@@ -1,0 +1,21 @@
+services:
+  redis:
+    image: redis/redis-stack:latest
+    container_name: bitwars-redis
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    volumes:
+      - redis-data:/data
+    environment:
+      REDIS_ARGS: "--appendonly yes --save 60 1 --loglevel warning"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+    driver: local
