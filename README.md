@@ -1,36 +1,25 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Yet another RTS game. Using Next.js, Redis, and TypeScript.
 
 ## Getting Started
 
-First, run the development server:
+First, install dependencies, start redis, start the server, run migrations and seed mock entities:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm i
+docker compose up -d
 pnpm dev
-# or
-bun dev
+pnpm db:migrate
+pnpm createmock:gamestate
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:8001/redis-stack/browser](http://localhost:8001/redis-stack/browser) with your browser to connect to redis stack.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Working Endpoints
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `GET /api/setup` - Initialize the entity index (run migrations) in redis
+- `POST /api/gamestate/mocks/create_gamestate` - Add mock entities to the redis cache
+- `GET /api/gamestate/poll` - Return all entities
+- `GET /api/gamestate/poll?x=87&y=87&radius=60` - Search for entities within a radius of x/y
+- `GET /api/gamestate/debug` - Debug the entity index  (to the console)
+- `GET /api/gamestate/stream` - Stream gamestate to clients
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
