@@ -1,10 +1,10 @@
 // store/upsertEntity.ts
 import { createClient, type RedisJSON } from "redis";
-import { Entity, EntitySchema } from "@/app/gamestate/schema/entity/entity";
-import { EntityDocSchema } from "@/app/gamestate/schema/entity/entityDoc";
-import { fromEntityDoc } from "@/app/gamestate/schema/entity/mappers";
-import { redis } from "@/app/gamestate/connection"; // your connected node-redis client
-import { entityKey } from "@/app/gamestate/schema/keys";
+import { Entity, EntitySchema } from "@/gamestate/schema/entity/entity";
+import { EntityDocSchema } from "@/gamestate/schema/entity/entityDoc";
+import { fromEntityDoc } from "@/gamestate/schema/entity/mappers";
+import { redis } from "@/gamestate/connection"; // your connected node-redis client
+import { entityKey } from "@/gamestate/schema/keys";
 
 export async function getEntity(id: string): Promise<Entity | null> {
   const raw = await redis.json.get(entityKey(id), { path: '$' }); // node-redis returns the doc (or array) per path

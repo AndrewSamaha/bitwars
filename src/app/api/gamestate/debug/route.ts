@@ -1,11 +1,11 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getNearbyEntities } from "@/app/gamestate/queries/read/getNearbyEntities";
-import { getAllEntitiesFromIndex } from "@/app/gamestate/queries/read/getAllEntities";
+import { getNearbyEntities } from "@/gamestate/queries/read/getNearbyEntities";
+import { getAllEntitiesFromIndex } from "@/gamestate/queries/read/getAllEntities";
 
 
 // debugIndex.ts
-import { redis } from "@/app/gamestate/connection";
-import { ENTITY_INDEX } from "@/app/gamestate/schema/keys";
+import { redis } from "@/gamestate/connection";
+import { ENTITY_INDEX } from "@/gamestate/schema/keys";
 
 async function scanKeys(pattern: string): Promise<string[]> {
   let cursor = "0";
