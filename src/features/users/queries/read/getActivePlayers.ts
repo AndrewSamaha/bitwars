@@ -1,7 +1,9 @@
 import { redis } from "@/lib/db/connection";
 import { PLAYER_INDEX } from "@/features/users/schema/keys";
+import { playerDocToPlayer } from "@/features/users/schema/player/mappers";
+import type { Player } from "@/features/users/schema/player/player";
 
-export async function getActivePlayers(windowMs = 600_000) {
+export async function getActivePlayers(windowMs = 600_000): Promise<Player[]> {
     const gameId = process.env.GAME_ID;
     if (!gameId) throw new Error("GAME_ID not set");
   
@@ -16,7 +18,7 @@ export async function getActivePlayers(windowMs = 600_000) {
       ]);
 
     if (res === null) {
-        return { total: 0, docs: [] };
+        return [];
     }
     if (!Array.isArray(res)) {
         throw new Error("Unexpected response format");
@@ -30,6 +32,7 @@ export async function getActivePlayers(windowMs = 600_000) {
       const doc = JSON.parse(fields[idx + 1] as string)[0];
       if (idx >= 0) docs.push(doc);
     }
-    return { total: docs.length, docs };
+    const activePlayers = docs.map((doc) => playerDocToPlayer(doc));
+    return activePlayers;
   }
   
