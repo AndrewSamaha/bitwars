@@ -6,14 +6,15 @@ import { ENTITY_INDEX, ENTITY_PREFIX } from '@/app/gamestate/schema/keys';
 export const runtime = 'nodejs';
 
 export async function createEntityIndex() {
+  await redis.sendCommand(['FLUSHDB']);
   return redis.sendCommand([
     "FT.CREATE", ENTITY_INDEX,
     "ON", "JSON",
     "PREFIX", "1", ENTITY_PREFIX,
     "SCHEMA",
     "$.gameId",   "AS", "gameId", "TAG",
-    "$.name",     "AS", "name",   "TEXT",
-    "$.pos_str",  "AS", "pos",    "GEO"
+    "$.x",        "AS", "x",      "NUMERIC",
+    "$.y",        "AS", "y",      "NUMERIC"
   ]);
 }
 

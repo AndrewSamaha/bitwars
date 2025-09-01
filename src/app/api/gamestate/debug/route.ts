@@ -68,10 +68,19 @@ export async function debugEntityIndex(prefix = "entity:*") {
   }
 }
 
+const globalSearch = async () => {
+  // Should show attributes x and y with their JSONPaths
+console.log(await redis.sendCommand(["FT.INFO", ENTITY_INDEX]));
+
+// Should return your keys (no content) if x/y exist and are numbers
+console.dir(await redis.sendCommand([
+  "FT.SEARCH", ENTITY_INDEX, "@x:[-inf +inf] @y:[-inf +inf]", "NOCONTENT", "DIALECT", "4"
+]), { depth: null });
+}
 
 export async function GET(request: NextRequest) {
   // If x or y is missing, return all entities
-  await debugEntityIndex()
+  await globalSearch()
   // Fetch nearby
 
   return NextResponse.json({ msg: "ok" }, { status: 200 });

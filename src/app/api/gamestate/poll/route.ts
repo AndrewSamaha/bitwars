@@ -26,6 +26,6 @@ export async function GET(request: NextRequest) {
   }
 
   // Fetch nearby
-  const entities = await getNearbyEntities([x, y], radius);
+  const entities = await getNearbyEntities([[x, y]], radius);
   return NextResponse.json(entities, { status: 200 });
 }
