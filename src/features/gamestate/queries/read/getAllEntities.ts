@@ -1,8 +1,8 @@
-import { redis } from "@/gamestate/connection";
-import { type Entity, EntitySchema } from "@/gamestate/schema/entity/entity";
-import { EntityDocSchema } from "@/gamestate/schema/entity/entityDoc";
-import { ENTITY_INDEX } from "@/gamestate/schema/keys";
-import { fromEntityDoc } from "@/gamestate/schema/entity/mappers";
+import { redis } from "@/features/gamestate/connection";
+import { type Entity, EntitySchema } from "@/features/gamestate/schema/entity/entity";
+import { EntityDocSchema } from "@/features/gamestate/schema/entity/entityDoc";
+import { ENTITY_INDEX } from "@/features/gamestate/schema/keys";
+import { fromEntityDoc } from "@/features/gamestate/schema/entity/mappers";
 
 // Return all keys + values (entities) on the entity index.
 // Uses FT.SEARCH to enumerate JSON docs and returns their Redis keys with parsed Entity values.

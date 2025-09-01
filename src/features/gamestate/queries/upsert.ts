@@ -1,10 +1,10 @@
 // store/upsertEntity.ts
 import { type RedisJSON } from "redis";
-import { Entity, EntitySchema } from "@/gamestate/schema/entity/entity";
-import { EntityDocSchema } from "@/gamestate/schema/entity/entityDoc";
-import { toEntityDoc } from "@/gamestate/schema/entity/mappers";
-import { redis } from "@/gamestate/connection"; // your connected node-redis client
-import { entityKey } from "@/gamestate/schema/keys";
+import { Entity, EntitySchema } from "@/features/gamestate/schema/entity/entity";
+import { EntityDocSchema } from "@/features/gamestate/schema/entity/entityDoc";
+import { toEntityDoc } from "@/features/gamestate/schema/entity/mappers";
+import { redis } from "@/features/gamestate/connection"; // your connected node-redis client
+import { entityKey } from "@/features/gamestate/schema/keys";
 
 export async function upsertEntity(entity: Entity) {
   // Validate domain object (optional but nice)

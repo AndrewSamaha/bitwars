@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { upsertEntity } from "@/gamestate/queries/upsert";
-import { Entity } from '@/gamestate/schema/entity/entity';
+import { upsertEntity } from "@/features/gamestate/queries/upsert";
+import { Entity } from '@/features/gamestate/schema/entity/entity';
 import { NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';

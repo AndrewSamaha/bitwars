@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
-import { redis } from '@/gamestate/connection';
-import { ENTITY_INDEX, ENTITY_PREFIX } from '@/gamestate/schema/keys';
+import { redis } from '@/features/gamestate/connection';
+import { ENTITY_INDEX, ENTITY_PREFIX } from '@/features/gamestate/schema/keys';
 
 export const runtime = 'nodejs';
 
