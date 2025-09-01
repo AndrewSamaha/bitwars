@@ -1,4 +1,4 @@
-import { redis } from "../connection";
+import { redis } from "../../../lib/db/connection";
 import { entityKey, geoKey } from "../schema/keys";
 
 /** Remove an entity from storage + geoset */

@@ -1,4 +1,4 @@
-import { redis } from "../connection";
+import { redis } from "../../../lib/db/connection";
 import type { RedisJSON } from "redis";
 
 const entityKey = (id: string) => `entity:${id}`;
@@ -8,11 +8,11 @@ const geoKey    = (gameId: string) => `geo:game:${gameId}`;
 export async function updateEntityPosition(
   id: string,
   gameId: string,
-  pos: [number, number],            // [lon, lat]
+  x: number,
+  y: number,
   updatedAt = new Date()
 ) {
   const k = entityKey(id);
-  const [lon, lat] = pos;
   const iso = updatedAt.toISOString();
 
   // Optional: ensure the doc exists (so we don't accidentally create a new one)
@@ -26,12 +26,9 @@ export async function updateEntityPosition(
   // - $.pos      -> numeric tuple
   // - $.pos_str  -> "lon,lat" for RediSearch GEO
   // - $.updatedAt-> ISO string
-  tx.json.set(k, "$.pos", pos as unknown as RedisJSON);
-  tx.json.set(k, "$.pos_str", `${lon},${lat}`);
+  tx.json.set(k, "$.x", x as unknown as RedisJSON);
+  tx.json.set(k, "$.y", y as unknown as RedisJSON);
   tx.json.set(k, "$.updatedAt", iso);
-
-  // If you keep a per-game GEOSET for proximity lookups, update it too:
-  tx.geoAdd(geoKey(gameId), [{ longitude: lon, latitude: lat, member: id }]);
 
   const res = await tx.exec();
   if (res === null) {

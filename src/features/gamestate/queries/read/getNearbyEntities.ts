@@ -1,4 +1,4 @@
-import { redis } from "../../connection";
+import { redis } from "../../../../lib/db/connection";
 import { type Entity } from "../../schema/entity/entity";
 import { EntityDocSchema } from "../../schema/entity/entityDoc";
 import { fromEntityDoc } from "../../schema/entity/mappers";

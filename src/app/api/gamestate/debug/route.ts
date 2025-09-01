@@ -4,7 +4,7 @@ import { getAllEntitiesFromIndex } from "@/features/gamestate/queries/read/getAl
 
 
 // debugIndex.ts
-import { redis } from "@/features/gamestate/connection";
+import { redis } from "@/lib/db/connection";
 import { ENTITY_INDEX } from "@/features/gamestate/schema/keys";
 
 async function scanKeys(pattern: string): Promise<string[]> {

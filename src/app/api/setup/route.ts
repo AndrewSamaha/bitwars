@@ -1,26 +1,12 @@
 import { NextResponse } from 'next/server';
 
-import { redis } from '@/features/gamestate/connection';
-import { ENTITY_INDEX, ENTITY_PREFIX } from '@/features/gamestate/schema/keys';
+import init from '@/lib/db/init/init';
 
 export const runtime = 'nodejs';
 
-export async function createEntityIndex() {
-  await redis.sendCommand(['FLUSHDB']);
-  return redis.sendCommand([
-    "FT.CREATE", ENTITY_INDEX,
-    "ON", "JSON",
-    "PREFIX", "1", ENTITY_PREFIX,
-    "SCHEMA",
-    "$.gameId",   "AS", "gameId", "TAG",
-    "$.x",        "AS", "x",      "NUMERIC",
-    "$.y",        "AS", "y",      "NUMERIC"
-  ]);
-}
-
 export async function POST() {
   try {
-    const result  = await createEntityIndex()
+    const result  = await init()
     return NextResponse.json({ result }, { status: 200 });
   } catch (err: any) {
     const msg = String(err?.message ?? err);

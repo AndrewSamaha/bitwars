@@ -1,4 +1,4 @@
-import { redis } from "@/features/gamestate/connection";
+import { redis } from "@/lib/db/connection";
 import { type Entity, EntitySchema } from "@/features/gamestate/schema/entity/entity";
 import { EntityDocSchema } from "@/features/gamestate/schema/entity/entityDoc";
 import { ENTITY_INDEX } from "@/features/gamestate/schema/keys";

@@ -3,7 +3,7 @@ import { createClient, type RedisJSON } from "redis";
 import { Entity, EntitySchema } from "@/features/gamestate/schema/entity/entity";
 import { EntityDocSchema } from "@/features/gamestate/schema/entity/entityDoc";
 import { fromEntityDoc } from "@/features/gamestate/schema/entity/mappers";
-import { redis } from "@/features/gamestate/connection"; // your connected node-redis client
+import { redis } from "@/lib/db/connection"; // your connected node-redis client
 import { entityKey } from "@/features/gamestate/schema/keys";
 
 export async function getEntity(id: string): Promise<Entity | null> {

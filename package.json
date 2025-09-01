@@ -9,7 +9,8 @@
     "lint": "biome check",
     "format": "biome format --write",
     "db:migrate": "curl -X POST http://localhost:3000/api/setup",
-    "createmock:gamestate": "curl -X POST http://localhost:3000/api/gamestate/mocks/create_gamestate"
+    "createmock:gamestate": "curl -X POST http://localhost:3000/api/gamestate/mocks/create_gamestate",
+    "createmock:players": "curl -X POST http://localhost:3000/api/players/mocks/create_players"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.7",
