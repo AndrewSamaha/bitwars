@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { PlayerLogin } from "@/features/users/schema/player/playerLogin";
 import type { Player } from "@/features/users/schema/player/player";
-import { PLAYER_COLORS } from "@/lib/constants";
+import { PLAYER_COLORS, PLAYER_NAME_PARTS } from "@/lib/constants";
 import { loginToPlayer } from "@/features/users/schema/player/mappers";
 import { createPlayer } from "@/features/users/queries/create";
 
@@ -10,39 +10,13 @@ const randomColor = (): string => {
   const randomIndex = Math.floor(Math.random() * colors.length);
   return colors[randomIndex];
 }
+
 const randomPlayerName = (): string => {
-  const names = [
-    "Grimm",
-    "Alice",
-    "Bob",
-    "Charlie",
-    "David",
-    "Eve",
-    "Frank",
-    "Grace",
-    "Hannah",
-    "Isaac",
-    "Jack",
-    "Jill",
-    "Katie",
-    "Liam",
-    "Mia",
-    "Noah",
-    "Olivia",
-    "Patrick",
-    "Quinn",
-    "Rachel",
-    "Sam",
-    "Taylor",
-    "Victor",
-    "Wendy",
-    "Xander",
-    "Yara",
-    "Zack",
-  ];
+  const names = PLAYER_NAME_PARTS;
   const randomIndex = Math.floor(Math.random() * names.length);
   return names[randomIndex];
 }
+
 const createLogin  = (): PlayerLogin => {
   return {
     name: randomPlayerName(),

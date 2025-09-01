@@ -1,7 +1,7 @@
 import { redis } from "@/lib/db/connection";
 import { PLAYER_INDEX, PLAYER_PREFIX } from "@/features/users/schema/keys";
 
-export async function ensurePlayerIndex() {
+export async function createPlayerIndex() {
     try {
       await redis.sendCommand(['FT.INFO', PLAYER_INDEX]);
       // index exists

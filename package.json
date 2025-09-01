@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "biome check",
     "format": "biome format --write",
-    "db:migrate": "curl -X POST http://localhost:3000/api/setup",
+    "db:init": "curl -X POST http://localhost:3000/api/init",
     "createmock:gamestate": "curl -X POST http://localhost:3000/api/gamestate/mocks/create_gamestate",
     "createmock:players": "curl -X POST http://localhost:3000/api/players/mocks/create_players"
   },
