@@ -1,29 +1,21 @@
-import { redis } from "../connection";
-import { Entity } from "../schema/entity";
-import type { RedisJSON } from "redis";
-
-const key = (id: string) => `entity:${id}`;
+// store/upsertEntity.ts
+import { type RedisJSON } from "redis";
+import { Entity, EntitySchema } from "@/app/gamestate/schema/entity/entity";
+import { EntityDocSchema } from "@/app/gamestate/schema/entity/entityDoc";
+import { toEntityDoc } from "@/app/gamestate/schema/entity/mappers";
+import { redis } from "@/app/gamestate/connection"; // your connected node-redis client
+import { entityKey } from "@/app/gamestate/schema/keys";
 
 export async function upsertEntity(entity: Entity) {
-  // Make 'detail' JSON-safe (strip functions/undefined/Date, etc.)
-  const safeDetail = entity.detail === undefined
-    ? undefined
-    : (JSON.parse(JSON.stringify(entity.detail)) as RedisJSON);
+  // Validate domain object (optional but nice)
+  const valid = EntitySchema.parse(entity);
 
-  const toStore: RedisJSON = {
-    id: entity.id,
-    gameId: entity.gameId,
-    ownerId: entity.ownerId,
-    name: entity.name,
-    pos: [entity.pos[0], entity.pos[1]],
-    dir: entity.dir,
-    speed: entity.speed,
-    pos_str: `${entity.pos[0]},${entity.pos[1]}`,
-    createdAt: entity.createdAt.toISOString(),
-    updatedAt: entity.updatedAt.toISOString(),
-    ...(safeDetail !== undefined ? { detail: safeDetail } : {}),
-    ...(entity.detailVersion ? { detailVersion: entity.detailVersion } : {}),
-  } as RedisJSON;
+  // Project to storage shape
+  const doc = toEntityDoc(valid);
 
-  await redis.json.set(key(entity.id), "$", toStore);
+  // Validate storage shape (catches non-JSON-safe or missing fields)
+  const storage = EntityDocSchema.parse(doc);
+
+  // ✅ Cast at the boundary (TS only, runtime is JSON.SET)
+  await redis.json.set(entityKey(valid.id), "$", storage as unknown as RedisJSON);
 }

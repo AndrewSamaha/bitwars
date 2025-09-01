@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getAllEntitiesFromIndex, getNearbyEntities } from "@/app/gamestate/queries/read";
+import { getNearbyEntities } from "@/app/gamestate/queries/read/getNearbyEntities";
+import { getAllEntitiesFromIndex } from "@/app/gamestate/queries/read/getAllEntities";
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
