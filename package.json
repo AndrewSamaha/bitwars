@@ -13,6 +13,7 @@
     "createmock:players": "curl -X POST http://localhost:3000/api/players/mocks/create_players"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.1",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.3",
@@ -23,6 +24,7 @@
     "next": "15.5.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-hook-form": "^7.62.0",
     "redis": "^5.8.2",
     "tailwind-merge": "^3.3.1",
     "uuid": "^11.1.0",

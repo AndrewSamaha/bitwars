@@ -1,19 +1,11 @@
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Sword, Shield, Zap, Users } from "lucide-react"
-import Username from "@/features/users/components/login/Username"
-import PlayerColorSelector from "@/features/users/components/login/PlayerColorSelector"
 import { getSuggestedLoginDetails } from "@/features/users/server-functions/getSuggestedLogin"
 import { Suspense } from "react"
+import LoginForm from "@/features/users/components/login/LoginForm"
 
 export default function BitWarsLanding() {
-
   const suggestedLoginDetailsPromise = getSuggestedLoginDetails();
-
-  const handleJoinBattle = () => {
-    console.log("handJoinBattle");
-  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -45,25 +37,9 @@ export default function BitWarsLanding() {
               <CardDescription>Choose your commander name and battle colors</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              
-                <div className="space-y-2">
-                  <Label htmlFor="username">Commander Name</Label>
-                  <Suspense fallback={<div className="text-sm text-muted-foreground">Loading suggestions…</div>}>
-                    <Username suggestedLoginDetailsPromise={suggestedLoginDetailsPromise} />
-                  </Suspense>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="color">Battle Colors</Label>
-                  <Suspense fallback={<div className="text-sm text-muted-foreground">Loading suggestions…</div>}>
-                    <PlayerColorSelector suggestedLoginDetailsPromise={suggestedLoginDetailsPromise} />
-                  </Suspense>
-                </div>
-              
-
-              <Button className="w-full" size="lg" disabled={false}>
-                Deploy to Battlefield
-              </Button>
+              <Suspense fallback={<div className="text-sm text-muted-foreground">Loading suggestions…</div>}>
+                <LoginForm suggestedLoginDetailsPromise={suggestedLoginDetailsPromise} />
+              </Suspense>
             </CardContent>
           </Card>
         </div>

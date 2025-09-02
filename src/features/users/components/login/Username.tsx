@@ -1,18 +1,16 @@
 "use client"
 
 import { Input } from "@/components/ui/input";
-import { use } from "react";
-import { type SuggestedLoginDetails } from "@/features/users/schema/player/suggestedLoginDetails";
+import { useFormContext } from "react-hook-form";
 
-export default function Username({ suggestedLoginDetailsPromise }: { suggestedLoginDetailsPromise: Promise<SuggestedLoginDetails> }) {
-  const suggestedLoginDetails = use(suggestedLoginDetailsPromise);
+export default function Username() {
+  const { register } = useFormContext();
   return (
     <Input
-                  id="username"
-                  placeholder="Enter your username"
-                  value={suggestedLoginDetails?.suggestedName}
-                  onChange={(e) => (console.log(e.target.value))}
-                  className="bg-input border-border"
-                />
+      id="username"
+      placeholder="Enter your username"
+      className="bg-input border-border"
+      {...register("name")}
+    />
   );
 }
