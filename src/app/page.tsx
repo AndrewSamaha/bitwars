@@ -1,31 +1,18 @@
-"use client"
-
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Sword, Shield, Zap, Users } from "lucide-react"
-
-const playerColors = [
-  { value: "red", label: "Crimson", color: "bg-red-500" },
-  { value: "blue", label: "Azure", color: "bg-blue-500" },
-  { value: "green", label: "Emerald", color: "bg-green-500" },
-  { value: "yellow", label: "Gold", color: "bg-yellow-500" },
-  { value: "purple", label: "Violet", color: "bg-purple-500" },
-  { value: "orange", label: "Amber", color: "bg-orange-500" },
-]
+import Username from "@/features/users/components/login/Username"
+import PlayerColorSelector from "@/features/users/components/login/PlayerColorSelector"
+import { getSuggestedLoginDetails } from "@/features/users/server-functions/getSuggestedLogin"
+import { Suspense } from "react"
 
 export default function BitWarsLanding() {
-  const [username, setUsername] = useState("")
-  const [selectedColor, setSelectedColor] = useState("blue")
+
+  const suggestedLoginDetailsPromise = getSuggestedLoginDetails();
 
   const handleJoinBattle = () => {
-    if (username.trim()) {
-      console.log(`${username} joining battle as ${selectedColor}`)
-      // Here you would typically navigate to the game or send data to your backend
-    }
+    console.log("handJoinBattle");
   }
 
   return (
@@ -58,37 +45,23 @@ export default function BitWarsLanding() {
               <CardDescription>Choose your commander name and battle colors</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="username">Commander Name</Label>
-                <Input
-                  id="username"
-                  placeholder="Enter your username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="bg-input border-border"
-                />
-              </div>
+              
+                <div className="space-y-2">
+                  <Label htmlFor="username">Commander Name</Label>
+                  <Suspense fallback={<div className="text-sm text-muted-foreground">Loading suggestions…</div>}>
+                    <Username suggestedLoginDetailsPromise={suggestedLoginDetailsPromise} />
+                  </Suspense>
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="color">Battle Colors</Label>
-                <Select value={selectedColor} onValueChange={setSelectedColor}>
-                  <SelectTrigger className="bg-input border-border">
-                    <SelectValue placeholder="Select your color" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {playerColors.map((color) => (
-                      <SelectItem key={color.value} value={color.value}>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-4 h-4 rounded-full ${color.color}`} />
-                          {color.label}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="color">Battle Colors</Label>
+                  <Suspense fallback={<div className="text-sm text-muted-foreground">Loading suggestions…</div>}>
+                    <PlayerColorSelector suggestedLoginDetailsPromise={suggestedLoginDetailsPromise} />
+                  </Suspense>
+                </div>
+              
 
-              <Button onClick={handleJoinBattle} className="w-full" size="lg" disabled={!username.trim()}>
+              <Button className="w-full" size="lg" disabled={false}>
                 Deploy to Battlefield
               </Button>
             </CardContent>
