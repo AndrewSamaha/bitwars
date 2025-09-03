@@ -6,6 +6,7 @@ import { useState, useRef, useEffect } from "react"
 import { ChevronLeft, ChevronRight, Terminal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import EntitiesStreamCounter from "@/features/gamestate/components/EntitiesStreamCounter"
 
 interface CommandHistory {
   command: string
@@ -72,9 +73,13 @@ export default function GamePage() {
         {isTerminalOpen && (
           <div className="h-full bg-card border border-border rounded-lg shadow-2xl flex flex-col">
             {/* Terminal Header */}
-            <div className="flex items-center gap-2 p-3 border-b border-border bg-muted/50 rounded-t-lg">
-              <Terminal className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium">BitWars Terminal</span>
+            <div className="flex items-center justify-between gap-2 p-3 border-b border-border bg-muted/50 rounded-t-lg">
+              <div className="flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-primary" />
+                <span className="text-sm font-medium">BitWars Terminal</span>
+                <EntitiesStreamCounter />
+              </div>
+              
             </div>
 
             {/* Terminal Content */}

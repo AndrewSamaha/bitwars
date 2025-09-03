@@ -1,32 +1,62 @@
 import { getAllEntitiesFromIndex } from '@/features/gamestate/queries/read/getAllEntities';
 
-export async function GET() {
+export async function GET(request: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      // Send an initial tick
+      let closed = false;
+
+      const safeEnqueue = (chunk: Uint8Array) => {
+        if (closed) return;
+        try {
+          controller.enqueue(chunk);
+        } catch {
+          // controller already closed
+          closed = true;
+        }
+      };
+
+      // Cleanup helper
+      const cleanup = (id?: ReturnType<typeof setInterval>) => {
+        if (id) clearInterval(id);
+        if (!closed) {
+          closed = true;
+          try { controller.close(); } catch {}
+        }
+      };
+
+      // Abort/disconnect handling
+      const onAbort = () => cleanup(intervalId);
+      request.signal.addEventListener('abort', onAbort);
+
+      // Initial tick
       try {
         const entities = await getAllEntitiesFromIndex();
-        controller.enqueue(encoder.encode(`event: entities\ndata: ${JSON.stringify(entities)}\n\n`));
+        safeEnqueue(encoder.encode(`event: entities\ndata: ${JSON.stringify(entities)}\n\n`));
       } catch (err) {
-        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: 'initial fetch failed' })}\n\n`));
+        safeEnqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: 'initial fetch failed' })}\n\n`));
       }
 
-      const id = setInterval(async () => {
+      // Periodic polling
+      const intervalId = setInterval(async () => {
+        if (closed) return;
         try {
           const entities = await getAllEntitiesFromIndex();
-          controller.enqueue(encoder.encode(`event: entities\ndata: ${JSON.stringify(entities)}\n\n`));
+          safeEnqueue(encoder.encode(`event: entities\ndata: ${JSON.stringify(entities)}\n\n`));
         } catch (err) {
-          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: 'poll failed' })}\n\n`));
+          safeEnqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: 'poll failed' })}\n\n`));
         }
       }, 1000);
 
-      // Store interval id on controller for cleanup in cancel
-      (controller as any)._intervalId = id;
+      // Store cleanup on controller
+      (controller as any)._cleanup = () => {
+        request.signal.removeEventListener('abort', onAbort);
+        cleanup(intervalId);
+      };
     },
     cancel() {
-      const id = (this as any)._intervalId;
-      if (id) clearInterval(id);
+      const doCleanup = (this as any)._cleanup;
+      if (typeof doCleanup === 'function') doCleanup();
     }
   });
 

@@ -10,7 +10,6 @@ export async function getAllEntitiesFromIndex(
     limit = 1000,
     offset = 0
   ): Promise<Array<{ key: string; entity: Entity }>> {
-    console.log('getAllEntities')
     const resp = await redis.sendCommand([
       "FT.SEARCH",
       ENTITY_INDEX,
