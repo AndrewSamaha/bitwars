@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Terminal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import EntitiesStreamCounter from "@/features/gamestate/components/EntitiesStreamCounter"
+import GameStage from "@/features/pixijs/components/GameStage"
 
 interface CommandHistory {
   command: string
@@ -123,6 +124,7 @@ export default function GamePage() {
           </div>
         )}
       </div>
+      <GameStage />
     </div>
   )
 }
