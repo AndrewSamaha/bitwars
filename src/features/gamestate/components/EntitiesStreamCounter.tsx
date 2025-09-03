@@ -1,18 +1,42 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function EntitiesStreamCounter() {
   const [count, setCount] = useState(0);
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
+  const errorCountRef = useRef(0);
+  const router = useRouter();
 
   useEffect(() => {
     const es = new EventSource("/api/gamestate/stream");
     esRef.current = es;
 
-    const onOpen = () => setConnected(true);
-    const onError = () => setConnected(false);
+    const onOpen = () => {
+      setConnected(true);
+      errorCountRef.current = 0;
+    };
+    const onError = async () => {
+      setConnected(false);
+      errorCountRef.current += 1;
+      // Probe auth status to distinguish between transient network errors and 401
+      try {
+        const resp = await fetch('/api/players/me', { method: 'GET', headers: { Accept: 'application/json' } });
+        if (resp.status === 401 || resp.status === 403) {
+          // Not authenticated -> navigate to login
+          router.push('/');
+          return;
+        }
+      } catch {
+        // network hiccup; fall through and let EventSource retry
+      }
+      // If EventSource has definitively closed, navigate to login as a fallback
+      if (es.readyState === EventSource.CLOSED && errorCountRef.current > 1) {
+        router.push('/');
+      }
+    };
     const onEntities = () => setCount((c) => c + 1);
 
     es.addEventListener("open", onOpen as EventListener);

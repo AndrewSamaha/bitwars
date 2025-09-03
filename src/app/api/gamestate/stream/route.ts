@@ -1,6 +1,10 @@
 import { getAllEntitiesFromIndex } from '@/features/gamestate/queries/read/getAllEntities';
+import { requireAuthOr401 } from '@/features/users/utils/auth';
 
 export async function GET(request: Request) {
+  const { res } = await requireAuthOr401();
+  if (res) return res; // 401 when not authenticated
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
