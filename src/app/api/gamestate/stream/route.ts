@@ -1,18 +1,32 @@
+import { getAllEntitiesFromIndex } from '@/features/gamestate/queries/read/getAllEntities';
+
 export async function GET() {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
-    start(controller) {
-      // Send a hello event immediately
-      controller.enqueue(encoder.encode(`event: hello\ndata: ${JSON.stringify({ t: Date.now() })}\n\n`));
+    async start(controller) {
+      // Send an initial tick
+      try {
+        const entities = await getAllEntitiesFromIndex();
+        controller.enqueue(encoder.encode(`event: entities\ndata: ${JSON.stringify(entities)}\n\n`));
+      } catch (err) {
+        controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: 'initial fetch failed' })}\n\n`));
+      }
 
-      // Example: push periodic state
-      const id = setInterval(() => {
-        const payload = { x: Math.random(), y: Math.random(), t: Date.now() };
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`)); // 'message' event by default
-      }, 1_050);
+      const id = setInterval(async () => {
+        try {
+          const entities = await getAllEntitiesFromIndex();
+          controller.enqueue(encoder.encode(`event: entities\ndata: ${JSON.stringify(entities)}\n\n`));
+        } catch (err) {
+          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ message: 'poll failed' })}\n\n`));
+        }
+      }, 1000);
 
-      // Clean up if client disconnects
-      (controller as any).signal?.addEventListener?.('abort', () => clearInterval(id));
+      // Store interval id on controller for cleanup in cancel
+      (controller as any)._intervalId = id;
+    },
+    cancel() {
+      const id = (this as any)._intervalId;
+      if (id) clearInterval(id);
     }
   });
 
@@ -20,8 +34,7 @@ export async function GET() {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-      // (Optionally) allow CORS
+      'Connection': 'keep-alive'
     }
   });
 }
