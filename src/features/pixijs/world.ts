@@ -5,8 +5,9 @@ import * as PIXI from "pixi.js";
 export type Position = { x: number; y: number };
 export type Velocity = { vx: number; vy: number };
 export type SpriteRef = { sprite: PIXI.Sprite };
+export type Scale = { scale: number };
 
-export type Entity = Partial<Position & Velocity & SpriteRef & { selectable?: true }>;
+export type Entity = Partial<Position & Velocity & SpriteRef & Scale & { selectable?: true }>;
 
 class GameWorld {
   world = new World<Entity>();

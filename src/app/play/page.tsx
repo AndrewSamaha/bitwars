@@ -72,7 +72,7 @@ export default function GamePage() {
 
         {/* Terminal Window */}
         {isTerminalOpen && (
-          <div className="h-full bg-card border border-border rounded-lg shadow-2xl flex flex-col">
+          <div className="h-full bg-opacity-95 border border-border rounded-lg shadow-2xl flex flex-col">
             {/* Terminal Header */}
             <div className="flex items-center justify-between gap-2 p-3 border-b border-border bg-muted/50 rounded-t-lg">
               <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export default function GamePage() {
             <div
               ref={terminalRef}
               onClick={handleTerminalClick}
-              className="flex-1 p-4 overflow-y-auto font-mono text-sm bg-black text-green-400 cursor-text"
+              className="flex-1 bg-transparent p-4 overflow-y-auto font-mono text-sm bg-black bg-opacity-90 text-green-400 cursor-text"
             >
               {commandHistory.map((entry, index) => (
                 <div key={index} className="mb-2">

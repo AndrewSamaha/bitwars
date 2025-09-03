@@ -24,8 +24,9 @@ export default function GameStage() {
         const texture = await Assets.load('/assets/corvette/idle.png');
         // Render system: project ECS -> Pixi once per frame
         const render = () => {
-            for (const e of game.world.with("sprite", "x", "y")) {
+            for (const e of game.world.with("sprite", "x", "y", "scale")) {
                 e.sprite.position.set(e.x!, e.y!);
+                e.sprite.scale.set(e.scale! / 2);
             }
         };
 
@@ -40,11 +41,13 @@ export default function GameStage() {
             const sprite = Sprite.from(texture);
             sprite.anchor.set(0.5);
             worldContainer.addChild(sprite);
-            game.world.add({ x: Math.random()*2000, y: Math.random()*2000, vx: 10, vy: 0, sprite });
+            const scale = i / 2000;
+            
+            game.world.add({ x: Math.random()*2000, y: Math.random()*2000, vx: 10*scale, vy: 0, sprite, scale: scale });
         }
 
         return () => {
-        app.destroy(true, { children: true, texture: false });
+          app.destroy(true, { children: true, texture: false });
         };
     }
     let cleanup: (() => void) | undefined;
