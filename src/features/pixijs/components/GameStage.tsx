@@ -1,7 +1,7 @@
 "use client";
 import { Application, Assets, Container, Sprite } from "pixi.js";
 import { useEffect, useRef } from "react";
-import { game } from "@/features/pixijs/world";
+import { game } from "@/features/gamestate/world";
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
