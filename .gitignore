@@ -19,7 +19,7 @@
 **/.next/
 **/.dist/
 node_modules/
-.turbo/
+**/.turbo/
 coverage/
 /apps/web/.next/
 /out/
