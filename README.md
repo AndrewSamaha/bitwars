@@ -4,10 +4,12 @@ Yet another RTS game. Using Next.js, Redis, and TypeScript.
 
 First, install dependencies, start redis, start the server, run migrations and seed mock entities:
 
+ From the repository's root:
 ```bash
 pnpm i
 docker compose up -d
 pnpm dev
+cd apps/web
 pnpm db:migrate
 pnpm createmock:gamestate
 ```

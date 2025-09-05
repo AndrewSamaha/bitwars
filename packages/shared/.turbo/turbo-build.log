@@ -1,0 +1,7 @@
+
+
+> @bitwars/shared@0.1.0 build /home/andrew/Development/bitwars/packages/shared
+> tsc -b
+
+sh: 1: tsc: not found
+[41m[30m ELIFECYCLE [39m[49m [31mCommand failed.[39m

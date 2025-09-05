@@ -15,7 +15,13 @@
 /coverage
 
 # next.js
-/.next/
+# monorepo-sh specific
+**/.next/
+**/.dist/
+node_modules/
+.turbo/
+coverage/
+/apps/web/.next/
 /out/
 
 # production
