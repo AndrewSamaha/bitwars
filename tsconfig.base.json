@@ -7,10 +7,7 @@
       "skipLibCheck": true,
       "declaration": true,
       "composite": true,
-      "baseUrl": ".",
-      "paths": {
-        "@bitwars/shared": ["packages/shared/src"]
-      }
+      "baseUrl": "."
     }
   }
   
