@@ -20,6 +20,7 @@
 **/.dist/
 node_modules/
 **/.turbo/
+**/dist/
 coverage/
 /apps/web/.next/
 /out/
