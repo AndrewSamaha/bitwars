@@ -6,7 +6,9 @@ First, install dependencies, start redis, start the server, run migrations and s
 
  From the repository's root:
 ```bash
-pnpm i
+pnpm run clean
+pnpm install
+pnpm approve-builds
 docker compose up -d
 pnpm dev
 cd apps/web
