@@ -1,15 +1,15 @@
 {
-    "name": "bitwars-monorepo",
-    "private": true,
-    "packageManager": "pnpm@10.15.1",
-    "scripts": {
-      "dev": "turbo run dev --parallel",
-      "build": "turbo run build",
-      "lint": "turbo run lint",
-      "test": "turbo run test"
-    },
-    "devDependencies": {
-      "turbo": "^2.0.0"
-    }
+  "name": "bitwars-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "clean": "bash ./scripts/clean.sh",
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
   }
-  
+}

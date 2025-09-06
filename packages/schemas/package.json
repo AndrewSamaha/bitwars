@@ -1,0 +1,17 @@
+{
+    "name": "@bitwars/schemas",
+    "private": true,
+    "version": "0.0.0",
+    "devDependencies": {
+      "@bufbuild/buf": "^1.45.0",
+      "ts-proto": "^1.181.0",
+      "chokidar": "^4.0.3"
+    },
+    "scripts": {
+      "gen:ts": "buf generate",
+      "lint": "buf lint",
+      "check:breaking": "buf breaking --against '.git#branch=main'",
+      "watch": "chokidar 'proto/**/*.proto' -c 'pnpm run gen:ts'"
+    }
+}
+  
