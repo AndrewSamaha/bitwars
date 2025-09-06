@@ -18,8 +18,9 @@
 # monorepo-sh specific
 **/.next/
 **/.dist/
-node_modules/
-.turbo/
+**/node_modules/
+**/.turbo/
+**/dist/
 coverage/
 /apps/web/.next/
 /out/
