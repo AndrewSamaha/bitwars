@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity.proto.
  */
 export const file_entity: GenFile = /*@__PURE__*/
-  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMiHAoEVmVjMhIJCgF4GAEgASgCEgkKAXkYAiABKAIiSgoGRW50aXR5EgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSGgoDcG9zGAMgASgLMg0uYml0d2Fycy5WZWMyEgoKAmhwGAQgASgFYgZwcm90bzM");
+  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMiHAoEVmVjMhIJCgF4GAEgASgCEgkKAXkYAiABKAIiagoGRW50aXR5EgoKAmlkGAEgASgEEhoKA3BvcxgDIAEoCzINLmJpdHdhcnMuVmVjMhIaCgN2ZWwYBCABKAsyDS5iaXR3YXJzLlZlYzISHAoFZm9yY2UYBSABKAsyDS5iaXR3YXJzLlZlYzJiBnByb3RvMw");
 
 /**
  * @generated from message bitwars.Vec2
@@ -39,16 +39,9 @@ export const Vec2Schema: GenMessage<Vec2> = /*@__PURE__*/
  */
 export type Entity = Message<"bitwars.Entity"> & {
   /**
-   * @generated from field: string id = 1;
+   * @generated from field: uint64 id = 1;
    */
-  id: string;
-
-  /**
-   * enum later
-   *
-   * @generated from field: string kind = 2;
-   */
-  kind: string;
+  id: bigint;
 
   /**
    * @generated from field: bitwars.Vec2 pos = 3;
@@ -56,9 +49,14 @@ export type Entity = Message<"bitwars.Entity"> & {
   pos?: Vec2;
 
   /**
-   * @generated from field: int32 hp = 4;
+   * @generated from field: bitwars.Vec2 vel = 4;
    */
-  hp: number;
+  vel?: Vec2;
+
+  /**
+   * @generated from field: bitwars.Vec2 force = 5;
+   */
+  force?: Vec2;
 };
 
 /**

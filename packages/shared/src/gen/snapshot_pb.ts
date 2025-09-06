@@ -12,17 +12,12 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file snapshot.proto.
  */
 export const file_snapshot: GenFile = /*@__PURE__*/
-  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyJLCghTbmFwc2hvdBIOCgZnYW1lSWQYASABKAkSDAoEdGljaxgCIAEoAxIhCghlbnRpdGllcxgDIAMoCzIPLmJpdHdhcnMuRW50aXR5YgZwcm90bzM", [file_entity]);
+  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyI7CghTbmFwc2hvdBIMCgR0aWNrGAIgASgDEiEKCGVudGl0aWVzGAMgAygLMg8uYml0d2Fycy5FbnRpdHliBnByb3RvMw", [file_entity]);
 
 /**
  * @generated from message bitwars.Snapshot
  */
 export type Snapshot = Message<"bitwars.Snapshot"> & {
-  /**
-   * @generated from field: string gameId = 1;
-   */
-  gameId: string;
-
   /**
    * @generated from field: int64 tick = 2;
    */

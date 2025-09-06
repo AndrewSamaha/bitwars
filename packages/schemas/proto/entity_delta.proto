@@ -1,0 +1,13 @@
+syntax = "proto3";
+package bitwars;
+
+import "entity.proto";
+
+// Sparse delta: only include fields that changed meaningfully.
+// proto3 'optional' yields Option<T> in Rust (prost) and presence in TS.
+message EntityDelta {
+  uint64 id      = 1;
+  optional Vec2 pos = 2;
+  optional Vec2 vel = 3;
+  optional Vec2 force = 4;
+}

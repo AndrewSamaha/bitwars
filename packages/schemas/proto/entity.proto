@@ -4,8 +4,8 @@ package bitwars;
 message Vec2 { float x = 1; float y = 2; }
 
 message Entity {
-  string id = 1;
-  string kind = 2; // enum later
-  Vec2 pos = 3;
-  int32 hp = 4;
+  uint64 id = 1;
+  Vec2   pos = 3;
+  Vec2   vel = 4;
+  Vec2 force = 5;
 }

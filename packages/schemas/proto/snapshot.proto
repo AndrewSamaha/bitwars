@@ -4,7 +4,6 @@ package bitwars;
 import "entity.proto";
 
 message Snapshot {
-  string gameId = 1;
   int64 tick = 2;
   repeated Entity entities = 3;
 }

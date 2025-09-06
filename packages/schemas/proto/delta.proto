@@ -1,0 +1,9 @@
+syntax = "proto3";
+package bitwars;
+
+import "entity_delta.proto";
+
+message Delta {
+  uint64 tick = 1;
+  repeated EntityDelta updates = 2;
+}
