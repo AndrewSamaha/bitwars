@@ -27,3 +27,18 @@ Open [http://localhost:8001/redis-stack/browser](http://localhost:8001/redis-sta
 - `GET /api/gamestate/debug` - Debug the entity index  (to the console)
 - `GET /api/gamestate/stream` - Stream gamestate to clients
 
+## Monorepo Structure
+```
+bitwars/
+├─ apps/ (the nextjs front end)
+├─ crates/ (there's a thing called game-types in there but I can't remember if that's actually being used yet)
+├─ packages/
+│  └─ schemas/  (protobuf schema definitions)
+│  └─ shared/  (typescript types generated from the above protobuf schemas go here)
+└─ services/ 
+    └─ rts-engine/ 
+          ├─ rts-engine/ 
+          │    ├─ src/ (rust source, only contains main.rs now hellow world)
+          │    └─ Cargo.toml
+          └─ package.json (to help turborepo and pnpm manage this workspace) 
+```
