@@ -2,6 +2,7 @@
 import { Application, Assets, Container, Sprite } from "pixi.js";
 import { useEffect, useRef } from "react";
 import { game } from "@/features/gamestate/world";
+import { isLiveSprite } from "../utils/guards";
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
@@ -24,10 +25,18 @@ export default function GameStage() {
         const texture = await Assets.load('/assets/corvette/idle.png');
         // Render system: project ECS -> Pixi once per frame
         const render = () => {
-            for (const e of game.world.with("sprite", "x", "y", "scale")) {
-                e.sprite.position.set(e.x!, e.y!);
-                e.sprite.scale.set(e.scale! / 2);
+          for (const e of game.world.with("sprite", "x", "y", "scale")) {
+            if (!isLiveSprite(e.sprite)) {
+              // Ensure the ECS stops tracking dead sprites immediately
+              // (remove the sprite component or the whole entity, your call)
+              // Example: remove only the sprite component so other data can live on:
+              // @ts-ignore: miniplex remove syntax varies; adapt to your API
+              game.world.removeComponent?.(e, "sprite") ?? game.world.remove(e);
+              continue;
             }
+            e.sprite.position.set(e.x!, e.y!);
+            e.sprite.scale.set(e.scale! / 2);
+          }
         };
 
         app.ticker.add((time) => {
