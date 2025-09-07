@@ -1,0 +1,8 @@
+syntax = "proto3";
+package bitwars;
+
+message SnapshotMeta {
+  uint64 tick = 1;                 // tick included in the snapshot
+  string boundary_stream_id = 2;   // last Redis stream ID included
+  int64  updated_at_ms = 3;
+}

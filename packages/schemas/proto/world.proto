@@ -6,4 +6,5 @@ import "vec2.proto";
 import "entity.proto";
 import "entity_delta.proto";
 import "snapshot.proto";
+import "snapshot_meta.proto";
 import "delta.proto";
