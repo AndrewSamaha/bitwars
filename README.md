@@ -56,3 +56,8 @@ To build the project:
 ```bash
 cargo build -p rts-engine
 ```
+
+To run the actual rts-engine:
+```bash
+cargo run -p rts-engine
+```
