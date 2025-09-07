@@ -42,3 +42,17 @@ bitwars/
           │    └─ Cargo.toml
           └─ package.json (to help turborepo and pnpm manage this workspace) 
 ```
+
+## rts-engine
+This is the rust server that runs the game loop. It pulls in types defined in 
+packages/shared (protobuf types). To validate types were built correctly, from
+project root do:
+```bash
+cargo clean
+cargo run -p rts-engine --example proto_sanity
+```
+
+To build the project:
+```bash
+cargo build -p rts-engine
+```
