@@ -38,6 +38,17 @@ pub struct Snapshot {
     pub entities: ::prost::alloc::vec::Vec<Entity>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnapshotMeta {
+    /// tick included in the snapshot
+    #[prost(uint64, tag = "1")]
+    pub tick: u64,
+    /// last Redis stream ID included
+    #[prost(string, tag = "2")]
+    pub boundary_stream_id: ::prost::alloc::string::String,
+    #[prost(int64, tag = "3")]
+    pub updated_at_ms: i64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Delta {
     #[prost(uint64, tag = "1")]
     pub tick: u64,

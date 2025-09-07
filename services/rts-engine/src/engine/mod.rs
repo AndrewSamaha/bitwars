@@ -1,6 +1,6 @@
 pub mod state;
 
-use rand::{rngs::StdRng, SeedableRng, Rng};
+use rand::{rngs::StdRng, SeedableRng};
 use tokio::time::{interval, Duration};
 use tracing::{error, info};
 
@@ -25,7 +25,7 @@ impl Engine {
         let state = init_world(&cfg, &mut rng);
         info!("Initialized world: entities={}, tps={}, friction={}", cfg.num_entities, cfg.tps, cfg.friction);
 
-        let mut redis = RedisClient::connect(&cfg.redis_url, cfg.game_id.clone()).await?;
+        let redis = RedisClient::connect(&cfg.redis_url, cfg.game_id.clone()).await?;
 
         // Initial snapshot with boundary "0-0"
         let mut engine = Self {
