@@ -2,6 +2,7 @@
 syntax = "proto3";
 package bitwars;
 
+import "vec2.proto";
 import "entity.proto";
 import "entity_delta.proto";
 import "snapshot.proto";

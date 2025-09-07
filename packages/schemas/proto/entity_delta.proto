@@ -1,6 +1,7 @@
 syntax = "proto3";
 package bitwars;
 
+import "vec2.proto";
 import "entity.proto";
 
 // Sparse delta: only include fields that changed meaningfully.

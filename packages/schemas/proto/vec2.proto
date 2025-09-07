@@ -1,0 +1,4 @@
+syntax = "proto3";
+package bitwars;
+
+message Vec2 { float x = 1; float y = 2; }
