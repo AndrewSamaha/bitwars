@@ -1,31 +1,32 @@
-use std::time::{Duration, Instant};
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use tokio::time::interval;
-use tracing::{info, Level};
+use tracing::{error, info, Level};
 use tracing_subscriber::EnvFilter;
 
-use rts_engine::pb;
+use prost::Message;                 // for encode_to_vec()
+use redis::AsyncCommands;           // for SET
 
-use pb::{Entity, Vec2, Snapshot};
+use rts_engine::pb;
+use pb::{Delta, Entity, EntityDelta, Snapshot, Vec2};
 
 #[derive(Clone)]
 struct GameConfig {
+    game_id: String,
     num_entities: usize,
-    // target ticks per second
     tps: u32,
-    // random force magnitude range applied each tick
     force_min: f32,
     force_max: f32,
-    // friction coefficient (per second) for exponential damping
-    // vel *= exp(-friction * dt)
     friction: f32,
-    // spawn bounds for initial positions
     spawn_min: f32,
     spawn_max: f32,
-    // (optional) mass if you later vary per-entity; for now, 1.0
     default_mass: f32,
+    // publishing
+    snapshot_every_secs: u64,
+    eps_pos: f32,  // movement threshold for deltas
+    eps_vel: f32,  // velocity threshold for deltas
 }
 
 #[derive(Clone)]
@@ -34,51 +35,61 @@ struct GameState {
     entities: Vec<Entity>,
 }
 
-// Add this:
-fn load_env() {
-    // 1) Try a local .env (useful if you run from services/rts-engine/)
-    let _ = dotenvy::dotenv();
-    // 2) Also try the repo-root .env explicitly (works no matter where you run from)
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.env");
-    let _ = dotenvy::from_path(root);
-}
-
 #[tokio::main]
 async fn main() {
     load_env();
     init_tracing();
 
-    let redis_url = std::env::var("GAMESTATE_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".into());
-    info!("Using GAMESTATE_REDIS_URL={}", redis_url);
-
     let cfg = GameConfig {
+        game_id: std::env::var("GAME_ID").unwrap_or_else(|_| "demo-001".into()),
         num_entities: 20,
         tps: 60,
         force_min: -20.0,
         force_max: 20.0,
-        friction: 1.2, // higher -> slows faster; try 0.6–2.0
+        friction: 1.2,
         spawn_min: -500.0,
         spawn_max: 500.0,
         default_mass: 1.0,
+        snapshot_every_secs: 2,
+        eps_pos: 0.0005,
+        eps_vel: 0.0005,
     };
 
+    // --- Redis connection ---
+    let redis_url = std::env::var("GAMESTATE_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".into());
+    let client = redis::Client::open(redis_url.clone()).expect("bad REDIS_URL");
+    let mut conn = client.get_async_connection().await.expect("cannot connect to redis");
+    info!("Connected to Redis at {}", redis_url);
+
+    // --- World init ---
     let mut rng = StdRng::seed_from_u64(42);
     let mut state = init_world(&cfg, &mut rng);
-
     info!(
         "Initialized world: entities={}, tps={}, friction={}",
         cfg.num_entities, cfg.tps, cfg.friction
     );
 
+    // Track the last delta stream ID we published (for snapshot boundary)
+    let mut last_delta_id: Option<String> = None;
+
+    // Publish an initial snapshot (boundary is "0-0" because no deltas yet)
+    if let Err(e) = publish_snapshot(&cfg, &mut conn, &state, "0-0").await {
+        error!(?e, "initial snapshot publish failed");
+    }
+
+    // Keep previous state for delta calc
+    let mut prev_state = state.clone();
+
     // --- Game loop ---
     let dt = 1.0 / cfg.tps as f32;
     let mut ticker = interval(Duration::from_micros((1_000_000.0 / cfg.tps as f64) as u64));
     let mut last = Instant::now();
+    let snapshot_interval = (cfg.tps as u64) * cfg.snapshot_every_secs;
 
     loop {
         ticker.tick().await;
 
-        // (Optional) measure real frame time; we integrate using fixed dt for stability
+        // (Optional) real frame time
         let _frame_time = last.elapsed();
         last = Instant::now();
 
@@ -87,19 +98,106 @@ async fn main() {
 
         state.tick += 1;
 
+        // Compute + publish delta (sparse)
+        let delta = compute_delta(&prev_state, &state, cfg.eps_pos, cfg.eps_vel);
+        if !delta.updates.is_empty() {
+            match publish_delta(&cfg, &mut conn, &delta).await {
+                Ok(id) => last_delta_id = Some(id),
+                Err(e) => error!(?e, "delta publish failed"),
+            }
+        }
+
+        // Periodic snapshot (use boundary of last published delta, or "0-0" if none)
+        if state.tick % snapshot_interval == 0 {
+            let boundary = last_delta_id.as_deref().unwrap_or("0-0");
+            if let Err(e) = publish_snapshot(&cfg, &mut conn, &state, boundary).await {
+                error!(?e, "snapshot publish failed");
+            }
+        }
+
+        // Log once per second
         if state.tick % (cfg.tps as u64) == 0 {
-            // Once per second, log a tiny summary of a few entities
             log_sample(&state);
         }
 
-        // If you want: emit deltas/snapshots to Redis here.
-        // publish_delta(...); publish_snapshot(...);
+        prev_state = state.clone();
     }
 }
 
 // ---------------------------
-// Initialization & Utilities
+// Redis publish helpers
 // ---------------------------
+
+async fn publish_snapshot(
+    cfg: &GameConfig,
+    conn: &mut redis::aio::Connection,
+    state: &GameState,
+    boundary_stream_id: &str, // last delta included in this snapshot
+) -> Result<(), redis::RedisError> {
+    let snap = Snapshot { tick: state.tick as i64, entities: state.entities.clone() };
+    let bytes = snap.encode_to_vec();
+
+    let snap_key = format!("snapshot:{}", cfg.game_id);
+    let meta_key = format!("snapshot_meta:{}", cfg.game_id);
+
+    // SET snapshot bytes
+    let _: () = conn.set(&snap_key, bytes).await?;
+
+    // HSET metadata (tick, boundary_stream_id, updated_at_ms)
+    let now_ms = now_millis();
+    let _: () = redis::cmd("HSET")
+        .arg(&meta_key)
+        .arg("tick").arg(state.tick as i64)
+        .arg("boundary_stream_id").arg(boundary_stream_id)
+        .arg("updated_at_ms").arg(now_ms as i64)
+        .query_async(conn)
+        .await?;
+
+    info!(
+        "SET {} (tick={}), HSET {} boundary_stream_id={}",
+        snap_key, state.tick, meta_key, boundary_stream_id
+    );
+    Ok(())
+}
+
+async fn publish_delta(
+    cfg: &GameConfig,
+    conn: &mut redis::aio::Connection,
+    delta: &Delta,
+) -> Result<String, redis::RedisError> {
+    let bytes = delta.encode_to_vec();
+    let stream = format!("deltas:{}", cfg.game_id);
+
+    // XADD deltas:<game_id> MAXLEN ~ 10000 * data <bytes>
+    let id: String = redis::cmd("XADD")
+        .arg(&stream)
+        .arg("MAXLEN").arg("~").arg(10_000) // tune retention
+        .arg("*")
+        .arg("data")
+        .arg(bytes)
+        .query_async(conn)
+        .await?;
+
+    info!(
+        "XADD {} id={} (tick={}, updates={})",
+        stream, id, delta.tick, delta.updates.len()
+    );
+    Ok(id)
+}
+
+fn now_millis() -> u128 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
+}
+
+// ---------------------------
+// Env + Tracing
+// ---------------------------
+
+fn load_env() {
+    let _ = dotenvy::dotenv(); // local .env
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.env");
+    let _ = dotenvy::from_path(root); // repo-root .env
+}
 
 fn init_tracing() {
     let filter = EnvFilter::try_from_default_env()
@@ -110,6 +208,10 @@ fn init_tracing() {
         .compact()
         .init();
 }
+
+// ---------------------------
+// Initialization & Physics
+// ---------------------------
 
 fn init_world(cfg: &GameConfig, rng: &mut StdRng) -> GameState {
     let mut entities = Vec::with_capacity(cfg.num_entities);
@@ -122,53 +224,33 @@ fn init_world(cfg: &GameConfig, rng: &mut StdRng) -> GameState {
             }),
             vel: Some(Vec2 { x: 0.0, y: 0.0 }),
             force: Some(Vec2 { x: 0.0, y: 0.0 }),
-            // If your proto also has force/mass, you could initialize them here.
         });
     }
     GameState { tick: 0, entities }
 }
 
-// ---------------------------
-// Physics helpers
-// ---------------------------
-
 #[inline]
 fn v_add(a: &Vec2, b: &Vec2) -> Vec2 {
-    Vec2 {
-        x: a.x + b.x,
-        y: a.y + b.y,
-    }
+    Vec2 { x: a.x + b.x, y: a.y + b.y }
 }
-
 #[inline]
 fn v_scale(a: &Vec2, s: f32) -> Vec2 {
     Vec2 { x: a.x * s, y: a.y * s }
 }
-
 #[inline]
 fn v_exp_damp(v: &Vec2, friction: f32, dt: f32) -> Vec2 {
-    // Exponential damping: v *= e^(-k * dt)
     let k = (-friction * dt).exp();
     v_scale(v, k)
 }
 
-// ---------------------------
-// Per-tick simulation steps
-// ---------------------------
-
 fn apply_random_forces(cfg: &GameConfig, state: &mut GameState, rng: &mut StdRng, dt: f32) {
-    // For this sketch: apply a single random force vector per entity each tick
-    // Convert force to acceleration: a = F / m  (m=1 => a=F)
     for e in &mut state.entities {
         let vel = e.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
 
         let fx = rng.gen_range(cfg.force_min..=cfg.force_max);
         let fy = rng.gen_range(cfg.force_min..=cfg.force_max);
-        let force = Vec2 { x: fx, y: fy };
+        let a = Vec2 { x: fx / cfg.default_mass, y: fy / cfg.default_mass };
 
-        let a = v_scale(&force, 1.0 / cfg.default_mass);
-
-        // Integrate velocity from acceleration
         *vel = v_add(vel, &v_scale(&a, dt));
     }
 }
@@ -178,14 +260,59 @@ fn integrate(cfg: &GameConfig, state: &mut GameState, dt: f32) {
         let pos = e.pos.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
         let vel = e.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
 
-        // Apply friction (damping) to velocity first
         let damped = v_exp_damp(vel, cfg.friction, dt);
         *e.vel.as_mut().unwrap() = damped;
 
-        // Integrate position
         *pos = v_add(pos, &v_scale(&damped, dt));
     }
 }
+
+// ---------------------------
+// Delta / Snapshot
+// ---------------------------
+
+fn compute_delta(prev: &GameState, curr: &GameState, eps_pos: f32, eps_vel: f32) -> Delta {
+    // Map prev entities by id for O(1) lookups
+    let mut prev_by_id: HashMap<u64, &Entity> = HashMap::with_capacity(prev.entities.len());
+    for e in &prev.entities {
+        prev_by_id.insert(e.id, e);
+    }
+
+    let mut updates: Vec<EntityDelta> = Vec::new();
+    for ce in &curr.entities {
+        let mut ed = EntityDelta { id: ce.id, pos: None, vel: None, force: None };
+
+        if let Some(pe) = prev_by_id.get(&ce.id) {
+            // pos change?
+            if let (Some(cp), Some(pp)) = (&ce.pos, &pe.pos) {
+                if (cp.x - pp.x).abs() > eps_pos || (cp.y - pp.y).abs() > eps_pos {
+                    ed.pos = Some(cp.clone());
+                }
+            } else if ce.pos.is_some() {
+                ed.pos = ce.pos.clone();
+            }
+            // vel change?
+            if let (Some(cv), Some(pv)) = (&ce.vel, &pe.vel) {
+                if (cv.x - pv.x).abs() > eps_vel || (cv.y - pv.y).abs() > eps_vel {
+                    ed.vel = Some(cv.clone());
+                }
+            } else if ce.vel.is_some() {
+                ed.vel = ce.vel.clone();
+            }
+        } else {
+            // New entity: include pos/vel so clients can create it
+            if ce.pos.is_some() { ed.pos = ce.pos.clone(); }
+            if ce.vel.is_some() { ed.vel = ce.vel.clone(); }
+        }
+
+        if ed.pos.is_some() || ed.vel.is_some() || ed.force.is_some() {
+            updates.push(ed);
+        }
+    }
+
+    Delta { tick: curr.tick, updates }
+}
+
 
 // ---------------------------
 // Logging
