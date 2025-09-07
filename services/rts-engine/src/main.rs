@@ -1,4 +1,5 @@
 use std::time::{Duration, Instant};
+use std::path::PathBuf;
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use tokio::time::interval;
@@ -33,9 +34,22 @@ struct GameState {
     entities: Vec<Entity>,
 }
 
+// Add this:
+fn load_env() {
+    // 1) Try a local .env (useful if you run from services/rts-engine/)
+    let _ = dotenvy::dotenv();
+    // 2) Also try the repo-root .env explicitly (works no matter where you run from)
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.env");
+    let _ = dotenvy::from_path(root);
+}
+
 #[tokio::main]
 async fn main() {
+    load_env();
     init_tracing();
+
+    let redis_url = std::env::var("GAMESTATE_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".into());
+    info!("Using GAMESTATE_REDIS_URL={}", redis_url);
 
     let cfg = GameConfig {
         num_entities: 20,
