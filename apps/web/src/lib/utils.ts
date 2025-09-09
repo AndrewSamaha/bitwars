@@ -1,6 +1,5 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import type { Unit } from "@bitwars/shared"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -19,6 +18,3 @@ export function normalizeString(inputString: string): string {
   return cleanedString;
 }
 
-export function consoleUnit(unit: Unit) {
-  console.log(unit);
-}

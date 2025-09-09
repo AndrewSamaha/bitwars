@@ -10,7 +10,9 @@
     "format": "biome format --write",
     "db:init": "curl -X POST http://localhost:3000/api/init",
     "createmock:gamestate": "curl -X POST http://localhost:3000/api/gamestate/mocks/create_gamestate",
-    "createmock:players": "curl -X POST http://localhost:3000/api/players/mocks/create_players"
+    "createmock:players": "curl -X POST http://localhost:3000/api/players/mocks/create_players",
+    "pretest": "pnpm -C ../../packages/shared build && cargo run --example generate_examples --manifest-path ../../services/rts-engine/Cargo.toml",
+    "test": "vitest run"
   },
   "dependencies": {
     "@bitwars/shared": "workspace:*",
@@ -43,6 +45,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "vitest": "^2.1.4",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.5",

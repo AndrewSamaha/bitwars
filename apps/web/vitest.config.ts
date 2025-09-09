@@ -1,0 +1,13 @@
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    environment: "node",
+    include: ["test/**/*.test.ts"],
+    globals: true,
+    reporters: ["default"],
+  },
+  esbuild: {
+    target: "node20",
+  },
+});
