@@ -17,7 +17,6 @@ import { fromBinary } from "@bufbuild/protobuf";
 import { redis } from "@/lib/db/connection";
 import { SnapshotSchema } from "@bitwars/shared/gen/snapshot_pb";
 import { DeltaSchema } from "@bitwars/shared/gen/delta_pb";
-import * as DeltaMod from "@bitwars/shared/gen/delta_pb";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -25,19 +24,6 @@ const DEFAULT_GAME_ID = "demo-001";
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const XREAD_BLOCK_MS = 15_000; // as per spec
 const XRANGE_BATCH_COUNT = 512;
-
-// one-time sanity
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-//console.log("[sse] protobuf runtime:", require("@bufbuild/protobuf/package.json").version);
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-console.log("[sse] resolved delta_pb:", require.resolve("@bitwars/shared/gen/delta_pb"));
-// Correct way to inspect fields on v2 schemas:
-console.log(
-  "[sse] fields:",
-  // @ts-ignore
-  DeltaSchema.fields?.list?.().map((f: any) => ({ no: f.no, name: f.name }))
-);
-
 
 function getEnv(name: string, fallback?: string): string {
   const v = process.env[name];
@@ -129,38 +115,6 @@ export async function GET(req: Request) {
   const logPrefix = `[sse ${Date.now().toString(36)}]`;
   const log = (...args: any[]) => console.log(logPrefix, ...args);
   const logErr = (...args: any[]) => console.error(logPrefix, ...args);
-
-  // DEBUG: where is this module resolved from at runtime?
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  //log("[sse] resolved delta_pb:", require.resolve("@bitwars/shared/src/gen/delta_pb"));
-  log("config", { GAME_ID, REDIS_URL });
-  // DEBUG: print descriptor info to ensure field numbers match
-  // @ts-ignore - accessing internal shape is fine for debugging
-  const deltaFields = (DeltaSchema as any).fields?.map((f: any) => ({
-    no: f.no,            // field number
-    name: f.name,        // "tick", "updates"
-    // f.T is either scalar type code or a message type object with typeName
-    T: typeof f.T === "object" && f.T !== null ? (f.T.typeName ?? f.T.toString()) : f.T
-  }));
-  // @ts-ignore
-  const deltaTypeName = (DeltaSchema as any).typeName;
-  // @ts-ignore
-  const snapFields = (SnapshotSchema as any).fields?.map((f: any) => ({ no: f.no, name: f.name }));
-  // @ts-ignore
-  const snapTypeName = (SnapshotSchema as any).typeName;
-
-  log("[sse] DeltaSchema:", { typeName: deltaTypeName, fields: deltaFields });
-  log("[sse] SnapshotSchema:", { typeName: snapTypeName, fields: snapFields });
-  
-  log("[sse] Delta exports:", Object.keys(DeltaMod));
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  //log("[sse] resolved delta_pb:", require.resolve("@bitwars/shared/gen/delta_pb"));
-  // Expect .../packages/shared/dist/gen/delta_pb.js
-
-  // quick descriptor sanity
-  // @ts-ignore
-  log("[sse] DeltaSchema fields:", (DeltaSchema as any).fields?.map((f: any) => ({ no: f.no, name: f.name })));
-
 
   const safeWrite = async (chunk: string) => {
     if (closed) return;
@@ -260,9 +214,6 @@ export async function GET(req: Request) {
   // Set up connection and streaming logic
   (async () => {
     try {
-      // connection is established in the shared module
-      log("using shared redis client", REDIS_URL);
-
       // Determine resume behavior
       let startFromId: string | undefined = undefined;
       if (sinceParam && sinceParam.trim().length > 0) {
@@ -286,9 +237,7 @@ export async function GET(req: Request) {
         if (snapshotBuf) {
           try {
             const snapshot = decodeSnapshotBinary(snapshotBuf);
-            //const snapshot = SnapshotSchema.fromBinary(new Uint8Array(snapshotBuf));
             const payload = mapSnapshotToJson(snapshot as any);
-            // If boundaryId exists, set it as the SSE id; otherwise omit id
             await safeWrite(
               sseFormat({ event: "snapshot", id: boundaryId || "0-0", data: payload })
             );
@@ -308,13 +257,7 @@ export async function GET(req: Request) {
               if (!dataBuf) continue;
               try {
                 const delta = decodeDeltaBinary(dataBuf);
-                //const delta    = DeltaSchema.fromBinary(new Uint8Array(dataBuf));
                 const payload = mapDeltaToJson(delta as any);
-                console.dir({ delta, payload }, { depth: null })
-                // if ((payload.tick === 0 || payload.tick === "0") && payload.updates.length === 0) {
-                //   logErr("decoded empty delta during GAP — likely schema mismatch; did you run gen:ts?");
-                // }
-                log("gap delta", { bytes: dataBuf.length, updates: payload.updates.length });
                 await safeWrite(sseFormat({ event: "delta", id, data: payload }));
                 lastId = id;
               } catch (e) {
@@ -350,11 +293,9 @@ export async function GET(req: Request) {
             try {
               const delta = decodeDeltaBinary(dataBuf);
               const payload = mapDeltaToJson(delta as any);
-              console.dir({ delta, payload }, { depth: null })
               if ((payload.tick === 0 || payload.tick === "0") && payload.updates.length === 0) {
                 logErr("decoded empty delta LIVE — likely schema mismatch; did you run gen:ts? wrong GAME_ID?");
               }
-              log("live delta", { bytes: dataBuf.length, updates: payload.updates.length });
               await safeWrite(sseFormat({ event: "delta", id, data: payload }));
               lastId = id;
             } catch (e) {
