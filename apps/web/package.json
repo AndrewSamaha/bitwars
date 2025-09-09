@@ -13,7 +13,10 @@
     "createmock:players": "curl -X POST http://localhost:3000/api/players/mocks/create_players",
     "pretest": "pnpm -C ../../packages/shared build && cargo run --example generate_examples --manifest-path ../../services/rts-engine/Cargo.toml",
     "test": "vitest run",
-    "test:read-redis": "tsx test/read_redis.ts"
+    "test:read-redis": "tsx test/read_redis.ts",
+    "test:write-and-read-redis": "tsx test/write_and_read_redis.ts",
+    "test:write-and-read-ioredis": "tsx test/write_and_read_ioredis.ts",
+    "ioredis-version": "ioredis --version"
   },
   "dependencies": {
     "@bitwars/shared": "workspace:*",
@@ -25,6 +28,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "geist": "^1.4.2",
+    "ioredis": "^5.7.0",
     "jose": "^6.1.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.542.0",
@@ -42,16 +46,16 @@
   "devDependencies": {
     "@biomejs/biome": "2.2.0",
     "@tailwindcss/postcss": "^4",
-    "dotenv": "^16.4.5",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "vitest": "^2.1.4",
+    "dotenv": "^16.4.5",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.5",
     "tw-animate-css": "^1.3.7",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.4"
   }
 }
