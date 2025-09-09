@@ -2,7 +2,7 @@
 // Standalone Node script to read snapshot and recent deltas from Redis
 // and decode using protobuf-es schemas from @bitwars/shared
 
-import { createClient } from "redis";
+import Redis from "ioredis";
 import dotenv from "dotenv";
 import path from "node:path";
 import { fromBinary } from "@bufbuild/protobuf";
@@ -25,14 +25,13 @@ function decodeDeltaBinary(buf: Buffer) {
   return msg;
 }
 
-async function readSnapshot(client: any, gameId: string) {
+async function readSnapshot(client: Redis, gameId: string) {
   const snapKey = `snapshot:${gameId}`;
   const metaKey = `snapshot_meta:${gameId}`;
 
   console.log("[read_redis] readSnapshot", { snapKey, metaKey });
-  const snapRes = await (client as any).sendCommand(["GET", snapKey], { returnBuffers: true });
-  console.log("[read_redis] GET resp type", snapRes && typeof snapRes, Buffer.isBuffer(snapRes) ? `buffer(${(snapRes as Buffer).length})` : snapRes);
-  const snapBuf = Buffer.isBuffer(snapRes) ? (snapRes as Buffer) : null;
+  const snapRes = await client.getBuffer(snapKey);
+  const snapBuf = snapRes ?? null;
   if (snapBuf) {
     const snapshot = decodeSnapshotBinary(snapBuf);
     console.log("snapshot:", { bytes: snapBuf.length, tick: snapshot.tick, entities: snapshot.entities.length });
@@ -48,29 +47,19 @@ async function readSnapshot(client: any, gameId: string) {
     console.log("no snapshot found at", snapKey);
   }
 
-  const meta = await (client as any).sendCommand(["HGETALL", metaKey], { returnBuffers: true }) as Buffer[] | null;
-  console.log("[read_redis] HGETALL resp", Array.isArray(meta) ? `array(${meta.length})` : typeof meta);
-  if (meta && Array.isArray(meta)) {
-    const obj: Record<string, string> = {};
-    for (let i = 0; i < meta.length - 1; i += 2) {
-      const k = meta[i]?.toString();
-      const v = meta[i + 1]?.toString();
-      if (k) obj[k] = v ?? "";
-    }
-    console.log("snapshot_meta:", obj);
-  } else {
-    console.log("no snapshot_meta found at", metaKey);
-  }
+  const metaObj = await client.hgetall(metaKey);
+  if (metaObj && Object.keys(metaObj).length > 0) console.log("snapshot_meta:", metaObj);
+  else console.log("no snapshot_meta found at", metaKey);
 }
 
-async function readRecentDeltas(client: any, gameId: string, count = 10) {
+async function readRecentDeltas(client: Redis, gameId: string, count = 10) {
   const stream = `deltas:${gameId}`;
   console.log("[read_redis] readRecentDeltas", { stream, count });
-  const res = await (client as any).sendCommand(["XRANGE", stream, "-", "+", "COUNT", String(count)], { returnBuffers: true }) as any[] | null;
-  console.log("[read_redis] XRANGE resp", Array.isArray(res) ? `array(${res.length})` : res === null ? "null" : typeof res);
+  const res = (await client.xreadBuffer("BLOCK", 0, "STREAMS", stream, "0")) as any[] | null;
+  console.log("[read_redis] XREAD resp", Array.isArray(res) ? `array(${res.length})` : res === null ? "null" : typeof res);
 
   if (!res) {
-    console.log("no entries or unexpected response for XRANGE", stream);
+    console.log("no entries or unexpected response for XREAD", stream);
     return;
   }
 
@@ -147,10 +136,9 @@ async function main() {
 
   console.log("[read_redis] config", { GAME_ID, REDIS_URL, cwd: process.cwd() });
 
-  // Dedicated client with Buffer replies
-  const client = createClient({ url: REDIS_URL, returnBuffers: true } as any);
-  client.on("error", (err) => console.error("Redis Client Error", err));
-  await client.connect();
+  // Dedicated ioredis client
+  const client = new Redis(REDIS_URL);
+  client.on("error", (err: unknown) => console.error("Redis Client Error", err));
   console.log("[read_redis] connected");
 
   try {
@@ -163,7 +151,7 @@ async function main() {
   } catch (e) {
     console.error(e);
   } 
-  try { await client.quit?.(); } catch {}
+  try { await client.quit(); } catch {}
 }
 
 main().catch((e) => {

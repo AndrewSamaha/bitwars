@@ -2,7 +2,7 @@
 // Write a known-good snapshot and delta to Redis under a separate GAME_ID,
 // then read them back and decode using protobuf-es.
 
-import { createClient } from "redis";
+import Redis from "ioredis";
 import fs from "node:fs";
 import dotenv from "dotenv";
 import path from "node:path";
@@ -35,9 +35,8 @@ async function main() {
   const wDeltaPath = path.join(outDir, "node_written_delta.bin");
   const rDeltaPath = path.join(outDir, "node_readback_delta.bin");
 
-  const client = createClient({ url: REDIS_URL });
-  client.on("error", (err) => console.error("Redis Client Error", err));
-  await client.connect();
+  const client = new Redis(REDIS_URL);
+  client.on("error", (err: unknown) => console.error("Redis Client Error", err));
   const useResp2 = process.argv.includes("--resp2");
   if (useResp2) {
     try {
@@ -76,28 +75,24 @@ async function main() {
   console.log("[write_and_read] writing snapshot and delta to", { TEST_GAME_ID, REDIS_URL });
 
   // Write snapshot
-  await (client as any).sendCommand(["SET", keySnapshot, snapshotBytes], { returnBuffers: true });
-  const exists = await (client as any).sendCommand(["EXISTS", keySnapshot]);
+  await client.set(keySnapshot, snapshotBytes);
+  const exists = await client.exists(keySnapshot);
   console.log("[write_and_read] snapshot EXISTS=", exists);
   const nowMs = Date.now().toString();
-  await (client as any).sendCommand(
-    ["HSET", keySnapshotMeta, "tick", "100", "boundary_stream_id", "0-0", "updated_at_ms", nowMs],
-    { returnBuffers: true }
-  );
+  await client.hset(keySnapshotMeta, {
+    tick: "100",
+    boundary_stream_id: "0-0",
+    updated_at_ms: nowMs,
+  });
 
   // Append delta to stream
-  const xaddArgs = ["XADD", streamDeltas, "*", "data", deltaBytes] as any[];
-  const xaddId = await (client as any).sendCommand(xaddArgs, { returnBuffers: true });
+  const xaddId = await client.xadd(streamDeltas, "*", "data", deltaBytes);
   console.log("[write_and_read] XADD id=", Buffer.isBuffer(xaddId) ? xaddId.toString() : xaddId);
 
   // Read back snapshot
-  const snapRes = await (client as any).sendCommand(["GET", keySnapshot], { returnBuffers: true });
+  const snapRes = await client.getBuffer(keySnapshot);
   console.log("[write_and_read] GET type:", snapRes && typeof snapRes, Buffer.isBuffer(snapRes) ? `buffer(${(snapRes as Buffer).length})` : snapRes);
-  const snapBuf = Buffer.isBuffer(snapRes)
-    ? (snapRes as Buffer)
-    : typeof snapRes === "string"
-      ? Buffer.from(snapRes as string, "binary")
-      : null;
+  const snapBuf = snapRes ?? null;
   if (!snapBuf) {
     console.error("[write_and_read] failed to read back snapshot bytes");
   } else {
@@ -112,7 +107,7 @@ async function main() {
   }
 
   // Read back last delta
-  const xrange = await (client as any).sendCommand(["XRANGE", streamDeltas, "-", "+", "COUNT", "1"], { returnBuffers: true });
+  const xrange = await (client as any).xrangeBuffer(streamDeltas, "-", "+", "COUNT", 1);
   console.log("[write_and_read] XRANGE type:", Array.isArray(xrange) ? `array(${xrange.length})` : typeof xrange);
   if (!xrange || !Array.isArray(xrange) || xrange.length === 0) {
     console.error("[write_and_read] no XRANGE entries returned");
@@ -120,36 +115,18 @@ async function main() {
     const entry = xrange[xrange.length - 1];
     const fields = entry?.[1] ?? [];
     let data: Buffer | undefined;
-    const coerceBuf = (v: any): Buffer | undefined => {
-      if (Buffer.isBuffer(v)) return v as Buffer;
-      if (typeof v === "string") return Buffer.from(v, "binary");
-      if (v && typeof v === "object" && (v as any).type === "Buffer" && Array.isArray((v as any).data)) return Buffer.from((v as any).data);
-      return undefined;
-    };
     // Fields as flat [field, value ...]
     if (Array.isArray(fields)) {
       for (let i = 0; i < fields.length - 1; i += 2) {
         const f = fields[i];
         const v = fields[i + 1];
-        if ((Buffer.isBuffer(f) ? f.toString() : String(f)) === "data") {
-          data = coerceBuf(v);
-          if (data) break;
-        }
-    if (!data && fields && typeof fields === "object" && !Array.isArray(fields)) {
-      for (const [k, v] of Object.entries(fields)) {
-        if (k === "data") {
-          if (Buffer.isBuffer(v)) data = v as Buffer;
-          else if (typeof v === "string") data = Buffer.from(v, "binary");
-          break;
-        }
-      }
-    }
+        if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
       }
       if (!data && fields.length > 0 && Array.isArray(fields[0])) {
         // Or as pairs [[field, value] ...]
         for (const pair of fields) {
           const f = pair?.[0]; const v = pair?.[1];
-          if ((Buffer.isBuffer(f) ? f.toString() : String(f)) === "data") { data = coerceBuf(v); if (data) break; }
+          if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
         }
       }
     }

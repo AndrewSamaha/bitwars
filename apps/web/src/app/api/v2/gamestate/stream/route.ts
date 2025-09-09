@@ -189,26 +189,32 @@ export async function GET(req: Request) {
     void safeWrite(sseFormat({ comment: "ping" }));
   }, HEARTBEAT_INTERVAL_MS);
 
-  // Helpers to read streams with Buffer replies using raw commands
+  // Helpers to read streams with Buffer replies using ioredis
   const xRangeWithBuffers = async (
     key: string,
     start: string,
     end: string,
     count: number
   ): Promise<Array<{ id: string; data?: Buffer }>> => {
-    const args = ["XRANGE", key, start, end, "COUNT", String(count)] as const;
-    const res = (await (redis as any).sendCommand(args, { returnBuffers: true })) as any[] | null;
+    const res = (await (redis as any).xrangeBuffer(key, start, end, "COUNT", count)) as any[] | null;
     if (!res) return [];
-    // res shape: [ [idBuf, [fieldBuf, valueBuf, ...]], ... ]
+    // res shape: [ [idBuf, [ [fieldBuf, valueBuf], ... ]], ... ]
     return res.map((entry: any) => {
       const idBuf: Buffer = entry[0];
-      const fields: Buffer[] = entry[1] ?? [];
+      const fields: any = entry[1] ?? [];
       let data: Buffer | undefined;
-      for (let i = 0; i < fields.length - 1; i += 2) {
-        const f = fields[i];
-        if (f && f.toString() === "data") {
-          data = fields[i + 1] as Buffer;
-          break;
+      if (Array.isArray(fields) && fields.length > 0) {
+        if (Array.isArray(fields[0])) {
+          for (const pair of fields) {
+            const f = pair?.[0];
+            const v = pair?.[1];
+            if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
+          }
+        } else {
+          for (let i = 0; i + 1 < fields.length; i += 2) {
+            const f = fields[i]; const v = fields[i + 1];
+            if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
+          }
         }
       }
       return { id: idBuf.toString(), data };
@@ -221,32 +227,28 @@ export async function GET(req: Request) {
     blockMs: number,
     count: number
   ): Promise<Array<{ id: string; data?: Buffer }>> => {
-    const args = [
-      "XREAD",
-      "BLOCK",
-      String(blockMs),
-      "COUNT",
-      String(count),
-      "STREAMS",
-      key,
-      lastId,
-    ] as const;
-    const res = (await (redis as any).sendCommand(args, { returnBuffers: true })) as any[] | null;
+    const res = (await (redis as any).xreadBuffer("BLOCK", blockMs, "COUNT", count, "STREAMS", key, lastId)) as any[] | null;
     if (!res) return [];
-    // res shape: [ [ streamKeyBuf, [ [idBuf, [fieldBuf, valBuf...]], ... ] ] ]
+    // res shape: [ [ streamKeyBuf, [ [idBuf, [ [fieldBuf, valBuf], ... ]], ... ] ] ]
     const out: Array<{ id: string; data?: Buffer }> = [];
     for (const stream of res) {
       const messages = stream[1] as any[];
       if (!messages) continue;
       for (const msg of messages) {
         const idBuf: Buffer = msg[0];
-        const fields: Buffer[] = msg[1] ?? [];
+        const fields: any = msg[1] ?? [];
         let data: Buffer | undefined;
-        for (let i = 0; i < fields.length - 1; i += 2) {
-          const f = fields[i];
-          if (f && f.toString() === "data") {
-            data = fields[i + 1] as Buffer;
-            break;
+        if (Array.isArray(fields) && fields.length > 0) {
+          if (Array.isArray(fields[0])) {
+            for (const pair of fields) {
+              const f = pair?.[0]; const v = pair?.[1];
+              if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
+            }
+          } else {
+            for (let i = 0; i + 1 < fields.length; i += 2) {
+              const f = fields[i]; const v = fields[i + 1];
+              if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
+            }
           }
         }
         out.push({ id: idBuf.toString(), data });
@@ -277,18 +279,9 @@ export async function GET(req: Request) {
 
       if (!lastId) {
         // Full bootstrap: snapshot + gap catch-up
-        const meta = await redis.hGetAll(keySnapshotMeta);
+        const meta = await (redis as any).hgetall(keySnapshotMeta);
         const boundaryId = meta["boundary_stream_id"]; // B
         const snapshotBuf: Buffer | null = (await (redis as any).getBuffer?.(keySnapshot)) ?? null;
-        // Fallback if getBuffer is not available: raw GET
-        if (!snapshotBuf) {
-          const raw = await (redis as any).sendCommand(["GET", keySnapshot], { returnBuffers: true });
-          if (raw && Buffer.isBuffer(raw)) {
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
-            (snapshotBuf as any) = raw as Buffer;
-          }
-        }
 
         if (snapshotBuf) {
           try {
