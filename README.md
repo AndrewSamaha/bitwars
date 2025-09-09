@@ -69,3 +69,14 @@ To run the actual rts-engine:
 ```bash
 cargo run -p rts-engine
 ```
+
+## Side-by-side testing of type decoding
+In nextjs:
+```bash
+pnpm --filter bitwars run test:read-redis
+```
+
+In rust:
+```bash
+pnpm engine:read-deltas
+```

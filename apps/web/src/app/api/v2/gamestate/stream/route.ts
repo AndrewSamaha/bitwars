@@ -85,6 +85,31 @@ const mapSnapshotToJson = (s: import("@bitwars/shared/gen/snapshot_pb").Snapshot
   })),
 });
 
+// Decode helpers (same approach we validated in vitest):
+function decodeSnapshotBinary(buf: Buffer) {
+  // fromBinary expects a Uint8Array
+  const msg = fromBinary(SnapshotSchema, new Uint8Array(buf));
+  // Lightweight validations mirroring tests
+  if (typeof msg.tick !== "bigint") {
+    console.warn("[sse] snapshot.tick not bigint — schema/runtime mismatch?", typeof msg.tick);
+  }
+  if (!Array.isArray(msg.entities)) {
+    console.warn("[sse] snapshot.entities not array — schema/runtime mismatch?");
+  }
+  return msg;
+}
+
+function decodeDeltaBinary(buf: Buffer) {
+  const msg = fromBinary(DeltaSchema, new Uint8Array(buf));
+  if (typeof msg.tick !== "bigint") {
+    console.warn("[sse] delta.tick not bigint — schema/runtime mismatch?", typeof msg.tick);
+  }
+  if (!Array.isArray(msg.updates)) {
+    console.warn("[sse] delta.updates not array — schema/runtime mismatch?");
+  }
+  return msg;
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const sinceParam = url.searchParams.get("since");
@@ -267,7 +292,7 @@ export async function GET(req: Request) {
 
         if (snapshotBuf) {
           try {
-            const snapshot = fromBinary(SnapshotSchema, new Uint8Array(snapshotBuf));
+            const snapshot = decodeSnapshotBinary(snapshotBuf);
             //const snapshot = SnapshotSchema.fromBinary(new Uint8Array(snapshotBuf));
             const payload = mapSnapshotToJson(snapshot as any);
             // If boundaryId exists, set it as the SSE id; otherwise omit id
@@ -289,12 +314,13 @@ export async function GET(req: Request) {
               const dataBuf = ent.data;
               if (!dataBuf) continue;
               try {
-                const delta = fromBinary(DeltaSchema, new Uint8Array(dataBuf));
+                const delta = decodeDeltaBinary(dataBuf);
                 //const delta    = DeltaSchema.fromBinary(new Uint8Array(dataBuf));
                 const payload = mapDeltaToJson(delta as any);
-                if ((payload.tick === 0 || payload.tick === "0") && payload.updates.length === 0) {
-                  logErr("decoded empty delta during GAP — likely schema mismatch; did you run gen:ts?");
-                }
+                console.dir({ delta, payload }, { depth: null })
+                // if ((payload.tick === 0 || payload.tick === "0") && payload.updates.length === 0) {
+                //   logErr("decoded empty delta during GAP — likely schema mismatch; did you run gen:ts?");
+                // }
                 log("gap delta", { bytes: dataBuf.length, updates: payload.updates.length });
                 await safeWrite(sseFormat({ event: "delta", id, data: payload }));
                 lastId = id;
@@ -329,9 +355,9 @@ export async function GET(req: Request) {
             const dataBuf = ent.data;
             if (!dataBuf) continue;
             try {
-              const delta = fromBinary(DeltaSchema, new Uint8Array(dataBuf));
-              //const delta    = DeltaSchema.fromBinary(new Uint8Array(dataBuf));
+              const delta = decodeDeltaBinary(dataBuf);
               const payload = mapDeltaToJson(delta as any);
+              console.dir({ delta, payload }, { depth: null })
               if ((payload.tick === 0 || payload.tick === "0") && payload.updates.length === 0) {
                 logErr("decoded empty delta LIVE — likely schema mismatch; did you run gen:ts? wrong GAME_ID?");
               }
