@@ -8,6 +8,7 @@ import path from "node:path";
 import { fromBinary } from "@bufbuild/protobuf";
 import { SnapshotSchema } from "@bitwars/shared/gen/snapshot_pb";
 import { DeltaSchema } from "@bitwars/shared/gen/delta_pb";
+// Do not use the shared app client here; create a dedicated client with Buffer replies
 
 function getEnv(name: string, fallback: string): string {
   const v = process.env[name];
@@ -24,12 +25,12 @@ function decodeDeltaBinary(buf: Buffer) {
   return msg;
 }
 
-async function readSnapshot(client: ReturnType<typeof createClient>, gameId: string) {
+async function readSnapshot(client: any, gameId: string) {
   const snapKey = `snapshot:${gameId}`;
   const metaKey = `snapshot_meta:${gameId}`;
 
   console.log("[read_redis] readSnapshot", { snapKey, metaKey });
-  const snapRes = await (client as any).sendCommand({ returnBuffers: true }, ["GET", snapKey]);
+  const snapRes = await (client as any).sendCommand(["GET", snapKey], { returnBuffers: true });
   console.log("[read_redis] GET resp type", snapRes && typeof snapRes, Buffer.isBuffer(snapRes) ? `buffer(${(snapRes as Buffer).length})` : snapRes);
   const snapBuf = Buffer.isBuffer(snapRes) ? (snapRes as Buffer) : null;
   if (snapBuf) {
@@ -47,7 +48,7 @@ async function readSnapshot(client: ReturnType<typeof createClient>, gameId: str
     console.log("no snapshot found at", snapKey);
   }
 
-  const meta = await (client as any).sendCommand({ returnBuffers: true }, ["HGETALL", metaKey]) as Buffer[] | null;
+  const meta = await (client as any).sendCommand(["HGETALL", metaKey], { returnBuffers: true }) as Buffer[] | null;
   console.log("[read_redis] HGETALL resp", Array.isArray(meta) ? `array(${meta.length})` : typeof meta);
   if (meta && Array.isArray(meta)) {
     const obj: Record<string, string> = {};
@@ -62,10 +63,10 @@ async function readSnapshot(client: ReturnType<typeof createClient>, gameId: str
   }
 }
 
-async function readRecentDeltas(client: ReturnType<typeof createClient>, gameId: string, count = 10) {
+async function readRecentDeltas(client: any, gameId: string, count = 10) {
   const stream = `deltas:${gameId}`;
   console.log("[read_redis] readRecentDeltas", { stream, count });
-  const res = await (client as any).sendCommand({ returnBuffers: true }, ["XRANGE", stream, "-", "+", "COUNT", String(count)]) as any[] | null;
+  const res = await (client as any).sendCommand(["XRANGE", stream, "-", "+", "COUNT", String(count)], { returnBuffers: true }) as any[] | null;
   console.log("[read_redis] XRANGE resp", Array.isArray(res) ? `array(${res.length})` : res === null ? "null" : typeof res);
 
   if (!res) {
@@ -80,25 +81,32 @@ async function readRecentDeltas(client: ReturnType<typeof createClient>, gameId:
     const fields = entry[1] ?? [];
     let data: Buffer | undefined;
     const parseFieldName = (f: any) => (Buffer.isBuffer(f) ? f.toString() : String(f));
-    if (Array.isArray(fields) && fields.length > 0 && Array.isArray(fields[0])) {
-      // Shape: [[field, value], [field, value], ...]
-      for (const pair of fields) {
-        const f = pair?.[0];
-        const v = pair?.[1];
-        if (parseFieldName(f) === "data" && Buffer.isBuffer(v)) {
-          data = v as Buffer;
-          break;
+    const coerceVal = (v: any): Buffer | undefined => {
+      if (Buffer.isBuffer(v)) return v as Buffer;
+      if (typeof v === "string") return Buffer.from(v, "binary");
+      if (v && typeof v === "object" && (v as any).type === "Buffer" && Array.isArray((v as any).data)) return Buffer.from((v as any).data);
+      return undefined;
+    };
+    if (Array.isArray(fields)) {
+      if (fields.length > 0 && Array.isArray(fields[0])) {
+        // [[field, value], ...]
+        for (const pair of fields) {
+          const f = pair?.[0];
+          const v = pair?.[1];
+          if (parseFieldName(f) === "data") { data = coerceVal(v); if (data) break; }
+        }
+      } else {
+        // [field, value, ...]
+        for (let i = 0; i < fields.length - 1; i += 2) {
+          const f = fields[i];
+          const v = fields[i + 1];
+          if (parseFieldName(f) === "data") { data = coerceVal(v); if (data) break; }
         }
       }
-    } else if (Array.isArray(fields)) {
-      // Shape: [field, value, field, value, ...]
-      for (let i = 0; i < fields.length - 1; i += 2) {
-        const f = fields[i];
-        const v = fields[i + 1];
-        if (parseFieldName(f) === "data" && Buffer.isBuffer(v)) {
-          data = v as Buffer;
-          break;
-        }
+    } else if (fields && typeof fields === "object") {
+      // RESP3 map/object
+      for (const [k, v] of Object.entries(fields)) {
+        if (k === "data") { data = coerceVal(v); break; }
       }
     }
     if (!data) {
@@ -139,7 +147,8 @@ async function main() {
 
   console.log("[read_redis] config", { GAME_ID, REDIS_URL, cwd: process.cwd() });
 
-  const client = createClient({ url: REDIS_URL });
+  // Dedicated client with Buffer replies
+  const client = createClient({ url: REDIS_URL, returnBuffers: true } as any);
   client.on("error", (err) => console.error("Redis Client Error", err));
   await client.connect();
   console.log("[read_redis] connected");
@@ -154,7 +163,7 @@ async function main() {
   } catch (e) {
     console.error(e);
   } 
-  await client.quit();
+  try { await client.quit?.(); } catch {}
 }
 
 main().catch((e) => {
