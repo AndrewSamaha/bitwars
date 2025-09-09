@@ -8,10 +8,20 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "engine:run": "cargo run -p rts-engine"
+    "engine:run": "cargo run -p rts-engine",
+    "engine:build": "cargo build -p rts-engine",
+    "gen:ts:nocache": "pnpm -w turbo run gen:ts --filter=@bitwars/schemas --no-cache"
   },
   "devDependencies": {
     "dotenv-cli": "^10.0.0",
     "turbo": "^2.0.0"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.7.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@bufbuild/protobuf": "^2.7.0"
+    }
   }
 }

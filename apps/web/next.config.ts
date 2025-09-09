@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  transpilePackages: ["@bitwars/shared"]
+  // transpilePackages: ["@bitwars/shared", "@bufbuild/protobuf"]
 };
 
 export default nextConfig;

@@ -25,7 +25,7 @@ impl RedisClient {
             .arg(&stream).arg("MAXLEN").arg("~").arg(10_000)
             .arg("*").arg("data").arg(bytes)
             .query_async(&mut self.conn).await?;
-        info!("XADD {} id={} (tick={}, updates={})", stream, id, delta.tick, delta.updates.len());
+        //info!("XADD {} id={} (tick={}, updates={})", stream, id, delta.tick, delta.updates.len());
         Ok(id)
     }
 

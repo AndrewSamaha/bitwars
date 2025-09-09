@@ -3,12 +3,19 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
+
+    "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": false,
+
+    "incremental": false,
+    "composite": false,
+
     "module": "esnext",
     "moduleResolution": "bundler",
     "target": "ES2019",
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/index.ts", "src/gen/**/*.ts"],
+  "exclude": []
 }

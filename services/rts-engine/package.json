@@ -3,6 +3,9 @@
     "private": true,
     "version": "0.0.0",
     "devDependencies": {},
-    "scripts": {}
+    "scripts": {
+      "dev": "cargo run -p rts-engine",
+      "build": "cargo build -p rts-engine"
+    }
 }
   

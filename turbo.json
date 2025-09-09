@@ -1,16 +1,17 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "gen:ts": { "outputs": ["packages/shared/src/gen/**"] },
-
+    "gen:ts": {
+      "outputs": ["packages/shared/src/gen/**"]
+    },
     "build": {
       "dependsOn": ["^build", "@bitwars/schemas#gen:ts"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**", "build/**", "target/**"]
     },
-
     "dev": {
       "cache": false,
-      "dependsOn": ["^dev", "@bitwars/shared#build"]
+      "persistent": true,
+      "dependsOn": ["^dev", "@bitwars/schemas#gen:ts", "@bitwars/shared#build"]
     }
   }
 }
