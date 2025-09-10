@@ -11,7 +11,8 @@ export default function EntitiesStreamCounter() {
   const router = useRouter();
 
   useEffect(() => {
-    const es = new EventSource("/api/gamestate/stream");
+    // Use the v2 SSE endpoint which emits named events: 'snapshot' and 'delta'
+    const es = new EventSource("/api/v2/gamestate/stream");
     esRef.current = es;
 
     const onOpen = () => {
@@ -37,20 +38,26 @@ export default function EntitiesStreamCounter() {
         router.push('/');
       }
     };
-    const onEntities = () => setCount((c) => c + 1);
+    // Count both snapshot (bootstrap) and delta (live/gap) events
+    const onSnapshot = () => setCount((c) => c + 1);
+    const onDelta = () => setCount((c) => c + 1);
+    // Fallback for any default 'message' events if server ever sends them
+    const onMessage = () => setCount((c) => c + 1);
 
     es.addEventListener("open", onOpen as EventListener);
     es.addEventListener("error", onError as EventListener);
-    // Server emits named event: 'entities'
-    es.addEventListener("entities", onEntities as EventListener);
+    // v2 server emits named events: 'snapshot' and 'delta'
+    es.addEventListener("snapshot", onSnapshot as EventListener);
+    es.addEventListener("delta", onDelta as EventListener);
     // If server ever falls back to default 'message' events, count them too
-    es.addEventListener("message", onEntities as EventListener);
+    es.addEventListener("message", onMessage as EventListener);
 
     return () => {
       es.removeEventListener("open", onOpen as EventListener);
       es.removeEventListener("error", onError as EventListener);
-      es.removeEventListener("entities", onEntities as EventListener);
-      es.removeEventListener("message", onEntities as EventListener);
+      es.removeEventListener("snapshot", onSnapshot as EventListener);
+      es.removeEventListener("delta", onDelta as EventListener);
+      es.removeEventListener("message", onMessage as EventListener);
       es.close();
       esRef.current = null;
     };
