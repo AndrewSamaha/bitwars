@@ -25,17 +25,37 @@ export default function GameStage() {
         const texture = await Assets.load('/assets/corvette/idle.png');
         // Render system: project ECS -> Pixi once per frame
         const render = () => {
-          for (const e of game.world.with("sprite", "x", "y", "scale")) {
+          // 1) Attach sprites to entities that have position but no sprite yet (proto or legacy)
+          for (const e of game.world.with("pos").without("sprite")) {
+            const sprite = Sprite.from(texture);
+            sprite.anchor.set(0.5);
+            worldContainer.addChild(sprite);
+            // Attach as component so future frames render it
+            (e as any).sprite = sprite;
+            // default scale if none present
+            if ((e as any).scale === undefined) (e as any).scale = 1;
+          }
+          for (const e of game.world.with("x", "y").without("sprite")) {
+            const sprite = Sprite.from(texture);
+            sprite.anchor.set(0.5);
+            worldContainer.addChild(sprite);
+            (e as any).sprite = sprite;
+            if ((e as any).scale === undefined) (e as any).scale = 1;
+          }
+
+          // 2) Cull dead sprites and project ECS positions to Pixi
+          for (const e of game.world.with("sprite").where((ee: any) => ee.pos || (ee.x !== undefined && ee.y !== undefined))) {
             if (!isLiveSprite(e.sprite)) {
               // Ensure the ECS stops tracking dead sprites immediately
-              // (remove the sprite component or the whole entity, your call)
-              // Example: remove only the sprite component so other data can live on:
-              // @ts-ignore: miniplex remove syntax varies; adapt to your API
-              game.world.removeComponent?.(e, "sprite") ?? game.world.remove(e);
+              game.world.removeComponent?.(e as any, "sprite") ?? game.world.remove(e as any);
               continue;
             }
-            e.sprite.position.set(e.x!, e.y!);
-            e.sprite.scale.set(e.scale! / 2);
+            // Position: prefer proto pos, fallback to legacy x/y
+            const px = (e as any).pos ? (e as any).pos.x : (e as any).x;
+            const py = (e as any).pos ? (e as any).pos.y : (e as any).y;
+            e.sprite.position.set(px, py);
+            const scale = (e as any).scale ?? 1;
+            e.sprite.scale.set(scale / 2);
           }
         };
 
@@ -44,16 +64,6 @@ export default function GameStage() {
             game.tick(now);
             render();
         });
-
-        // Example: spawn a few
-        for (let i = 0; i < 2000; i++) {
-            const sprite = Sprite.from(texture);
-            sprite.anchor.set(0.5);
-            worldContainer.addChild(sprite);
-            const scale = i / 2000;
-            
-            game.world.add({ x: Math.random()*2000, y: Math.random()*2000, vx: 10*scale, vy: 0, sprite, scale: scale });
-        }
 
         return () => {
           app.destroy(true, { children: true, texture: false });
