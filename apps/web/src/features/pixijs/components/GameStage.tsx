@@ -43,7 +43,7 @@ export default function GameStage() {
             if ((e as any).scale === undefined) (e as any).scale = 1;
           }
 
-          // 2) Cull dead sprites and project ECS positions to Pixi
+          // 2) Cull dead sprites and project ECS positions/rotation to Pixi
           for (const e of game.world.with("sprite").where((ee: any) => ee.pos || (ee.x !== undefined && ee.y !== undefined))) {
             if (!isLiveSprite(e.sprite)) {
               // Ensure the ECS stops tracking dead sprites immediately
@@ -56,6 +56,15 @@ export default function GameStage() {
             e.sprite.position.set(px, py);
             const scale = (e as any).scale ?? 1;
             e.sprite.scale.set(scale / 2);
+
+            // Rotation: if we have a velocity vector, rotate to face direction of travel
+            const hasProtoVel = (e as any).vel && typeof (e as any).vel.x === 'number' && typeof (e as any).vel.y === 'number';
+            const vx = hasProtoVel ? (e as any).vel.x : (e as any).vx;
+            const vy = hasProtoVel ? (e as any).vel.y : (e as any).vy;
+            if (typeof vx === 'number' && typeof vy === 'number' && (vx !== 0 || vy !== 0)) {
+              // atan2 returns radians; 0 rad means pointing along +X axis
+              e.sprite.rotation = Math.atan2(vy, vx);
+            }
           }
         };
 
