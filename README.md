@@ -43,6 +43,14 @@ bitwars/
           └─ package.json (to help turborepo and pnpm manage this workspace) 
 ```
 
+### Using pnpm in monorepo
+Adding dependencies at the root level is easy, you simply run your pnpm commands at root.
+
+Adding dependencies to a specific package is a bit more involved. You need to run pnpm install --filter <package-name>, e.g.,
+```bash
+pnpm -F bitwars add @bufbuild/protobuf
+```
+
 ## rts-engine
 This is the rust server that runs the game loop. It pulls in types defined in 
 packages/shared (protobuf types). To validate types were built correctly, from
@@ -60,4 +68,15 @@ cargo build -p rts-engine
 To run the actual rts-engine:
 ```bash
 cargo run -p rts-engine
+```
+
+## Side-by-side testing of type decoding
+In nextjs:
+```bash
+pnpm --filter bitwars run test:read-redis
+```
+
+In rust:
+```bash
+pnpm engine:read-deltas
 ```

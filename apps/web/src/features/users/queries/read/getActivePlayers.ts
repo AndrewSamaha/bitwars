@@ -2,6 +2,7 @@ import { redis } from "@/lib/db/connection";
 import { PLAYER_INDEX } from "@/features/users/schema/keys";
 import { playerDocToPlayer } from "@/features/users/schema/player/mappers";
 import type { Player } from "@/features/users/schema/player/player";
+import { Command } from "ioredis";
 
 export async function getActivePlayers(windowMs = 600_000): Promise<Player[]> {
     const gameId = process.env.GAME_ID;
@@ -10,12 +11,15 @@ export async function getActivePlayers(windowMs = 600_000): Promise<Player[]> {
     const min = (Date.now() - windowMs).toString();
     const q = `@gameId:{${gameId}} @lastSeen:[${min} +inf]`;
   
-    const res = await redis.sendCommand([
-        'FT.SEARCH', PLAYER_INDEX, "*",
+    const res = await redis.sendCommand(
+      new Command('FT.SEARCH', [
+        PLAYER_INDEX,
+        q,
         'RETURN', '1', '$',
         'LIMIT', '0', '200',
-        'DIALECT', '4'
-      ]);
+        'DIALECT', '4',
+      ])
+    );
 
     if (res === null) {
         return [];

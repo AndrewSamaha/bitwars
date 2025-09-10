@@ -1,8 +1,8 @@
 # packages/schemas/buf.gen.yaml
 version: v2
 plugins:
-  - remote: buf.build/bufbuild/es
+  - remote: buf.build/bufbuild/es:v2.7.0
     out: ../shared/src/gen
     opt:
-      - target=ts           # generate TypeScript
-      - import_extension=none
+      - target=ts
+      - import_extension=js

@@ -8,10 +8,25 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "engine:run": "cargo run -p rts-engine"
+    "test:read-binary": "pnpm --filter bitwars test",
+    "test:read-redis": "dotenv -e .env -e .env.local -- pnpm --filter bitwars run test:read-redis",
+    "engine:run": "cargo run -p rts-engine",
+    "engine:build": "cargo build -p rts-engine",
+    "engine:read-snapshot": "cargo run --example read_snapshot --manifest-path services/rts-engine/Cargo.toml",
+    "engine:read-deltas": "cargo run --example read_deltas --manifest-path services/rts-engine/Cargo.toml",
+    "engine:generate-examples": "cargo run --example generate_examples --manifest-path services/rts-engine/Cargo.toml",
+    "gen:ts:nocache": "pnpm -w turbo run gen:ts --filter=@bitwars/schemas --no-cache"
   },
   "devDependencies": {
     "dotenv-cli": "^10.0.0",
     "turbo": "^2.0.0"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.7.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@bufbuild/protobuf": "^2.7.0"
+    }
   }
 }

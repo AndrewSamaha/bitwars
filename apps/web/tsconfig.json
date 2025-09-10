@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "target": "ES2017",
+    "target": "ES2020",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
@@ -15,20 +15,19 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
+    "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./src/*"],
-      "@bitwars/shared": ["../../packages/shared/src"],
-      "@bitwars/shared/*": ["../../packages/shared/src/*"]
+      "@/*": ["./src/*"]
+      /**
+       * Intentionally NO aliases for "@bitwars/shared" or "@bitwars/shared/*".
+       * This ensures imports like:
+       *   import { DeltaSchema } from "@bitwars/shared/gen/delta_pb";
+       * resolve via the package's "exports" field to packages/shared/dist/gen/*.js
+       */
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
-,
+  "exclude": ["node_modules"],
   "references": [
     { "path": "../../packages/shared" }
   ]
