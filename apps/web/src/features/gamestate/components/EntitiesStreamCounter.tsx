@@ -4,7 +4,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function EntitiesStreamCounter() {
-  const [count, setCount] = useState(0);
+  const [snapshotCount, setSnapshotCount] = useState(0);
+  const [deltaCount, setDeltaCount] = useState(0);
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const errorCountRef = useRef(0);
@@ -38,11 +39,11 @@ export default function EntitiesStreamCounter() {
         router.push('/');
       }
     };
-    // Count both snapshot (bootstrap) and delta (live/gap) events
-    const onSnapshot = () => setCount((c) => c + 1);
-    const onDelta = () => setCount((c) => c + 1);
+    // Count both snapshot (bootstrap) and delta (live/gap) events separately
+    const onSnapshot = () => setSnapshotCount((c) => c + 1);
+    const onDelta = () => setDeltaCount((c) => c + 1);
     // Fallback for any default 'message' events if server ever sends them
-    const onMessage = () => setCount((c) => c + 1);
+    const onMessage = () => setDeltaCount((c) => c + 1);
 
     es.addEventListener("open", onOpen as EventListener);
     es.addEventListener("error", onError as EventListener);
@@ -66,7 +67,7 @@ export default function EntitiesStreamCounter() {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
       <span className={`h-2 w-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
-      <span>Stream events: {count}</span>
+      <span>Stream events: {snapshotCount}/{deltaCount}</span>
     </div>
   );
 }
