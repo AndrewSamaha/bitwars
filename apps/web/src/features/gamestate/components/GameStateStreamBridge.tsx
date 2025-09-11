@@ -44,8 +44,12 @@ export default function GameStateStreamBridge() {
     const normalizeId = (id: number | string) => String(id);
 
     const applySnapshot = (payload: SnapshotPayload) => {
-      // Remove old streamed entities
+      // Remove old streamed entities (and destroy any attached sprites)
       for (const [, ent] of byId) {
+        try {
+          // @ts-ignore - sprite is optional
+          ent.sprite?.destroy?.();
+        } catch {}
         world.remove(ent);
       }
       byId.clear();
@@ -119,8 +123,12 @@ export default function GameStateStreamBridge() {
       es.removeEventListener("delta", onDelta as EventListener);
       es.close();
 
-      // Clean up streamed entities we created
+      // Clean up streamed entities we created (and destroy sprites)
       for (const [, ent] of byId) {
+        try {
+          // @ts-ignore - sprite is optional
+          ent.sprite?.destroy?.();
+        } catch {}
         world.remove(ent);
       }
       byId.clear();

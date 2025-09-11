@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, Terminal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import EntitiesStreamCounter from "@/features/gamestate/components/EntitiesStreamCounter"
+import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount"
 import GameStage from "@/features/pixijs/components/GameStage"
 import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge"
 
@@ -82,6 +83,7 @@ export default function GamePage() {
                 <Terminal className="w-4 h-4 text-primary" />
                 <span className="text-sm font-medium">BitWars Terminal</span>
                 <EntitiesStreamCounter />
+                <EcsEntityCount />
               </div>
               
             </div>
