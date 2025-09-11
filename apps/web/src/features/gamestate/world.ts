@@ -32,13 +32,6 @@ class GameWorld {
     const dt = (now - this.last) / 1000; // seconds
     this.last = now;
 
-    // movement
-    // Legacy movement (x, y, vx, vy)
-    for (const e of this.world.with("x", "y", "vx", "vy")) {
-      e.x += e.vx * dt;
-      e.y += e.vy * dt;
-    }
-
     // Proto-shaped movement (pos: {x,y}, vel: {x,y})
     for (const e of this.world.with("pos", "vel")) {
       if (e.pos && e.vel) {

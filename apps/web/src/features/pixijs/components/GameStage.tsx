@@ -28,7 +28,7 @@ export default function GameStage() {
         // Track which entities we've attached sprites to, to avoid re-attaching due to query/index lag
         const attached = new WeakSet<any>();
 
-        // Render system: project ECS -> Pixi once per frame
+        // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
           // 1) Attach sprites to entities that have position but no sprite yet (proto only)
           for (const e of game.world.with("pos").without("sprite")) {
@@ -40,10 +40,10 @@ export default function GameStage() {
             (e as any).sprite = sprite;
             attached.add(e);
             // default scale if none present
-            if ((e as any).scale === undefined) (e as any).scale = 1;
+            if (e.scale === undefined) e.scale = 1;
           }
 
-          // 2) Cull dead sprites and project ECS positions/rotation to Pixi (proto only)
+          // 2) Project ECS positions/rotation to Pixi (proto only)
           for (const e of game.world.with("sprite", "pos")) {
             if (!isLiveSprite(e.sprite)) {
               // Remove sprite from scene graph and destroy it to prevent leaks
@@ -55,29 +55,30 @@ export default function GameStage() {
                 }
               } catch {}
               // Ensure the ECS stops tracking dead sprites immediately
-              game.world.removeComponent?.(e as any, "sprite") ?? game.world.remove(e as any);
+              game.world.removeComponent?.(e, "sprite") ?? game.world.remove(e);
               attached.delete(e);
               continue;
             }
-            // Position: proto pos
-            e.sprite.position.set((e as any).pos.x, (e as any).pos.y);
-            const scale = (e as any).scale ?? 1;
+            // Position: proto pos (already advanced by world.tick)
+            e.sprite.position.set(e.pos.x, e.pos.y);
+            const scale = e.scale ?? 1;
             e.sprite.scale.set(scale / 2);
 
-            // Rotation: if we have a velocity vector, rotate to face direction of travel
-            const hasProtoVel = (e as any).vel && typeof (e as any).vel.x === 'number' && typeof (e as any).vel.y === 'number';
-            const vx = hasProtoVel ? (e as any).vel.x : undefined;
-            const vy = hasProtoVel ? (e as any).vel.y : undefined;
-            if (typeof vx === 'number' && typeof vy === 'number' && (vx !== 0 || vy !== 0)) {
-              // atan2 returns radians; 0 rad means pointing along +X axis
-              e.sprite.rotation = Math.atan2(vy, vx);
+            // Rotation: if we have proto velocity, rotate to face direction of travel
+            const vel = e.vel as { x: number; y: number } | undefined;
+            if (vel) {
+              const { x: vx, y: vy } = vel;
+              if (vx !== 0 || vy !== 0) {
+                // atan2 returns radians; 0 rad means pointing along +X axis
+                e.sprite.rotation = Math.atan2(vy, vx);
+              }
             }
           }
         };
 
-        app.ticker.add((time) => {
-            const now = performance.now();
-            game.tick(now);
+        app.ticker.add(() => {
+            // Advance ECS systems (including movement)
+            game.tick(performance.now());
             render();
         });
 
