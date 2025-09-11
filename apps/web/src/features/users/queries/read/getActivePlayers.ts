@@ -28,13 +28,35 @@ export async function getActivePlayers(windowMs = 600_000): Promise<Player[]> {
         throw new Error("Unexpected response format");
     }
 
-    const total = res[0] as number;
+    // RediSearch response shape (dialect 4):
+    // [ total, docId1, [ '$', jsonOrBuffer, ... ], docId2, [ '$', jsonOrBuffer, ... ], ... ]
+    const total = res[0] as number; // not used, but validates shape
     const docs: any[] = [];
-    for (let i = 1; i < res.length; i += 2) {
-      const fields = res[i + 1] as string[];
-      const idx = fields.indexOf('$');
-      const doc = JSON.parse(fields[idx + 1] as string)[0];
-      if (idx >= 0) docs.push(doc);
+    for (let i = 1; i + 1 < res.length; i += 2) {
+      const fields = res[i + 1] as any;
+      if (!Array.isArray(fields)) continue;
+      // Find the path token '$' which contains the full JSON document
+      let idx = -1;
+      for (let j = 0; j < fields.length; j++) {
+        const k = fields[j];
+        if (k === '$' || (typeof k === 'object' && k && typeof (k as Buffer).toString === 'function' && (k as Buffer).toString() === '$')) {
+          idx = j;
+          break;
+        }
+      }
+      if (idx < 0) continue;
+      const raw = fields[idx + 1];
+      const str = typeof raw === 'string' ? raw : (Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw ?? ''));
+      if (!str || str === '$') continue; // guard against malformed entries
+      try {
+        const parsed = JSON.parse(str);
+        const doc = Array.isArray(parsed) ? parsed[0] : parsed;
+        if (doc) docs.push(doc);
+      } catch (e) {
+        // Log and skip bad entries instead of throwing the whole request
+        console.warn('[getActivePlayers] Failed to parse JSON document from RediSearch', e);
+        continue;
+      }
     }
     const activePlayers = docs.map((doc) => playerDocToPlayer(doc));
     return activePlayers;

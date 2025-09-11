@@ -21,39 +21,66 @@ export default function GameStage() {
 
         // Pixi scene graph root for world
         const worldContainer = new Container();
+        worldContainer.position.set(800, 500);
+        worldContainer.scale.set(.5);
         app.stage.addChild(worldContainer);
         const texture = await Assets.load('/assets/corvette/idle.png');
-        // Render system: project ECS -> Pixi once per frame
+        // Track which entities we've attached sprites to, to avoid re-attaching due to query/index lag
+        const attached = new WeakSet<any>();
+
+        // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
-          for (const e of game.world.with("sprite", "x", "y", "scale")) {
-            if (!isLiveSprite(e.sprite)) {
-              // Ensure the ECS stops tracking dead sprites immediately
-              // (remove the sprite component or the whole entity, your call)
-              // Example: remove only the sprite component so other data can live on:
-              // @ts-ignore: miniplex remove syntax varies; adapt to your API
-              game.world.removeComponent?.(e, "sprite") ?? game.world.remove(e);
-              continue;
-            }
-            e.sprite.position.set(e.x!, e.y!);
-            e.sprite.scale.set(e.scale! / 2);
-          }
-        };
-
-        app.ticker.add((time) => {
-            const now = performance.now();
-            game.tick(now);
-            render();
-        });
-
-        // Example: spawn a few
-        for (let i = 0; i < 2000; i++) {
+          // 1) Attach sprites to entities that have position but no sprite yet (proto only)
+          for (const e of game.world.with("pos").without("sprite")) {
+            if (attached.has(e)) continue;
             const sprite = Sprite.from(texture);
             sprite.anchor.set(0.5);
             worldContainer.addChild(sprite);
-            const scale = i / 2000;
-            
-            game.world.add({ x: Math.random()*2000, y: Math.random()*2000, vx: 10*scale, vy: 0, sprite, scale: scale });
-        }
+            // Attach as component so future frames render it
+            (e as any).sprite = sprite;
+            attached.add(e);
+            // default scale if none present
+            if (e.scale === undefined) e.scale = 1;
+          }
+
+          // 2) Project ECS positions/rotation to Pixi (proto only)
+          for (const e of game.world.with("sprite", "pos")) {
+            if (!isLiveSprite(e.sprite)) {
+              // Remove sprite from scene graph and destroy it to prevent leaks
+              try {
+                const spr = (e as any).sprite as Sprite | undefined;
+                if (spr) {
+                  spr.parent?.removeChild(spr);
+                  spr.destroy();
+                }
+              } catch {}
+              // Ensure the ECS stops tracking dead sprites immediately
+              game.world.removeComponent?.(e, "sprite") ?? game.world.remove(e);
+              attached.delete(e);
+              continue;
+            }
+            // Position: proto pos (already advanced by world.tick)
+            e.sprite.position.set(e.pos.x, e.pos.y);
+            const scale = e.scale ?? 1;
+            e.sprite.scale.set(scale / 2);
+
+            // Rotation: if we have proto velocity, rotate to face direction of travel
+            const vel = e.vel as { x: number; y: number } | undefined;
+            if (vel) {
+              const { x: vx, y: vy } = vel;
+              if (vx !== 0 || vy !== 0) {
+                // atan2 returns radians; 0 rad means pointing along +X axis
+                e.sprite.rotation = Math.atan2(vy, vx);
+              }
+            }
+          }
+        };
+
+        app.ticker.add(() => {
+            // Advance ECS systems (including movement)
+            game.tick(performance.now());
+            render();
+        });
 
         return () => {
           app.destroy(true, { children: true, texture: false });
