@@ -1,8 +1,8 @@
 import { redis } from "@/lib/db/connection";
 import { decodeDeltaBinary, decodeSnapshotBinary } from "@/lib/db/utils/binary-encoding";
 import { getEnv } from "@/lib/utils";
-import { type Delta } from "@bitwars/shared/gen/delta_pb";
-import { type Snapshot } from "@bitwars/shared/gen/snapshot_pb";
+import { sseFormat } from "@/lib/db/utils/sse";
+import { mapSnapshotToJson, mapDeltaToJson } from "@/lib/db/utils/protobuf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,46 +11,6 @@ const DEFAULT_GAME_ID = "demo-001";
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const XREAD_BLOCK_MS = 15_000; // as per spec
 const XRANGE_BATCH_COUNT = 512;
-
-function sseFormat({ event, id, data, comment }: { event?: string; id?: string; data?: any; comment?: string; }): string {
-  if (comment) {
-    return `: ${comment}\n\n`;
-  }
-  let out = "";
-  if (event) out += `event: ${event}\n`;
-  if (id) out += `id: ${id}\n`;
-  if (data !== undefined) out += `data: ${JSON.stringify(data)}\n`;
-  return out + "\n";
-}
-
-// Helpers to convert protobuf-es messages into compact, client-friendly JSON
-const biToNumOrStr = (v: bigint): number | string => {
-  const num = Number(v);
-  return Number.isSafeInteger(num) ? num : v.toString();
-};
-
-const mapDeltaToJson = (d: Delta) => ({
-  type: "delta" as const,
-  tick: biToNumOrStr(d.tick),
-  updates: (d.updates ?? []).map((u) => ({
-    id: biToNumOrStr(u.id),
-    ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
-    ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
-    ...(u.force ? { force: { x: u.force.x, y: u.force.y } } : {}),
-  })),
-});
-
-const mapSnapshotToJson = (s: Snapshot) => ({
-  type: "snapshot" as const,
-  tick: biToNumOrStr(s.tick),
-  entities: (s.entities ?? []).map((e) => ({
-    id: biToNumOrStr(e.id),
-    ...(e.pos ? { pos: { x: e.pos.x, y: e.pos.y } } : {}),
-    ...(e.vel ? { vel: { x: e.vel.x, y: e.vel.y } } : {}),
-    ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
-  })),
-});
-
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
