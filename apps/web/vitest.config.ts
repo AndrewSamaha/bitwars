@@ -1,4 +1,6 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 export default defineConfig({
   test: {
@@ -9,5 +11,10 @@ export default defineConfig({
   },
   esbuild: {
     target: "node20",
+  },
+  resolve: {
+    alias: {
+      "@": resolve(fileURLToPath(new URL("./src", import.meta.url))),
+    },
   },
 });
