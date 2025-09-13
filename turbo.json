@@ -12,6 +12,11 @@
       "cache": false,
       "persistent": true,
       "dependsOn": ["^dev", "@bitwars/schemas#gen:ts", "@bitwars/shared#build"]
+    },
+    "test": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^test", "@bitwars/schemas#gen:ts", "@bitwars/shared#build"]
     }
   }
 }
