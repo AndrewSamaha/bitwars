@@ -1,8 +1,8 @@
-import { redis } from "@/lib/db/connection";
-import { decodeDeltaBinary, decodeSnapshotBinary } from "@/lib/db/utils/binary-encoding";
 import { getEnv } from "@/lib/utils";
-import { sseFormat } from "@/lib/db/utils/sse";
-import { mapSnapshotToJson, mapDeltaToJson } from "@/lib/db/utils/protobuf";
+import { xReadWithBuffers } from "@/lib/db/utils/redis-streams";
+import { createSseChannel } from "@/lib/db/utils/sse-channel";
+import { bootstrapAndCatchUp } from "@/lib/db/utils/bootstrap";
+import { emitDeltaFromBuffer } from "@/lib/db/utils/delta";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,112 +19,21 @@ export async function GET(req: Request) {
 
   const GAME_ID = getEnv("GAME_ID", DEFAULT_GAME_ID);
 
-  const encoder = new TextEncoder();
-
-  const transform = new TransformStream<Uint8Array, Uint8Array>();
-  const writer = transform.writable.getWriter();
-
-  let closed = false;
-  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
-
   const logPrefix = `[sse ${Date.now().toString(36)}]`;
   const log = (...args: any[]) => console.log(logPrefix, ...args);
   const logErr = (...args: any[]) => console.error(logPrefix, ...args);
 
-  const safeWrite = async (chunk: string) => {
-    if (closed) return;
-    try {
-      await writer.write(encoder.encode(chunk));
-    } catch (e) {
-      closed = true;
-    }
-  };
+  const channel = createSseChannel({ heartbeatMs: HEARTBEAT_INTERVAL_MS, log });
 
   const end = async () => {
-    if (closed) return;
-    closed = true;
-    try { if (heartbeatTimer) clearInterval(heartbeatTimer); } catch {}
-    try { await writer.close(); } catch {}
+    await channel.close();
   };
 
-  const onAbort = () => {
-    log("client aborted");
-    end();
-  };
-  req.signal.addEventListener("abort", onAbort);
+  channel.attachAbortSignal(req.signal, () => {
+    // nothing else needed; channel.close() is invoked in handler
+  });
 
-  // Start heartbeat
-  heartbeatTimer = setInterval(() => {
-    void safeWrite(sseFormat({ comment: "ping" }));
-  }, HEARTBEAT_INTERVAL_MS);
-
-  // Helpers to read streams with Buffer replies using ioredis
-  const xRangeWithBuffers = async (
-    key: string,
-    start: string,
-    end: string,
-    count: number
-  ): Promise<Array<{ id: string; data?: Buffer }>> => {
-    const res = (await (redis as any).xrangeBuffer(key, start, end, "COUNT", count)) as any[] | null;
-    if (!res) return [];
-    // res shape: [ [idBuf, [ [fieldBuf, valueBuf], ... ]], ... ]
-    return res.map((entry: any) => {
-      const idBuf: Buffer = entry[0];
-      const fields: any = entry[1] ?? [];
-      let data: Buffer | undefined;
-      if (Array.isArray(fields) && fields.length > 0) {
-        if (Array.isArray(fields[0])) {
-          for (const pair of fields) {
-            const f = pair?.[0];
-            const v = pair?.[1];
-            if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
-          }
-        } else {
-          for (let i = 0; i + 1 < fields.length; i += 2) {
-            const f = fields[i]; const v = fields[i + 1];
-            if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
-          }
-        }
-      }
-      return { id: idBuf.toString(), data };
-    });
-  };
-
-  const xReadWithBuffers = async (
-    key: string,
-    lastId: string,
-    blockMs: number,
-    count: number
-  ): Promise<Array<{ id: string; data?: Buffer }>> => {
-    const res = (await (redis as any).xreadBuffer("BLOCK", blockMs, "COUNT", count, "STREAMS", key, lastId)) as any[] | null;
-    if (!res) return [];
-    // res shape: [ [ streamKeyBuf, [ [idBuf, [ [fieldBuf, valBuf], ... ]], ... ] ] ]
-    const out: Array<{ id: string; data?: Buffer }> = [];
-    for (const stream of res) {
-      const messages = stream[1] as any[];
-      if (!messages) continue;
-      for (const msg of messages) {
-        const idBuf: Buffer = msg[0];
-        const fields: any = msg[1] ?? [];
-        let data: Buffer | undefined;
-        if (Array.isArray(fields) && fields.length > 0) {
-          if (Array.isArray(fields[0])) {
-            for (const pair of fields) {
-              const f = pair?.[0]; const v = pair?.[1];
-              if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
-            }
-          } else {
-            for (let i = 0; i + 1 < fields.length; i += 2) {
-              const f = fields[i]; const v = fields[i + 1];
-              if (Buffer.isBuffer(f) && f.toString() === "data" && Buffer.isBuffer(v)) { data = v; break; }
-            }
-          }
-        }
-        out.push({ id: idBuf.toString(), data });
-      }
-    }
-    return out;
-  };
+  // Redis Streams helpers moved to '@/lib/db/utils/redis-streams'
 
   // Set up connection and streaming logic
   (async () => {
@@ -137,54 +46,17 @@ export async function GET(req: Request) {
         startFromId = lastEventId;
       }
 
-      const keySnapshot = `snapshot:${GAME_ID}`;
-      const keySnapshotMeta = `snapshot_meta:${GAME_ID}`;
       const streamDeltas = `deltas:${GAME_ID}`;
 
-      let lastId = startFromId; // L
+      let lastId = startFromId; 
 
       if (!lastId) {
-        // Full bootstrap: snapshot + gap catch-up
-        const meta = await (redis as any).hgetall(keySnapshotMeta);
-        const boundaryId = meta["boundary_stream_id"]; // B
-        const snapshotBuf: Buffer | null = (await (redis as any).getBuffer?.(keySnapshot)) ?? null;
-
-        if (snapshotBuf) {
-          try {
-            const snapshot = decodeSnapshotBinary(snapshotBuf);
-            const payload = mapSnapshotToJson(snapshot as any);
-            await safeWrite(
-              sseFormat({ event: "snapshot", id: boundaryId || "0-0", data: payload })
-            );
-          } catch (e) {
-            logErr("snapshot decode error", e);
-          }
-
-          // Gap catch-up after boundary
-          let nextStart = `(${boundaryId || "0-0"}`; // exclusive
-          while (!closed) {
-            // XRANGE stream (B + COUNT 512)
-            const entries = await xRangeWithBuffers(streamDeltas, nextStart, "+", XRANGE_BATCH_COUNT);
-            if (!entries || entries.length === 0) break;
-            for (const ent of entries) {
-              const id = ent.id;
-              const dataBuf = ent.data;
-              if (!dataBuf) continue;
-              try {
-                const delta = decodeDeltaBinary(dataBuf);
-                const payload = mapDeltaToJson(delta as any);
-                await safeWrite(sseFormat({ event: "delta", id, data: payload }));
-                lastId = id;
-              } catch (e) {
-                logErr("delta decode error (gap)", e);
-                continue; // skip bad entry
-              }
-            }
-            nextStart = `(${entries[entries.length - 1]!.id}`;
-            if (entries.length < XRANGE_BATCH_COUNT) break; // drained
-          }
-        } else {
+        // Full bootstrap: snapshot + gap catch-up using helper
+        const bootLast = await bootstrapAndCatchUp(GAME_ID, channel, () => channel.isClosed(), logErr);
+        if (!bootLast) {
           log("no snapshot or boundary id; skipping bootstrap and starting live tail");
+        } else {
+          lastId = bootLast;
         }
       } else {
         log("resuming from", lastId);
@@ -194,7 +66,7 @@ export async function GET(req: Request) {
       // For XREAD, when lastId is undefined, start from '$' to only get new ones.
       if (!lastId) lastId = "$";
 
-      while (!closed) {
+      while (!channel.isClosed()) {
         try {
           const entries = await xReadWithBuffers(streamDeltas, lastId, XREAD_BLOCK_MS, XRANGE_BATCH_COUNT);
           if (!entries || entries.length === 0) {
@@ -205,18 +77,8 @@ export async function GET(req: Request) {
             const id = ent.id;
             const dataBuf = ent.data;
             if (!dataBuf) continue;
-            try {
-              const delta = decodeDeltaBinary(dataBuf);
-              const payload = mapDeltaToJson(delta as any);
-              if ((payload.tick === 0 || payload.tick === "0") && payload.updates.length === 0) {
-                logErr("decoded empty delta LIVE — likely schema mismatch; did you run gen:ts? wrong GAME_ID?");
-              }
-              await safeWrite(sseFormat({ event: "delta", id, data: payload }));
-              lastId = id;
-            } catch (e) {
-              logErr("delta decode error (live)", e);
-              continue;
-            }
+            await emitDeltaFromBuffer(channel, id, dataBuf, (msg, e) => logErr(`${msg} (live)`, e));
+            lastId = id;
           }
         } catch (e: any) {
           // Attempt a simple retry loop on transient errors
@@ -233,12 +95,5 @@ export async function GET(req: Request) {
     }
   })();
 
-  const headers = new Headers({
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-store",
-    "Connection": "keep-alive",
-    "Transfer-Encoding": "chunked",
-  });
-
-  return new Response(transform.readable, { headers });
+  return new Response(channel.readable, { headers: channel.headers });
 }
