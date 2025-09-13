@@ -1,22 +1,9 @@
-/*
-Client usage example:
-
-const es = new EventSource("/api/v2/gamestate/stream");
-es.addEventListener("snapshot", (e) => {
-  const s = JSON.parse(e.data);
-  // render snapshot
-});
-es.addEventListener("delta", (e) => {
-  const d = JSON.parse(e.data);
-  // apply delta
-});
-es.onerror = () => es.close();
-*/
-
-import { fromBinary } from "@bufbuild/protobuf";
 import { redis } from "@/lib/db/connection";
-import { SnapshotSchema } from "@bitwars/shared/gen/snapshot_pb";
-import { DeltaSchema } from "@bitwars/shared/gen/delta_pb";
+import { decodeDeltaBinary, decodeSnapshotBinary } from "@/lib/db/utils/binary-encoding";
+import { getEnv } from "@/lib/utils";
+import { type Delta } from "@bitwars/shared/gen/delta_pb";
+import { type Snapshot } from "@bitwars/shared/gen/snapshot_pb";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -24,13 +11,6 @@ const DEFAULT_GAME_ID = "demo-001";
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const XREAD_BLOCK_MS = 15_000; // as per spec
 const XRANGE_BATCH_COUNT = 512;
-
-function getEnv(name: string, fallback?: string): string {
-  const v = process.env[name];
-  if (v && v.length > 0) return v;
-  if (fallback !== undefined) return fallback;
-  throw new Error(`Missing required env var: ${name}`);
-}
 
 function sseFormat({ event, id, data, comment }: { event?: string; id?: string; data?: any; comment?: string; }): string {
   if (comment) {
@@ -49,7 +29,7 @@ const biToNumOrStr = (v: bigint): number | string => {
   return Number.isSafeInteger(num) ? num : v.toString();
 };
 
-const mapDeltaToJson = (d: import("@bitwars/shared/gen/delta_pb").Delta) => ({
+const mapDeltaToJson = (d: Delta) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
   updates: (d.updates ?? []).map((u) => ({
@@ -60,7 +40,7 @@ const mapDeltaToJson = (d: import("@bitwars/shared/gen/delta_pb").Delta) => ({
   })),
 });
 
-const mapSnapshotToJson = (s: import("@bitwars/shared/gen/snapshot_pb").Snapshot) => ({
+const mapSnapshotToJson = (s: Snapshot) => ({
   type: "snapshot" as const,
   tick: biToNumOrStr(s.tick),
   entities: (s.entities ?? []).map((e) => ({
@@ -71,30 +51,6 @@ const mapSnapshotToJson = (s: import("@bitwars/shared/gen/snapshot_pb").Snapshot
   })),
 });
 
-// Decode helpers (same approach we validated in vitest):
-function decodeSnapshotBinary(buf: Buffer) {
-  // fromBinary expects a Uint8Array
-  const msg = fromBinary(SnapshotSchema, new Uint8Array(buf));
-  // Lightweight validations mirroring tests
-  if (typeof msg.tick !== "bigint") {
-    console.warn("[sse] snapshot.tick not bigint — schema/runtime mismatch?", typeof msg.tick);
-  }
-  if (!Array.isArray(msg.entities)) {
-    console.warn("[sse] snapshot.entities not array — schema/runtime mismatch?");
-  }
-  return msg;
-}
-
-function decodeDeltaBinary(buf: Buffer) {
-  const msg = fromBinary(DeltaSchema, new Uint8Array(buf));
-  if (typeof msg.tick !== "bigint") {
-    console.warn("[sse] delta.tick not bigint — schema/runtime mismatch?", typeof msg.tick);
-  }
-  if (!Array.isArray(msg.updates)) {
-    console.warn("[sse] delta.updates not array — schema/runtime mismatch?");
-  }
-  return msg;
-}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -102,7 +58,6 @@ export async function GET(req: Request) {
   const lastEventId = req.headers.get("last-event-id");
 
   const GAME_ID = getEnv("GAME_ID", DEFAULT_GAME_ID);
-  const REDIS_URL = getEnv("GAMESTATE_REDIS_URL", "redis://127.0.0.1:6379");
 
   const encoder = new TextEncoder();
 
