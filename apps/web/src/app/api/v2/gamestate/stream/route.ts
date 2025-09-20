@@ -32,7 +32,7 @@ export const GET = withAxiom(async (req: Request) => {
 
   const channel = createSseChannel({ heartbeatMs: HEARTBEAT_INTERVAL_MS, log });
 
-  logger.info("v2/stream:init", { GAME_ID, sid, sinceParam, lastEventId, userAgent, cacheControl });
+  logger.info("v2/stream:init", { GAME_ID, sid, sinceParam, lastEventId });
 
   const end = async () => {
     await channel.close();
@@ -40,7 +40,6 @@ export const GET = withAxiom(async (req: Request) => {
 
   channel.attachAbortSignal(req.signal, () => {
     // nothing else needed; channel.close() is invoked in handler
-    logger.info("v2/stream:abort-signal", { GAME_ID, sid });
   });
 
   // Redis Streams helpers moved to '@/lib/db/utils/redis-streams'
@@ -53,16 +52,13 @@ export const GET = withAxiom(async (req: Request) => {
         await channel.write(
           sseFormat({ event: "hello", data: { ok: true, sid: sid || null, ts: Date.now() } })
         );
-        logger.info("v2/stream:hello", { GAME_ID, sid });
       } catch (e: any) {
         logger.warn("v2/stream:hello:error", { GAME_ID, sid, error: e?.message || String(e) });
       }
 
       // Optional boot delay to ensure client event listeners are attached before snapshot/catch-up
       if (bootDelayMs > 0) {
-        logger.info("v2/stream:boot-delay:start", { GAME_ID, sid, bootDelayMs });
         await new Promise((r) => setTimeout(r, bootDelayMs));
-        logger.info("v2/stream:boot-delay:end", { GAME_ID, sid, bootDelayMs });
       }
 
       // Determine resume behavior
@@ -100,10 +96,7 @@ export const GET = withAxiom(async (req: Request) => {
       // For XREAD, when lastId is undefined, start from '$' to only get new ones.
       if (!lastId) lastId = "$";
 
-      logger.info("v2/stream:live:start", { GAME_ID, sid, from: lastId, stream: streamDeltas, blockMs: XREAD_BLOCK_MS, batchCount: XRANGE_BATCH_COUNT });
-
-      let firstLiveLogDone = false;
-      let firstEmittedCount = 0;
+      logger.info("v2/stream:live:start", { GAME_ID, sid, from: lastId, stream: streamDeltas });
 
       while (!channel.isClosed()) {
         try {
@@ -111,12 +104,6 @@ export const GET = withAxiom(async (req: Request) => {
           if (!entries || entries.length === 0) {
             // timeout, emit heartbeat has already been doing pings
             continue;
-          }
-          if (!firstLiveLogDone) {
-            const ids = entries.slice(0, 5).map((e) => e.id);
-            const sizes = entries.slice(0, 5).map((e) => e.data?.length ?? 0);
-            logger.debug("v2/stream:live:first-batch", { GAME_ID, sid, count: entries.length, ids, sizes });
-            firstLiveLogDone = true;
           }
           for (const ent of entries) {
             const id = ent.id;
@@ -126,10 +113,6 @@ export const GET = withAxiom(async (req: Request) => {
               logErr(`${msg} (live)`, e);
               logger.error("v2/stream:emit:error", { GAME_ID, sid, id, msg, error: e?.message || String(e) });
             });
-            if (firstEmittedCount < 5) {
-              firstEmittedCount++;
-              logger.debug("v2/stream:emit:first", { GAME_ID, sid, id, size: dataBuf.length });
-            }
             lastId = id;
           }
         } catch (e: any) {

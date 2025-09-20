@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { useLogger, logger } from "@/lib/axiom/client";
+import { useLogger } from "@/lib/axiom/client";
 import { game, type Entity } from "../world";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -64,23 +64,7 @@ export default function GameStateStreamBridge() {
       byId.clear();
 
       // Add new ones
-      let concerningEntities = 0;
-      let greatEntities = 0;
       for (const s of payload.entities) {
-        let warnings: string[] = [];
-        // Avoid logging entire payloads repeatedly; keep it light.
-        log.debug("snapshot entity", { id: s.id, hasPos: !!s.pos, hasVel: !!s.vel });
-        if (!s.pos) warnings.push("snapshot entity missing pos");
-        if (!s.vel) warnings.push("snapshot entity missing vel");
-        if (warnings.length > 0) {
-          concerningEntities++;
-          log.debug("snapshot entity missing components", { id: s.id, warnings });
-        }
-        else {
-          greatEntities++;
-          log.debug("snapshot entity looks great", { id: s.id });
-        }
-
         const ent: Entity = {
           id: s.id,
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
@@ -90,10 +74,7 @@ export default function GameStateStreamBridge() {
         world.add(ent);
         byId.set(normalizeId(s.id), ent);
       }
-      
-      log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length, concerningEntities, greatEntities });
-      // Force a flush so we can see this in Axiom during debugging (fire-and-forget)
-      try { void logger.flush?.(); } catch {}
+      log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length });
       // Signal that the world is ready for ticking/rendering
       if (!game.ready) {
         game.ready = true;
@@ -149,12 +130,6 @@ export default function GameStateStreamBridge() {
       try {
         const payload = JSON.parse(e.data) as DeltaPayload;
         if (payload && payload.type === "delta") {
-          const already = firstDeltaLoggedRef.current;
-          if (already < 5) {
-            const sample = payload.updates.slice(0, 5).map(u => ({ id: u.id, hasPos: !!u.pos, hasVel: !!u.vel }));
-            log.debug("GameStateStreamBridge:delta:first", { streamId: streamIdRef.current, tick: payload.tick, total: payload.updates.length, sample });
-            firstDeltaLoggedRef.current = Math.min(5, already + 1);
-          }
           applyDelta(payload);
         }
       } catch (err) {
@@ -172,20 +147,8 @@ export default function GameStateStreamBridge() {
       log.warn("GameStateStreamBridge:es:error", { streamId: streamIdRef.current, readyState: rs });
     };
 
-    const onHello = (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data || "{}");
-        log.info("GameStateStreamBridge:hello", { streamId: streamIdRef.current, payload });
-      } catch {
-        log.info("GameStateStreamBridge:hello", { streamId: streamIdRef.current });
-      }
-      // Force a flush so we can see this in Axiom during debugging (fire-and-forget)
-      try { void logger.flush?.(); } catch {}
-    };
-
     es.addEventListener("snapshot", onSnapshot as EventListener);
     es.addEventListener("delta", onDelta as EventListener);
-    es.addEventListener("hello", onHello as EventListener);
     es.addEventListener("open", onOpen as EventListener);
     es.addEventListener("error", onError as EventListener);
 
@@ -193,7 +156,6 @@ export default function GameStateStreamBridge() {
       log.info("GameStateStreamBridge:cleanup", { streamId: streamIdRef.current });
       es.removeEventListener("snapshot", onSnapshot as EventListener);
       es.removeEventListener("delta", onDelta as EventListener);
-      es.removeEventListener("hello", onHello as EventListener);
       es.removeEventListener("open", onOpen as EventListener);
       es.removeEventListener("error", onError as EventListener);
       es.close();
