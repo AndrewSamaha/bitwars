@@ -4,6 +4,7 @@ import { createSseChannel } from "@/lib/db/utils/sse-channel";
 import { bootstrapAndCatchUp } from "@/lib/db/utils/bootstrap";
 import { emitDeltaFromBuffer } from "@/lib/db/utils/delta";
 import { logger, withAxiom } from "@/lib/axiom/server";
+import { sseFormat } from "@/lib/db/utils/sse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,11 @@ export const GET = withAxiom(async (req: Request) => {
   const url = new URL(req.url);
   const sinceParam = url.searchParams.get("since");
   const lastEventId = req.headers.get("last-event-id");
+  const userAgent = req.headers.get("user-agent");
+  const cacheControl = req.headers.get("cache-control");
+  const sid = url.searchParams.get("sid") || undefined;
+  const bootDelayMsParam = url.searchParams.get("bootDelayMs");
+  const bootDelayMs = bootDelayMsParam ? Math.max(0, Math.min(5000, Number(bootDelayMsParam) || 0)) : 0;
 
   const GAME_ID = getEnv("GAME_ID", DEFAULT_GAME_ID);
 
@@ -26,7 +32,7 @@ export const GET = withAxiom(async (req: Request) => {
 
   const channel = createSseChannel({ heartbeatMs: HEARTBEAT_INTERVAL_MS, log });
 
-  logger.info("v2/stream", { GAME_ID, sinceParam, lastEventId });
+  logger.info("v2/stream:init", { GAME_ID, sid, sinceParam, lastEventId, userAgent, cacheControl });
 
   const end = async () => {
     await channel.close();
@@ -34,6 +40,7 @@ export const GET = withAxiom(async (req: Request) => {
 
   channel.attachAbortSignal(req.signal, () => {
     // nothing else needed; channel.close() is invoked in handler
+    logger.info("v2/stream:abort-signal", { GAME_ID, sid });
   });
 
   // Redis Streams helpers moved to '@/lib/db/utils/redis-streams'
@@ -41,6 +48,23 @@ export const GET = withAxiom(async (req: Request) => {
   // Set up connection and streaming logic
   (async () => {
     try {
+      // Handshake: immediately send a small hello event so the client can confirm listeners are attached
+      try {
+        await channel.write(
+          sseFormat({ event: "hello", data: { ok: true, sid: sid || null, ts: Date.now() } })
+        );
+        logger.info("v2/stream:hello", { GAME_ID, sid });
+      } catch (e: any) {
+        logger.warn("v2/stream:hello:error", { GAME_ID, sid, error: e?.message || String(e) });
+      }
+
+      // Optional boot delay to ensure client event listeners are attached before snapshot/catch-up
+      if (bootDelayMs > 0) {
+        logger.info("v2/stream:boot-delay:start", { GAME_ID, sid, bootDelayMs });
+        await new Promise((r) => setTimeout(r, bootDelayMs));
+        logger.info("v2/stream:boot-delay:end", { GAME_ID, sid, bootDelayMs });
+      }
+
       // Determine resume behavior
       let startFromId: string | undefined = undefined;
       if (sinceParam && sinceParam.trim().length > 0) {
@@ -55,19 +79,31 @@ export const GET = withAxiom(async (req: Request) => {
 
       if (!lastId) {
         // Full bootstrap: snapshot + gap catch-up using helper
-        const bootLast = await bootstrapAndCatchUp(GAME_ID, channel, () => channel.isClosed(), logErr);
+        logger.info("v2/stream:bootstrap:start", { GAME_ID, sid });
+        const bootLast = await bootstrapAndCatchUp(GAME_ID, channel, () => channel.isClosed(), (msg, e) => {
+          logErr(msg, e);
+          logger.error("v2/stream:bootstrap:error", { GAME_ID, sid, msg, error: e?.message || String(e) });
+        });
         if (!bootLast) {
           log("no snapshot or boundary id; skipping bootstrap and starting live tail");
+          logger.warn("v2/stream:bootstrap:missing-boundary", { GAME_ID, sid });
         } else {
           lastId = bootLast;
+          logger.info("v2/stream:bootstrap:complete", { GAME_ID, sid, lastId });
         }
       } else {
         log("resuming from", lastId);
+        logger.info("v2/stream:resume", { GAME_ID, sid, lastId });
       }
 
       // Live tail via XREAD BLOCK 15000 STREAMS deltas:<GAME_ID> L
       // For XREAD, when lastId is undefined, start from '$' to only get new ones.
       if (!lastId) lastId = "$";
+
+      logger.info("v2/stream:live:start", { GAME_ID, sid, from: lastId, stream: streamDeltas, blockMs: XREAD_BLOCK_MS, batchCount: XRANGE_BATCH_COUNT });
+
+      let firstLiveLogDone = false;
+      let firstEmittedCount = 0;
 
       while (!channel.isClosed()) {
         try {
@@ -76,16 +112,30 @@ export const GET = withAxiom(async (req: Request) => {
             // timeout, emit heartbeat has already been doing pings
             continue;
           }
+          if (!firstLiveLogDone) {
+            const ids = entries.slice(0, 5).map((e) => e.id);
+            const sizes = entries.slice(0, 5).map((e) => e.data?.length ?? 0);
+            logger.debug("v2/stream:live:first-batch", { GAME_ID, sid, count: entries.length, ids, sizes });
+            firstLiveLogDone = true;
+          }
           for (const ent of entries) {
             const id = ent.id;
             const dataBuf = ent.data;
             if (!dataBuf) continue;
-            await emitDeltaFromBuffer(channel, id, dataBuf, (msg, e) => logErr(`${msg} (live)`, e));
+            await emitDeltaFromBuffer(channel, id, dataBuf, (msg, e) => {
+              logErr(`${msg} (live)`, e);
+              logger.error("v2/stream:emit:error", { GAME_ID, sid, id, msg, error: e?.message || String(e) });
+            });
+            if (firstEmittedCount < 5) {
+              firstEmittedCount++;
+              logger.debug("v2/stream:emit:first", { GAME_ID, sid, id, size: dataBuf.length });
+            }
             lastId = id;
           }
         } catch (e: any) {
           // Attempt a simple retry loop on transient errors
           logErr("xread error", e?.message || e);
+          logger.warn("v2/stream:xread:error", { GAME_ID, sid, error: e?.message || String(e) });
           // small delay before retry to avoid hot loop
           await new Promise((r) => setTimeout(r, 250));
           continue;
@@ -93,8 +143,10 @@ export const GET = withAxiom(async (req: Request) => {
       }
     } catch (e) {
       logErr("fatal error", e);
+      logger.error("v2/stream:fatal", { GAME_ID, sid, error: (e as any)?.message || String(e) });
     } finally {
       await end();
+      logger.info("v2/stream:close", { GAME_ID, sid });
     }
   })();
 

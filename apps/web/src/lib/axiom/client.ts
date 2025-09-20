@@ -5,7 +5,7 @@ import { createUseLogger, createWebVitalsComponent } from '@axiomhq/react';
 
 export const logger = new Logger({
   transports: [
-    new ProxyTransport({ url: '/api/axiom', autoFlush: true }),
+    new ProxyTransport({ url: 'http://localhost:3000/api/axiom', autoFlush: true }),
   ],
 });
 

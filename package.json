@@ -11,7 +11,7 @@
     "test:read-binary": "pnpm --filter bitwars test",
     "test:read-redis": "dotenv -e .env -e .env.local -- pnpm --filter bitwars run test:read-redis",
     "fe:run": "turbo run dev --filter=bitwars",
-    "logs": "axiom query 'bitwars | where _time > ago(1d) | sort by _time desc | take 10' || echo 'Warning: Be sure to run gvm use g1.25 before running this command'",
+    "logs": "axiom query 'bitwars | where _time > ago(1d) | sort by _time desc | take 50 | sort by _time asc' || echo 'Warning: Be sure to run gvm use g1.25 before running this command'",
     "engine:run": "cargo run -p rts-engine",
     "engine:build": "cargo build -p rts-engine",
     "engine:read-snapshot": "cargo run --example read_snapshot --manifest-path services/rts-engine/Cargo.toml",

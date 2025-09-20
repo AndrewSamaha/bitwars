@@ -1,13 +1,23 @@
 "use client";
 import { Application, Assets, Container, Sprite } from "pixi.js";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { game } from "@/features/gamestate/world";
 import { isLiveSprite } from "../utils/guards";
+import LoadingAnimation from "@/components/LoadingAnimation";
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState<boolean>(game.ready);
 
   useEffect(() => {
+    // Observe readiness until the first snapshot is applied
+    let poll = window.setInterval(() => {
+      if (game.ready) {
+        setReady(true);
+        window.clearInterval(poll);
+      }
+    }, 100);
+
     const initWorld = async () => {
         const app = new Application();
         await app.init({
@@ -77,6 +87,8 @@ export default function GameStage() {
         };
 
         app.ticker.add(() => {
+            // Wait for first snapshot to be applied before rendering/ticking
+            if (!game.ready) return;
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             render();
@@ -95,8 +107,22 @@ export default function GameStage() {
     return () => {
       cancelled = true;
       if (cleanup) cleanup();
+      window.clearInterval(poll);
+      // Reset local readiness; Bridge will toggle global ready on next mount
+      setReady(false);
     };
   }, []);
 
-  return <div ref={ref} className="w-full h-full" />;
+  return (
+    <div className="relative w-full min-h-screen">
+      {/* Canvas mount point */}
+      <div ref={ref} className="absolute inset-0" />
+      {/* Overlay loading indicator while world is not ready */}
+      {!ready && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+          <LoadingAnimation />
+        </div>
+      )}
+    </div>
+  );
 }
