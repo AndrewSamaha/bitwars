@@ -18,3 +18,9 @@ export function normalizeString(inputString: string): string {
   return cleanedString;
 }
 
+export function getEnv(name: string, fallback?: string): string {
+  const v = process.env[name];
+  if (v && v.length > 0) return v;
+  if (fallback !== undefined) return fallback;
+  throw new Error(`Missing required env var: ${name}`);
+}

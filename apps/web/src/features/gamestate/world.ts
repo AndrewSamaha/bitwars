@@ -27,6 +27,8 @@ export type Scale = { scale: number };
 class GameWorld {
   world = new World<Entity>();
   last = performance.now();
+  // Render/tick should wait until the first snapshot has been applied
+  ready = false;
 
   tick(now: number) {
     const dt = (now - this.last) / 1000; // seconds
