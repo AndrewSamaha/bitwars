@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
+import { useLogger } from "@/lib/axiom/client";
 import { game, type Entity } from "../world";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -32,8 +33,10 @@ type DeltaPayload = {
 // - On snapshot: clears previously-streamed entities and repopulates them
 // - On delta: upserts entities by id and patches provided components
 export default function GameStateStreamBridge() {
+  const log = useLogger();
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
+  log.info("instantiating GameStateBridge", { byIdRef: byIdRef.current } );
 
   useEffect(() => {
     const byId = byIdRef.current;
@@ -55,7 +58,18 @@ export default function GameStateStreamBridge() {
       byId.clear();
 
       // Add new ones
+      let concerningEntities = 0;
       for (const s of payload.entities) {
+        let warnings: string[] = [];
+        log.info("snapshot entity", { s });
+        if (!s.pos) warnings.push("snapshot entity missing pos");
+        if (!s.vel) warnings.push("snapshot entity missing vel");
+        if (warnings.length > 0) {
+          concerningEntities++;
+          log.warn("snapshot entity missing components", { s, warnings });
+        }
+        else log.info("snapshot entity looks great", {s});
+
         const ent: Entity = {
           id: s.id,
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
@@ -65,6 +79,8 @@ export default function GameStateStreamBridge() {
         world.add(ent);
         byId.set(normalizeId(s.id), ent);
       }
+      
+      log.info("snapshot applied", { byIdRef: byIdRef.current, concerningEntities } );
     };
 
     const applyDelta = (payload: DeltaPayload) => {

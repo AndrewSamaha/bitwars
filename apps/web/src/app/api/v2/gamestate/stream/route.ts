@@ -3,6 +3,7 @@ import { xReadWithBuffers } from "@/lib/db/utils/redis-streams";
 import { createSseChannel } from "@/lib/db/utils/sse-channel";
 import { bootstrapAndCatchUp } from "@/lib/db/utils/bootstrap";
 import { emitDeltaFromBuffer } from "@/lib/db/utils/delta";
+import { logger, withAxiom } from "@/lib/axiom/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ const HEARTBEAT_INTERVAL_MS = 10_000;
 const XREAD_BLOCK_MS = 15_000; // as per spec
 const XRANGE_BATCH_COUNT = 512;
 
-export async function GET(req: Request) {
+export const GET = withAxiom(async (req: Request) => {
   const url = new URL(req.url);
   const sinceParam = url.searchParams.get("since");
   const lastEventId = req.headers.get("last-event-id");
@@ -24,6 +25,8 @@ export async function GET(req: Request) {
   const logErr = (...args: any[]) => console.error(logPrefix, ...args);
 
   const channel = createSseChannel({ heartbeatMs: HEARTBEAT_INTERVAL_MS, log });
+
+  logger.info("v2/stream", { GAME_ID, sinceParam, lastEventId });
 
   const end = async () => {
     await channel.close();
@@ -96,4 +99,4 @@ export async function GET(req: Request) {
   })();
 
   return new Response(channel.readable, { headers: channel.headers });
-}
+});

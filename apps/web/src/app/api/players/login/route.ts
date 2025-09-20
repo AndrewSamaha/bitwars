@@ -4,10 +4,11 @@ import { sign, SignOptions } from 'jsonwebtoken';
 import type { PlayerLogin } from '@/features/users/schema/player/playerLogin';
 import { loginToPlayer, playerDocToPlayer } from '@/features/users/schema/player/mappers';
 import { createPlayer } from '@/features/users/queries/create';
+import { logger, withAxiom } from "@/lib/axiom/server";
 
-export async function POST(request: Request) {
+export const POST = withAxiom(async (request: Request) => {
   const body = (await request.json()) as PlayerLogin;
-  console.log({body});
+  logger.info("players/login", body);
   const player = loginToPlayer(body);
   const tokenPayload = {
     playerId: player.id,
@@ -35,4 +36,4 @@ export async function POST(request: Request) {
   });
 
   return res;
-}
+});
