@@ -4,7 +4,6 @@ import { createSseChannel } from "@/lib/db/utils/sse-channel";
 import { bootstrapAndCatchUp } from "@/lib/db/utils/bootstrap";
 import { emitDeltaFromBuffer } from "@/lib/db/utils/delta";
 import { logger, withAxiom } from "@/lib/axiom/server";
-import { sseFormat } from "@/lib/db/utils/sse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,11 +17,7 @@ export const GET = withAxiom(async (req: Request) => {
   const url = new URL(req.url);
   const sinceParam = url.searchParams.get("since");
   const lastEventId = req.headers.get("last-event-id");
-  const userAgent = req.headers.get("user-agent");
-  const cacheControl = req.headers.get("cache-control");
   const sid = url.searchParams.get("sid") || undefined;
-  const bootDelayMsParam = url.searchParams.get("bootDelayMs");
-  const bootDelayMs = bootDelayMsParam ? Math.max(0, Math.min(5000, Number(bootDelayMsParam) || 0)) : 0;
 
   const GAME_ID = getEnv("GAME_ID", DEFAULT_GAME_ID);
 
@@ -47,19 +42,7 @@ export const GET = withAxiom(async (req: Request) => {
   // Set up connection and streaming logic
   (async () => {
     try {
-      // Handshake: immediately send a small hello event so the client can confirm listeners are attached
-      try {
-        await channel.write(
-          sseFormat({ event: "hello", data: { ok: true, sid: sid || null, ts: Date.now() } })
-        );
-      } catch (e: any) {
-        logger.warn("v2/stream:hello:error", { GAME_ID, sid, error: e?.message || String(e) });
-      }
-
-      // Optional boot delay to ensure client event listeners are attached before snapshot/catch-up
-      if (bootDelayMs > 0) {
-        await new Promise((r) => setTimeout(r, bootDelayMs));
-      }
+      // (Handshake and boot delay removed; client now gates readiness.)
 
       // Determine resume behavior
       let startFromId: string | undefined = undefined;
