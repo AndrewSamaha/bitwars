@@ -5,6 +5,7 @@ import React, {
   useMemo,
   useReducer,
   useEffect,
+  useRef,
   ReactNode,
   Dispatch,
 } from "react";
@@ -19,6 +20,11 @@ export type Resources = {
   wood: number;
   stone: number;
   [k: string]: number; // extensible
+};
+
+export type CommandHistory = {
+  command: string;
+  output: string;
 };
 
 export type HUDPanels = {
@@ -37,6 +43,10 @@ export type HUDState = {
   // Misc ephemeral HUD data
   hoveredEntityId?: EntityId | null;
   tooltip?: string | null;
+  // Terminal state
+  isTerminalOpen: boolean;
+  currentCommand: string;
+  commandHistory: CommandHistory[];
 };
 
 //
@@ -54,6 +64,11 @@ const defaultState: HUDState = {
   },
   hoveredEntityId: null,
   tooltip: null,
+  isTerminalOpen: true,
+  currentCommand: "",
+  commandHistory: [
+    { command: "", output: "BitWars Terminal v1.0.0\nType 'help' for available commands.\n" },
+  ],
 };
 
 //
@@ -70,6 +85,11 @@ type Action =
   | { type: "PANEL_TOGGLE"; key: keyof HUDPanels }
   | { type: "HOVER_SET"; id: EntityId | null }
   | { type: "TOOLTIP_SET"; text: string | null }
+  // Terminal actions
+  | { type: "TERMINAL_SET_OPEN"; open: boolean }
+  | { type: "TERMINAL_TOGGLE" }
+  | { type: "TERMINAL_SET_INPUT"; value: string }
+  | { type: "TERMINAL_PUSH_HISTORY"; entry: CommandHistory }
   | { type: "HYDRATE"; state: HUDState };                         // for persistence restore
 
 //
@@ -124,6 +144,18 @@ function reducer(state: HUDState, action: Action): HUDState {
     case "TOOLTIP_SET":
       return { ...state, tooltip: action.text };
 
+    case "TERMINAL_SET_OPEN":
+      return { ...state, isTerminalOpen: action.open };
+
+    case "TERMINAL_TOGGLE":
+      return { ...state, isTerminalOpen: !state.isTerminalOpen };
+
+    case "TERMINAL_SET_INPUT":
+      return { ...state, currentCommand: action.value };
+
+    case "TERMINAL_PUSH_HISTORY":
+      return { ...state, commandHistory: [...state.commandHistory, action.entry] };
+
     case "HYDRATE":
       // Rebuild Set from plain array if coming from JSON
       return {
@@ -166,6 +198,11 @@ type HUDContextValue = {
     togglePanel: (key: keyof HUDPanels) => void;
     setHovered: (id: EntityId | null) => void;
     setTooltip: (text: string | null) => void;
+    // Terminal
+    setTerminalOpen: (open: boolean) => void;
+    toggleTerminal: () => void;
+    setTerminalInput: (value: string) => void;
+    pushCommandHistory: (entry: CommandHistory) => void;
   };
   selectors: {
     hasSelection: boolean;
@@ -173,6 +210,15 @@ type HUDContextValue = {
     isSelected: (id: EntityId) => boolean;
     isPanelOpen: (key: keyof HUDPanels) => boolean;
     getResource: (key: keyof Resources) => number;
+    // Terminal
+    isTerminalOpen: boolean;
+    currentCommand: string;
+    commandHistory: CommandHistory[];
+  };
+  // Terminal refs (not persisted)
+  refs: {
+    terminalRef: React.RefObject<HTMLDivElement | null>;
+    inputRef: React.RefObject<HTMLInputElement | null>;
   };
 };
 
@@ -189,6 +235,10 @@ type HUDProviderProps = {
 
 export function HUDProvider({ children, persistKey = "hud", persist = false }: HUDProviderProps) {
   const [state, dispatch] = useReducer(reducer, defaultState);
+
+  // Refs that we expose via context (not stored in state, not persisted)
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // (Optional) Load from sessionStorage once
   useEffect(() => {
@@ -233,6 +283,12 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
 
       setHovered: (id: EntityId | null) => dispatch({ type: "HOVER_SET", id }),
       setTooltip: (text: string | null) => dispatch({ type: "TOOLTIP_SET", text }),
+
+      // Terminal
+      setTerminalOpen: (open: boolean) => dispatch({ type: "TERMINAL_SET_OPEN", open }),
+      toggleTerminal: () => dispatch({ type: "TERMINAL_TOGGLE" }),
+      setTerminalInput: (value: string) => dispatch({ type: "TERMINAL_SET_INPUT", value }),
+      pushCommandHistory: (entry: CommandHistory) => dispatch({ type: "TERMINAL_PUSH_HISTORY", entry }),
     }),
     []
   );
@@ -245,12 +301,24 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       isSelected: (id: EntityId) => state.selectedSet.has(id),
       isPanelOpen: (key: keyof HUDPanels) => !!state.panels[key],
       getResource: (key: keyof Resources) => state.resources[key] ?? 0,
+      // Terminal
+      isTerminalOpen: state.isTerminalOpen,
+      currentCommand: state.currentCommand,
+      commandHistory: state.commandHistory,
     }),
-    [state.selectedEntities.length, state.selectedSet, state.panels, state.resources]
+    [
+      state.selectedEntities.length,
+      state.selectedSet,
+      state.panels,
+      state.resources,
+      state.isTerminalOpen,
+      state.currentCommand,
+      state.commandHistory,
+    ]
   );
 
   const value = useMemo<HUDContextValue>(
-    () => ({ state, dispatch, actions, selectors }),
+    () => ({ state, dispatch, actions, selectors, refs: { terminalRef, inputRef } }),
     [state, actions, selectors]
   );
 
