@@ -1,10 +1,10 @@
 // store/upsertEntity.ts
-import { type RedisJSON } from "redis";
 import { Entity, EntitySchema } from "@/features/gamestate/schema/entity/entity";
 import { EntityDocSchema } from "@/features/gamestate/schema/entity/entityDoc";
 import { toEntityDoc } from "@/features/gamestate/schema/entity/mappers";
-import { redis } from "@/lib/db/connection"; // your connected node-redis client
+import { redis } from "@/lib/db/connection"; // ioredis client
 import { entityKey } from "@/features/gamestate/schema/keys";
+import { Command } from "ioredis";
 
 export async function upsertEntity(entity: Entity) {
   // Validate domain object (optional but nice)
@@ -16,6 +16,7 @@ export async function upsertEntity(entity: Entity) {
   // Validate storage shape (catches non-JSON-safe or missing fields)
   const storage = EntityDocSchema.parse(doc);
 
-  // ✅ Cast at the boundary (TS only, runtime is JSON.SET)
-  await redis.json.set(entityKey(valid.id), "$", storage as unknown as RedisJSON);
+  // Use RedisJSON via raw command with ioredis
+  const payload = JSON.stringify(storage);
+  await redis.sendCommand(new Command("JSON.SET", [entityKey(valid.id), "$", payload]));
 }

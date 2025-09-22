@@ -2,8 +2,6 @@
 import { World } from "miniplex";
 import * as PIXI from "pixi.js";
 
-export type Position = { x: number; y: number };
-export type Velocity = { vx: number; vy: number };
 export type SpriteRef = { sprite: PIXI.Sprite };
 export type Scale = { scale: number };
  
@@ -12,10 +10,8 @@ export type Scale = { scale: number };
  export type ProtoVelocity = { vel: { x: number; y: number } };
  export type EntityId = { id: number | string };
  
- // Entity now accepts both legacy (x,y,vx,vy) and proto (pos,vel,id) shapes.
+ // Entity uses proto-shaped components (pos, vel, id) and render extras
  export type Entity = Partial<
-   Position &
-   Velocity &
    ProtoPosition &
    ProtoVelocity &
    EntityId &
@@ -45,3 +41,4 @@ class GameWorld {
 }
 
 export const game = new GameWorld(); // module-singleton
+

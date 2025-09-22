@@ -10,8 +10,8 @@
     "start": "next start",
     "lint": "biome check",
     "format": "biome format --write",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "db:init": "curl -X POST http://localhost:3000/api/init",
-    "createmock:gamestate": "curl -X POST http://localhost:3000/api/gamestate/mocks/create_gamestate",
     "createmock:players": "curl -X POST http://localhost:3000/api/players/mocks/create_players",
     "pretest": "pnpm -C ../../packages/shared build && cargo run --example generate_examples --manifest-path ../../services/rts-engine/Cargo.toml",
     "test": "vitest run",
@@ -44,7 +44,6 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hook-form": "^7.62.0",
-    "redis": "^5.8.2",
     "tailwind-merge": "^3.3.1",
     "uuid": "^11.1.0",
     "zod": "^4.1.5"

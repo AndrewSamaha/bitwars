@@ -1,17 +1,17 @@
 // store/upsertEntity.ts
-import { createClient, type RedisJSON } from "redis";
 import { Entity, EntitySchema } from "@/features/gamestate/schema/entity/entity";
 import { EntityDocSchema } from "@/features/gamestate/schema/entity/entityDoc";
 import { fromEntityDoc } from "@/features/gamestate/schema/entity/mappers";
-import { redis } from "@/lib/db/connection"; // your connected node-redis client
+import { redis } from "@/lib/db/connection"; // ioredis client
 import { entityKey } from "@/features/gamestate/schema/keys";
+import { Command } from "ioredis";
 
 export async function getEntity(id: string): Promise<Entity | null> {
-  const raw = await redis.json.get(entityKey(id), { path: '$' }); // node-redis returns the doc (or array) per path
-  if (!raw) return null;
-
-  // When using "$", RedisJSON may return an array with one element
-  const docLike = Array.isArray(raw) ? raw[0] : raw;
+  // Use RedisJSON via raw command; JSON.GET returns a JSON string or null
+  const resp = await redis.sendCommand(new Command("JSON.GET", [entityKey(id), "$"]));
+  if (!resp) return null;
+  const parsed = JSON.parse(typeof resp === "string" ? resp : String(resp));
+  const docLike = Array.isArray(parsed) ? parsed[0] : parsed;
 
   const doc = EntityDocSchema.parse(docLike);
   return fromEntityDoc(doc);
