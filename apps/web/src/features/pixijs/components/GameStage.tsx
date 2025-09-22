@@ -1,8 +1,7 @@
 "use client";
-import { Application, Assets, Container, Sprite } from "pixi.js";
+import { Application, Assets, Container, Sprite, Graphics } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { game } from "@/features/gamestate/world";
-import { isLiveSprite } from "../utils/guards";
 import LoadingAnimation from "@/components/LoadingAnimation";
 
 export default function GameStage() {
@@ -40,39 +39,48 @@ export default function GameStage() {
 
         // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
-          // 1) Attach sprites to entities that have position but no sprite yet (proto only)
-          for (const e of game.world.with("pos").without("sprite")) {
+          // 1) Attach containers (and inner sprite) to entities that have position but no container yet (proto only)
+          for (const e of game.world.with("pos").without("pixiContainer")) {
             if (attached.has(e)) continue;
+            const entityContainer = new Container();
+            entityContainer.eventMode = 'static';
+            // create primary sprite as child
             const sprite = Sprite.from(texture);
             sprite.anchor.set(0.5);
-            worldContainer.addChild(sprite);
-            // Attach as component so future frames render it
-            (e as any).sprite = sprite;
+            entityContainer.addChild(sprite);
+            worldContainer.addChild(entityContainer);
+            // Attach container as component so future frames render it
+            (e as any).pixiContainer = entityContainer;
+            entityContainer
+              .on("mouseover", () => {
+                (e as any).hover = true;
+              })
+              .on("mouseout", () => {
+                (e as any).hover = false;
+              });
             attached.add(e);
             // default scale if none present
-            if (e.scale === undefined) e.scale = 1;
+            if ((e as any).scale === undefined) (e as any).scale = 1;
           }
 
           // 2) Project ECS positions/rotation to Pixi (proto only)
-          for (const e of game.world.with("sprite", "pos")) {
-            if (!isLiveSprite(e.sprite)) {
-              // Remove sprite from scene graph and destroy it to prevent leaks
+          for (const e of game.world.with("pixiContainer", "pos")) {
+            const container = (e as any).pixiContainer as Container | undefined;
+            if (!container || (container as any).destroyed) {
+              // Remove container from scene graph and destroy it to prevent leaks
               try {
-                const spr = (e as any).sprite as Sprite | undefined;
-                if (spr) {
-                  spr.parent?.removeChild(spr);
-                  spr.destroy();
-                }
+                if (container) container.parent?.removeChild(container);
+                container?.destroy({ children: true });
               } catch {}
               // Ensure the ECS stops tracking dead sprites immediately
-              game.world.removeComponent?.(e, "sprite") ?? game.world.remove(e);
+              game.world.removeComponent?.(e, "pixiContainer") ?? game.world.remove(e);
               attached.delete(e);
               continue;
             }
             // Position: proto pos (already advanced by world.tick)
-            e.sprite.position.set(e.pos.x, e.pos.y);
-            const scale = e.scale ?? 1;
-            e.sprite.scale.set(scale / 2);
+            container.position.set(e.pos.x, e.pos.y);
+            const scale = (e as any).scale ?? 1;
+            container.scale.set(scale / 2);
 
             // Rotation: if we have proto velocity, rotate to face direction of travel
             const vel = e.vel as { x: number; y: number } | undefined;
@@ -80,8 +88,30 @@ export default function GameStage() {
               const { x: vx, y: vy } = vel;
               if (vx !== 0 || vy !== 0) {
                 // atan2 returns radians; 0 rad means pointing along +X axis
-                e.sprite.rotation = Math.atan2(vy, vx);
+                container.rotation = Math.atan2(vy, vx);
               }
+            }
+
+            // 3) Project ECS hover state to Pixi (proto only)
+            // First child is primary sprite
+            const primary = container.children.find((c) => c instanceof Sprite) as Sprite | undefined;
+            if ((e as any).hover) {
+              if (primary) (primary as any).tint = 0xff0000;
+              // ensure a hover indicator exists as a child after sprite
+              let hoverIndicator = container.children.find((c) => c.label === 'hoverIndicator') as Graphics | undefined;
+              if (!hoverIndicator) {
+                hoverIndicator = new Graphics()
+                  .fill(0xff0000)
+                  .circle(0, 0, 150)
+                  .stroke(0xff0000);
+
+                container.addChild(hoverIndicator);
+              }
+            } else {
+              if (primary) (primary as any).tint = 0xffffff;
+              // remove hover indicator if present
+              const existing = container.children.find((c) => c.label === 'hoverIndicator');
+              if (existing) existing.parent?.removeChild(existing);
             }
           }
         };
