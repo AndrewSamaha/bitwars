@@ -3,6 +3,7 @@ import { type Entity } from "../../schema/entity/entity";
 import { EntityDocSchema } from "../../schema/entity/entityDoc";
 import { fromEntityDoc } from "../../schema/entity/mappers";
 import { ENTITY_INDEX } from "../../schema/keys";
+import { Command } from "ioredis";
 
 type NearbyEntity = { entity: Entity; distance: number };
 
@@ -33,14 +34,14 @@ export async function getNearbyEntities(
   // 3) Fetch only candidates inside the box; load JSON and x/y
   // Use a generous pre-limit so we don't miss candidates before we filter by radius.
   const preLimit = String(Math.max(limit * 10, 1000));
-  const command = [
-    "FT.AGGREGATE", ENTITY_INDEX, query,
+  const args = [
+    ENTITY_INDEX, query,
     "LOAD", "3", "$", "@x", "@y",
     "LIMIT", "0", preLimit,
     "DIALECT", "4",
-  ]
+  ];
 
-  const resp = await redis.sendCommand(command);
+  const resp = await redis.sendCommand(new Command("FT.AGGREGATE", args));
 
   if (!Array.isArray(resp)) return [];
   const rows = (resp as any[]).slice(1);
