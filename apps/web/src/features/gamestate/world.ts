@@ -39,13 +39,6 @@ class GameWorld {
         e.pos.y += e.vel.y * dt;
       }
     }
-
-    // // UI hover state
-    // for (const e of this.world.with("hover")) {
-    //   if (e.hover) {
-    //     e.hover = false;
-    //   }
-    // }
   }
 }
 

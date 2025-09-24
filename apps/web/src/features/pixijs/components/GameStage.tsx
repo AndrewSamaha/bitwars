@@ -104,7 +104,7 @@ export default function GameStage() {
                   .fill(0xff0000)
                   .circle(0, 0, 150)
                   .stroke(0xff0000);
-
+                hoverIndicator.label = 'hoverIndicator';
                 container.addChild(hoverIndicator);
               }
             } else {
