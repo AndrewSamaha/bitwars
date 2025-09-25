@@ -5,6 +5,8 @@ import { game } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
+import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
+import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
@@ -23,7 +25,7 @@ export default function GameStage() {
     const initWorld = async () => {
         const app = new Application();
         await app.init({
-            background: '#000000',
+            background: BACKGROUND_APP_COLOR,
             resizeTo: window,
             antialias: true,
             resolution: devicePixelRatio
@@ -102,20 +104,16 @@ export default function GameStage() {
             // First child is primary sprite
             const primary = container.children.find((c) => c instanceof Sprite) as Sprite | undefined;
             if ((e as any).hover) {
-              if (primary) (primary as any).tint = 0xff0000;
+              if (primary) (primary as any).tint = SELECTED_COLOR;
               // ensure a hover indicator exists as a child after sprite
               let hoverIndicator = container.children.find((c) => c.label === 'hoverIndicator') as Graphics | undefined;
               if (!hoverIndicator) {
-                hoverIndicator = new Graphics()
-                  .fill(0xff0000)
-                  .circle(0, 0, 150)
-                  .stroke(0xff0000);
-                hoverIndicator.label = 'hoverIndicator';
+                hoverIndicator = createHoverIndicator();
                 container.addChild(hoverIndicator);
               }
               setHovered(e);
             } else {
-              if (primary) (primary as any).tint = 0xffffff;
+              if (primary) (primary as any).tint = CLEAN_COLOR;
               // remove hover indicator if present
               const existing = container.children.find((c) => c.label === 'hoverIndicator');
               if (existing) existing.parent?.removeChild(existing);
