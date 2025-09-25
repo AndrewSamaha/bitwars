@@ -1,6 +1,6 @@
 # Project Documentation
 
-Last updated: 2025-09-25 18:22:02 -0400
+Last updated: 2025-09-25 18:36:05 -0400
 
 This directory contains specifications, designs, and decision records for the project.
 
@@ -8,6 +8,7 @@ This directory contains specifications, designs, and decision records for the pr
 
 - Requirements
   - [Entity Intent System Requirements](./requirements/entity-intents.md)
+  - [Entities and Abilities Requirements](./requirements/entities-and-abilities.md)
 - Architecture Decision Records (ADRs)
   - See [docs/adr/](./adr/)
 - Glossary

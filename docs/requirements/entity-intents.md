@@ -1,6 +1,6 @@
 # Entity Intent System Requirements
 
-Last updated: 2025-09-25 18:19:38 -0400
+Last updated: 2025-09-25 18:36:05 -0400
 
 ## Purpose
 
@@ -39,6 +39,25 @@ Define a robust, RTS-style intent system where players issue commands (intents) 
   - Soft: provisional allocation with timeouts; auto-cancel if shortage arises.
 - **Slots/Queues**: building production queues and parallel slots.
 - **Optional Path Reservation**: reduce deadlocks in narrow chokepoints.
+
+## Data-Driven Entities and Scripting Hooks
+
+- **Entity/Ability Definitions**
+  - Entities and abilities are defined in data (e.g., JSON/YAML seeded into Postgres) and version-controlled.
+  - Each ability is a first-class, data-defined intent type with stable `ability_id` and a content `version`.
+
+- **Scripting Model (Server-Authoritative)**
+  - Sandbox (e.g., Lua) provides hooks: `canExecute(context)`, `onStart(ctx)`, `onTick(ctx)`, `onInterrupt(ctx)`, `onComplete(ctx)`.
+  - Hooks are deterministic: no wall-clock, no filesystem/network, deterministic RNG seeded per match/tick.
+  - Strict CPU/memory quotas; failures surface as intent `FAILED` with reason `SCRIPT_ERROR`.
+
+- **Validation and Costs via Hooks**
+  - `canExecute` returns `{ ok, reason?, cost_vector?, reservations? }` consumed by the reservation manager.
+  - Targeting schema is declared in data (point/entity/area/self) and drives both client UI and server checks.
+
+- **Client Prediction**
+  - Client mirrors static data (cooldowns, ranges, costs) for UX; authoritative resolution stays server-side.
+  - If client lacks script parity, treat predictions as hints and reconcile from server updates.
 
 ## Queues, Chaining, and Grouping
 
@@ -102,6 +121,17 @@ Define a robust, RTS-style intent system where players issue commands (intents) 
 - Versioned intent schema; backward-compatible extensions.
 - Feature flags for rollout.
 - Scriptable/DSL action definitions with validated preconditions/effects.
+-
+- **Content Versioning and Match Pinning**
+  - All entity/ability data is bundled into a signed content pack with a content hash/version.
+  - Each match is pinned to an immutable content version to preserve fairness and determinism.
+
+- **Long-Running Matches and Mid-Match Evolution**
+  - Servers may support controlled, mid-match evolution for multi-week games via migration policies:
+    - Additive, backward-compatible changes only (e.g., new unit types) OR
+    - Scheduled migrations at maintenance ticks with explicit compatibility shims.
+  - Intent validation and script hooks must handle version-aware behavior. When evolution occurs, both old and new ability versions may coexist; entities reference their bound version.
+  - Hot reload allowed in development; production changes only by content-pack upgrades with strict gating.
 
 ## Observability and Tooling
 
@@ -137,3 +167,7 @@ Define a robust, RTS-style intent system where players issue commands (intents) 
 - Formation sophistication and arrival sync defaults.
 - Determinism strategy: fixed-point vs constrained FP.
 - Replay format: input-stream vs state delta recording.
+ - Scripting engine and sandbox: Lua vs JS/WASM; quotas and deterministic APIs.
+ - Content pipeline: data source of truth (files vs DB), seeding, signing, and content hash strategy.
+ - Mid-match evolution policy: allowed change types, migration windows, and compatibility shims.
+ - Client prediction policy for data-defined abilities: mirrored scripts vs server-trust with hints.

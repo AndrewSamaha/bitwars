@@ -30,3 +30,16 @@ Concise definitions of common terms used across `docs/` and code.
 - **Interrupted**: Action forcibly stopped (e.g., by damage or new order) during execution.
 - **Blocked**: Action cannot proceed due to temporary constraints (path fail, resource shortfall).
 - **Idempotency**: Safe to apply the same command multiple times without changing the outcome.
+
+## Content and Scripting Terminology
+
+- **Content Version**: A hash/semantic version representing the set of entity/ability definitions used by a match.
+- **Content Pack**: The bundled, signed definitions (and metadata) for entities/abilities for a specific content version.
+- **Match Pinning**: Binding a match to a single `content_version` for its entire duration.
+- **Migration**: A controlled change to content or live state applied during a long-running match; requires compatibility shims.
+- **Maintenance Tick**: A scheduled simulation tick window during which migrations may be safely applied.
+- **Hot Reload**: Reloading content without restarting the match; typically allowed only in development.
+- **Sandbox**: Restricted script execution environment with limited APIs and enforced quotas.
+- **Ability Hooks**: Script entry points like `canExecute`, `onStart`, `onTick`, `onInterrupt`, `onComplete` used to validate/drive abilities.
+- **Deterministic RNG**: Pseudo-random number generator seeded by match/tick to ensure reproducible results.
+- **Compatibility Shim**: Code or data layer translating between old and new content versions to keep ongoing actions valid.
