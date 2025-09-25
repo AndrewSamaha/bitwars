@@ -10,6 +10,8 @@ import React, {
   Dispatch,
 } from "react";
 
+import type { Application, Container } from "pixi.js";
+import type { Entity } from "@/features/gamestate/world";
 //
 // Types
 //
@@ -41,12 +43,15 @@ export type HUDState = {
   resources: Resources;
   panels: HUDPanels;
   // Misc ephemeral HUD data
-  hoveredEntityId?: EntityId | null;
+  hoveredEntity: Entity | null;
   tooltip?: string | null;
   // Terminal state
   isTerminalOpen: boolean;
   currentCommand: string;
   commandHistory: CommandHistory[];
+  // PixiJS Stuff
+  app: Application | null;
+  camera: Container | null;
 };
 
 //
@@ -62,13 +67,15 @@ const defaultState: HUDState = {
     productionOpen: false,
     techTreeOpen: false,
   },
-  hoveredEntityId: null,
+  hoveredEntity: null,
   tooltip: null,
   isTerminalOpen: true,
   currentCommand: "",
   commandHistory: [
     { command: "", output: "BitWars Terminal v1.0.0\nType 'help' for available commands.\n" },
   ],
+  app: null,
+  camera: null,
 };
 
 //
@@ -83,8 +90,10 @@ type Action =
   | { type: "RES_DELTA"; delta: Partial<Resources> }              // increment/decrement resources
   | { type: "PANEL_SET"; key: keyof HUDPanels; value: boolean }
   | { type: "PANEL_TOGGLE"; key: keyof HUDPanels }
-  | { type: "HOVER_SET"; id: EntityId | null }
+  | { type: "HOVER_SET"; entity: Entity | null }
   | { type: "TOOLTIP_SET"; text: string | null }
+  | { type: "APP_SET"; app: Application }
+  | { type: "CAMERA_SET"; camera: Container }
   // Terminal actions
   | { type: "TERMINAL_SET_OPEN"; open: boolean }
   | { type: "TERMINAL_TOGGLE" }
@@ -139,7 +148,7 @@ function reducer(state: HUDState, action: Action): HUDState {
       return { ...state, panels: { ...state.panels, [action.key]: !state.panels[action.key] } };
 
     case "HOVER_SET":
-      return { ...state, hoveredEntityId: action.id };
+      return { ...state, hoveredEntity: action.entity };
 
     case "TOOLTIP_SET":
       return { ...state, tooltip: action.text };
@@ -162,6 +171,12 @@ function reducer(state: HUDState, action: Action): HUDState {
         ...action.state,
         selectedSet: new Set(action.state.selectedEntities),
       };
+
+    case "APP_SET":
+      return { ...state, app: action.app };
+
+    case "CAMERA_SET":
+      return { ...state, camera: action.camera };
 
     default:
       return state;
@@ -196,13 +211,15 @@ type HUDContextValue = {
     deltaResources: (delta: Partial<Resources>) => void;
     setPanel: (key: keyof HUDPanels, value: boolean) => void;
     togglePanel: (key: keyof HUDPanels) => void;
-    setHovered: (id: EntityId | null) => void;
+    setHovered: (entity: Entity | null) => void;
     setTooltip: (text: string | null) => void;
     // Terminal
     setTerminalOpen: (open: boolean) => void;
     toggleTerminal: () => void;
     setTerminalInput: (value: string) => void;
     pushCommandHistory: (entry: CommandHistory) => void;
+    setApp: (app: Application) => void;
+    setCamera: (camera: Container) => void;
   };
   selectors: {
     hasSelection: boolean;
@@ -214,6 +231,9 @@ type HUDContextValue = {
     isTerminalOpen: boolean;
     currentCommand: string;
     commandHistory: CommandHistory[];
+    app: Application | null;
+    camera: Container | null;
+    hoveredEntity: Entity | null
   };
   // Terminal refs (not persisted)
   refs: {
@@ -281,8 +301,10 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       setPanel: (key: keyof HUDPanels, value: boolean) => dispatch({ type: "PANEL_SET", key, value }),
       togglePanel: (key: keyof HUDPanels) => dispatch({ type: "PANEL_TOGGLE", key }),
 
-      setHovered: (id: EntityId | null) => dispatch({ type: "HOVER_SET", id }),
+      setHovered: (entity: Entity | null) => dispatch({ type: "HOVER_SET", entity }),
       setTooltip: (text: string | null) => dispatch({ type: "TOOLTIP_SET", text }),
+      setApp: (app: Application) => dispatch({ type: "APP_SET", app }),
+      setCamera: (camera: Container) => dispatch({ type: "CAMERA_SET", camera }),
 
       // Terminal
       setTerminalOpen: (open: boolean) => dispatch({ type: "TERMINAL_SET_OPEN", open }),
@@ -305,6 +327,9 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       isTerminalOpen: state.isTerminalOpen,
       currentCommand: state.currentCommand,
       commandHistory: state.commandHistory,
+      hoveredEntity: state.hoveredEntity,
+      app: state.app,
+      camera: state.camera,
     }),
     [
       state.selectedEntities.length,
@@ -314,6 +339,9 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       state.isTerminalOpen,
       state.currentCommand,
       state.commandHistory,
+      state.hoveredEntity,
+      state.app,
+      state.camera
     ]
   );
 

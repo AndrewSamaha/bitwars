@@ -3,10 +3,13 @@ import { Application, Assets, Container, Sprite, Graphics } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { game } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
+import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
+import { useHUD } from "@/features/hud/components/HUDContext";
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState<boolean>(game.ready);
+  const { actions: { setHovered, setApp, setCamera }} = useHUD();
 
   useEffect(() => {
     // Observe readiness until the first snapshot is applied
@@ -25,6 +28,8 @@ export default function GameStage() {
             antialias: true,
             resolution: devicePixelRatio
         });
+        setApp(app);
+        setCamera(app.stage);
 
         ref.current!.appendChild(app.canvas);
 
@@ -57,6 +62,7 @@ export default function GameStage() {
               })
               .on("mouseout", () => {
                 (e as any).hover = false;
+                setHovered(null);
               });
             attached.add(e);
             // default scale if none present
@@ -107,6 +113,7 @@ export default function GameStage() {
                 hoverIndicator.label = 'hoverIndicator';
                 container.addChild(hoverIndicator);
               }
+              setHovered(e);
             } else {
               if (primary) (primary as any).tint = 0xffffff;
               // remove hover indicator if present
@@ -147,6 +154,7 @@ export default function GameStage() {
     <div className="relative w-full min-h-screen">
       {/* Canvas mount point */}
       <div ref={ref} className="absolute inset-0" />
+      {ready && <TooltipOverlay />}
       {/* Overlay loading indicator while world is not ready */}
       {!ready && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/40">
