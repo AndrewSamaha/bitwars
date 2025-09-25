@@ -61,6 +61,7 @@ export default function GameStage() {
             entityContainer
               .on("mouseover", () => {
                 (e as any).hover = true;
+                setHovered(e);
               })
               .on("mouseout", () => {
                 (e as any).hover = false;
@@ -111,7 +112,7 @@ export default function GameStage() {
                 hoverIndicator = createHoverIndicator();
                 container.addChild(hoverIndicator);
               }
-              setHovered(e);
+              
             } else {
               if (primary) (primary as any).tint = CLEAN_COLOR;
               // remove hover indicator if present

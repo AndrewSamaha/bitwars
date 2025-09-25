@@ -5,11 +5,10 @@ import * as PIXI from "pixi.js";
 import { useHUD } from "./HUDContext";
 
 export function TooltipOverlay() {
-  const { selectors: { hoveredEntity, app, camera } } = useHUD();
+  const { selectors: { hoveredEntity, app } } = useHUD();
   const [pos, setPos] = useState<{x:number;y:number}|null>(null);
 
   useEffect(() => {
-    if (!camera) return;
     if (!app) return;
     if (!hoveredEntity) {
         setPos(null);
@@ -32,7 +31,7 @@ export function TooltipOverlay() {
 
     setPos({ x: cssX, y: cssY });
 
-  }, [hoveredEntity, hoveredEntity?.id, app, camera]);
+  }, [hoveredEntity, app]);
 
   if (!hoveredEntity || !pos) {
     return null
