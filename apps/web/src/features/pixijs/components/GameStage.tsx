@@ -112,6 +112,7 @@ export default function GameStage() {
                 hoverIndicator = createHoverIndicator();
                 container.addChild(hoverIndicator);
               }
+              setHovered(e);
               
             } else {
               if (primary) (primary as any).tint = CLEAN_COLOR;
