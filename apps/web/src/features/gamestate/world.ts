@@ -2,23 +2,25 @@
 import { World } from "miniplex";
 import * as PIXI from "pixi.js";
 
-export type SpriteRef = { sprite: PIXI.Sprite };
+export type ContainerRef = { pixiContainer: PIXI.Container };
 export type Scale = { scale: number };
- 
- // Proto-compatible component shapes coming from the stream
- export type ProtoPosition = { pos: { x: number; y: number } };
- export type ProtoVelocity = { vel: { x: number; y: number } };
- export type EntityId = { id: number | string };
- 
- // Entity uses proto-shaped components (pos, vel, id) and render extras
- export type Entity = Partial<
-   ProtoPosition &
-   ProtoVelocity &
-   EntityId &
-   SpriteRef &
-   Scale &
-   { selectable?: true }
- >;
+
+// Proto-compatible component shapes coming from the stream
+export type ProtoPosition = { pos: { x: number; y: number } };
+export type ProtoVelocity = { vel: { x: number; y: number } };
+export type EntityId = { id: number | string };
+export type UIState = { hover: boolean };
+
+// Entity uses proto-shaped components (pos, vel, id) and render extras
+export type Entity = Partial<
+  ProtoPosition &
+  ProtoVelocity &
+  EntityId &
+  ContainerRef &
+  Scale &
+  { selectable?: true } &
+  UIState
+>;
 
 class GameWorld {
   world = new World<Entity>();
@@ -41,4 +43,3 @@ class GameWorld {
 }
 
 export const game = new GameWorld(); // module-singleton
-
