@@ -1,6 +1,6 @@
 # Entity Intent System Requirements
 
-Last updated: 2025-09-25 18:36:05 -0400
+Last updated: 2025-09-26 06:42:01 -0400
 
 ## Purpose
 
@@ -58,6 +58,11 @@ Define a robust, RTS-style intent system where players issue commands (intents) 
 - **Client Prediction**
   - Client mirrors static data (cooldowns, ranges, costs) for UX; authoritative resolution stays server-side.
   - If client lacks script parity, treat predictions as hints and reconcile from server updates.
+
+- **Ability Library Resolution**
+  - Ability references resolve through a match-scoped Ability Library mapping `ability_id -> current_version`.
+  - New validations/executions use the current ability version. In-progress actions continue with the version they started with until completion/interrupt.
+  - Queued intents referencing older versions attempt auto-migration to the current version if compatible; otherwise they retain their original version or surface a warning and allow cancel with refund policy (see ADR-002).
 
 ## Queues, Chaining, and Grouping
 
