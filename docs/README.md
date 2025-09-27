@@ -13,6 +13,9 @@ This directory contains specifications, designs, and decision records for the pr
   - See [docs/adr/](./adr/)
 - Glossary
   - See [Glossary](./glossary.md)
+ - Milestones
+   - [Roadmap Overview](./milestones.md)
+   - [M0: Hello-RTS — Single Unit Click-to-Move](./milestones/m0-hello-rts.md)
 
 ## Contributing to Docs
 

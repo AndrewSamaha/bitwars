@@ -5,22 +5,38 @@ Last updated: 2025-09-26 06:50:11 -0400
 This roadmap lays out small, demonstrable steps toward the full data-driven, scriptable, long-running RTS intent system.
 Each milestone targets a vertical slice that can be shown end-to-end: client issues intents → server validates/executes → client receives deltas and updates UI.
 
-## M0: Hello-RTS — Single Unit, Single Ability (Move)
+## M-Foundation: COMPLETE - Baseline Infra and Typed Pipeline
 
 - Goals
-  - Server-authoritative loop with fixed tick (e.g., 20–30 Hz).
-  - Define one entity type `worker` with movement stats in static JSON.
-  - Implement one ability: `Move` to a point.
-  - Implement intent pipeline: client → server `MoveIntent` → server executes path/motion → deltas to client.
-  - No queueing, no combat, no resources.
+  - Ensure local dev environment and data pipeline are in place and reliable.
+  - Establish Protobuf-typed state across engine and client with Redis as the transport.
 - Deliverables
-  - Minimal ECS: `Transform`, `Velocity`, `Mover`.
-  - Intent handler for `Move`: validate ownership and pathability; set a motion target; IN_PROGRESS until arrival.
-  - Deltas: position/velocity; periodic snapshots.
-  - Demo UI: click-to-move a single unit; show current target and simple progress.
+  - Redis Stack via `docker-compose.yml` with browser UI at `http://localhost:8001/redis-stack/browser`.
+  - `rts-engine` POC loop that publishes snapshots/deltas to Redis.
+  - Protobuf schemas under `packages/schemas/` and generated TS types in `packages/shared/`.
+  - Next.js app can connect and read typed snapshots/deltas from Redis.
 - Acceptance Criteria
-  - Click creates a `MoveIntent`; unit moves with basic steering; client receives smooth position updates.
-  - Server logs include intent lifecycle (accepted → in_progress → finished) and `intent_id` correlation.
+  - `docker compose up -d` + `pnpm dev` produces live snapshots/deltas; client decodes using generated types.
+  - Binary reads from Redis verified; logs/console confirm successful decode and message counts.
+
+## M0: Hello-RTS — Single Unit, Single Ability (Move)
+
+- See detailed plan: [docs/milestones/m0-hello-rts.md](./milestones/m0-hello-rts.md)
+
+- Goals
+  - Demonstrate a minimal vertical slice using the existing stack: client issues `Move` intent; server processes; client renders.
+  - Keep entity definition minimal; defer full data-driven loader to M4.
+- Deliverables
+  - Users spawn into game with one unit
+  - Server-side movement loop: store per-entity position and optional motion target; on each tick, advance toward target at a fixed speed; mark complete on arrival and emit typed deltas.
+  - `Move` intent handler: validate ownership and basic pathability (stub path ok), set motion target, mark IN_PROGRESS until arrival.
+  - Client: click-to-move UI; selection/hover indicators (using current HUD context); emits `client_cmd_id` per intent.
+  - Deltas include position/velocity under protobuf schema; periodic snapshots continue to function.
+  - Intent submission path: Phase A (direct injection for demos); Phase B (Redis stream ingestion from `apps/web`).
+- Acceptance Criteria
+  - Clicking ground enqueues `MoveIntent`; entity moves and arrives; client renders smooth updates.
+  - Server logs include intent lifecycle (accepted → in_progress → finished) with correlation IDs (`player_id`, `intent_id`).
+  - Schema decoding verified on client; no breaking changes to snapshot/delta pipeline.
 
 ## M1: Intent Queueing and Replace/Append Semantics
 
@@ -28,8 +44,8 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
   - Per-entity FIFO intent queue with modifiers: replace current, append, clear.
   - Shift-queueing on client.
 - Deliverables
-  - `IntentQueue` component and queue processor.
-  - Client UX to queue multiple moves (e.g., waypoints) with simple icons.
+  - Server `IntentQueue` component and queue processor integrated into the tick loop.
+  - Client UX to queue multiple moves (e.g., waypoints) with simple icons and modifier shortcuts (replace/append/clear).
 - Acceptance Criteria
   - Queued waypoints execute sequentially; replace/append/clear behaves as expected.
 
@@ -39,7 +55,7 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
   - Add `client_cmd_id` and per-player sequence numbers; idempotent server apply.
   - Batch intents per tick; tolerate out-of-order delivery.
 - Deliverables
-  - Server dedupe by `client_cmd_id`; log duplicates dropped.
+  - Server dedupe by `client_cmd_id`; per-player sequencing; log duplicates dropped with correlation info.
   - Wire protocol messages versioned; include `server_tick` with deltas.
 - Acceptance Criteria
   - Synthetic network tests show correct behavior under reordering/duplication.

@@ -28,6 +28,12 @@ Open [http://localhost:8001/redis-stack/browser](http://localhost:8001/redis-sta
 bitwars/
 ├─ docker-compose.yml     (redis-stack cache and ui)
 ├─ docs/                  (documentation)
+│  ├─ requirements/       (High-level future requirements)
+│  ├─ milestones/         (Detailed development milestones that latter up toward requirements)
+│  ├─ adr/                (Architecture Decision Records)
+│  ├─ glossary.md         (Shared terminology)
+│  ├─ milestones.md       (High-level overview of milestones)
+│  └─ README.md           (Documentation index)
 ├─ apps/
 │  └─ web/                (Next.js 15 app; dev scripts and API routes under `/api`)
 ├─ crates/                (currently empty)
