@@ -2,45 +2,46 @@ Yet another RTS game. Using Next.js, Redis, and TypeScript.
 
 ## Getting Started
 
-First, install dependencies, start redis, start the server, run migrations and seed mock entities:
+First, install dependencies, start Redis Stack, start the dev servers, and (optionally) seed some mock data:
 
  From the repository's root:
 ```bash
 pnpm run clean
 pnpm install
-pnpm approve-builds
 docker compose up -d
 pnpm dev
-cd apps/web
-pnpm db:migrate
-pnpm createmock:gamestate
+
+# In another terminal (optional data init for the web app):
+pnpm -C apps/web run db:init
+pnpm -C apps/web run createmock:players
 ```
 
-Open [http://localhost:8001/redis-stack/browser](http://localhost:8001/redis-stack/browser) with your browser to connect to redis stack.
+Open [http://localhost:8001/redis-stack/browser](http://localhost:8001/redis-stack/browser) with your browser to connect to Redis Stack.
 
 ## Working Endpoints
 
-- `GET /api/setup` - Initialize the entity index (run migrations) in redis
-- `POST /api/gamestate/mocks/create_gamestate` - Add mock entities to the redis cache
-- `GET /api/gamestate/poll` - Return all entities
-- `GET /api/gamestate/poll?x=87&y=87&radius=60` - Search for entities within a radius of x/y
-- `GET /api/gamestate/debug` - Debug the entity index  (to the console)
-- `GET /api/gamestate/stream` - Stream gamestate to clients
+- `POST /api/init` - Initialize any required indexes/state (development convenience)
+- `POST /api/players/mocks/create_players` - Seed mock players (development/testing)
 
 ## Monorepo Structure
 ```
 bitwars/
-├─ apps/ (the nextjs front end)
-├─ crates/ (there's a thing called game-types in there but I can't remember if that's actually being used yet)
+├─ docker-compose.yml     (redis-stack cache and ui)
+├─ docs/                  (documentation)
+│  ├─ requirements/       (High-level future requirements)
+│  ├─ milestones/         (Detailed development milestones that latter up toward requirements)
+│  ├─ adr/                (Architecture Decision Records)
+│  ├─ glossary.md         (Shared terminology)
+│  ├─ milestones.md       (High-level overview of milestones)
+│  └─ README.md           (Documentation index)
+├─ apps/
+│  └─ web/                (Next.js 15 app; dev scripts and API routes under `/api`)
+├─ crates/                (currently empty)
 ├─ packages/
-│  └─ schemas/  (protobuf schema definitions)
-│  └─ shared/  (typescript types generated from the above protobuf schemas go here)
-└─ services/ 
-    └─ rts-engine/ 
-          ├─ rts-engine/ 
-          │    ├─ src/ (rust source, only contains main.rs now hellow world)
-          │    └─ Cargo.toml
-          └─ package.json (to help turborepo and pnpm manage this workspace) 
+│  ├─ schemas/            (Protobuf schema definitions)
+│  └─ shared/             (TypeScript types generated from protobuf schemas)
+└─ services/
+   └─ rts-engine/         (Rust server/engine; Redis client, examples, protobuf build)
 ```
 
 ### Using pnpm in monorepo
@@ -52,21 +53,23 @@ pnpm -F bitwars add @bufbuild/protobuf
 ```
 
 ## rts-engine
-This is the rust server that runs the game loop. It pulls in types defined in 
-packages/shared (protobuf types). To validate types were built correctly, from
-project root do:
+This is the Rust server that will run the game loop. It integrates with Redis and protobuf-generated types.
+
+Common tasks from repo root (see `package.json`):
 ```bash
-cargo clean
-cargo run -p rts-engine --example proto_sanity
+# Build and run
+pnpm engine:build
+pnpm engine:run
+
+# Utilities/examples
+pnpm engine:generate-examples
+pnpm engine:read-snapshot
+pnpm engine:read-deltas
 ```
 
-To build the project:
+You can also invoke Cargo directly:
 ```bash
 cargo build -p rts-engine
-```
-
-To run the actual rts-engine:
-```bash
 cargo run -p rts-engine
 ```
 
@@ -80,3 +83,12 @@ In rust:
 ```bash
 pnpm engine:read-deltas
 ```
+
+## Documentation
+
+See `docs/` for specifications and design:
+- `docs/README.md` – documentation index
+- `docs/requirements/` – system requirements
+- `docs/adr/` – Architecture Decision Records (e.g., `001-scripting-engine-and-sandbox.md`)
+- `docs/milestones.md` – development roadmap
+- `docs/glossary.md` – shared terminology
