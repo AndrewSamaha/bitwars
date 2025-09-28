@@ -1,4 +1,5 @@
 pub mod state;
+pub mod intent;
 
 use rand::{rngs::StdRng, SeedableRng};
 use tokio::time::{interval, Duration};
