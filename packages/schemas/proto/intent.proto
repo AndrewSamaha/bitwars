@@ -1,0 +1,91 @@
+syntax = "proto3";
+package bitwars;
+
+import "vec2.proto";
+
+// Represents an in-flight destination for an entity (server-side).
+message MotionTarget {
+  Vec2  target      = 1; // world-space destination
+  float stop_radius = 2; // distance threshold for arrival (world units)
+}
+
+// Minimal payload for a Move intent.
+message MoveToLocationIntent {
+  uint64 entity_id     = 1; // the server-side entity id to move
+  Vec2   target        = 2; // desired destination
+  string client_cmd_id = 3; // client-generated id for idempotency
+  string player_id     = 4; // issuing player
+}
+
+// Attack intent payload (authoritative server-side).
+message AttackIntent {
+  uint64 entity_id     = 1; // attacker
+  uint64 target_id     = 2; // target entity
+  string client_cmd_id = 3;
+  string player_id     = 4;
+}
+
+// Build intent payload (authoritative server-side).
+message BuildIntent {
+  uint64 entity_id     = 1; // builder
+  string blueprint_id  = 2; // id of structure/unit blueprint
+  Vec2   location      = 3; // build location
+  string client_cmd_id = 4;
+  string player_id     = 5;
+}
+
+// Extensible Intent envelope.
+// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
+message Intent {
+  oneof kind {
+    MoveToLocationIntent move = 1;
+    AttackIntent         attack = 2;
+    BuildIntent          build  = 3;
+  }
+}
+
+// Per-entity queue of intents (for M1 and beyond).
+message IntentQueue {
+  repeated Intent items = 1;
+}
+
+// Server-side auxiliary state for intents and destinations.
+// NOTE: You can embed these maps into your authoritative GameState,
+// or publish them via a separate snapshot/delta channel.
+// For M0 you likely won't publish these; they’re server internals.
+message IntentState {
+  // Per-entity intent queues (entity_id -> queue)
+  map<uint64, IntentQueue> intent_queues = 1;
+
+  // Current executing action per entity (entity_id -> action state)
+  map<uint64, ActionState> current_action = 2;
+}
+
+// Execution state per kind (authoritative server-side).
+message MoveState {
+  MotionTarget target = 1;
+}
+
+message AttackState {
+  uint64 target_id      = 1;
+  // Optional for LOS/prediction policies
+  Vec2   last_known_pos = 2;
+}
+
+message BuildState {
+  string blueprint_id = 1;
+  Vec2   location     = 2;
+  float  progress     = 3; // 0..1 (casts/channels/build progress)
+}
+
+// Unified per-entity execution container (one active at a time).
+message ActionState {
+  // Echo original intent for correlation/observability (optional but useful)
+  Intent intent = 1;
+
+  oneof exec {
+    MoveState   move   = 2;
+    AttackState attack = 3;
+    BuildState  build  = 4;
+  }
+}
