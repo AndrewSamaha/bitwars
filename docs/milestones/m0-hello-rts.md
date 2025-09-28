@@ -25,10 +25,10 @@ This milestone delivers a minimal, end-to-end demo of server-authoritative movem
 
 ## Deliverables
 
-- Users spawn into game with one unit. [TODO] (currently spawns 20 in `engine/state.rs`)
-- Server-side movement loop (framework-agnostic): store per-entity position and optional motion target; each tick, advance position toward target at a fixed speed; mark complete on arrival and emit typed deltas. [PARTIAL] (`IntentManager::follow_targets()` exists; not wired into engine tick yet)
-- Intent submission path (Phase A: direct injection for demos; Phase B: Redis stream ingestion from `apps/web`). [TODO]
-- Lifecycle logging: accepted → in_progress → finished with correlation IDs. [PARTIAL] (`start`/`finish` exist; `accept` missing; none triggered until wiring)
+- Users spawn into game with one unit. [DONE]
+- Server-side movement loop (framework-agnostic): store per-entity position and optional motion target; each tick, advance position toward target at a fixed speed; mark complete on arrival and emit typed deltas. [DONE]
+- Intent submission path (Phase A: direct injection for demos; Phase B: Redis stream ingestion from `apps/web`). [DONE via Redis stream ingestion + CLI]
+- Lifecycle logging: accepted → in_progress → finished with correlation IDs. [DONE]
 
 ## Engine specifics (rts-engine)
 
@@ -39,26 +39,25 @@ This milestone delivers a minimal, end-to-end demo of server-authoritative movem
     - Uses protobuf `packages/schemas/proto/intent.proto` (`pb::Intent`, `ActionState`, `MoveState`, `MotionTarget`).
     - Motion target is represented inside `ActionState::Move` rather than a separate `GameState` map.
 
-- Tick pipeline changes (`services/rts-engine/src/engine/mod.rs`): [TODO]
-  - Engine currently still calls `apply_random_forces(...)`.
-  - Replace with:
-    1. `ingest_intents_tick()` — Phase A: dev injection path to enqueue a Move and log accept; Phase B: read Redis stream `intents:{game_id}`.
-    2. `process_intents_tick()` — call `IntentManager::process_pending()` to start next actions.
-    3. `follow_targets_tick()` — call `IntentManager::follow_targets(&mut state, cfg.default_speed, dt)` to set vel and detect arrival.
-    4. `integrate(...)` — keep using to apply velocity to position.
+- Tick pipeline changes (`services/rts-engine/src/engine/mod.rs`): [DONE]
+  1. Ingest intents from Redis stream `intents:{game_id}` and log accept.
+  2. `IntentManager::process_pending()` starts next actions per entity.
+  3. `IntentManager::follow_targets(&mut state, cfg.default_entity_speed, dt)` sets velocity, detects arrival, logs finish.
+  4. `integrate(...)` applies velocity to position.
+  - Random forces removed from the loop for M0 (no longer applied).
 
-- Config additions (`services/rts-engine/src/config.rs`): [TODO]
-  - `default_speed: f32` (e.g., 10.0).
-  - `stop_radius: f32` (e.g., 0.5–1.0 world units).
-  - `enable_random_forces: bool` (default false after Move loop introduced).
+- Config additions (`services/rts-engine/src/config.rs`): [PARTIAL]
+  - `default_entity_speed: f32` [DONE]
+  - `default_stop_radius: f32` [DONE]
+  - `enable_random_forces: bool` [OPTIONAL / N/A for M0] (random forces are disabled in code)
 
 ## API and data contracts
 
 - Protobuf schema changes: [DIFFERS]
   - Earlier plan: none required for M0.
   - Actual: introduced `packages/schemas/proto/intent.proto` and server uses protobuf intents and action state. This is acceptable and will carry into later milestones.
-- Intent transport (Phase B): [TODO]
-  - Redis Stream `intents:{game_id}` entries with a single field `data` (binary) or `json` (string).
+- Intent transport (Phase B): [DONE]
+  - Redis Stream `intents:{game_id}` entries with a single field `data` (binary) carrying a protobuf `Intent`.
   - Suggested JSON payload for fast iteration:
     ```json
     {
@@ -73,21 +72,21 @@ This milestone delivers a minimal, end-to-end demo of server-authoritative movem
 
 ## Logs and observability
 
-- On accept: [TODO]
+- On accept: [DONE]
   - `accept intent=Move client_cmd_id=... player_id=... entity_id=... target=(x,y) tick=...`
-- On start (target set): [PARTIAL] (`log_start()` exists; will fire once pipeline is wired)
+- On start (target set): [DONE]
   - `start intent=Move client_cmd_id=... entity_id=... target=(x,y) tick=...`
-- On finish (arrival): [PARTIAL] (`log_finish()` exists; called when action completes)
+- On finish (arrival): [DONE]
   - `finish intent=Move client_cmd_id=... entity_id=... tick=...`
 - Once per second summary (already present via `log_sample`):
   - `tick=... | id:1 pos=(...), vel=(...) ...`
 
 ## Acceptance criteria
 
-- Clicking ground enqueues a Move intent with a `client_cmd_id`. [TODO]
-- Server applies Move deterministically; entity advances to target and arrives (within `stop_radius`). [PARTIAL]
-- Client decodes protobuf deltas and renders smooth motion. [DONE] (baseline deltas flow)
-- Logs show accepted → in_progress → finished with correlation IDs. [PARTIAL]
+- Clicking ground enqueues a Move intent with a `client_cmd_id`. [PARTIAL] (tested via CLI + client visualization; web POST wiring can follow in Phase B)
+- Server applies Move deterministically; entity advances to target and arrives (within `stop_radius`). [DONE]
+- Client decodes protobuf deltas and renders smooth motion. [DONE]
+- Logs show accepted → in_progress → finished with correlation IDs. [DONE]
 
 ## Demo steps
 
