@@ -100,6 +100,27 @@ This milestone delivers a minimal, end-to-end demo of server-authoritative movem
 4. Watch the unit move and arrive; verify deltas in the client and that logs show lifecycle completion.
 5. Optional: use Redis UI at `http://localhost:8001/redis-stack/browser` to observe deltas stream and snapshot.
 
+### Creating intents manually
+
+- **[Via CLI]** (publishes to `intents:{GAME_ID}` as protobuf bytes)
+  ```bash
+  # From services/rts-engine/
+  cargo run --bin intent_cli -- redis://127.0.0.1/ demo-001 move 1 50 75 cmd-1 p1
+  ```
+
+- **[Via HTTP]** POST `apps/web` endpoint (`/api/v1/intent`), which publishes to the same Redis stream
+  ```bash
+  curl -X POST http://localhost:3000/api/v1/intent \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "type": "Move",
+      "entity_id": 1,
+      "target": { "x": 50.0, "y": 75.0 },
+      "client_cmd_id": "cmd-1",
+      "player_id": "p1"
+    }'
+  ```
+
 ## Phase plan
 
 - Phase A (internal proof):
