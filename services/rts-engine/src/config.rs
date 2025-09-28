@@ -21,7 +21,7 @@ impl Default for GameConfig {
     fn default() -> Self {
         Self {
             game_id: "demo-001".into(),
-            num_entities: 20,
+            num_entities: 1,
             tps: 60,
             force_min: -200.0,
             force_max: 200.0,

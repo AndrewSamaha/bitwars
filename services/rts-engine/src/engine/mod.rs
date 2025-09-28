@@ -8,18 +8,20 @@ use tracing::{error, info};
 use crate::config::GameConfig;
 use crate::delta::compute_delta;
 use crate::io::redis::RedisClient;
-use crate::physics::{apply_random_forces, integrate};
+use crate::physics::{integrate};
 use crate::engine::intent::IntentManager;
 use state::{GameState, init_world, log_sample};
+use crate::pb; // protobuf types for decoding intents
+use prost::Message;
 
 pub struct Engine {
     cfg: GameConfig,
-    rng: StdRng,
     state: GameState,
     prev_state: GameState,
     last_delta_id: Option<String>,
     redis: RedisClient,
     intents: IntentManager,
+    last_intent_id: String,
 }
 
 impl Engine {
@@ -36,12 +38,13 @@ impl Engine {
         let mut engine = Self {
             prev_state: state.clone(),
             state,
-            rng,
             last_delta_id: None,
             cfg,
             redis,
             // Initialize with captured value to avoid use-after-move of `cfg`
             intents: IntentManager::new(default_stop_radius),
+            // Start reading intents from the beginning (change to "$" to only read new ones)
+            last_intent_id: "0-0".to_string(),
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
         Ok(engine)
@@ -55,10 +58,43 @@ impl Engine {
         loop {
             ticker.tick().await;
 
-            // TODO(cfg): gate random forces behind a flag once movement loop is primary
-            apply_random_forces(&self.cfg, &mut self.state, &mut self.rng, dt);
-
-            // Phase A: (optional) dev injection path could enqueue here
+            // Phase B: Ingest intents from Redis stream (non-blocking)
+            if let Ok(Some((new_last_id, payloads))) = self.redis.read_new_intents(&self.last_intent_id, 100).await {
+                for bytes in payloads {
+                    match pb::Intent::decode(bytes.as_slice()) {
+                        Ok(intent) => {
+                            // Log accept
+                            match intent.kind.as_ref() {
+                                Some(pb::intent::Kind::Move(m)) => {
+                                    if let Some(t) = m.target.as_ref() {
+                                        info!(entity_id = m.entity_id, client_cmd_id = %m.client_cmd_id, player_id = %m.player_id, target_x = t.x, target_y = t.y, "accept intent=Move");
+                                    } else {
+                                        info!(entity_id = m.entity_id, client_cmd_id = %m.client_cmd_id, player_id = %m.player_id, "accept intent=Move (missing target)");
+                                    }
+                                }
+                                Some(pb::intent::Kind::Attack(a)) => {
+                                    info!(entity_id = a.entity_id, client_cmd_id = %a.client_cmd_id, player_id = %a.player_id, target_id = a.target_id, "accept intent=Attack");
+                                }
+                                Some(pb::intent::Kind::Build(b)) => {
+                                    if let Some(loc) = b.location.as_ref() {
+                                        info!(entity_id = b.entity_id, client_cmd_id = %b.client_cmd_id, player_id = %b.player_id, blueprint_id = %b.blueprint_id, loc_x = loc.x, loc_y = loc.y, "accept intent=Build");
+                                    } else {
+                                        info!(entity_id = b.entity_id, client_cmd_id = %b.client_cmd_id, player_id = %b.player_id, blueprint_id = %b.blueprint_id, "accept intent=Build (missing location)");
+                                    }
+                                }
+                                None => {}
+                            }
+                            // Enqueue into manager
+                            self.intents.enqueue(intent);
+                        }
+                        Err(e) => {
+                            // Skip invalid payloads
+                            tracing::warn!(error = ?e, "failed to decode intent payload from Redis");
+                        }
+                    }
+                }
+                self.last_intent_id = new_last_id;
+            }
 
             // Start any pending intents for entities without a current action
             let _started = self.intents.process_pending();

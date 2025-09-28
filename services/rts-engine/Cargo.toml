@@ -2,6 +2,7 @@
 name = "rts-engine"
 version = "0.1.0"
 edition = "2021"
+default-run = "rts-engine"
 
 [dependencies]
 tokio = { version = "1.39", features = ["full"] }
