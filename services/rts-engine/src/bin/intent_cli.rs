@@ -1,6 +1,5 @@
 use std::env;
 
-use prost::Message;
 use rts_engine::io::redis::RedisClient; // if this path differs, adjust accordingly
 use rts_engine::pb;
 

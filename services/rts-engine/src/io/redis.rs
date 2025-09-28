@@ -1,6 +1,6 @@
 use prost::Message;
-use redis::{AsyncCommands, Value as RedisValue, FromRedisValue};
-use tracing::{info, warn};
+use redis::{AsyncCommands, Value as RedisValue};
+use tracing::info;
 
 use crate::engine::state::GameState;
 use crate::pb::{Delta, Snapshot};
@@ -65,53 +65,61 @@ impl RedisClient {
     /// Returns (last_id, payloads) where last_id is the id of the last entry read, and payloads are raw bytes of 'data' fields.
     pub async fn read_new_intents(&mut self, last_id: &str, count: usize) -> anyhow::Result<Option<(String, Vec<Vec<u8>>)>> {
         let stream = format!("intents:{}", self.game_id);
-        // Build XREAD COUNT <count> STREAMS <stream> <last_id>
         let mut cmd = redis::cmd("XREAD");
         if count > 0 { cmd.arg("COUNT").arg(count as i64); }
         cmd.arg("STREAMS").arg(&stream).arg(last_id);
         let reply: RedisValue = cmd.query_async(&mut self.conn).await?;
 
-        // Expected reply: [[stream, [[id, [field, value, ...]], ...]]]
-        if let RedisValue::Bulk(ref streams) = reply {
-            if streams.is_empty() { return Ok(None); }
-            // Parse first (and only) stream
-            // streams[0] => [stream_name, entries]
-            if let [RedisValue::Data(_name), entries] = &streams[..] {
-                if let RedisValue::Bulk(items) = entries {
-                    let mut out: Vec<Vec<u8>> = Vec::new();
-                    let mut new_last_id = String::from(last_id);
-                    for item in items {
-                        if let RedisValue::Bulk(parts) = item {
-                            // parts[0] => id, parts[1] => fields bulk
-                            if parts.len() >= 2 {
-                                if let RedisValue::Data(id_bytes) = &parts[0] {
-                                    if let Ok(id_str) = String::from_utf8(id_bytes.clone()) {
-                                        new_last_id = id_str;
+        // Expected reply shape from redis-rs for XREAD:
+        // Bulk([
+        //   Bulk([
+        //     Data(stream_name),
+        //     Bulk([
+        //       Bulk([ Data(id), Bulk([ Data(field), Data(value), ... ]) ]),
+        //       ...
+        //     ])
+        //   ])
+        // ])
+        match reply {
+            RedisValue::Nil => return Ok(None),
+            RedisValue::Bulk(ref top) => {
+                if top.is_empty() { return Ok(None); }
+                if let Some(RedisValue::Bulk(stream_entry)) = top.get(0) {
+                    if let [RedisValue::Data(_name), RedisValue::Bulk(items)] = &stream_entry[..] {
+                        let mut out: Vec<Vec<u8>> = Vec::new();
+                        let mut new_last_id = String::from(last_id);
+                        for item in items.iter() {
+                            if let RedisValue::Bulk(parts) = item {
+                                if parts.len() >= 2 {
+                                    if let RedisValue::Data(id_bytes) = &parts[0] {
+                                        if let Ok(id_str) = String::from_utf8(id_bytes.clone()) {
+                                            new_last_id = id_str;
+                                        }
                                     }
-                                }
-                                if let RedisValue::Bulk(fieldvals) = &parts[1] {
-                                    // look for field "data"
-                                    let mut i = 0;
-                                    while i + 1 < fieldvals.len() {
-                                        let field = &fieldvals[i];
-                                        let value = &fieldvals[i + 1];
-                                        if let RedisValue::Data(field_name) = field {
-                                            if field_name == b"data" {
-                                                if let RedisValue::Data(payload) = value {
-                                                    out.push(payload.clone());
+                                    if let RedisValue::Bulk(fieldvals) = &parts[1] {
+                                        let mut i = 0;
+                                        while i + 1 < fieldvals.len() {
+                                            let field = &fieldvals[i];
+                                            let value = &fieldvals[i + 1];
+                                            if let RedisValue::Data(field_name) = field {
+                                                if field_name == b"data" {
+                                                    if let RedisValue::Data(payload) = value {
+                                                        out.push(payload.clone());
+                                                    }
                                                 }
                                             }
+                                            i += 2;
                                         }
-                                        i += 2;
                                     }
                                 }
                             }
                         }
+                        if out.is_empty() { return Ok(None); }
+                        return Ok(Some((new_last_id, out)));
                     }
-                    if out.is_empty() { return Ok(None); }
-                    return Ok(Some((new_last_id, out)));
                 }
             }
+            _ => {}
         }
         Ok(None)
     }
