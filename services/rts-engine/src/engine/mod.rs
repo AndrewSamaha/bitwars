@@ -9,6 +9,7 @@ use crate::config::GameConfig;
 use crate::delta::compute_delta;
 use crate::io::redis::RedisClient;
 use crate::physics::{apply_random_forces, integrate};
+use crate::engine::intent::IntentManager;
 use state::{GameState, init_world, log_sample};
 
 pub struct Engine {
@@ -18,6 +19,7 @@ pub struct Engine {
     prev_state: GameState,
     last_delta_id: Option<String>,
     redis: RedisClient,
+    intents: IntentManager,
 }
 
 impl Engine {
@@ -29,6 +31,8 @@ impl Engine {
         let redis = RedisClient::connect(&cfg.redis_url, cfg.game_id.clone()).await?;
 
         // Initial snapshot with boundary "0-0"
+        // Capture needed config values before moving `cfg` into the struct
+        let default_stop_radius = cfg.default_stop_radius;
         let mut engine = Self {
             prev_state: state.clone(),
             state,
@@ -36,6 +40,8 @@ impl Engine {
             last_delta_id: None,
             cfg,
             redis,
+            // Initialize with captured value to avoid use-after-move of `cfg`
+            intents: IntentManager::new(default_stop_radius),
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
         Ok(engine)
@@ -49,7 +55,16 @@ impl Engine {
         loop {
             ticker.tick().await;
 
+            // TODO(cfg): gate random forces behind a flag once movement loop is primary
             apply_random_forces(&self.cfg, &mut self.state, &mut self.rng, dt);
+
+            // Phase A: (optional) dev injection path could enqueue here
+
+            // Start any pending intents for entities without a current action
+            let _started = self.intents.process_pending();
+
+            // Advance currently executing actions (e.g., Move) toward targets
+            self.intents.follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
             integrate(&self.cfg, &mut self.state, dt);
             self.state.tick += 1;
 
@@ -61,7 +76,6 @@ impl Engine {
                     Err(e) => error!(?e, "delta publish failed"),
                 }
             }
-
             // Periodic snapshot
             if self.state.tick % snapshot_interval == 0 {
                 let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
