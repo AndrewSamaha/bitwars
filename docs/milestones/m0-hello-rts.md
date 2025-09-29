@@ -83,7 +83,7 @@ This milestone delivers a minimal, end-to-end demo of server-authoritative movem
 
 ## Acceptance criteria
 
-- Clicking ground enqueues a Move intent with a `client_cmd_id`. [PARTIAL] (tested via CLI + client visualization; web POST wiring can follow in Phase B)
+- Add UI flow to move entities: select the entity (adds the entity to the selectedEntities field in HUD state), press M on the keyboard (set selectedAction in HUD state), left-click on the ground sends move intent to api endpoint to  enqueues a Move intent with a `client_cmd_id`. [PARTIAL] (api endpoint tested via CLI + client visualization; web POST wiring can follow in Phase B)
 - Server applies Move deterministically; entity advances to target and arrives (within `stop_radius`). [DONE]
 - Client decodes protobuf deltas and renders smooth motion. [DONE]
 - Logs show accepted → in_progress → finished with correlation IDs. [DONE]
