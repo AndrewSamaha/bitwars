@@ -77,28 +77,20 @@ This milestone delivers a minimal, end-to-end demo of server-authoritative movem
 - On start (target set): [DONE]
   - `start intent=Move client_cmd_id=... entity_id=... target=(x,y) tick=...`
 - On finish (arrival): [DONE]
-  - `finish intent=Move client_cmd_id=... entity_id=... tick=...`
 - Once per second summary (already present via `log_sample`):
   - `tick=... | id:1 pos=(...), vel=(...) ...`
 
 ## Acceptance criteria
 
-- Add UI flow to move entities: select the entity (adds the entity to the selectedEntities field in HUD state), press M on the keyboard (set selectedAction in HUD state), left-click on the ground sends move intent to api endpoint to  enqueues a Move intent with a `client_cmd_id`. [PARTIAL] (api endpoint tested via CLI + client visualization; web POST wiring can follow in Phase B)
+ - Add UI flow to move entities: select the entity (adds the entity to the selectedEntities field in HUD state), press M on the keyboard (set selectedAction in HUD state), left-click on the ground sends move intent to api endpoint to enqueues a Move intent with a `client_cmd_id`. [DONE]
+   - Implemented via client POST to `/api/v1/intent` in `apps/web/src/features/pixijs/components/GameStage.tsx` when in Move mode.
+   - API route implemented at `apps/web/src/app/api/v1/intent/route.ts` publishes protobuf `Intent` to Redis stream `intents:{GAME_ID}`.
 - Server applies Move deterministically; entity advances to target and arrives (within `stop_radius`). [DONE]
 - Client decodes protobuf deltas and renders smooth motion. [DONE]
 - Logs show accepted → in_progress → finished with correlation IDs. [DONE]
 
 ## Demo steps
-
-1. Start infra and dev processes
-   ```bash
-   docker compose up -d
-   pnpm dev
-   ```
-2. Open app, verify the user spawns with one unit.
-3. Click a destination on the map; confirm Move intent is sent and logged with `client_cmd_id`.
-4. Watch the unit move and arrive; verify deltas in the client and that logs show lifecycle completion.
-5. Optional: use Redis UI at `http://localhost:8001/redis-stack/browser` to observe deltas stream and snapshot.
+{{ ... }}
 
 ### Creating intents manually
 
@@ -127,9 +119,26 @@ This milestone delivers a minimal, end-to-end demo of server-authoritative movem
   - Provide a dev-only path to enqueue Move intents (engine example or admin route) and validate server movement loop.
 - Phase B (integrated path):
   - Implement Redis stream ingestion for intents and wire web `POST /api/move` (or equivalent) to write Move payloads.
-
 ## Open questions
 
 - Ownership validation for M0 vs later (stub now, enforce later when auth/session are ready).
 - Numeric stability: ensure speed/integration work consistently with current `integrate` damping; may disable damping while target-following to avoid drift.
 - Whether to expose `target` in deltas for UI markers in M0 or defer to M1.
+
+## Current State & Implementation Details (since 0ac159b)
+
+- **[End-to-end move flow]** Client can select a unit, press [m] to enter Move mode, and click ground to POST `/api/v1/intent`. Server ingests intents from Redis, advances deterministically, emits deltas, and logs accept→start→finish.
+- **[Intent protobuf + manager]** Protobuf intent types and `IntentManager` in `rts-engine` manage per-entity queues/action state. Redis ingestion matches `intent_cli` wire format (`data` field carries protobuf bytes).
+- **[Config centralization]** Movement parameters centralized in `GameConfig` (default speed, stop radius) for consistency and fewer magic numbers.
+- **[API route]** `apps/web/src/app/api/v1/intent/route.ts` validates JSON, serializes protobuf `Intent`, and publishes via `xaddBuffer` to `intents:{GAME_ID}`. M0 supports `Move` only.
+- **[Client UI wiring]** `GameStage.tsx` posts Move intents when in Move mode on ground click; fixes ensure selection/move reliably trigger the POST.
+- **[Rendering]** Client decodes protobuf deltas and renders smooth motion via Pixi; `EntityDetailPanel` reflects live positions by subscribing to `app.ticker`.
+- **[Selection UX]** Clicking an entity selects it; clicking ground deselects when not in Move mode (entity clicks stop propagation to avoid immediate deselect).
+- **[Actions UI]** `EntityDetailPanel` shows available actions with key hints using `AvailableAction` (e.g., `[m]ove`), highlighting the active action. `HUDContext` selectors expose `commandHistory` and `app` for panel consumers.
+
+### Known limitations (acceptable for M0)
+
+- **[Single action]** Only Move is implemented; no Attack/Patrol/etc.
+- **[Ownership]** Ownership validation is stubbed; to be enforced in later milestones.
+- **[UI polish]** No target markers on the map; no multi-select or drag selection; basic styles only.
+- **[Config]** Random forces disabled; speed/stop radius configured; damping considerations deferred.
