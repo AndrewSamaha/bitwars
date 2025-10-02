@@ -1,16 +1,14 @@
 "use client"
 
-import { useEffect, useCallback, useState } from "react";
-import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useEffect, useState } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { getEntityDetailLeftOffset } from "@/features/hud/layout/constants";
 import { game } from "@/features/gamestate/world";
+import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
 
 export default function EntityDetailPanel() {
-  const { selectors } = useHUD();
-  const { selectedEntities } = selectors;
+  const { selectors, actions } = useHUD();
+  const { selectedEntities, selectedAction } = selectors;
   // Access Pixi application to subscribe to ticker
   const { app } = selectors as any;
   const [, forceRerender] = useState(0);
@@ -45,6 +43,22 @@ export default function EntityDetailPanel() {
 
   if (!selectedEntities?.length) return null;
 
+  // Dynamic actions for a given entity. For now only Move ('m').
+  const getActionsForEntity = (entityId: string): ActionDef[] => {
+    // Example placeholder: in future, check entity type/capabilities
+    return [
+      { key: "m", name: "move", enabled: true, value: "Move" },
+    ];
+  };
+  // Intersect actions across all selected entities (simple approach: show those enabled for first)
+  const firstId = selectedEntities[0]!;
+  const availableActions = getActionsForEntity(firstId);
+
+  const onClickAction = (val: "Move") => {
+    // Toggle selection of action
+    actions.setSelectedAction(selectedAction === val ? null : val);
+  };
+
   return (
     <div
       className={`fixed bottom-4 z-50 ${selectedEntities.length > 0 ? "h-20" : "h-2"}`}
@@ -66,6 +80,17 @@ export default function EntityDetailPanel() {
                 );
               })}
             </ul>
+            {/* Actions row */}
+            <div className="mt-2 flex items-center gap-2">
+              {availableActions.map((a) => (
+                <AvailableAction
+                  key={a.value}
+                  action={a}
+                  active={selectedAction === a.value}
+                  onClick={(action) => action.enabled !== false && onClickAction(action.value)}
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <div className="p-3 text-xs">No entities selected</div>
