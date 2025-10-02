@@ -154,11 +154,15 @@ export default function GameStage() {
           }
         };
 
-        // Ground click -> send Move intent if in Move mode
+        // Ground click
         ground.on('pointerdown', async (ev: any) => {
           try {
             const sel = latestSelectorsRef.current;
-            if (sel.selectedAction !== 'Move') return;
+            // If not in Move mode, treat ground click as deselect
+            if (sel.selectedAction !== 'Move') {
+              if (sel.hasSelection) setSelection([]);
+              return;
+            }
             if (!sel.hasSelection) return;
             const first = sel.firstSelectedId;
             if (!first) return;
