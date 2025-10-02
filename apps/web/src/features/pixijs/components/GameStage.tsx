@@ -11,7 +11,10 @@ import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hu
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState<boolean>(game.ready);
-  const { actions: { setHovered, setApp, setCamera }} = useHUD();
+  const { actions: { setHovered, setApp, setCamera, setSelection, setSelectedAction }, selectors } = useHUD();
+  // Keep latest selectors in a ref so event handlers see current selection/action
+  const latestSelectorsRef = useRef(selectors);
+  useEffect(() => { latestSelectorsRef.current = selectors; }, [selectors]);
 
   useEffect(() => {
     // Observe readiness until the first snapshot is applied
@@ -40,6 +43,24 @@ export default function GameStage() {
         worldContainer.position.set(800, 500);
         worldContainer.scale.set(.5);
         app.stage.addChild(worldContainer);
+        // Ground capture for clicks (very large transparent rect)
+        const ground = new Graphics();
+        (ground as any).label = 'ground';
+        ground.rect(-4000, -4000, 8000, 8000).fill(0x000000, 0);
+        ground.eventMode = 'static';
+        worldContainer.addChild(ground);
+
+        // Keyboard: M to set Move, Escape to clear (reads latest selectors via ref)
+        const onKeyDown = (ev: KeyboardEvent) => {
+          const sel = latestSelectorsRef.current;
+          if (ev.key === 'm' || ev.key === 'M') {
+            console.log({ key: ev.key, selectedEntities: sel.selectedEntities });
+            if (sel.hasSelection) setSelectedAction('Move');
+          } else if (ev.key === 'Escape') {
+            setSelectedAction(null);
+          }
+        };
+        window.addEventListener('keydown', onKeyDown);
         const texture = await Assets.load('/assets/corvette/idle.png');
         // Track which entities we've attached sprites to, to avoid re-attaching due to query/index lag
         const attached = new WeakSet<any>();
@@ -66,6 +87,16 @@ export default function GameStage() {
               .on("mouseout", () => {
                 (e as any).hover = false;
                 setHovered(null);
+              })
+              .on('pointerdown', (ev: any) => {
+                // Select this entity on click
+                const id = (e as any).id;
+                console.log({clickedEntityId: id})
+                if (id !== undefined && id !== null) {
+                  setSelection([String(id)]);
+                  console.log({settingSelectedEntityId: [String(id)]})
+                }
+                ev.stopPropagation(); // don't trigger ground handler
               });
             attached.add(e);
             // default scale if none present
@@ -123,6 +154,48 @@ export default function GameStage() {
           }
         };
 
+        // Ground click
+        ground.on('pointerdown', async (ev: any) => {
+          try {
+            const sel = latestSelectorsRef.current;
+            // If not in Move mode, treat ground click as deselect
+            if (sel.selectedAction !== 'Move') {
+              if (sel.hasSelection) setSelection([]);
+              return;
+            }
+            if (!sel.hasSelection) return;
+            const first = sel.firstSelectedId;
+            if (!first) return;
+            // Compute world position from global
+            const global = ev.global;
+            const local = worldContainer.toLocal(global);
+
+            // Build request payload
+            const entityIdNum = Number(first);
+            if (!Number.isFinite(entityIdNum)) return;
+            const body = {
+              type: 'Move',
+              entity_id: entityIdNum,
+              target: { x: Number(local.x), y: Number(local.y) },
+              client_cmd_id: `ui-${Date.now()}`,
+              player_id: 'p1', // TODO: replace with real player context
+            };
+
+            // POST to API
+            await fetch('/api/v1/intent', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+
+            // Clear action mode after enqueue
+            setSelectedAction(null);
+          } catch (e) {
+            // best-effort; do not throw in render loop
+            console.error('move intent post failed', e);
+          }
+        });
+
         app.ticker.add(() => {
             // Wait for first snapshot to be applied before rendering/ticking
             if (!game.ready) return;
@@ -133,6 +206,7 @@ export default function GameStage() {
 
         return () => {
           app.destroy(true, { children: true, texture: false });
+          window.removeEventListener('keydown', onKeyDown);
         };
     }
     let cleanup: (() => void) | undefined;

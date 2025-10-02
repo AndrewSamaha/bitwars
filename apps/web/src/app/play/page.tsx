@@ -6,6 +6,7 @@ import GameStage from "@/features/pixijs/components/GameStage"
 import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge"
 import { HUDProvider } from "@/features/hud/components/HUDContext"
 import TerminalPanel from "@/features/hud/components/TerminalPanel"
+import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel"
 
 export default function GamePage() {
   return (
@@ -15,6 +16,7 @@ export default function GamePage() {
         <GameStateStreamBridge />
         {/* Floating Terminal */}
         <TerminalPanel />
+        <EntityDetailPanel />
         {/* Game Stage */}
         <GameStage />
       </div>

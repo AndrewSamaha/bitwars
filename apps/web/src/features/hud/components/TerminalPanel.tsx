@@ -5,8 +5,10 @@ import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import EntitiesStreamCounter from "@/features/gamestate/components/EntitiesStreamCounter";
-import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount";
 import { useHUD } from "@/features/hud/components/HUDContext";
+import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount";
+
+const SHOW_STREAM_COUNTER = false;
 
 export default function TerminalPanel() {
   const { selectors, actions, refs } = useHUD();
@@ -66,7 +68,7 @@ export default function TerminalPanel() {
               <Terminal className="w-4 h-4 text-primary" />
               <span className="text-sm font-medium">BitWars Terminal</span>
               <EntitiesStreamCounter />
-              <EcsEntityCount />
+              {SHOW_STREAM_COUNTER && <EcsEntityCount />}
             </div>
           </div>
 

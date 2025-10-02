@@ -8,3 +8,4 @@ import "entity_delta.proto";
 import "snapshot.proto";
 import "snapshot_meta.proto";
 import "delta.proto";
+import "intent.proto";

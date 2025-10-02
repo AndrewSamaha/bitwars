@@ -55,3 +55,143 @@ pub struct Delta {
     #[prost(message, repeated, tag = "2")]
     pub updates: ::prost::alloc::vec::Vec<EntityDelta>,
 }
+/// Represents an in-flight destination for an entity (server-side).
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct MotionTarget {
+    /// world-space destination
+    #[prost(message, optional, tag = "1")]
+    pub target: ::core::option::Option<Vec2>,
+    /// distance threshold for arrival (world units)
+    #[prost(float, tag = "2")]
+    pub stop_radius: f32,
+}
+/// Minimal payload for a Move intent.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MoveToLocationIntent {
+    /// the server-side entity id to move
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    /// desired destination
+    #[prost(message, optional, tag = "2")]
+    pub target: ::core::option::Option<Vec2>,
+    /// client-generated id for idempotency
+    #[prost(string, tag = "3")]
+    pub client_cmd_id: ::prost::alloc::string::String,
+    /// issuing player
+    #[prost(string, tag = "4")]
+    pub player_id: ::prost::alloc::string::String,
+}
+/// Attack intent payload (authoritative server-side).
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttackIntent {
+    /// attacker
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    /// target entity
+    #[prost(uint64, tag = "2")]
+    pub target_id: u64,
+    #[prost(string, tag = "3")]
+    pub client_cmd_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub player_id: ::prost::alloc::string::String,
+}
+/// Build intent payload (authoritative server-side).
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildIntent {
+    /// builder
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    /// id of structure/unit blueprint
+    #[prost(string, tag = "2")]
+    pub blueprint_id: ::prost::alloc::string::String,
+    /// build location
+    #[prost(message, optional, tag = "3")]
+    pub location: ::core::option::Option<Vec2>,
+    #[prost(string, tag = "4")]
+    pub client_cmd_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub player_id: ::prost::alloc::string::String,
+}
+/// Extensible Intent envelope.
+/// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Intent {
+    #[prost(oneof = "intent::Kind", tags = "1, 2, 3")]
+    pub kind: ::core::option::Option<intent::Kind>,
+}
+/// Nested message and enum types in `Intent`.
+pub mod intent {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Kind {
+        #[prost(message, tag = "1")]
+        Move(super::MoveToLocationIntent),
+        #[prost(message, tag = "2")]
+        Attack(super::AttackIntent),
+        #[prost(message, tag = "3")]
+        Build(super::BuildIntent),
+    }
+}
+/// Per-entity queue of intents (for M1 and beyond).
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntentQueue {
+    #[prost(message, repeated, tag = "1")]
+    pub items: ::prost::alloc::vec::Vec<Intent>,
+}
+/// Server-side auxiliary state for intents and destinations.
+/// NOTE: You can embed these maps into your authoritative GameState,
+/// or publish them via a separate snapshot/delta channel.
+/// For M0 you likely won't publish these; they’re server internals.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntentState {
+    /// Per-entity intent queues (entity_id -> queue)
+    #[prost(map = "uint64, message", tag = "1")]
+    pub intent_queues: ::std::collections::HashMap<u64, IntentQueue>,
+    /// Current executing action per entity (entity_id -> action state)
+    #[prost(map = "uint64, message", tag = "2")]
+    pub current_action: ::std::collections::HashMap<u64, ActionState>,
+}
+/// Execution state per kind (authoritative server-side).
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct MoveState {
+    #[prost(message, optional, tag = "1")]
+    pub target: ::core::option::Option<MotionTarget>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct AttackState {
+    #[prost(uint64, tag = "1")]
+    pub target_id: u64,
+    /// Optional for LOS/prediction policies
+    #[prost(message, optional, tag = "2")]
+    pub last_known_pos: ::core::option::Option<Vec2>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildState {
+    #[prost(string, tag = "1")]
+    pub blueprint_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub location: ::core::option::Option<Vec2>,
+    /// 0..1 (casts/channels/build progress)
+    #[prost(float, tag = "3")]
+    pub progress: f32,
+}
+/// Unified per-entity execution container (one active at a time).
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ActionState {
+    /// Echo original intent for correlation/observability (optional but useful)
+    #[prost(message, optional, tag = "1")]
+    pub intent: ::core::option::Option<Intent>,
+    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4")]
+    pub exec: ::core::option::Option<action_state::Exec>,
+}
+/// Nested message and enum types in `ActionState`.
+pub mod action_state {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Exec {
+        #[prost(message, tag = "2")]
+        Move(super::MoveState),
+        #[prost(message, tag = "3")]
+        Attack(super::AttackState),
+        #[prost(message, tag = "4")]
+        Build(super::BuildState),
+    }
+}

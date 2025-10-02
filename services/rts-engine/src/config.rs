@@ -13,13 +13,15 @@ pub struct GameConfig {
     pub eps_pos: f32,
     pub eps_vel: f32,
     pub redis_url: String,
+    pub default_stop_radius: f32,
+    pub default_entity_speed: f32,
 }
 
 impl Default for GameConfig {
     fn default() -> Self {
         Self {
             game_id: "demo-001".into(),
-            num_entities: 20,
+            num_entities: 2,
             tps: 60,
             force_min: -200.0,
             force_max: 200.0,
@@ -31,6 +33,8 @@ impl Default for GameConfig {
             eps_pos: 0.0005,
             eps_vel: 0.0005,
             redis_url: "redis://127.0.0.1/".into(),
+            default_stop_radius: 0.75,
+            default_entity_speed: 10.0,
         }
     }
 }

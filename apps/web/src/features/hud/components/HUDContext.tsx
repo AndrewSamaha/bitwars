@@ -40,6 +40,7 @@ export type HUDPanels = {
 export type HUDState = {
   selectedEntities: EntityId[];     // ordered array if you care about last-selected
   selectedSet: Set<EntityId>;       // fast membership checks
+  selectedAction: "Move" | null;   // current command mode (M to set Move)
   resources: Resources;
   panels: HUDPanels;
   // Misc ephemeral HUD data
@@ -60,6 +61,7 @@ export type HUDState = {
 const defaultState: HUDState = {
   selectedEntities: [],
   selectedSet: new Set(),
+  selectedAction: null,
   resources: { gold: 0, wood: 0, stone: 0 },
   panels: {
     minimapOpen: true,
@@ -86,6 +88,7 @@ type Action =
   | { type: "SELECT_ADD"; ids: EntityId[] }                       // add to selection
   | { type: "SELECT_REMOVE"; ids: EntityId[] }                    // remove from selection
   | { type: "SELECT_CLEAR" }
+  | { type: "ACTION_SET"; value: HUDState["selectedAction"] }
   | { type: "RES_SET"; patch: Partial<Resources> }                // set/patch resource values
   | { type: "RES_DELTA"; delta: Partial<Resources> }              // increment/decrement resources
   | { type: "PANEL_SET"; key: keyof HUDPanels; value: boolean }
@@ -123,6 +126,9 @@ function reducer(state: HUDState, action: Action): HUDState {
     }
     case "SELECT_CLEAR":
       return { ...state, selectedEntities: [], selectedSet: new Set() };
+
+    case "ACTION_SET":
+      return { ...state, selectedAction: action.value };
 
     case "RES_SET": {
       const next: Resources = { ...state.resources };
@@ -207,6 +213,7 @@ type HUDContextValue = {
     addSelection: (ids: EntityId[]) => void;
     removeSelection: (ids: EntityId[]) => void;
     clearSelection: () => void;
+    setSelectedAction: (value: HUDState["selectedAction"]) => void;
     setResources: (patch: Partial<Resources>) => void;
     deltaResources: (delta: Partial<Resources>) => void;
     setPanel: (key: keyof HUDPanels, value: boolean) => void;
@@ -225,15 +232,18 @@ type HUDContextValue = {
     hasSelection: boolean;
     selectionCount: number;
     isSelected: (id: EntityId) => boolean;
+    selectedAction: HUDState["selectedAction"];
+    selectedEntities: EntityId[];
+    firstSelectedId: EntityId | null;
     isPanelOpen: (key: keyof HUDPanels) => boolean;
     getResource: (key: keyof Resources) => number;
     // Terminal
     isTerminalOpen: boolean;
     currentCommand: string;
     commandHistory: CommandHistory[];
-    app: Application | null;
     camera: Container | null;
     hoveredEntity: Entity | null
+    app: Application | null;
   };
   // Terminal refs (not persisted)
   refs: {
@@ -294,6 +304,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       addSelection: (ids: EntityId[]) => dispatch({ type: "SELECT_ADD", ids }),
       removeSelection: (ids: EntityId[]) => dispatch({ type: "SELECT_REMOVE", ids }),
       clearSelection: () => dispatch({ type: "SELECT_CLEAR" }),
+      setSelectedAction: (value: HUDState["selectedAction"]) => dispatch({ type: "ACTION_SET", value }),
 
       setResources: (patch: Partial<Resources>) => dispatch({ type: "RES_SET", patch }),
       deltaResources: (delta: Partial<Resources>) => dispatch({ type: "RES_DELTA", delta }),
@@ -321,6 +332,9 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       hasSelection: state.selectedEntities.length > 0,
       selectionCount: state.selectedEntities.length,
       isSelected: (id: EntityId) => state.selectedSet.has(id),
+      selectedAction: state.selectedAction,
+      selectedEntities: state.selectedEntities,
+      firstSelectedId: state.selectedEntities.length > 0 ? state.selectedEntities[0]! : null,
       isPanelOpen: (key: keyof HUDPanels) => !!state.panels[key],
       getResource: (key: keyof Resources) => state.resources[key] ?? 0,
       // Terminal
@@ -334,6 +348,8 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
     [
       state.selectedEntities.length,
       state.selectedSet,
+      state.selectedAction,
+      state.selectedEntities,
       state.panels,
       state.resources,
       state.isTerminalOpen,

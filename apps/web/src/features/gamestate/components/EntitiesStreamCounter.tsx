@@ -3,6 +3,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
+const SHOW_STREAM_COUNTER = false;
+
 export default function EntitiesStreamCounter() {
   const [snapshotCount, setSnapshotCount] = useState(0);
   const [deltaCount, setDeltaCount] = useState(0);
@@ -67,7 +69,7 @@ export default function EntitiesStreamCounter() {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
       <span className={`h-2 w-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
-      <span>Stream events: {snapshotCount}/{deltaCount}</span>
+      {SHOW_STREAM_COUNTER && <span>Stream events: {snapshotCount}/{deltaCount}</span>}
     </div>
   );
 }
