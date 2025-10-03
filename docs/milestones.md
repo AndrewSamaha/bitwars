@@ -53,7 +53,6 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
 ---
 
 ## M0.1: Intent Lifecycle, IDs, and Observability Seed
-
 > Adds thin guardrails and hooks without changing gameplay scope.
 
 * Goals
@@ -62,38 +61,7 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
   * Stamp **`server_tick`** everywhere.
   * Seed **observability + mini-replay** to protect determinism/idempotency later.
 
-* Deliverables
-
-  * **Lifecycle states**: `RECEIVED → ACCEPTED → IN_PROGRESS → BLOCKED? → FINISHED | CANCELED | REJECTED`.
-    Each event includes: `intent_id`, `client_cmd_id`, `player_id`, `server_tick`; failures include `reason`.
-  * **Identifiers**
-
-    * `client_cmd_id`: 16-byte UUIDv7 from client.
-    * `intent_id`: UUIDv7 or monotonic per player (server-assigned).
-    * `client_seq`: per-player sequence number (client-maintained).
-    * `server_tick`: strictly monotonic; attached to deltas and lifecycle events.
-  * **Wire/Streams (Redis)**
-
-    * `rts:match:{id}:intents` — client → engine (XADD; consumer group on engine).
-    * `rts:match:{id}:events` — engine → client (lifecycle events, deltas, metrics).
-    * `rts:match:{id}:snapshots` — periodic world snapshots.
-    * Payloads are **protobuf**; optional tiny JSON envelope for devtools readability.
-  * **Protocol header**
-
-    * `protocol_version (semver)`, `content_version (hash)` echoed in handshake logs (client & server).
-  * **Mini-replay script** (`pnpm demo:replay:lastN`)
-
-    * Replays the last N intents against an in-memory engine and asserts final world hash (`xxh3` over sorted entity state).
-  * **Latency probe CLI**
-
-    * Send 100 `Move` intents; report p50/p95 from submit → first delta that references that `intent_id`.
-
-* Acceptance Criteria
-
-  * Lifecycle events produced for `Move` with all IDs + `server_tick`; UI can ignore them, logs must show them.
-  * Applying the same delta twice on a cloned world yields the same world hash (idempotency smoke test).
-  * Mini-replay of the last N intents yields identical final world hash to live world.
-  * Latency probe prints p50/p95 to console and writes one JSON metrics file per run.
+IN PROGRESS: see docs/milestones/m0.1-intent-lifecycle.md for deliverables and acceptance criteria
 
 ---
 
