@@ -1,4 +1,8 @@
-use rts_engine::{config::GameConfig, io::{env::load_env, tracing::init_tracing}, engine::Engine};
+use rts_engine::{
+    config::GameConfig,
+    engine::Engine,
+    io::{env::load_env, tracing::init_tracing},
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

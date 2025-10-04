@@ -75,9 +75,11 @@ pub struct MoveToLocationIntent {
     #[prost(message, optional, tag = "2")]
     pub target: ::core::option::Option<Vec2>,
     /// client-generated id for idempotency
+    #[deprecated]
     #[prost(string, tag = "3")]
     pub client_cmd_id: ::prost::alloc::string::String,
     /// issuing player
+    #[deprecated]
     #[prost(string, tag = "4")]
     pub player_id: ::prost::alloc::string::String,
 }
@@ -90,8 +92,10 @@ pub struct AttackIntent {
     /// target entity
     #[prost(uint64, tag = "2")]
     pub target_id: u64,
+    #[deprecated]
     #[prost(string, tag = "3")]
     pub client_cmd_id: ::prost::alloc::string::String,
+    #[deprecated]
     #[prost(string, tag = "4")]
     pub player_id: ::prost::alloc::string::String,
 }
@@ -107,10 +111,50 @@ pub struct BuildIntent {
     /// build location
     #[prost(message, optional, tag = "3")]
     pub location: ::core::option::Option<Vec2>,
+    #[deprecated]
     #[prost(string, tag = "4")]
     pub client_cmd_id: ::prost::alloc::string::String,
+    #[deprecated]
     #[prost(string, tag = "5")]
     pub player_id: ::prost::alloc::string::String,
+}
+/// Transport envelope that wraps all intent payloads and carries authoritative metadata.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntentEnvelope {
+    /// UUIDv7 (16 bytes), supplied by client
+    #[prost(bytes = "vec", tag = "1")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    /// UUIDv7 (16 bytes), assigned by server
+    #[prost(bytes = "vec", tag = "2")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub player_id: ::prost::alloc::string::String,
+    /// client-maintained monotonic counter
+    #[prost(uint64, tag = "4")]
+    pub client_seq: u64,
+    /// frozen when ACCEPTED
+    #[prost(uint64, tag = "5")]
+    pub server_tick: u64,
+    /// major version
+    #[prost(uint32, tag = "6")]
+    pub protocol_version: u32,
+    /// defaults to REPLACE_ACTIVE when omitted
+    #[prost(enumeration = "IntentPolicy", tag = "7")]
+    pub policy: i32,
+    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12")]
+    pub payload: ::core::option::Option<intent_envelope::Payload>,
+}
+/// Nested message and enum types in `IntentEnvelope`.
+pub mod intent_envelope {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Payload {
+        #[prost(message, tag = "10")]
+        Move(super::MoveToLocationIntent),
+        #[prost(message, tag = "11")]
+        Attack(super::AttackIntent),
+        #[prost(message, tag = "12")]
+        Build(super::BuildIntent),
+    }
 }
 /// Extensible Intent envelope.
 /// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
@@ -129,6 +173,40 @@ pub mod intent {
         Attack(super::AttackIntent),
         #[prost(message, tag = "3")]
         Build(super::BuildIntent),
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LifecycleEvent {
+    #[prost(bytes = "vec", tag = "1")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub player_id: ::prost::alloc::string::String,
+    /// emission tick for this state
+    #[prost(uint64, tag = "4")]
+    pub server_tick: u64,
+    #[prost(enumeration = "LifecycleState", tag = "5")]
+    pub state: i32,
+    #[prost(enumeration = "LifecycleReason", tag = "6")]
+    pub reason: i32,
+    #[prost(uint32, tag = "7")]
+    pub protocol_version: u32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EventsStreamRecord {
+    #[prost(oneof = "events_stream_record::Record", tags = "1, 2")]
+    pub record: ::core::option::Option<events_stream_record::Record>,
+}
+/// Nested message and enum types in `EventsStreamRecord`.
+pub mod events_stream_record {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Record {
+        #[prost(message, tag = "1")]
+        Lifecycle(super::LifecycleEvent),
+        /// Metrics payloads may be added in a future milestone.
+        #[prost(message, tag = "2")]
+        Delta(super::Delta),
     }
 }
 /// Per-entity queue of intents (for M1 and beyond).
@@ -193,5 +271,122 @@ pub mod action_state {
         Attack(super::AttackState),
         #[prost(message, tag = "4")]
         Build(super::BuildState),
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IntentPolicy {
+    Unspecified = 0,
+    ReplaceActive = 1,
+    Append = 2,
+    ClearThenAppend = 3,
+}
+impl IntentPolicy {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "INTENT_POLICY_UNSPECIFIED",
+            Self::ReplaceActive => "REPLACE_ACTIVE",
+            Self::Append => "APPEND",
+            Self::ClearThenAppend => "CLEAR_THEN_APPEND",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INTENT_POLICY_UNSPECIFIED" => Some(Self::Unspecified),
+            "REPLACE_ACTIVE" => Some(Self::ReplaceActive),
+            "APPEND" => Some(Self::Append),
+            "CLEAR_THEN_APPEND" => Some(Self::ClearThenAppend),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum LifecycleState {
+    Unspecified = 0,
+    Received = 1,
+    Accepted = 2,
+    InProgress = 3,
+    Blocked = 4,
+    Finished = 5,
+    Canceled = 6,
+    Rejected = 7,
+}
+impl LifecycleState {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "LIFECYCLE_STATE_UNSPECIFIED",
+            Self::Received => "RECEIVED",
+            Self::Accepted => "ACCEPTED",
+            Self::InProgress => "IN_PROGRESS",
+            Self::Blocked => "BLOCKED",
+            Self::Finished => "FINISHED",
+            Self::Canceled => "CANCELED",
+            Self::Rejected => "REJECTED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "LIFECYCLE_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "RECEIVED" => Some(Self::Received),
+            "ACCEPTED" => Some(Self::Accepted),
+            "IN_PROGRESS" => Some(Self::InProgress),
+            "BLOCKED" => Some(Self::Blocked),
+            "FINISHED" => Some(Self::Finished),
+            "CANCELED" => Some(Self::Canceled),
+            "REJECTED" => Some(Self::Rejected),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum LifecycleReason {
+    Unspecified = 0,
+    None = 1,
+    Interrupted = 2,
+    Duplicate = 3,
+    OutOfOrder = 4,
+    InvalidTarget = 5,
+    ProtocolMismatch = 6,
+}
+impl LifecycleReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "LIFECYCLE_REASON_UNSPECIFIED",
+            Self::None => "NONE",
+            Self::Interrupted => "INTERRUPTED",
+            Self::Duplicate => "DUPLICATE",
+            Self::OutOfOrder => "OUT_OF_ORDER",
+            Self::InvalidTarget => "INVALID_TARGET",
+            Self::ProtocolMismatch => "PROTOCOL_MISMATCH",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "LIFECYCLE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "NONE" => Some(Self::None),
+            "INTERRUPTED" => Some(Self::Interrupted),
+            "DUPLICATE" => Some(Self::Duplicate),
+            "OUT_OF_ORDER" => Some(Self::OutOfOrder),
+            "INVALID_TARGET" => Some(Self::InvalidTarget),
+            "PROTOCOL_MISMATCH" => Some(Self::ProtocolMismatch),
+            _ => None,
+        }
     }
 }

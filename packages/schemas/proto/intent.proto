@@ -1,7 +1,36 @@
 syntax = "proto3";
 package bitwars;
 
+import "delta.proto";
 import "vec2.proto";
+
+enum IntentPolicy {
+  INTENT_POLICY_UNSPECIFIED = 0;
+  REPLACE_ACTIVE = 1;
+  APPEND = 2;
+  CLEAR_THEN_APPEND = 3;
+}
+
+enum LifecycleState {
+  LIFECYCLE_STATE_UNSPECIFIED = 0;
+  RECEIVED = 1;
+  ACCEPTED = 2;
+  IN_PROGRESS = 3;
+  BLOCKED = 4;
+  FINISHED = 5;
+  CANCELED = 6;
+  REJECTED = 7;
+}
+
+enum LifecycleReason {
+  LIFECYCLE_REASON_UNSPECIFIED = 0;
+  NONE = 1;
+  INTERRUPTED = 2;
+  DUPLICATE = 3;
+  OUT_OF_ORDER = 4;
+  INVALID_TARGET = 5;
+  PROTOCOL_MISMATCH = 6;
+}
 
 // Represents an in-flight destination for an entity (server-side).
 message MotionTarget {
@@ -13,16 +42,16 @@ message MotionTarget {
 message MoveToLocationIntent {
   uint64 entity_id     = 1; // the server-side entity id to move
   Vec2   target        = 2; // desired destination
-  string client_cmd_id = 3; // client-generated id for idempotency
-  string player_id     = 4; // issuing player
+  string client_cmd_id = 3 [deprecated = true]; // client-generated id for idempotency
+  string player_id     = 4 [deprecated = true]; // issuing player
 }
 
 // Attack intent payload (authoritative server-side).
 message AttackIntent {
   uint64 entity_id     = 1; // attacker
   uint64 target_id     = 2; // target entity
-  string client_cmd_id = 3;
-  string player_id     = 4;
+  string client_cmd_id = 3 [deprecated = true];
+  string player_id     = 4 [deprecated = true];
 }
 
 // Build intent payload (authoritative server-side).
@@ -30,8 +59,27 @@ message BuildIntent {
   uint64 entity_id     = 1; // builder
   string blueprint_id  = 2; // id of structure/unit blueprint
   Vec2   location      = 3; // build location
-  string client_cmd_id = 4;
-  string player_id     = 5;
+  string client_cmd_id = 4 [deprecated = true];
+  string player_id     = 5 [deprecated = true];
+}
+
+// Transport envelope that wraps all intent payloads and carries authoritative metadata.
+message IntentEnvelope {
+  bytes  client_cmd_id    = 1;  // UUIDv7 (16 bytes), supplied by client
+  bytes  intent_id        = 2;  // UUIDv7 (16 bytes), assigned by server
+  string player_id        = 3;
+  uint64 client_seq       = 4;  // client-maintained monotonic counter
+  uint64 server_tick      = 5;  // frozen when ACCEPTED
+  uint32 protocol_version = 6;  // major version
+  IntentPolicy policy     = 7;  // defaults to REPLACE_ACTIVE when omitted
+
+  oneof payload {
+    MoveToLocationIntent move   = 10;
+    AttackIntent         attack = 11;
+    BuildIntent          build  = 12;
+  }
+
+  reserved 8, 9, 13, 14, 15;
 }
 
 // Extensible Intent envelope.
@@ -41,6 +89,24 @@ message Intent {
     MoveToLocationIntent move = 1;
     AttackIntent         attack = 2;
     BuildIntent          build  = 3;
+  }
+}
+
+message LifecycleEvent {
+  bytes  intent_id        = 1;
+  bytes  client_cmd_id    = 2;
+  string player_id        = 3;
+  uint64 server_tick      = 4;     // emission tick for this state
+  LifecycleState state    = 5;
+  LifecycleReason reason  = 6;
+  uint32 protocol_version = 7;
+}
+
+message EventsStreamRecord {
+  oneof record {
+    LifecycleEvent lifecycle = 1;
+    Delta          delta     = 2;
+    // Metrics payloads may be added in a future milestone.
   }
 }
 

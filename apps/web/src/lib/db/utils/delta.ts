@@ -1,24 +1,50 @@
-import { decodeDeltaBinary } from "@/lib/db/utils/binary-encoding";
-import { mapDeltaToJson } from "@/lib/db/utils/protobuf";
-import { sseFormat } from "@/lib/db/utils/sse";
 import type { SseChannel } from "@/lib/db/utils/sse-channel";
+import { sseFormat } from "@/lib/db/utils/sse";
+import { mapDeltaToJson } from "@/lib/db/utils/protobuf";
+import { EventsStreamRecordSchema } from "@bitwars/shared/gen/intent_pb";
+import { fromBinary } from "@bufbuild/protobuf";
 
-export async function emitDeltaFromBuffer(
+function bufferToEventsStreamRecord(buf: Buffer) {
+  try {
+    return fromBinary(EventsStreamRecordSchema, new Uint8Array(buf));
+  } catch (err) {
+    return undefined;
+  }
+}
+
+export async function emitEventFromBuffer(
   channel: SseChannel,
   id: string,
   dataBuf: Buffer,
   logErr: (...args: any[]) => void
 ): Promise<void> {
-  try {
-    const delta = decodeDeltaBinary(dataBuf);
-    const payload = mapDeltaToJson(delta as any);
-    if ((payload as any)?.tick !== undefined && (payload as any)?.updates !== undefined) {
-      if (((payload as any).tick === 0 || (payload as any).tick === "0") && (payload as any).updates.length === 0) {
-        logErr("decoded empty delta — likely schema mismatch; did you run gen:ts? wrong GAME_ID?");
-      }
+  const record = bufferToEventsStreamRecord(dataBuf);
+  if (!record || !record.record) {
+    logErr("events record decode error", { id });
+    return;
+  }
+
+  switch (record.record.case) {
+    case "lifecycle": {
+      const payload = {
+        type: "lifecycle",
+        intentId: Buffer.from(record.record.value.intentId ?? new Uint8Array()).toString("hex"),
+        clientCmdId: Buffer.from(record.record.value.clientCmdId ?? new Uint8Array()).toString("hex"),
+        playerId: record.record.value.playerId,
+        serverTick: record.record.value.serverTick.toString(),
+        state: record.record.value.state,
+        reason: record.record.value.reason,
+        protocolVersion: record.record.value.protocolVersion,
+      };
+      await channel.write(sseFormat({ event: "lifecycle", id, data: payload }));
+      break;
     }
-    await channel.write(sseFormat({ event: "delta", id, data: payload }));
-  } catch (e) {
-    logErr("delta decode error", e);
+    case "delta": {
+      const deltaJson = mapDeltaToJson(record.record.value as any);
+      await channel.write(sseFormat({ event: "delta", id, data: deltaJson }));
+      break;
+    }
+    default:
+      logErr(`unsupported events record case ${record.record.case}`);
   }
 }

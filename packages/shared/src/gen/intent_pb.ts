@@ -2,8 +2,10 @@
 // @generated from file intent.proto (package bitwars, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Delta } from "./delta_pb.js";
+import { file_delta } from "./delta_pb.js";
 import type { Vec2 } from "./vec2_pb.js";
 import { file_vec2 } from "./vec2_pb.js";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file intent.proto.
  */
 export const file_intent: GenFile = /*@__PURE__*/
-  fileDesc("CgxpbnRlbnQucHJvdG8SB2JpdHdhcnMiQgoMTW90aW9uVGFyZ2V0Eh0KBnRhcmdldBgBIAEoCzINLmJpdHdhcnMuVmVjMhITCgtzdG9wX3JhZGl1cxgCIAEoAiJyChRNb3ZlVG9Mb2NhdGlvbkludGVudBIRCgllbnRpdHlfaWQYASABKAQSHQoGdGFyZ2V0GAIgASgLMg0uYml0d2Fycy5WZWMyEhUKDWNsaWVudF9jbWRfaWQYAyABKAkSEQoJcGxheWVyX2lkGAQgASgJIl4KDEF0dGFja0ludGVudBIRCgllbnRpdHlfaWQYASABKAQSEQoJdGFyZ2V0X2lkGAIgASgEEhUKDWNsaWVudF9jbWRfaWQYAyABKAkSEQoJcGxheWVyX2lkGAQgASgJIoEBCgtCdWlsZEludGVudBIRCgllbnRpdHlfaWQYASABKAQSFAoMYmx1ZXByaW50X2lkGAIgASgJEh8KCGxvY2F0aW9uGAMgASgLMg0uYml0d2Fycy5WZWMyEhUKDWNsaWVudF9jbWRfaWQYBCABKAkSEQoJcGxheWVyX2lkGAUgASgJIo8BCgZJbnRlbnQSLQoEbW92ZRgBIAEoCzIdLmJpdHdhcnMuTW92ZVRvTG9jYXRpb25JbnRlbnRIABInCgZhdHRhY2sYAiABKAsyFS5iaXR3YXJzLkF0dGFja0ludGVudEgAEiUKBWJ1aWxkGAMgASgLMhQuYml0d2Fycy5CdWlsZEludGVudEgAQgYKBGtpbmQiLQoLSW50ZW50UXVldWUSHgoFaXRlbXMYASADKAsyDy5iaXR3YXJzLkludGVudCKkAgoLSW50ZW50U3RhdGUSPQoNaW50ZW50X3F1ZXVlcxgBIAMoCzImLmJpdHdhcnMuSW50ZW50U3RhdGUuSW50ZW50UXVldWVzRW50cnkSPwoOY3VycmVudF9hY3Rpb24YAiADKAsyJy5iaXR3YXJzLkludGVudFN0YXRlLkN1cnJlbnRBY3Rpb25FbnRyeRpJChFJbnRlbnRRdWV1ZXNFbnRyeRILCgNrZXkYASABKAQSIwoFdmFsdWUYAiABKAsyFC5iaXR3YXJzLkludGVudFF1ZXVlOgI4ARpKChJDdXJyZW50QWN0aW9uRW50cnkSCwoDa2V5GAEgASgEEiMKBXZhbHVlGAIgASgLMhQuYml0d2Fycy5BY3Rpb25TdGF0ZToCOAEiMgoJTW92ZVN0YXRlEiUKBnRhcmdldBgBIAEoCzIVLmJpdHdhcnMuTW90aW9uVGFyZ2V0IkcKC0F0dGFja1N0YXRlEhEKCXRhcmdldF9pZBgBIAEoBBIlCg5sYXN0X2tub3duX3BvcxgCIAEoCzINLmJpdHdhcnMuVmVjMiJVCgpCdWlsZFN0YXRlEhQKDGJsdWVwcmludF9pZBgBIAEoCRIfCghsb2NhdGlvbhgCIAEoCzINLmJpdHdhcnMuVmVjMhIQCghwcm9ncmVzcxgDIAEoAiKoAQoLQWN0aW9uU3RhdGUSHwoGaW50ZW50GAEgASgLMg8uYml0d2Fycy5JbnRlbnQSIgoEbW92ZRgCIAEoCzISLmJpdHdhcnMuTW92ZVN0YXRlSAASJgoGYXR0YWNrGAMgASgLMhQuYml0d2Fycy5BdHRhY2tTdGF0ZUgAEiQKBWJ1aWxkGAQgASgLMhMuYml0d2Fycy5CdWlsZFN0YXRlSABCBgoEZXhlY2IGcHJvdG8z", [file_vec2]);
+  fileDesc("CgxpbnRlbnQucHJvdG8SB2JpdHdhcnMiQgoMTW90aW9uVGFyZ2V0Eh0KBnRhcmdldBgBIAEoCzINLmJpdHdhcnMuVmVjMhITCgtzdG9wX3JhZGl1cxgCIAEoAiJ6ChRNb3ZlVG9Mb2NhdGlvbkludGVudBIRCgllbnRpdHlfaWQYASABKAQSHQoGdGFyZ2V0GAIgASgLMg0uYml0d2Fycy5WZWMyEhkKDWNsaWVudF9jbWRfaWQYAyABKAlCAhgBEhUKCXBsYXllcl9pZBgEIAEoCUICGAEiZgoMQXR0YWNrSW50ZW50EhEKCWVudGl0eV9pZBgBIAEoBBIRCgl0YXJnZXRfaWQYAiABKAQSGQoNY2xpZW50X2NtZF9pZBgDIAEoCUICGAESFQoJcGxheWVyX2lkGAQgASgJQgIYASKJAQoLQnVpbGRJbnRlbnQSEQoJZW50aXR5X2lkGAEgASgEEhQKDGJsdWVwcmludF9pZBgCIAEoCRIfCghsb2NhdGlvbhgDIAEoCzINLmJpdHdhcnMuVmVjMhIZCg1jbGllbnRfY21kX2lkGAQgASgJQgIYARIVCglwbGF5ZXJfaWQYBSABKAlCAhgBIt8CCg5JbnRlbnRFbnZlbG9wZRIVCg1jbGllbnRfY21kX2lkGAEgASgMEhEKCWludGVudF9pZBgCIAEoDBIRCglwbGF5ZXJfaWQYAyABKAkSEgoKY2xpZW50X3NlcRgEIAEoBBITCgtzZXJ2ZXJfdGljaxgFIAEoBBIYChBwcm90b2NvbF92ZXJzaW9uGAYgASgNEiUKBnBvbGljeRgHIAEoDjIVLmJpdHdhcnMuSW50ZW50UG9saWN5Ei0KBG1vdmUYCiABKAsyHS5iaXR3YXJzLk1vdmVUb0xvY2F0aW9uSW50ZW50SAASJwoGYXR0YWNrGAsgASgLMhUuYml0d2Fycy5BdHRhY2tJbnRlbnRIABIlCgVidWlsZBgMIAEoCzIULmJpdHdhcnMuQnVpbGRJbnRlbnRIAEIJCgdwYXlsb2FkSgQICBAJSgQICRAKSgQIDRAOSgQIDhAPSgQIDxAQIo8BCgZJbnRlbnQSLQoEbW92ZRgBIAEoCzIdLmJpdHdhcnMuTW92ZVRvTG9jYXRpb25JbnRlbnRIABInCgZhdHRhY2sYAiABKAsyFS5iaXR3YXJzLkF0dGFja0ludGVudEgAEiUKBWJ1aWxkGAMgASgLMhQuYml0d2Fycy5CdWlsZEludGVudEgAQgYKBGtpbmQizgEKDkxpZmVjeWNsZUV2ZW50EhEKCWludGVudF9pZBgBIAEoDBIVCg1jbGllbnRfY21kX2lkGAIgASgMEhEKCXBsYXllcl9pZBgDIAEoCRITCgtzZXJ2ZXJfdGljaxgEIAEoBBImCgVzdGF0ZRgFIAEoDjIXLmJpdHdhcnMuTGlmZWN5Y2xlU3RhdGUSKAoGcmVhc29uGAYgASgOMhguYml0d2Fycy5MaWZlY3ljbGVSZWFzb24SGAoQcHJvdG9jb2xfdmVyc2lvbhgHIAEoDSJtChJFdmVudHNTdHJlYW1SZWNvcmQSLAoJbGlmZWN5Y2xlGAEgASgLMhcuYml0d2Fycy5MaWZlY3ljbGVFdmVudEgAEh8KBWRlbHRhGAIgASgLMg4uYml0d2Fycy5EZWx0YUgAQggKBnJlY29yZCItCgtJbnRlbnRRdWV1ZRIeCgVpdGVtcxgBIAMoCzIPLmJpdHdhcnMuSW50ZW50IqQCCgtJbnRlbnRTdGF0ZRI9Cg1pbnRlbnRfcXVldWVzGAEgAygLMiYuYml0d2Fycy5JbnRlbnRTdGF0ZS5JbnRlbnRRdWV1ZXNFbnRyeRI/Cg5jdXJyZW50X2FjdGlvbhgCIAMoCzInLmJpdHdhcnMuSW50ZW50U3RhdGUuQ3VycmVudEFjdGlvbkVudHJ5GkkKEUludGVudFF1ZXVlc0VudHJ5EgsKA2tleRgBIAEoBBIjCgV2YWx1ZRgCIAEoCzIULmJpdHdhcnMuSW50ZW50UXVldWU6AjgBGkoKEkN1cnJlbnRBY3Rpb25FbnRyeRILCgNrZXkYASABKAQSIwoFdmFsdWUYAiABKAsyFC5iaXR3YXJzLkFjdGlvblN0YXRlOgI4ASIyCglNb3ZlU3RhdGUSJQoGdGFyZ2V0GAEgASgLMhUuYml0d2Fycy5Nb3Rpb25UYXJnZXQiRwoLQXR0YWNrU3RhdGUSEQoJdGFyZ2V0X2lkGAEgASgEEiUKDmxhc3Rfa25vd25fcG9zGAIgASgLMg0uYml0d2Fycy5WZWMyIlUKCkJ1aWxkU3RhdGUSFAoMYmx1ZXByaW50X2lkGAEgASgJEh8KCGxvY2F0aW9uGAIgASgLMg0uYml0d2Fycy5WZWMyEhAKCHByb2dyZXNzGAMgASgCIqgBCgtBY3Rpb25TdGF0ZRIfCgZpbnRlbnQYASABKAsyDy5iaXR3YXJzLkludGVudBIiCgRtb3ZlGAIgASgLMhIuYml0d2Fycy5Nb3ZlU3RhdGVIABImCgZhdHRhY2sYAyABKAsyFC5iaXR3YXJzLkF0dGFja1N0YXRlSAASJAoFYnVpbGQYBCABKAsyEy5iaXR3YXJzLkJ1aWxkU3RhdGVIAEIGCgRleGVjKmQKDEludGVudFBvbGljeRIdChlJTlRFTlRfUE9MSUNZX1VOU1BFQ0lGSUVEEAASEgoOUkVQTEFDRV9BQ1RJVkUQARIKCgZBUFBFTkQQAhIVChFDTEVBUl9USEVOX0FQUEVORBADKpUBCg5MaWZlY3ljbGVTdGF0ZRIfChtMSUZFQ1lDTEVfU1RBVEVfVU5TUEVDSUZJRUQQABIMCghSRUNFSVZFRBABEgwKCEFDQ0VQVEVEEAISDwoLSU5fUFJPR1JFU1MQAxILCgdCTE9DS0VEEAQSDAoIRklOSVNIRUQQBRIMCghDQU5DRUxFRBAGEgwKCFJFSkVDVEVEEAcqmgEKD0xpZmVjeWNsZVJlYXNvbhIgChxMSUZFQ1lDTEVfUkVBU09OX1VOU1BFQ0lGSUVEEAASCAoETk9ORRABEg8KC0lOVEVSUlVQVEVEEAISDQoJRFVQTElDQVRFEAMSEAoMT1VUX09GX09SREVSEAQSEgoOSU5WQUxJRF9UQVJHRVQQBRIVChFQUk9UT0NPTF9NSVNNQVRDSBAGYgZwcm90bzM", [file_delta, file_vec2]);
 
 /**
  * Represents an in-flight destination for an entity (server-side).
@@ -65,14 +67,16 @@ export type MoveToLocationIntent = Message<"bitwars.MoveToLocationIntent"> & {
   /**
    * client-generated id for idempotency
    *
-   * @generated from field: string client_cmd_id = 3;
+   * @generated from field: string client_cmd_id = 3 [deprecated = true];
+   * @deprecated
    */
   clientCmdId: string;
 
   /**
    * issuing player
    *
-   * @generated from field: string player_id = 4;
+   * @generated from field: string player_id = 4 [deprecated = true];
+   * @deprecated
    */
   playerId: string;
 };
@@ -105,12 +109,14 @@ export type AttackIntent = Message<"bitwars.AttackIntent"> & {
   targetId: bigint;
 
   /**
-   * @generated from field: string client_cmd_id = 3;
+   * @generated from field: string client_cmd_id = 3 [deprecated = true];
+   * @deprecated
    */
   clientCmdId: string;
 
   /**
-   * @generated from field: string player_id = 4;
+   * @generated from field: string player_id = 4 [deprecated = true];
+   * @deprecated
    */
   playerId: string;
 };
@@ -150,12 +156,14 @@ export type BuildIntent = Message<"bitwars.BuildIntent"> & {
   location?: Vec2;
 
   /**
-   * @generated from field: string client_cmd_id = 4;
+   * @generated from field: string client_cmd_id = 4 [deprecated = true];
+   * @deprecated
    */
   clientCmdId: string;
 
   /**
-   * @generated from field: string player_id = 5;
+   * @generated from field: string player_id = 5 [deprecated = true];
+   * @deprecated
    */
   playerId: string;
 };
@@ -166,6 +174,90 @@ export type BuildIntent = Message<"bitwars.BuildIntent"> & {
  */
 export const BuildIntentSchema: GenMessage<BuildIntent> = /*@__PURE__*/
   messageDesc(file_intent, 3);
+
+/**
+ * Transport envelope that wraps all intent payloads and carries authoritative metadata.
+ *
+ * @generated from message bitwars.IntentEnvelope
+ */
+export type IntentEnvelope = Message<"bitwars.IntentEnvelope"> & {
+  /**
+   * UUIDv7 (16 bytes), supplied by client
+   *
+   * @generated from field: bytes client_cmd_id = 1;
+   */
+  clientCmdId: Uint8Array;
+
+  /**
+   * UUIDv7 (16 bytes), assigned by server
+   *
+   * @generated from field: bytes intent_id = 2;
+   */
+  intentId: Uint8Array;
+
+  /**
+   * @generated from field: string player_id = 3;
+   */
+  playerId: string;
+
+  /**
+   * client-maintained monotonic counter
+   *
+   * @generated from field: uint64 client_seq = 4;
+   */
+  clientSeq: bigint;
+
+  /**
+   * frozen when ACCEPTED
+   *
+   * @generated from field: uint64 server_tick = 5;
+   */
+  serverTick: bigint;
+
+  /**
+   * major version
+   *
+   * @generated from field: uint32 protocol_version = 6;
+   */
+  protocolVersion: number;
+
+  /**
+   * defaults to REPLACE_ACTIVE when omitted
+   *
+   * @generated from field: bitwars.IntentPolicy policy = 7;
+   */
+  policy: IntentPolicy;
+
+  /**
+   * @generated from oneof bitwars.IntentEnvelope.payload
+   */
+  payload: {
+    /**
+     * @generated from field: bitwars.MoveToLocationIntent move = 10;
+     */
+    value: MoveToLocationIntent;
+    case: "move";
+  } | {
+    /**
+     * @generated from field: bitwars.AttackIntent attack = 11;
+     */
+    value: AttackIntent;
+    case: "attack";
+  } | {
+    /**
+     * @generated from field: bitwars.BuildIntent build = 12;
+     */
+    value: BuildIntent;
+    case: "build";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message bitwars.IntentEnvelope.
+ * Use `create(IntentEnvelopeSchema)` to create a new message.
+ */
+export const IntentEnvelopeSchema: GenMessage<IntentEnvelope> = /*@__PURE__*/
+  messageDesc(file_intent, 4);
 
 /**
  * Extensible Intent envelope.
@@ -203,7 +295,87 @@ export type Intent = Message<"bitwars.Intent"> & {
  * Use `create(IntentSchema)` to create a new message.
  */
 export const IntentSchema: GenMessage<Intent> = /*@__PURE__*/
-  messageDesc(file_intent, 4);
+  messageDesc(file_intent, 5);
+
+/**
+ * @generated from message bitwars.LifecycleEvent
+ */
+export type LifecycleEvent = Message<"bitwars.LifecycleEvent"> & {
+  /**
+   * @generated from field: bytes intent_id = 1;
+   */
+  intentId: Uint8Array;
+
+  /**
+   * @generated from field: bytes client_cmd_id = 2;
+   */
+  clientCmdId: Uint8Array;
+
+  /**
+   * @generated from field: string player_id = 3;
+   */
+  playerId: string;
+
+  /**
+   * emission tick for this state
+   *
+   * @generated from field: uint64 server_tick = 4;
+   */
+  serverTick: bigint;
+
+  /**
+   * @generated from field: bitwars.LifecycleState state = 5;
+   */
+  state: LifecycleState;
+
+  /**
+   * @generated from field: bitwars.LifecycleReason reason = 6;
+   */
+  reason: LifecycleReason;
+
+  /**
+   * @generated from field: uint32 protocol_version = 7;
+   */
+  protocolVersion: number;
+};
+
+/**
+ * Describes the message bitwars.LifecycleEvent.
+ * Use `create(LifecycleEventSchema)` to create a new message.
+ */
+export const LifecycleEventSchema: GenMessage<LifecycleEvent> = /*@__PURE__*/
+  messageDesc(file_intent, 6);
+
+/**
+ * @generated from message bitwars.EventsStreamRecord
+ */
+export type EventsStreamRecord = Message<"bitwars.EventsStreamRecord"> & {
+  /**
+   * @generated from oneof bitwars.EventsStreamRecord.record
+   */
+  record: {
+    /**
+     * @generated from field: bitwars.LifecycleEvent lifecycle = 1;
+     */
+    value: LifecycleEvent;
+    case: "lifecycle";
+  } | {
+    /**
+     * Metrics payloads may be added in a future milestone.
+     *
+     * @generated from field: bitwars.Delta delta = 2;
+     */
+    value: Delta;
+    case: "delta";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message bitwars.EventsStreamRecord.
+ * Use `create(EventsStreamRecordSchema)` to create a new message.
+ */
+export const EventsStreamRecordSchema: GenMessage<EventsStreamRecord> = /*@__PURE__*/
+  messageDesc(file_intent, 7);
 
 /**
  * Per-entity queue of intents (for M1 and beyond).
@@ -222,7 +394,7 @@ export type IntentQueue = Message<"bitwars.IntentQueue"> & {
  * Use `create(IntentQueueSchema)` to create a new message.
  */
 export const IntentQueueSchema: GenMessage<IntentQueue> = /*@__PURE__*/
-  messageDesc(file_intent, 5);
+  messageDesc(file_intent, 8);
 
 /**
  * Server-side auxiliary state for intents and destinations.
@@ -253,7 +425,7 @@ export type IntentState = Message<"bitwars.IntentState"> & {
  * Use `create(IntentStateSchema)` to create a new message.
  */
 export const IntentStateSchema: GenMessage<IntentState> = /*@__PURE__*/
-  messageDesc(file_intent, 6);
+  messageDesc(file_intent, 9);
 
 /**
  * Execution state per kind (authoritative server-side).
@@ -272,7 +444,7 @@ export type MoveState = Message<"bitwars.MoveState"> & {
  * Use `create(MoveStateSchema)` to create a new message.
  */
 export const MoveStateSchema: GenMessage<MoveState> = /*@__PURE__*/
-  messageDesc(file_intent, 7);
+  messageDesc(file_intent, 10);
 
 /**
  * @generated from message bitwars.AttackState
@@ -296,7 +468,7 @@ export type AttackState = Message<"bitwars.AttackState"> & {
  * Use `create(AttackStateSchema)` to create a new message.
  */
 export const AttackStateSchema: GenMessage<AttackState> = /*@__PURE__*/
-  messageDesc(file_intent, 8);
+  messageDesc(file_intent, 11);
 
 /**
  * @generated from message bitwars.BuildState
@@ -325,7 +497,7 @@ export type BuildState = Message<"bitwars.BuildState"> & {
  * Use `create(BuildStateSchema)` to create a new message.
  */
 export const BuildStateSchema: GenMessage<BuildState> = /*@__PURE__*/
-  messageDesc(file_intent, 9);
+  messageDesc(file_intent, 12);
 
 /**
  * Unified per-entity execution container (one active at a time).
@@ -369,5 +541,133 @@ export type ActionState = Message<"bitwars.ActionState"> & {
  * Use `create(ActionStateSchema)` to create a new message.
  */
 export const ActionStateSchema: GenMessage<ActionState> = /*@__PURE__*/
-  messageDesc(file_intent, 10);
+  messageDesc(file_intent, 13);
+
+/**
+ * @generated from enum bitwars.IntentPolicy
+ */
+export enum IntentPolicy {
+  /**
+   * @generated from enum value: INTENT_POLICY_UNSPECIFIED = 0;
+   */
+  INTENT_POLICY_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: REPLACE_ACTIVE = 1;
+   */
+  REPLACE_ACTIVE = 1,
+
+  /**
+   * @generated from enum value: APPEND = 2;
+   */
+  APPEND = 2,
+
+  /**
+   * @generated from enum value: CLEAR_THEN_APPEND = 3;
+   */
+  CLEAR_THEN_APPEND = 3,
+}
+
+/**
+ * Describes the enum bitwars.IntentPolicy.
+ */
+export const IntentPolicySchema: GenEnum<IntentPolicy> = /*@__PURE__*/
+  enumDesc(file_intent, 0);
+
+/**
+ * @generated from enum bitwars.LifecycleState
+ */
+export enum LifecycleState {
+  /**
+   * @generated from enum value: LIFECYCLE_STATE_UNSPECIFIED = 0;
+   */
+  LIFECYCLE_STATE_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: RECEIVED = 1;
+   */
+  RECEIVED = 1,
+
+  /**
+   * @generated from enum value: ACCEPTED = 2;
+   */
+  ACCEPTED = 2,
+
+  /**
+   * @generated from enum value: IN_PROGRESS = 3;
+   */
+  IN_PROGRESS = 3,
+
+  /**
+   * @generated from enum value: BLOCKED = 4;
+   */
+  BLOCKED = 4,
+
+  /**
+   * @generated from enum value: FINISHED = 5;
+   */
+  FINISHED = 5,
+
+  /**
+   * @generated from enum value: CANCELED = 6;
+   */
+  CANCELED = 6,
+
+  /**
+   * @generated from enum value: REJECTED = 7;
+   */
+  REJECTED = 7,
+}
+
+/**
+ * Describes the enum bitwars.LifecycleState.
+ */
+export const LifecycleStateSchema: GenEnum<LifecycleState> = /*@__PURE__*/
+  enumDesc(file_intent, 1);
+
+/**
+ * @generated from enum bitwars.LifecycleReason
+ */
+export enum LifecycleReason {
+  /**
+   * @generated from enum value: LIFECYCLE_REASON_UNSPECIFIED = 0;
+   */
+  LIFECYCLE_REASON_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: NONE = 1;
+   */
+  NONE = 1,
+
+  /**
+   * @generated from enum value: INTERRUPTED = 2;
+   */
+  INTERRUPTED = 2,
+
+  /**
+   * @generated from enum value: DUPLICATE = 3;
+   */
+  DUPLICATE = 3,
+
+  /**
+   * @generated from enum value: OUT_OF_ORDER = 4;
+   */
+  OUT_OF_ORDER = 4,
+
+  /**
+   * @generated from enum value: INVALID_TARGET = 5;
+   */
+  INVALID_TARGET = 5,
+
+  /**
+   * @generated from enum value: PROTOCOL_MISMATCH = 6;
+   */
+  PROTOCOL_MISMATCH = 6,
+}
+
+/**
+ * Describes the enum bitwars.LifecycleReason.
+ */
+export const LifecycleReasonSchema: GenEnum<LifecycleReason> = /*@__PURE__*/
+  enumDesc(file_intent, 2);
 

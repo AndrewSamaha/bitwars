@@ -42,8 +42,12 @@ impl Default for GameConfig {
 impl GameConfig {
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
-        if let Ok(v) = std::env::var("GAME_ID") { cfg.game_id = v; }
-        if let Ok(v) = std::env::var("GAMESTATE_REDIS_URL") { cfg.redis_url = v; }
+        if let Ok(v) = std::env::var("GAME_ID") {
+            cfg.game_id = v;
+        }
+        if let Ok(v) = std::env::var("GAMESTATE_REDIS_URL") {
+            cfg.redis_url = v;
+        }
         // (add more env overrides if you like)
         cfg
     }

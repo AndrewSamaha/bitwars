@@ -8,6 +8,9 @@ fn main() {
         vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
         force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
     };
-    let s = pb::Snapshot { tick: 0, entities: vec![e] };
+    let s = pb::Snapshot {
+        tick: 0,
+        entities: vec![e],
+    };
     println!("OK: {} entities", s.entities.len());
 }

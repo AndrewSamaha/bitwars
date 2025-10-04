@@ -16,10 +16,7 @@ fn main() -> anyhow::Result<()> {
         .expect("could not resolve repo root from CARGO_MANIFEST_DIR")
         .to_path_buf();
 
-    let out_dir = repo_root
-        .join("packages")
-        .join("schemas")
-        .join("testdata");
+    let out_dir = repo_root.join("packages").join("schemas").join("testdata");
     fs::create_dir_all(&out_dir)?;
 
     // Example snapshot: tick=42, two entities with positions/velocities
