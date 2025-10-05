@@ -175,7 +175,8 @@ impl Engine {
         };
         let client_cmd_id = envelope.client_cmd_id.clone();
 
-        let policy = pb::IntentPolicy::try_from(envelope.policy).unwrap_or(pb::IntentPolicy::ReplaceActive);
+        let policy =
+            pb::IntentPolicy::try_from(envelope.policy).unwrap_or(pb::IntentPolicy::ReplaceActive);
 
         let metadata = IntentMetadata {
             intent_id: intent_id.clone(),
@@ -186,20 +187,35 @@ impl Engine {
             policy,
         };
 
-        self.emit_lifecycle_event(&metadata, pb::LifecycleState::Received, pb::LifecycleReason::None, accept_tick)
-            .await?;
+        self.emit_lifecycle_event(
+            &metadata,
+            pb::LifecycleState::Received,
+            pb::LifecycleReason::None,
+            accept_tick,
+        )
+        .await?;
 
         if protocol_version != ENGINE_PROTOCOL_MAJOR {
-            self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, pb::LifecycleReason::ProtocolMismatch, accept_tick)
-                .await?;
+            self.emit_lifecycle_event(
+                &metadata,
+                pb::LifecycleState::Rejected,
+                pb::LifecycleReason::ProtocolMismatch,
+                accept_tick,
+            )
+            .await?;
             warn!(player_id = %player_id, expected = ENGINE_PROTOCOL_MAJOR, got = protocol_version, "protocol mismatch");
             return Err(anyhow!("protocol mismatch"));
         }
 
         if let Some(last_seq) = self.player_last_seq.get(&player_id).copied() {
             if client_seq <= last_seq {
-                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, pb::LifecycleReason::OutOfOrder, accept_tick)
-                    .await?;
+                self.emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::OutOfOrder,
+                    accept_tick,
+                )
+                .await?;
                 warn!(player_id = %player_id, client_seq, last_seq, "dropping out-of-order intent");
                 return Err(anyhow!("out of order"));
             }
@@ -210,8 +226,13 @@ impl Engine {
             .existing_intent_for_cmd(&player_id, &client_cmd_id)
             .await?
         {
-            self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, pb::LifecycleReason::Duplicate, accept_tick)
-                .await?;
+            self.emit_lifecycle_event(
+                &metadata,
+                pb::LifecycleState::Rejected,
+                pb::LifecycleReason::Duplicate,
+                accept_tick,
+            )
+            .await?;
             warn!(player_id = %player_id, existing_intent_id = %format_uuid(&existing_intent_id), "duplicate client_cmd_id received");
             return Err(anyhow!("duplicate command"));
         }
@@ -257,6 +278,20 @@ impl Engine {
             }
         };
 
+        let policy_outcome = self
+            .intents
+            .apply_policy_before_enqueue(&payload_intent, metadata.policy);
+
+        for (_, canceled_metadata) in policy_outcome.canceled.iter() {
+            self.emit_lifecycle_event(
+                canceled_metadata,
+                pb::LifecycleState::Canceled,
+                pb::LifecycleReason::Interrupted,
+                self.state.tick,
+            )
+            .await?;
+        }
+
         self.emit_lifecycle_event(
             &metadata,
             pb::LifecycleState::Accepted,
@@ -264,6 +299,16 @@ impl Engine {
             accept_tick,
         )
         .await?;
+
+        if policy_outcome.blocked {
+            self.emit_lifecycle_event(
+                &metadata,
+                pb::LifecycleState::Blocked,
+                pb::LifecycleReason::None,
+                self.state.tick,
+            )
+            .await?;
+        }
 
         self.intents.enqueue(QueuedIntent {
             intent: payload_intent,

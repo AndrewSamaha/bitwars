@@ -26,6 +26,12 @@ pub struct ActiveIntent {
     pub metadata: IntentMetadata,
 }
 
+#[derive(Default)]
+pub struct PolicyOutcome {
+    pub canceled: Vec<(u64, IntentMetadata)>,
+    pub blocked: bool,
+}
+
 /// Minimal intent manager that holds per-entity queues and current action state.
 ///
 /// Notes:
@@ -150,6 +156,51 @@ impl IntentManager {
         notifications
     }
 
+    pub fn apply_policy_before_enqueue(
+        &mut self,
+        intent: &pb::Intent,
+        policy: pb::IntentPolicy,
+    ) -> PolicyOutcome {
+        let Some(entity_id) = Self::intent_entity_id(intent) else {
+            warn!("policy application skipped for intent with no entity id");
+            return PolicyOutcome::default();
+        };
+
+        let mut outcome = PolicyOutcome::default();
+
+        match policy {
+            pb::IntentPolicy::Unspecified | pb::IntentPolicy::ReplaceActive => {
+                if let Some(active) = self.current_action.remove(&entity_id) {
+                    log_cancel(&active.metadata, entity_id, "replace_active");
+                    outcome.canceled.push((entity_id, active.metadata));
+                }
+            }
+            pb::IntentPolicy::ClearThenAppend => {
+                if let Some(active) = self.current_action.remove(&entity_id) {
+                    log_cancel(&active.metadata, entity_id, "clear_then_append");
+                    outcome.canceled.push((entity_id, active.metadata));
+                }
+                if let Some(queue) = self.intent_queues.get_mut(&entity_id) {
+                    while let Some(QueuedIntent { metadata, .. }) = queue.pop_front() {
+                        log_cancel(&metadata, entity_id, "clear_then_append_queue");
+                        outcome.canceled.push((entity_id, metadata));
+                    }
+                }
+            }
+            pb::IntentPolicy::Append => {}
+        }
+
+        let still_active = self.current_action.contains_key(&entity_id);
+        let queue_blocked = self
+            .intent_queues
+            .get(&entity_id)
+            .map(|q| !q.is_empty())
+            .unwrap_or(false);
+        outcome.blocked = still_active || queue_blocked;
+
+        outcome
+    }
+
     pub fn snapshot(
         &self,
     ) -> (
@@ -234,6 +285,17 @@ fn log_finish(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u6
         client_cmd_id = %format_uuid(&metadata.client_cmd_id),
         player_id = %metadata.player_id,
         "finish intent={kind}"
+    );
+}
+
+fn log_cancel(metadata: &IntentMetadata, entity_id: u64, ctx: &str) {
+    info!(
+        entity_id,
+        intent_id = %format_uuid(&metadata.intent_id),
+        client_cmd_id = %format_uuid(&metadata.client_cmd_id),
+        player_id = %metadata.player_id,
+        context = %ctx,
+        "cancel intent"
     );
 }
 
