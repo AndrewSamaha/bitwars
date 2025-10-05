@@ -307,3 +307,140 @@ pub(crate) fn format_uuid(bytes: &[u8]) -> String {
     }
     hex::encode(bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::state::GameState;
+    use crate::pb;
+
+    fn make_move_intent(entity_id: u64, target: (f32, f32)) -> pb::Intent {
+        pb::Intent {
+            kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
+                entity_id,
+                target: Some(pb::Vec2 {
+                    x: target.0,
+                    y: target.1,
+                }),
+                client_cmd_id: String::new(),
+                player_id: String::new(),
+            })),
+        }
+    }
+
+    fn make_metadata(intent_id_byte: u8, policy: pb::IntentPolicy) -> IntentMetadata {
+        IntentMetadata {
+            intent_id: vec![intent_id_byte; 16],
+            client_cmd_id: vec![intent_id_byte + 1; 16],
+            player_id: "tester".into(),
+            protocol_version: 1,
+            server_tick: 0,
+            policy,
+        }
+    }
+
+    fn make_action_state(intent: &pb::Intent) -> pb::ActionState {
+        let exec = match intent.kind.as_ref() {
+            Some(pb::intent::Kind::Move(m)) => Some(pb::action_state::Exec::Move(pb::MoveState {
+                target: Some(pb::MotionTarget {
+                    target: m.target.clone(),
+                    stop_radius: 0.75,
+                }),
+            })),
+            Some(pb::intent::Kind::Attack(a)) => Some(pb::action_state::Exec::Attack(pb::AttackState {
+                target_id: a.target_id,
+                last_known_pos: None,
+            })),
+            Some(pb::intent::Kind::Build(b)) => Some(pb::action_state::Exec::Build(pb::BuildState {
+                blueprint_id: b.blueprint_id.clone(),
+                location: b.location.clone(),
+                progress: 0.0,
+            })),
+            None => None,
+        };
+        pb::ActionState {
+            intent: Some(intent.clone()),
+            exec,
+        }
+    }
+
+    #[test]
+    fn replace_active_cancels_current_intent() {
+        let mut manager = IntentManager::new(0.75);
+        let entity_id = 7_u64;
+        let existing_intent = make_move_intent(entity_id, (10.0, 5.0));
+        let existing_meta = make_metadata(1, pb::IntentPolicy::ReplaceActive);
+
+        manager.current_action.insert(
+            entity_id,
+            ActiveIntent {
+                action: make_action_state(&existing_intent),
+                metadata: existing_meta.clone(),
+            },
+        );
+
+        let incoming_intent = make_move_intent(entity_id, (20.0, -4.0));
+        let outcome = manager.apply_policy_before_enqueue(
+            &incoming_intent,
+            pb::IntentPolicy::ReplaceActive,
+        );
+
+        assert_eq!(outcome.canceled.len(), 1, "active intent should be canceled");
+        assert_eq!(outcome.canceled[0].0, entity_id);
+        assert_eq!(outcome.canceled[0].1.intent_id, existing_meta.intent_id);
+        assert!(!outcome.blocked, "no active or queued intents remain after replace");
+    }
+
+    #[test]
+    fn append_policy_flags_blocked_when_queue_not_empty() {
+        let mut manager = IntentManager::new(0.75);
+        let entity_id = 3_u64;
+        let queued_intent = QueuedIntent {
+            intent: make_move_intent(entity_id, (1.0, 1.0)),
+            metadata: make_metadata(2, pb::IntentPolicy::Append),
+        };
+
+        let mut queue = VecDeque::new();
+        queue.push_back(queued_intent);
+        manager.intent_queues.insert(entity_id, queue);
+
+        let new_intent = make_move_intent(entity_id, (2.0, 2.0));
+        let outcome = manager.apply_policy_before_enqueue(&new_intent, pb::IntentPolicy::Append);
+
+        assert!(outcome.canceled.is_empty());
+        assert!(outcome.blocked, "existing queue should mark blocked=true");
+    }
+
+    #[test]
+    fn lifecycle_progression_moves_from_pending_to_finished() {
+        let mut manager = IntentManager::new(0.75);
+        let entity_id = 11_u64;
+        let metadata = make_metadata(3, pb::IntentPolicy::ReplaceActive);
+        let move_intent = make_move_intent(entity_id, (0.0, 0.0));
+
+        manager.enqueue(QueuedIntent {
+            intent: move_intent.clone(),
+            metadata: metadata.clone(),
+        });
+
+        let started = manager.process_pending();
+        assert_eq!(started.len(), 1, "intent should transition to in-progress");
+        assert_eq!(started[0].0, entity_id);
+        assert_eq!(started[0].1.intent_id, metadata.intent_id);
+
+        let mut state = GameState {
+            tick: 0,
+            entities: vec![pb::Entity {
+                id: entity_id,
+                pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+            }],
+        };
+
+        let finished = manager.follow_targets(&mut state, 5.0, 0.016);
+        assert_eq!(finished.len(), 1, "intent should complete immediately at target");
+        assert_eq!(finished[0].0, entity_id);
+        assert_eq!(finished[0].1.intent_id, metadata.intent_id);
+    }
+}

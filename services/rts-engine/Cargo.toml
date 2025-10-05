@@ -23,6 +23,9 @@ prost-types = "0.13"
 uuid = { version = "1", features = ["v7"] }
 hex = "0.4"
 
+[dev-dependencies]
+redis = { version = "0.25", features = ["tokio-comp"] }
+
 [build-dependencies]
 prost-build = "0.13"
 tonic-build = "0.12"
