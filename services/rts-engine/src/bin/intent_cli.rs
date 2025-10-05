@@ -9,7 +9,7 @@ async fn main() -> anyhow::Result<()> {
     // Usage: intent_cli <redis_url> <game_id> move <entity_id> <x> <y> <client_cmd_id> <player_id>
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
-        eprintln!("Usage:\n  intent_cli <redis_url> <game_id> move <entity_id> <x> <y> <client_cmd_id> <player_id>");
+        eprintln!("Usage:\n  intent_cli <redis_url> <game_id> move <entity_id> <x> <y> <client_cmd_id> <player_id> <client_seq>");
         std::process::exit(1);
     }
 
@@ -24,6 +24,7 @@ async fn main() -> anyhow::Result<()> {
         let y: f32 = args[6].parse().expect("y must be f32");
         let client_cmd_id = args[7].clone();
         let player_id = args[8].clone();
+        let client_seq: u64 = args[9].parse().expect("client_seq must be u64");
 
         let move_intent = pb::MoveToLocationIntent {
             entity_id,
@@ -37,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
             client_cmd_id: client_cmd_uuid.into_bytes().to_vec(),
             intent_id: Uuid::now_v7().into_bytes().to_vec(),
             player_id,
-            client_seq: 0,
+            client_seq,
             server_tick: 0,
             protocol_version: 1,
             policy: pb::IntentPolicy::ReplaceActive as i32,

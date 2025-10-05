@@ -13,6 +13,7 @@ use crate::config::GameConfig;
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata, QueuedIntent};
 use crate::io::redis::RedisClient;
+use crate::io::telemetry::Telemetry;
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
 use prost::Message;
@@ -31,6 +32,7 @@ pub struct Engine {
     last_intent_id: String,
     player_last_seq: HashMap<String, u64>,
     lifecycle_emitted: HashSet<(Vec<u8>, pb::LifecycleState)>,
+    telemetry: Option<Telemetry>,
 }
 
 impl Engine {
@@ -43,6 +45,10 @@ impl Engine {
         );
 
         let redis = RedisClient::connect(&cfg.redis_url, cfg.game_id.clone()).await?;
+        let telemetry = Telemetry::from_env()?;
+        if let Some(ref t) = telemetry {
+            info!(dataset = t.dataset(), "axiom telemetry enabled");
+        }
 
         // Initial snapshot with boundary "0-0"
         // Capture needed config values before moving `cfg` into the struct
@@ -59,6 +65,7 @@ impl Engine {
             last_intent_id: "0-0".to_string(),
             player_last_seq: HashMap::new(),
             lifecycle_emitted: HashSet::new(),
+            telemetry,
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
         Ok(engine)
@@ -410,6 +417,29 @@ impl Engine {
             .publish_lifecycle_event(&event)
             .await
             .context("publish lifecycle event")?;
+
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            let intent_id_str = format_uuid(intent_id);
+            let client_cmd_id_str = format_uuid(client_cmd_id);
+            let state_str = state.as_str_name();
+            let reason_str = reason.as_str_name();
+            if let Err(err) = telemetry
+                .publish_lifecycle_event(
+                    &self.cfg.game_id,
+                    player_id,
+                    &intent_id_str,
+                    &client_cmd_id_str,
+                    state_str,
+                    reason_str,
+                    tick,
+                    protocol_version,
+                )
+                .await
+            {
+                warn!(error = ?err, "failed to publish lifecycle telemetry");
+            }
+        }
+
         Ok(())
     }
 }
