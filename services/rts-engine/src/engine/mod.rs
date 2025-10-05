@@ -14,7 +14,7 @@ use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata, QueuedIntent};
 use crate::io::redis::RedisClient;
 use crate::io::telemetry::Telemetry;
-use crate::pb::{self, intent_envelope};
+use crate::pb::{self, events_stream_record, intent_envelope};
 use crate::physics::integrate;
 use prost::Message;
 use state::{init_world, log_sample, GameState};
@@ -34,6 +34,160 @@ pub struct Engine {
     lifecycle_emitted: HashSet<(Vec<u8>, pb::LifecycleState)>,
     telemetry: Option<Telemetry>,
 }
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use prost::Message;
+    use redis::Value as RedisValue;
+    use uuid::Uuid;
+
+    fn test_redis_url() -> String {
+        std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string())
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Redis server (set TEST_REDIS_URL)"]
+    #[allow(deprecated)]
+    async fn lifecycle_sequence_for_move_intent() -> Result<()> {
+        let redis_url = test_redis_url();
+        let game_id = format!("itest-{}", Uuid::now_v7());
+        let events_stream = format!("rts:match:{}:events", game_id);
+        let intents_stream = format!("rts:match:{}:intents", game_id);
+
+        let client = redis::Client::open(redis_url.clone())?;
+        let mut conn = client.get_multiplexed_async_connection().await?;
+        redis::cmd("DEL")
+            .arg(&events_stream)
+            .arg(&intents_stream)
+            .query_async::<_, ()>(&mut conn)
+            .await?;
+        drop(conn);
+
+        let mut cfg = GameConfig::default();
+        cfg.game_id = game_id.clone();
+        cfg.redis_url = redis_url.clone();
+        cfg.num_entities = 1;
+
+        let mut engine = Engine::new(cfg).await?;
+        let entity = engine
+            .state
+            .entities
+            .first()
+            .cloned()
+            .expect("world should have at least one entity");
+
+        let move_intent = pb::MoveToLocationIntent {
+            entity_id: entity.id,
+            target: entity.pos.clone(),
+            client_cmd_id: String::new(),
+            player_id: String::new(),
+        };
+
+        let intent_id_bytes = Uuid::now_v7().into_bytes();
+        let intent_id_vec = intent_id_bytes.to_vec();
+        let envelope = pb::IntentEnvelope {
+            client_cmd_id: Uuid::now_v7().into_bytes().to_vec(),
+            intent_id: intent_id_vec.clone(),
+            player_id: "player-1".to_string(),
+            client_seq: 1,
+            server_tick: 0,
+            protocol_version: ENGINE_PROTOCOL_MAJOR,
+            policy: pb::IntentPolicy::ReplaceActive as i32,
+            payload: Some(intent_envelope::Payload::Move(move_intent)),
+        };
+
+        engine.handle_envelope(envelope).await?;
+
+        let started = engine.intents.process_pending();
+        for (_, metadata) in started {
+            engine
+                .emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::InProgress,
+                    pb::LifecycleReason::None,
+                    engine.state.tick,
+                )
+                .await?;
+        }
+
+        let finished = engine.intents.follow_targets(
+            &mut engine.state,
+            engine.cfg.default_entity_speed,
+            0.0,
+        );
+        for (_, metadata) in finished {
+            engine
+                .emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Finished,
+                    pb::LifecycleReason::None,
+                    engine.state.tick,
+                )
+                .await?;
+        }
+
+        engine.state.tick += 1;
+
+        let mut read_conn = redis::Client::open(redis_url.clone())?
+            .get_multiplexed_async_connection()
+            .await?;
+        let reply: RedisValue = redis::cmd("XRANGE")
+            .arg(&events_stream)
+            .arg("-")
+            .arg("+")
+            .query_async(&mut read_conn)
+            .await?;
+
+        let mut states = Vec::new();
+        if let RedisValue::Bulk(entries) = reply {
+            for entry in entries {
+                if let RedisValue::Bulk(parts) = entry {
+                    if let Some(RedisValue::Bulk(fieldvals)) = parts.get(1) {
+                        let mut i = 0;
+                        while i + 1 < fieldvals.len() {
+                            if let (RedisValue::Data(field), RedisValue::Data(value)) =
+                                (&fieldvals[i], &fieldvals[i + 1])
+                            {
+                                if field == b"data" {
+                                    if let Ok(record) =
+                                        pb::EventsStreamRecord::decode(value.as_slice())
+                                    {
+                                        if let Some(events_stream_record::Record::Lifecycle(event)) =
+                                            record.record
+                                        {
+                                            if event.intent_id == intent_id_vec {
+                                                if let Some(state) =
+                                                    pb::LifecycleState::from_i32(event.state)
+                                                {
+                                                    states.push(state);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            i += 2;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert_eq!(
+            states,
+            vec![
+                pb::LifecycleState::Received,
+                pb::LifecycleState::Accepted,
+                pb::LifecycleState::InProgress,
+                pb::LifecycleState::Finished,
+            ]
+        );
+
+        Ok(())
+    }
+}
+
 
 impl Engine {
     pub async fn new(cfg: GameConfig) -> anyhow::Result<Self> {

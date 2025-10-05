@@ -25,6 +25,7 @@ hex = "0.4"
 
 [dev-dependencies]
 redis = { version = "0.25", features = ["tokio-comp"] }
+reqwest = { version = "0.12", features = ["json", "gzip", "rustls-tls"] }
 
 [build-dependencies]
 prost-build = "0.13"
