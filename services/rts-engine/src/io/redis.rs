@@ -20,6 +20,10 @@ impl RedisClient {
         format!("rts:match:{}:events", self.game_id)
     }
 
+    fn snapshots_stream(&self) -> String {
+        format!("rts:match:{}:snapshots", self.game_id)
+    }
+
     fn dedupe_key(&self, player_id: &str, client_cmd_id: &[u8]) -> String {
         format!(
             "rts:match:{}:dedupe:{}:{}",
@@ -94,7 +98,7 @@ impl RedisClient {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
-        let _: () = self.conn.set(&snap_key, bytes).await?;
+        let _: () = self.conn.set(&snap_key, bytes.clone()).await?;
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -114,6 +118,25 @@ impl RedisClient {
         info!(
             "SET {} (tick={}), HSET {} boundary_stream_id={}",
             snap_key, state.tick, meta_key, boundary_stream_id
+        );
+
+        let stream = self.snapshots_stream();
+        let stream_id: String = redis::cmd("XADD")
+            .arg(&stream)
+            .arg("MAXLEN")
+            .arg("~")
+            .arg(10_000)
+            .arg("*")
+            .arg("data")
+            .arg(bytes)
+            .query_async(&mut self.conn)
+            .await?;
+
+        info!(
+            stream = %stream,
+            stream_id = %stream_id,
+            tick = state.tick,
+            "XADD snapshot"
         );
         Ok(())
     }
