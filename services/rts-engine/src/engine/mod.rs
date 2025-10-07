@@ -3,11 +3,11 @@ pub mod state;
 
 use std::collections::{HashMap, HashSet};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use rand::{rngs::StdRng, SeedableRng};
 use tokio::time::{interval, Duration};
 use tracing::{error, info, warn};
-use uuid::Uuid;
+use uuid::{Uuid, Version};
 
 use crate::config::GameConfig;
 use crate::delta::compute_delta;
@@ -21,6 +21,49 @@ use state::{init_world, log_sample, GameState};
 
 const ENGINE_PROTOCOL_MAJOR: u32 = 1;
 const DEDUPE_TTL_SECS: usize = 600;
+
+fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {
+    if bytes.len() != 16 {
+        bail!("{field} must be 16 bytes (UUIDv7)");
+    }
+
+    let uuid = Uuid::from_slice(bytes)
+        .with_context(|| format!("{field} must contain valid UUID bytes"))?;
+
+    if uuid.get_version() != Some(Version::SortRand) {
+        let version = uuid
+            .get_version()
+            .map(|v| format!("{:?}", v))
+            .unwrap_or_else(|| "unknown".to_string());
+        bail!("{field} must be a UUIDv7 (found version {version})");
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod uuid_tests {
+    use super::*;
+
+    #[test]
+    fn ensure_uuid_v7_accepts_valid_uuid() {
+        let uuid = Uuid::now_v7();
+        ensure_uuid_v7(uuid.as_bytes(), "test-field").expect("valid UUIDv7 should pass");
+    }
+
+    #[test]
+    fn ensure_uuid_v7_rejects_wrong_length() {
+        let err = ensure_uuid_v7(&[0u8; 15], "test-field").expect_err("length mismatch should fail");
+        assert!(err.to_string().contains("16 bytes"));
+    }
+
+    #[test]
+    fn ensure_uuid_v7_rejects_wrong_version() {
+        let uuid_nil = Uuid::nil();
+        let err = ensure_uuid_v7(uuid_nil.as_bytes(), "test-field").expect_err("wrong version should fail");
+        assert!(err.to_string().contains("UUIDv7"));
+    }
+}
 
 pub struct Engine {
     cfg: GameConfig,
@@ -356,6 +399,40 @@ impl Engine {
         )
         .await?;
 
+        if let Err(validation_err) = ensure_uuid_v7(&client_cmd_id, "client_cmd_id") {
+            self.emit_lifecycle_event(
+                &metadata,
+                pb::LifecycleState::Rejected,
+                pb::LifecycleReason::InvalidTarget,
+                accept_tick,
+            )
+            .await?;
+            warn!(
+                player_id = %player_id,
+                error = ?validation_err,
+                "invalid client_cmd_id (expected UUIDv7)"
+            );
+            return Err(validation_err);
+        }
+
+        if !envelope.intent_id.is_empty() {
+            if let Err(validation_err) = ensure_uuid_v7(&intent_id, "intent_id") {
+                self.emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::InvalidTarget,
+                    accept_tick,
+                )
+                .await?;
+                warn!(
+                    player_id = %player_id,
+                    error = ?validation_err,
+                    "invalid intent_id (expected UUIDv7)"
+                );
+                return Err(validation_err);
+            }
+        }
+
         if protocol_version != ENGINE_PROTOCOL_MAJOR {
             self.emit_lifecycle_event(
                 &metadata,
@@ -494,9 +571,19 @@ impl Engine {
             None => "",
         };
 
-        let client_cmd_bytes = Uuid::parse_str(legacy_client_cmd)
-            .map(|u| u.into_bytes().to_vec())
-            .unwrap_or_else(|_| Uuid::now_v7().into_bytes().to_vec());
+        let client_cmd_bytes = match Uuid::parse_str(legacy_client_cmd) {
+            Ok(uuid) if uuid.get_version() == Some(Version::SortRand) => {
+                uuid.into_bytes().to_vec()
+            }
+            Ok(uuid) => {
+                warn!(
+                    client_cmd_id = %uuid,
+                    "legacy client_cmd_id not UUIDv7; generating replacement"
+                );
+                Uuid::now_v7().into_bytes().to_vec()
+            }
+            Err(_) => Uuid::now_v7().into_bytes().to_vec(),
+        };
 
         let player_id = match intent.kind.as_ref() {
             Some(pb::intent::Kind::Move(m)) => m.player_id.clone(),
