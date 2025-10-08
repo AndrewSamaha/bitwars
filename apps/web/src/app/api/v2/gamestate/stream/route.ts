@@ -75,7 +75,7 @@ export const GET = withAxiom(async (req: Request) => {
         logger.info("v2/stream:resume", { GAME_ID, sid, lastId });
       }
 
-      // Live tail via XREAD BLOCK 15000 STREAMS deltas:<GAME_ID> L
+      // Live tail via XREAD BLOCK 15000 STREAMS rts:match:<GAME_ID>:events <lastId>
       // For XREAD, when lastId is undefined, start from '$' to only get new ones.
       if (!lastId) lastId = "$";
 

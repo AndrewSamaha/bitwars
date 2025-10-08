@@ -11,6 +11,7 @@ import { create, toBinary, fromBinary } from "@bufbuild/protobuf";
 import { SnapshotSchema } from "@bitwars/shared/gen/snapshot_pb";
 import { DeltaSchema } from "@bitwars/shared/gen/delta_pb";
 import { EntityDeltaSchema } from "@bitwars/shared/gen/entity_delta_pb";
+import { EventsStreamRecordSchema } from "@bitwars/shared/gen/intent_pb";
 
 function getEnv(name: string, fallback: string): string {
   const v = process.env[name];
@@ -34,7 +35,7 @@ async function main() {
   const wSnapPath = path.join(outDir, "ioredis_written_snapshot.bin");
   const rSnapPath = path.join(outDir, "ioredis_readback_snapshot.bin");
   const wDeltaPath = path.join(outDir, "ioredis_written_delta.bin");
-  const rDeltaPath = path.join(outDir, "ioredis_readback_delta.bin");
+  const rDeltaPath = path.join(outDir, "ioredis_readback_event_record.bin");
 
   const redis = new Redis(REDIS_URL);
 
@@ -51,7 +52,7 @@ async function main() {
 
   const keySnapshot = `snapshot:${TEST_GAME_ID}`;
   const keySnapshotMeta = `snapshot_meta:${TEST_GAME_ID}`;
-  const streamDeltas = `deltas:${TEST_GAME_ID}`;
+  const streamEvents = `rts:match:${TEST_GAME_ID}:events`;
 
   // Build messages
   const snapshot = create(SnapshotSchema, {
@@ -87,7 +88,12 @@ async function main() {
   });
 
   // Write delta to stream
-  const xaddId = await redis.xadd(streamDeltas, "*", "data", deltaBytes);
+  const eventsRecord = create(EventsStreamRecordSchema, {
+    record: { case: "delta", value: delta },
+  });
+  const eventsBytes = Buffer.from(toBinary(EventsStreamRecordSchema, eventsRecord));
+
+  const xaddId = await redis.xadd(streamEvents, "*", "data", eventsBytes);
   console.log("[ioredis] XADD id=", xaddId);
 
   // Read back snapshot
@@ -108,7 +114,7 @@ async function main() {
   }
 
   // Read back last delta via XRANGE COUNT 1
-  const xr = await redis.xrangeBuffer(streamDeltas, "-", "+", "COUNT", 1);
+  const xr = await redis.xrangeBuffer(streamEvents, "-", "+", "COUNT", 1);
   if (!xr || xr.length === 0) {
     console.error("[ioredis] no XRANGE entries returned");
   } else {
@@ -134,15 +140,22 @@ async function main() {
       console.error("[ioredis] XRANGE returned but no binary data field found", typeof fields);
     } else {
       fs.writeFileSync(rDeltaPath, data);
-      if (!deltaBytes.equals(data)) {
-        const firstDiff = (() => { for (let i = 0; i < Math.min(deltaBytes.length, data.length); i++) { if (deltaBytes[i] !== data[i]) return i; } return -1; })();
-        const ctx = (buf: Buffer, i: number) => Array.from(buf.subarray(Math.max(0, i - 8), Math.min(buf.length, i + 8))).map(b => b.toString(16).padStart(2, "0")).join(" ");
-        console.warn("[ioredis] DELTA bytes differ:", { wLen: deltaBytes.length, rLen: data.length, firstDiff, wCtx: firstDiff>=0?ctx(deltaBytes, firstDiff):undefined, rCtx: firstDiff>=0?ctx(data, firstDiff):undefined, wPath: wDeltaPath, rPath: rDeltaPath });
+
+      const record = fromBinary(EventsStreamRecordSchema, new Uint8Array(data));
+      if (!record?.record || record.record.case !== "delta") {
+        console.error("[ioredis] events record missing delta payload", { case: record?.record?.case });
       } else {
-        console.log("[ioredis] DELTA bytes match exactly");
+        const decodedDelta = record.record.value;
+        const decodedBytes = Buffer.from(toBinary(DeltaSchema, decodedDelta));
+        if (!deltaBytes.equals(decodedBytes)) {
+          const firstDiff = (() => { for (let i = 0; i < Math.min(deltaBytes.length, decodedBytes.length); i++) { if (deltaBytes[i] !== decodedBytes[i]) return i; } return -1; })();
+          const ctx = (buf: Buffer, i: number) => Array.from(buf.subarray(Math.max(0, i - 8), Math.min(buf.length, i + 8))).map(b => b.toString(16).padStart(2, "0")).join(" ");
+          console.warn("[ioredis] DELTA payload differs after roundtrip:", { wLen: deltaBytes.length, rLen: decodedBytes.length, firstDiff, wCtx: firstDiff>=0?ctx(deltaBytes, firstDiff):undefined, rCtx: firstDiff>=0?ctx(decodedBytes, firstDiff):undefined, wPath: wDeltaPath, rPath: rDeltaPath });
+        } else {
+          console.log("[ioredis] DELTA payload matches inner record exactly");
+        }
+        console.log("[ioredis] delta decoded:", { tick: decodedDelta.tick, updates: decodedDelta.updates.length, first: decodedDelta.updates[0] });
       }
-      const d = fromBinary(DeltaSchema, new Uint8Array(data));
-      console.log("[ioredis] delta decoded:", { tick: d.tick, updates: d.updates.length, first: d.updates[0] });
     }
   }
 
