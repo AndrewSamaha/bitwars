@@ -19,7 +19,7 @@ use crate::physics::integrate;
 use prost::Message;
 use state::{init_world, log_sample, GameState};
 
-const ENGINE_PROTOCOL_MAJOR: u32 = 1;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 1;
 const DEDUPE_TTL_SECS: usize = 600;
 
 fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {
