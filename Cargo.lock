@@ -1668,11 +1668,14 @@ dependencies = [
  "reqwest 0.12.23",
  "serde",
  "serde_json",
+ "sim",
+ "thiserror 1.0.69",
  "tokio",
  "tonic-build",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -1877,6 +1880,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2a4719bff48cee6b39d12c020eeb490953ad2443b7055bd0b21fca26bd8c28b"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "sim"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "prost",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "uuid",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -2864,6 +2882,12 @@ name = "writeable"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea2f10b9bb0928dfb1b42b65e1f9e36f7f54dbdf08457afefb38afcdec4fa2bb"
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdd20c5420375476fbd4394763288da7eb0cc0b8c11deed431a91562af7335d3"
 
 [[package]]
 name = "yoke"

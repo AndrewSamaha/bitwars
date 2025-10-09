@@ -22,6 +22,11 @@ prost = "0.13"
 prost-types = "0.13"
 uuid = { version = "1", features = ["v7"] }
 hex = "0.4"
+thiserror = "1.0"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+# Local sim crate
+sim = { path = "crates/sim" }
 
 [dev-dependencies]
 redis = { version = "0.25", features = ["tokio-comp"] }
