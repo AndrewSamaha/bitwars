@@ -17,7 +17,7 @@ export async function getActivePlayers(windowMs = 600_000): Promise<Player[]> {
         q,
         'RETURN', '1', '$',
         'LIMIT', '0', '200',
-        'DIALECT', '4',
+        'DIALECT', '2',
       ])
     );
 

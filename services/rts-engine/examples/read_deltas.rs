@@ -9,7 +9,10 @@ use rts_engine::io::env as io_env;
 use rts_engine::pb::Delta;
 
 fn get_env(name: &str, fallback: &str) -> String {
-    env::var(name).ok().filter(|s| !s.is_empty()).unwrap_or_else(|| fallback.to_string())
+    env::var(name)
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| fallback.to_string())
 }
 
 #[tokio::main]
@@ -41,8 +44,13 @@ async fn main() -> anyhow::Result<()> {
     if let redis::Value::Bulk(entries) = res {
         for entry in entries {
             if let redis::Value::Bulk(pair) = entry {
-                if pair.len() != 2 { continue; }
-                let id = match &pair[0] { redis::Value::Data(b) => String::from_utf8_lossy(b).to_string(), _ => continue };
+                if pair.len() != 2 {
+                    continue;
+                }
+                let id = match &pair[0] {
+                    redis::Value::Data(b) => String::from_utf8_lossy(b).to_string(),
+                    _ => continue,
+                };
                 let mut data_bytes: Option<&[u8]> = None;
                 if let redis::Value::Bulk(fields) = &pair[1] {
                     let mut i = 0;
@@ -51,7 +59,9 @@ async fn main() -> anyhow::Result<()> {
                         let v = &fields[i + 1];
                         if let redis::Value::Data(name) = f {
                             if name == b"data" {
-                                if let redis::Value::Data(b) = v { data_bytes = Some(b); }
+                                if let redis::Value::Data(b) = v {
+                                    data_bytes = Some(b);
+                                }
                                 break;
                             }
                         }

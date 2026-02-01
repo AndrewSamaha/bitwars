@@ -1,5 +1,5 @@
 // apps/web/test/read_redis.ts
-// Standalone Node script to read snapshot and recent deltas from Redis
+// Standalone Node script to read snapshot and recent events from Redis
 // and decode using protobuf-es schemas from @bitwars/shared
 
 import Redis from "ioredis";
@@ -7,7 +7,7 @@ import dotenv from "dotenv";
 import path from "node:path";
 import { fromBinary } from "@bufbuild/protobuf";
 import { SnapshotSchema } from "@bitwars/shared/gen/snapshot_pb";
-import { DeltaSchema } from "@bitwars/shared/gen/delta_pb";
+import { EventsStreamRecordSchema } from "@bitwars/shared/gen/intent_pb";
 // Do not use the shared app client here; create a dedicated client with Buffer replies
 
 function getEnv(name: string, fallback: string): string {
@@ -20,8 +20,8 @@ function decodeSnapshotBinary(buf: Buffer) {
   return msg;
 }
 
-function decodeDeltaBinary(buf: Buffer) {
-  const msg = fromBinary(DeltaSchema, new Uint8Array(buf));
+function decodeEventsRecordBinary(buf: Buffer) {
+  const msg = fromBinary(EventsStreamRecordSchema, new Uint8Array(buf));
   return msg;
 }
 
@@ -52,9 +52,9 @@ async function readSnapshot(client: Redis, gameId: string) {
   else console.log("no snapshot_meta found at", metaKey);
 }
 
-async function readRecentDeltas(client: Redis, gameId: string, count = 10) {
-  const stream = `deltas:${gameId}`;
-  console.log("[read_redis] readRecentDeltas", { stream, count });
+async function readRecentEvents(client: Redis, gameId: string, count = 10) {
+  const stream = `rts:match:${gameId}:events`;
+  console.log("[read_redis] readRecentEvents", { stream, count });
   const res = (await client.xreadBuffer("BLOCK", 0, "STREAMS", stream, "0")) as any[] | null;
   console.log("[read_redis] XREAD resp", Array.isArray(res) ? `array(${res.length})` : res === null ? "null" : typeof res);
 
@@ -106,10 +106,35 @@ async function readRecentDeltas(client: Redis, gameId: string, count = 10) {
       const len = data.length;
       const head = Array.from(data.subarray(0, Math.min(16, len))).map((b) => b.toString(16).padStart(2, "0")).join(" ");
       console.log(`  id=${id} bytes=${len} head=${head}`);
-      const delta = decodeDeltaBinary(data);
-      console.log(`    → tick=${delta.tick} updates=${delta.updates.length}`);
+      const record = decodeEventsRecordBinary(data);
+      if (!record?.record) {
+        console.warn(`    → empty record for id=${id}`);
+        continue;
+      }
+      switch (record.record.case) {
+        case "delta": {
+          const delta = record.record.value;
+          console.log(`    → type=delta tick=${delta.tick.toString()} updates=${delta.updates.length}`);
+          break;
+        }
+        case "lifecycle": {
+          const lifecycle = record.record.value;
+          console.log(
+            "    → type=lifecycle",
+            {
+              intentId: Buffer.from(lifecycle.intentId ?? new Uint8Array()).toString("hex"),
+              state: lifecycle.state,
+              reason: lifecycle.reason,
+              serverTick: lifecycle.serverTick.toString(),
+            }
+          );
+          break;
+        }
+        default:
+          console.log(`    → type=${record.record.case}`);
+      }
     } catch (e) {
-      console.error(`  id=${id} failed to decode delta:`, e);
+      console.error(`  id=${id} failed to decode events record:`, e);
     }
   }
 }
@@ -147,7 +172,7 @@ async function main() {
     console.error(e);
   }
   try {
-    await readRecentDeltas(client, GAME_ID, 10);
+    await readRecentEvents(client, GAME_ID, 10);
   } catch (e) {
     console.error(e);
   } 

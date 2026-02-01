@@ -52,8 +52,7 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
 
 ---
 
-## M0.1: Intent Lifecycle, IDs, and Observability Seed
-
+## M0.1: DONE — Intent Lifecycle, IDs, and Observability Seed
 > Adds thin guardrails and hooks without changing gameplay scope.
 
 * Goals
@@ -62,38 +61,15 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
   * Stamp **`server_tick`** everywhere.
   * Seed **observability + mini-replay** to protect determinism/idempotency later.
 
-* Deliverables
+* Intent lifecycle (summary)
 
-  * **Lifecycle states**: `RECEIVED → ACCEPTED → IN_PROGRESS → BLOCKED? → FINISHED | CANCELED | REJECTED`.
-    Each event includes: `intent_id`, `client_cmd_id`, `player_id`, `server_tick`; failures include `reason`.
-  * **Identifiers**
+  * Canonical states: **RECEIVED → ACCEPTED → IN_PROGRESS → BLOCKED? → FINISHED | CANCELED | REJECTED**. Engine emits **LifecycleEvent** per transition with enum reason (`INTERRUPTED`, `DUPLICATE`, `OUT_OF_ORDER`, `INVALID_TARGET`, `PROTOCOL_MISMATCH`, etc.). **IntentEnvelope** carries `client_cmd_id`/`intent_id` (UUIDv7 bytes), `player_id`, `client_seq`, `server_tick`, `protocol_version`, and policy (`REPLACE_ACTIVE` | `APPEND` | `CLEAR_THEN_APPEND`).
 
-    * `client_cmd_id`: 16-byte UUIDv7 from client.
-    * `intent_id`: UUIDv7 or monotonic per player (server-assigned).
-    * `client_seq`: per-player sequence number (client-maintained).
-    * `server_tick`: strictly monotonic; attached to deltas and lifecycle events.
-  * **Wire/Streams (Redis)**
+* Deliverables (all done)
 
-    * `rts:match:{id}:intents` — client → engine (XADD; consumer group on engine).
-    * `rts:match:{id}:events` — engine → client (lifecycle events, deltas, metrics).
-    * `rts:match:{id}:snapshots` — periodic world snapshots.
-    * Payloads are **protobuf**; optional tiny JSON envelope for devtools readability.
-  * **Protocol header**
+  * Intent envelope (transport wrapper); lifecycle states & events; identifiers & ordering (UUIDv7, dedupe, client_seq); wire/streams (Redis intents + events); protocol header and mismatch rejection; mini-replay tests (`pnpm test:replay:x`); latency probe CLI (`pnpm run latency:probe`); **schema/contract CI guardrails** (`pnpm schema:check`, GitHub Action; proto changes require version bump or PR label `compat: non-breaking`).
 
-    * `protocol_version (semver)`, `content_version (hash)` echoed in handshake logs (client & server).
-  * **Mini-replay script** (`pnpm demo:replay:lastN`)
-
-    * Replays the last N intents against an in-memory engine and asserts final world hash (`xxh3` over sorted entity state).
-  * **Latency probe CLI**
-
-    * Send 100 `Move` intents; report p50/p95 from submit → first delta that references that `intent_id`.
-
-* Acceptance Criteria
-
-  * Lifecycle events produced for `Move` with all IDs + `server_tick`; UI can ignore them, logs must show them.
-  * Applying the same delta twice on a cloned world yields the same world hash (idempotency smoke test).
-  * Mini-replay of the last N intents yields identical final world hash to live world.
-  * Latency probe prints p50/p95 to console and writes one JSON metrics file per run.
+* Details and acceptance criteria: [m0.1-intent-lifecycle.md](./milestones/m0.1-intent-lifecycle.md).
 
 ---
 

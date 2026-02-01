@@ -73,6 +73,55 @@ cargo build -p rts-engine
 cargo run -p rts-engine
 ```
 
+### Replay tests (`pnpm test:replay:x`)
+
+Named replay tests run a scenario (beginning world state, entities, predefined intents, predefined ticks) against the in-memory sim engine and assert the final world hash (xxh3). No Redis required.
+
+**Run a replay test** (from repo root):
+
+```bash
+pnpm test:replay:two_entities_move
+```
+
+Exit 0 means the hash matched; exit 1 means mismatch (a minimal diff is printed).
+
+**Add another scenario:**
+
+1. Define the scenario in `services/rts-engine/src/bin/replay_test.rs` inside `scenarios()`: set `initial_state`, `intents`, `total_ticks`, and use `expected_hash: 0` and `expected_json: ""` as placeholders.
+2. Run with `--golden` to print the expected hash and JSON:
+   ```bash
+   cargo run -p rts-engine --bin replay_test -- <scenario_name> --golden
+   ```
+3. Paste the printed `expected_hash` and `expected_json` into the scenario in `replay_test.rs`.
+4. Add a script in the root `package.json`:
+   ```json
+   "test:replay:<name>": "cargo run -p rts-engine --bin replay_test -- <name>"
+   ```
+
+### Latency probe
+
+The latency probe sends 100 Move intents to the engine and reports p50/p95 latency from submit to first RECEIVED/ACCEPTED lifecycle event. Requires the engine running with the same `game_id`. Metrics are written to `./.metrics/m0.1/`. See [docs/tools/latency-probe.md](docs/tools/latency-probe.md) for full usage.
+
+```bash
+pnpm run latency:probe -- <game_id>
+# Example (engine must be running with GAME_ID=testgameid):
+pnpm run latency:probe -- testgameid
+```
+
+### Schema check
+
+The schema check regenerates TS and Rust from `.proto` and fails if generated files are out of sync. Run it before committing after proto changes; it also runs in CI. See [docs/tools/schema-check.md](docs/tools/schema-check.md) for details.
+
+```bash
+# Run locally (from repo root)
+pnpm schema:check
+
+# If it fails: regenerate and commit
+pnpm --filter @bitwars/schemas run gen:ts
+cargo build -p rts-engine
+# then git add and commit packages/shared/src/gen services/rts-engine/src/pb
+```
+
 ## Side-by-side testing of type decoding
 In nextjs:
 ```bash

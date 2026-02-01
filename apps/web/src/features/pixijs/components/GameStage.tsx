@@ -7,6 +7,7 @@ import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
+import { v7 as uuidv7 } from "uuid";
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
@@ -15,6 +16,7 @@ export default function GameStage() {
   // Keep latest selectors in a ref so event handlers see current selection/action
   const latestSelectorsRef = useRef(selectors);
   useEffect(() => { latestSelectorsRef.current = selectors; }, [selectors]);
+  const clientSeqRef = useRef<number>(0);
 
   useEffect(() => {
     // Observe readiness until the first snapshot is applied
@@ -173,12 +175,14 @@ export default function GameStage() {
             // Build request payload
             const entityIdNum = Number(first);
             if (!Number.isFinite(entityIdNum)) return;
+            const nextClientSeq = clientSeqRef.current + 1;
+            clientSeqRef.current = nextClientSeq;
             const body = {
               type: 'Move',
               entity_id: entityIdNum,
               target: { x: Number(local.x), y: Number(local.y) },
-              client_cmd_id: `ui-${Date.now()}`,
-              player_id: 'p1', // TODO: replace with real player context
+              client_cmd_id: uuidv7(),
+              client_seq: nextClientSeq,
             };
 
             // POST to API

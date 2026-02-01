@@ -17,7 +17,10 @@
     "engine:read-snapshot": "cargo run --example read_snapshot --manifest-path services/rts-engine/Cargo.toml",
     "engine:read-deltas": "cargo run --example read_deltas --manifest-path services/rts-engine/Cargo.toml",
     "engine:generate-examples": "cargo run --example generate_examples --manifest-path services/rts-engine/Cargo.toml",
-    "gen:ts:nocache": "pnpm -w turbo run gen:ts --filter=@bitwars/schemas --no-cache"
+    "gen:ts:nocache": "pnpm -w turbo run gen:ts --filter=@bitwars/schemas --no-cache",
+    "schema:check": "bash scripts/schema-check.sh",
+    "test:replay:two_entities_move": "cargo run -p rts-engine --bin replay_test -- two_entities_move",
+    "latency:probe": "cargo run -p rts-engine --bin latency_probe --"
   },
   "devDependencies": {
     "dotenv-cli": "^10.0.0",

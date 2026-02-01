@@ -33,6 +33,9 @@ coverage/
 # production
 /build
 
+# metrics (latency probe, etc.)
+.metrics/
+
 # misc
 .DS_Store
 *.pem

@@ -10,7 +10,10 @@ use rts_engine::io::env as io_env;
 use rts_engine::pb::Snapshot;
 
 fn get_env(name: &str, fallback: &str) -> String {
-    env::var(name).ok().filter(|s| !s.is_empty()).unwrap_or_else(|| fallback.to_string())
+    env::var(name)
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| fallback.to_string())
 }
 
 #[tokio::main]
@@ -36,10 +39,17 @@ async fn main() -> anyhow::Result<()> {
         println!("snapshot: {} bytes", bytes.len());
         match Snapshot::decode(bytes.as_slice()) {
             Ok(snap) => {
-                println!("decoded snapshot: tick={} entities={}", snap.tick, snap.entities.len());
+                println!(
+                    "decoded snapshot: tick={} entities={}",
+                    snap.tick,
+                    snap.entities.len()
+                );
                 // print a couple of entities for sanity
                 for e in snap.entities.iter().take(2) {
-                    println!("  entity id={} pos={:?} vel={:?} force={:?}", e.id, e.pos, e.vel, e.force);
+                    println!(
+                        "  entity id={} pos={:?} vel={:?} force={:?}",
+                        e.id, e.pos, e.vel, e.force
+                    );
                 }
             }
             Err(e) => {
@@ -51,7 +61,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Read meta
-    let meta: redis::RedisResult<redis::Value> = redis::cmd("HGETALL").arg(&meta_key).query_async(&mut conn).await;
+    let meta: redis::RedisResult<redis::Value> = redis::cmd("HGETALL")
+        .arg(&meta_key)
+        .query_async(&mut conn)
+        .await;
     match meta {
         Ok(val) => {
             let map: redis::Value = val;

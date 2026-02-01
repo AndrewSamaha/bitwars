@@ -2,7 +2,7 @@ import { getEnv } from "@/lib/utils";
 import { xReadWithBuffers } from "@/lib/db/utils/redis-streams";
 import { createSseChannel } from "@/lib/db/utils/sse-channel";
 import { bootstrapAndCatchUp } from "@/lib/db/utils/bootstrap";
-import { emitDeltaFromBuffer } from "@/lib/db/utils/delta";
+import { emitEventFromBuffer } from "@/lib/db/utils/delta";
 import { logger, withAxiom } from "@/lib/axiom/server";
 
 export const runtime = "nodejs";
@@ -52,7 +52,7 @@ export const GET = withAxiom(async (req: Request) => {
         startFromId = lastEventId;
       }
 
-      const streamDeltas = `deltas:${GAME_ID}`;
+      const streamEvents = `rts:match:${GAME_ID}:events`;
 
       let lastId = startFromId; 
 
@@ -75,15 +75,15 @@ export const GET = withAxiom(async (req: Request) => {
         logger.info("v2/stream:resume", { GAME_ID, sid, lastId });
       }
 
-      // Live tail via XREAD BLOCK 15000 STREAMS deltas:<GAME_ID> L
+      // Live tail via XREAD BLOCK 15000 STREAMS rts:match:<GAME_ID>:events <lastId>
       // For XREAD, when lastId is undefined, start from '$' to only get new ones.
       if (!lastId) lastId = "$";
 
-      logger.info("v2/stream:live:start", { GAME_ID, sid, from: lastId, stream: streamDeltas });
+      logger.info("v2/stream:live:start", { GAME_ID, sid, from: lastId, stream: streamEvents });
 
       while (!channel.isClosed()) {
         try {
-          const entries = await xReadWithBuffers(streamDeltas, lastId, XREAD_BLOCK_MS, XRANGE_BATCH_COUNT);
+          const entries = await xReadWithBuffers(streamEvents, lastId, XREAD_BLOCK_MS, XRANGE_BATCH_COUNT);
           if (!entries || entries.length === 0) {
             // timeout, emit heartbeat has already been doing pings
             continue;
@@ -92,7 +92,7 @@ export const GET = withAxiom(async (req: Request) => {
             const id = ent.id;
             const dataBuf = ent.data;
             if (!dataBuf) continue;
-            await emitDeltaFromBuffer(channel, id, dataBuf, (msg, e) => {
+            await emitEventFromBuffer(channel, id, dataBuf, (msg, e) => {
               logErr(`${msg} (live)`, e);
               logger.error("v2/stream:emit:error", { GAME_ID, sid, id, msg, error: e?.message || String(e) });
             });

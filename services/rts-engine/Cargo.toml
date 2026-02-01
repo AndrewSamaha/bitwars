@@ -10,11 +10,27 @@ redis = { version = "0.25", features = ["tokio-comp"] }
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-rand = "0.8"
+reqwest = { version = "0.12", features = ["json", "gzip", "rustls-tls"] }
 dotenvy = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+rand = "0.8"
+axiom-rs = { version = "0.6", features = ["tokio"] }
 
 prost = "0.13"
 prost-types = "0.13"
+uuid = { version = "1", features = ["v7"] }
+hex = "0.4"
+thiserror = "1.0"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+# Local sim crate
+sim = { path = "crates/sim" }
+
+[dev-dependencies]
+redis = { version = "0.25", features = ["tokio-comp"] }
+reqwest = { version = "0.12", features = ["json", "gzip", "rustls-tls"] }
 
 [build-dependencies]
 prost-build = "0.13"
