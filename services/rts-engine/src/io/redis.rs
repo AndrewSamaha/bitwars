@@ -262,4 +262,73 @@ impl RedisClient {
         }
         Ok(None)
     }
+
+    /// Read new entries from the events stream, blocking up to `block_ms` if no data.
+    /// Returns (new_last_id, decoded EventsStreamRecords). Skips entries that fail to decode.
+    pub async fn read_events_blocking(
+        &mut self,
+        last_id: &str,
+        block_ms: u64,
+    ) -> anyhow::Result<Option<(String, Vec<EventsStreamRecord>)>> {
+        let stream = self.events_stream();
+        let reply: RedisValue = redis::cmd("XREAD")
+            .arg("BLOCK")
+            .arg(block_ms as i64)
+            .arg("STREAMS")
+            .arg(&stream)
+            .arg(last_id)
+            .query_async(&mut self.conn)
+            .await?;
+
+        match reply {
+            RedisValue::Nil => return Ok(None),
+            RedisValue::Bulk(ref top) => {
+                if top.is_empty() {
+                    return Ok(None);
+                }
+                if let Some(RedisValue::Bulk(stream_entry)) = top.get(0) {
+                    if let [RedisValue::Data(_name), RedisValue::Bulk(items)] = &stream_entry[..] {
+                        let mut out: Vec<EventsStreamRecord> = Vec::new();
+                        let mut new_last_id = String::from(last_id);
+                        for item in items.iter() {
+                            if let RedisValue::Bulk(parts) = item {
+                                if parts.len() >= 2 {
+                                    if let RedisValue::Data(id_bytes) = &parts[0] {
+                                        if let Ok(id_str) = String::from_utf8(id_bytes.clone()) {
+                                            new_last_id = id_str;
+                                        }
+                                    }
+                                    if let RedisValue::Bulk(fieldvals) = &parts[1] {
+                                        let mut i = 0;
+                                        while i + 1 < fieldvals.len() {
+                                            let field = &fieldvals[i];
+                                            let value = &fieldvals[i + 1];
+                                            if let RedisValue::Data(field_name) = field {
+                                                if field_name == b"data" {
+                                                    if let RedisValue::Data(payload) = value {
+                                                        if let Ok(record) =
+                                                            EventsStreamRecord::decode(payload.as_slice())
+                                                        {
+                                                            out.push(record);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            i += 2;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if out.is_empty() {
+                            return Ok(None);
+                        }
+                        return Ok(Some((new_last_id, out)));
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(None)
+    }
 }
