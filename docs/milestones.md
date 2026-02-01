@@ -52,7 +52,7 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
 
 ---
 
-## M0.1: Intent Lifecycle, IDs, and Observability Seed
+## M0.1: DONE — Intent Lifecycle, IDs, and Observability Seed
 > Adds thin guardrails and hooks without changing gameplay scope.
 
 * Goals
@@ -61,7 +61,7 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
   * Stamp **`server_tick`** everywhere.
   * Seed **observability + mini-replay** to protect determinism/idempotency later.
 
-IN PROGRESS: see docs/milestones/m0.1-intent-lifecycle.md for deliverables and acceptance criteria
+DONE: see docs/milestones/m0.1-intent-lifecycle.md for deliverables and acceptance criteria
 
 ---
 

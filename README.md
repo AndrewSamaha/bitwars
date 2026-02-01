@@ -73,6 +73,31 @@ cargo build -p rts-engine
 cargo run -p rts-engine
 ```
 
+### Replay tests (`pnpm test:replay:x`)
+
+Named replay tests run a scenario (beginning world state, entities, predefined intents, predefined ticks) against the in-memory sim engine and assert the final world hash (xxh3). No Redis required.
+
+**Run a replay test** (from repo root):
+
+```bash
+pnpm test:replay:two_entities_move
+```
+
+Exit 0 means the hash matched; exit 1 means mismatch (a minimal diff is printed).
+
+**Add another scenario:**
+
+1. Define the scenario in `services/rts-engine/src/bin/replay_test.rs` inside `scenarios()`: set `initial_state`, `intents`, `total_ticks`, and use `expected_hash: 0` and `expected_json: ""` as placeholders.
+2. Run with `--golden` to print the expected hash and JSON:
+   ```bash
+   cargo run -p rts-engine --bin replay_test -- <scenario_name> --golden
+   ```
+3. Paste the printed `expected_hash` and `expected_json` into the scenario in `replay_test.rs`.
+4. Add a script in the root `package.json`:
+   ```json
+   "test:replay:<name>": "cargo run -p rts-engine --bin replay_test -- <name>"
+   ```
+
 ## Side-by-side testing of type decoding
 In nextjs:
 ```bash
