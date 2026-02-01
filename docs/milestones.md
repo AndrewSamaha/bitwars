@@ -61,7 +61,15 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
   * Stamp **`server_tick`** everywhere.
   * Seed **observability + mini-replay** to protect determinism/idempotency later.
 
-DONE: see docs/milestones/m0.1-intent-lifecycle.md for deliverables and acceptance criteria
+* Intent lifecycle (summary)
+
+  * Canonical states: **RECEIVED → ACCEPTED → IN_PROGRESS → BLOCKED? → FINISHED | CANCELED | REJECTED**. Engine emits **LifecycleEvent** per transition with enum reason (`INTERRUPTED`, `DUPLICATE`, `OUT_OF_ORDER`, `INVALID_TARGET`, `PROTOCOL_MISMATCH`, etc.). **IntentEnvelope** carries `client_cmd_id`/`intent_id` (UUIDv7 bytes), `player_id`, `client_seq`, `server_tick`, `protocol_version`, and policy (`REPLACE_ACTIVE` | `APPEND` | `CLEAR_THEN_APPEND`).
+
+* Deliverables (all done)
+
+  * Intent envelope (transport wrapper); lifecycle states & events; identifiers & ordering (UUIDv7, dedupe, client_seq); wire/streams (Redis intents + events); protocol header and mismatch rejection; mini-replay tests (`pnpm test:replay:x`); latency probe CLI (`pnpm run latency:probe`); **schema/contract CI guardrails** (`pnpm schema:check`, GitHub Action; proto changes require version bump or PR label `compat: non-breaking`).
+
+* Details and acceptance criteria: [m0.1-intent-lifecycle.md](./milestones/m0.1-intent-lifecycle.md).
 
 ---
 
