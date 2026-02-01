@@ -13,9 +13,14 @@ This directory contains specifications, designs, and decision records for the pr
   - See [docs/adr/](./adr/)
 - Glossary
   - See [Glossary](./glossary.md)
- - Milestones
+- Milestones
    - [Roadmap Overview](./milestones.md)
    - [M0: Hello-RTS — Single Unit Click-to-Move](./milestones/m0-hello-rts.md)
+- Tools
+  - [Schema Check (script and CI)](./tools/schema-check.md)
+  - [Intent CLI](./tools/intent-cli.md)
+  - [Latency Probe](./tools/latency-probe.md)
+  - [Redis to Files](./tools/redis-to-files.md)
 
 ## Contributing to Docs
 

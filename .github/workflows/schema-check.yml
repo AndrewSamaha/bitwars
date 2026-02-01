@@ -1,0 +1,75 @@
+# Schema / contract CI guardrails (M0.1 deliverable 8).
+# - Regenerate TS and Rust from .proto; fail if generated files changed.
+# - On PRs: if .proto changed without ENGINE_PROTOCOL_MAJOR bump, require "compat: non-breaking" label.
+#
+# To require this check before merge: Repo → Settings → Branches → Branch protection (e.g. main)
+# → Require status checks → select "schema-check".
+name: Schema check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  schema-check:
+    name: schema-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run schema check (regenerate and diff)
+        run: pnpm schema:check
+
+      - name: Compat check (proto change ⇒ version bump or label)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
+        run: |
+          set -euo pipefail
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
+          PROTO_CHANGED=$(echo "$CHANGED_FILES" | grep -E '^packages/schemas/proto/.*\.proto$' || true)
+          if [ -z "$PROTO_CHANGED" ]; then
+            echo "No .proto files changed; compat check skipped."
+            exit 0
+          fi
+          echo "Proto files changed; checking for version bump or compat label..."
+          HAS_COMPAT_LABEL=$(echo "$PR_LABELS" | jq -r '.[].name' 2>/dev/null | grep -Fx "compat: non-breaking" || true)
+          if [ -n "$HAS_COMPAT_LABEL" ]; then
+            echo "PR has label 'compat: non-breaking'; compat check passed."
+            exit 0
+          fi
+          MAJOR_CONST="ENGINE_PROTOCOL_MAJOR"
+          BASE_VAL=$(git show "$BASE_SHA:services/rts-engine/src/engine/mod.rs" 2>/dev/null | grep "$MAJOR_CONST" | grep -oE '[0-9]+' | head -1 || echo "0")
+          HEAD_VAL=$(git show "$HEAD_SHA:services/rts-engine/src/engine/mod.rs" 2>/dev/null | grep "$MAJOR_CONST" | grep -oE '[0-9]+' | head -1 || echo "0")
+          if [ -n "$BASE_VAL" ] && [ -n "$HEAD_VAL" ] && [ "$HEAD_VAL" -gt "$BASE_VAL" ]; then
+            echo "ENGINE_PROTOCOL_MAJOR bumped ($BASE_VAL → $HEAD_VAL); compat check passed."
+            exit 0
+          fi
+          echo "::error::Proto files changed without ENGINE_PROTOCOL_MAJOR bump. Add label 'compat: non-breaking' or bump the constant in services/rts-engine/src/engine/mod.rs."
+          exit 1

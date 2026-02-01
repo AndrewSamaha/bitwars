@@ -108,6 +108,20 @@ pnpm run latency:probe -- <game_id>
 pnpm run latency:probe -- testgameid
 ```
 
+### Schema check
+
+The schema check regenerates TS and Rust from `.proto` and fails if generated files are out of sync. Run it before committing after proto changes; it also runs in CI. See [docs/tools/schema-check.md](docs/tools/schema-check.md) for details.
+
+```bash
+# Run locally (from repo root)
+pnpm schema:check
+
+# If it fails: regenerate and commit
+pnpm --filter @bitwars/schemas run gen:ts
+cargo build -p rts-engine
+# then git add and commit packages/shared/src/gen services/rts-engine/src/pb
+```
+
 ## Side-by-side testing of type decoding
 In nextjs:
 ```bash
