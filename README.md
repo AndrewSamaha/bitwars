@@ -98,6 +98,16 @@ Exit 0 means the hash matched; exit 1 means mismatch (a minimal diff is printed)
    "test:replay:<name>": "cargo run -p rts-engine --bin replay_test -- <name>"
    ```
 
+### Latency probe
+
+The latency probe sends 100 Move intents to the engine and reports p50/p95 latency from submit to first RECEIVED/ACCEPTED lifecycle event. Requires the engine running with the same `game_id`. Metrics are written to `./.metrics/m0.1/`. See [docs/tools/latency-probe.md](docs/tools/latency-probe.md) for full usage.
+
+```bash
+pnpm run latency:probe -- <game_id>
+# Example (engine must be running with GAME_ID=testgameid):
+pnpm run latency:probe -- testgameid
+```
+
 ## Side-by-side testing of type decoding
 In nextjs:
 ```bash
