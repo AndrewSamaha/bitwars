@@ -7,6 +7,7 @@ import GameStateStreamBridge from "@/features/gamestate/components/GameStateStre
 import { HUDProvider } from "@/features/hud/components/HUDContext"
 import TerminalPanel from "@/features/hud/components/TerminalPanel"
 import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel"
+import IntentQueuePanel from "@/features/intent-queue/IntentQueuePanel"
 
 export default function GamePage() {
   return (
@@ -17,6 +18,8 @@ export default function GamePage() {
         {/* Floating Terminal */}
         <TerminalPanel />
         <EntityDetailPanel />
+        {/* M1: Intent queue panel */}
+        <IntentQueuePanel />
         {/* Game Stage */}
         <GameStage />
       </div>

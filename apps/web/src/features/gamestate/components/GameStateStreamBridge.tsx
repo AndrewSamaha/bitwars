@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { useLogger } from "@/lib/axiom/client";
 import { game, type Entity } from "../world";
+import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -137,6 +138,26 @@ export default function GameStateStreamBridge() {
         log.error("GameStateStreamBridge:delta:parse-error", { streamId: streamIdRef.current, error: (err as any)?.message || String(err) });
       }
     };
+
+    // M1: Listen for lifecycle events to drive intent queue draining.
+    const onLifecycle = (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload && payload.type === "lifecycle") {
+          intentQueue.onLifecycleEvent({
+            clientCmdId: payload.clientCmdId ?? "",
+            intentId: payload.intentId ?? "",
+            playerId: payload.playerId ?? "",
+            serverTick: payload.serverTick ?? "0",
+            state: typeof payload.state === "number" ? payload.state : Number(payload.state),
+            reason: typeof payload.reason === "number" ? payload.reason : Number(payload.reason),
+          });
+        }
+      } catch (err) {
+        console.error("[GameStateStreamBridge] lifecycle parse error", err);
+      }
+    };
+
     const onOpen = () => {
       log.info("GameStateStreamBridge:es:open", { streamId: streamIdRef.current, msSinceMount: Date.now() - mountedAtRef.current });
     };
@@ -149,6 +170,7 @@ export default function GameStateStreamBridge() {
 
     es.addEventListener("snapshot", onSnapshot as EventListener);
     es.addEventListener("delta", onDelta as EventListener);
+    es.addEventListener("lifecycle", onLifecycle as EventListener);
     es.addEventListener("open", onOpen as EventListener);
     es.addEventListener("error", onError as EventListener);
 
@@ -156,6 +178,7 @@ export default function GameStateStreamBridge() {
       log.info("GameStateStreamBridge:cleanup", { streamId: streamIdRef.current });
       es.removeEventListener("snapshot", onSnapshot as EventListener);
       es.removeEventListener("delta", onDelta as EventListener);
+      es.removeEventListener("lifecycle", onLifecycle as EventListener);
       es.removeEventListener("open", onOpen as EventListener);
       es.removeEventListener("error", onError as EventListener);
       es.close();

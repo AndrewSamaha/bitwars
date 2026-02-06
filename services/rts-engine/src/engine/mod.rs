@@ -5,16 +5,16 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Context, Result};
 use rand::{rngs::StdRng, SeedableRng};
-use tokio::time::{interval, Duration};
+use tokio::time::{interval, Duration, Instant};
 use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
 
 use crate::config::GameConfig;
 use crate::delta::compute_delta;
-use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata, QueuedIntent};
+use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::RedisClient;
 use crate::io::telemetry::Telemetry;
-use crate::pb::{self, events_stream_record, intent_envelope};
+use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
 use prost::Message;
 use state::{init_world, log_sample, GameState};
@@ -127,11 +127,9 @@ mod integration_tests {
             player_id: String::new(),
         };
 
-        let intent_id_bytes = Uuid::now_v7().into_bytes();
-        let intent_id_vec = intent_id_bytes.to_vec();
         let envelope = pb::IntentEnvelope {
             client_cmd_id: Uuid::now_v7().into_bytes().to_vec(),
-            intent_id: intent_id_vec.clone(),
+            intent_id: Vec::new(),
             player_id: "player-1".to_string(),
             client_seq: 1,
             server_tick: 0,
@@ -140,20 +138,11 @@ mod integration_tests {
             payload: Some(intent_envelope::Payload::Move(move_intent)),
         };
 
+        // M1: handle_envelope now activates the intent and emits
+        // RECEIVED, ACCEPTED, and IN_PROGRESS internally.
         engine.handle_envelope(envelope).await?;
 
-        let started = engine.intents.process_pending();
-        for (_, metadata) in started {
-            engine
-                .emit_lifecycle_event(
-                    &metadata,
-                    pb::LifecycleState::InProgress,
-                    pb::LifecycleReason::None,
-                    engine.state.tick,
-                )
-                .await?;
-        }
-
+        // follow_targets should finish the intent (entity already at target)
         let finished = engine.intents.follow_targets(
             &mut engine.state,
             engine.cfg.default_entity_speed,
@@ -196,15 +185,13 @@ mod integration_tests {
                                     if let Ok(record) =
                                         pb::EventsStreamRecord::decode(value.as_slice())
                                     {
-                                        if let Some(events_stream_record::Record::Lifecycle(event)) =
+                                        if let Some(pb::events_stream_record::Record::Lifecycle(event)) =
                                             record.record
                                         {
-                                            if event.intent_id == intent_id_vec {
-                                                if let Some(state) =
-                                                    pb::LifecycleState::from_i32(event.state)
-                                                {
-                                                    states.push(state);
-                                                }
+                                            if let Some(state) =
+                                                pb::LifecycleState::from_i32(event.state)
+                                            {
+                                                states.push(state);
                                             }
                                         }
                                     }
@@ -278,33 +265,39 @@ impl Engine {
         loop {
             ticker.tick().await;
 
-            // Phase B: Ingest intents from Redis stream (non-blocking)
-            if let Ok(Some((new_last_id, payloads))) =
-                self.redis.read_new_intents(&self.last_intent_id, 100).await
+            // Phase B: Ingest intents from Redis stream (tick-bounded)
+            let batch_start = Instant::now();
+            let mut cmds_this_tick: u32 = 0;
+            let read_count = self.cfg.max_cmds_per_tick as usize;
+
+            if let Ok(Some(entries)) =
+                self.redis.read_new_intents(&self.last_intent_id, read_count).await
             {
-                for bytes in payloads {
+                for (entry_id, bytes) in entries {
+                    // Tick-bounded ingress: respect max_cmds_per_tick
+                    if cmds_this_tick >= self.cfg.max_cmds_per_tick {
+                        warn!(tick = self.state.tick, limit = self.cfg.max_cmds_per_tick, "max_cmds_per_tick reached, deferring remaining");
+                        break;
+                    }
+                    // Tick-bounded ingress: respect max_batch_ms
+                    if self.cfg.max_batch_ms > 0
+                        && batch_start.elapsed().as_millis() as u64 >= self.cfg.max_batch_ms
+                    {
+                        warn!(tick = self.state.tick, elapsed_ms = batch_start.elapsed().as_millis() as u64, limit_ms = self.cfg.max_batch_ms, "max_batch_ms reached, deferring remaining");
+                        break;
+                    }
+
                     if let Err(err) = self.process_raw_intent(bytes.as_slice()).await {
                         warn!(error = ?err, "failed to handle intent payload from Redis");
                     }
+                    cmds_this_tick += 1;
+                    // Advance cursor per-entry so unprocessed entries are re-read next tick
+                    self.last_intent_id = entry_id;
                 }
-                self.last_intent_id = new_last_id;
             }
 
-            // Start any pending intents for entities without a current action
-            let started = self.intents.process_pending();
-            for (_entity, metadata) in started {
-                if let Err(err) = self
-                    .emit_lifecycle_event(
-                        &metadata,
-                        pb::LifecycleState::InProgress,
-                        pb::LifecycleReason::None,
-                        self.state.tick,
-                    )
-                    .await
-                {
-                    warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit IN_PROGRESS lifecycle event");
-                }
-            }
+            // M1: No process_pending step. Intents are activated immediately
+            // inside handle_envelope via IntentManager::try_activate.
 
             // Advance currently executing actions (e.g., Move) toward targets
             let finished =
@@ -445,17 +438,20 @@ impl Engine {
             return Err(anyhow!("protocol mismatch"));
         }
 
-        if let Some(last_seq) = self.player_last_seq.get(&player_id).copied() {
-            if client_seq <= last_seq {
-                self.emit_lifecycle_event(
-                    &metadata,
-                    pb::LifecycleState::Rejected,
-                    pb::LifecycleReason::OutOfOrder,
-                    accept_tick,
-                )
-                .await?;
-                warn!(player_id = %player_id, client_seq, last_seq, "dropping out-of-order intent");
-                return Err(anyhow!("out of order"));
+        // Per-player client_seq validation (skip for legacy intents with seq=0)
+        if client_seq > 0 {
+            if let Some(last_seq) = self.player_last_seq.get(&player_id).copied() {
+                if client_seq <= last_seq {
+                    self.emit_lifecycle_event(
+                        &metadata,
+                        pb::LifecycleState::Rejected,
+                        pb::LifecycleReason::OutOfOrder,
+                        accept_tick,
+                    )
+                    .await?;
+                    warn!(player_id = %player_id, client_seq, last_seq, "dropping out-of-order intent");
+                    return Err(anyhow!("out of order"));
+                }
             }
         }
 
@@ -475,7 +471,10 @@ impl Engine {
             return Err(anyhow!("duplicate command"));
         }
 
-        self.player_last_seq.insert(player_id.clone(), client_seq);
+        // Update seq tracking (only for non-zero seq values)
+        if client_seq > 0 {
+            self.player_last_seq.insert(player_id.clone(), client_seq);
+        }
         self.redis
             .store_client_cmd(&player_id, &client_cmd_id, &intent_id, DEDUPE_TTL_SECS)
             .await?;
@@ -516,11 +515,11 @@ impl Engine {
             }
         };
 
-        let policy_outcome = self
-            .intents
-            .apply_policy_before_enqueue(&payload_intent, metadata.policy);
+        // M1: Try to activate immediately (no server-side queue).
+        let outcome = self.intents.try_activate(payload_intent, metadata.clone());
 
-        for (_, canceled_metadata) in policy_outcome.canceled.iter() {
+        // Emit CANCELED for any preempted intents (REPLACE_ACTIVE)
+        for (_, canceled_metadata) in outcome.canceled.iter() {
             self.emit_lifecycle_event(
                 canceled_metadata,
                 pb::LifecycleState::Canceled,
@@ -530,28 +529,42 @@ impl Engine {
             .await?;
         }
 
-        self.emit_lifecycle_event(
-            &metadata,
-            pb::LifecycleState::Accepted,
-            pb::LifecycleReason::None,
-            accept_tick,
-        )
-        .await?;
-
-        if policy_outcome.blocked {
+        if outcome.rejected_busy {
+            // M1: APPEND / CLEAR_THEN_APPEND when entity is busy -> REJECTED(ENTITY_BUSY)
             self.emit_lifecycle_event(
                 &metadata,
-                pb::LifecycleState::Blocked,
+                pb::LifecycleState::Rejected,
+                pb::LifecycleReason::EntityBusy,
+                accept_tick,
+            )
+            .await?;
+            warn!(
+                player_id = %player_id,
+                intent_id = %format_uuid(&metadata.intent_id),
+                policy = ?metadata.policy,
+                "rejected: entity busy (client should hold in local queue)"
+            );
+            return Err(anyhow!("entity busy"));
+        }
+
+        if outcome.started.is_some() {
+            // Emit ACCEPTED then immediately IN_PROGRESS (M1: no intermediate queue)
+            self.emit_lifecycle_event(
+                &metadata,
+                pb::LifecycleState::Accepted,
                 pb::LifecycleReason::None,
-                self.state.tick,
+                accept_tick,
+            )
+            .await?;
+
+            self.emit_lifecycle_event(
+                &metadata,
+                pb::LifecycleState::InProgress,
+                pb::LifecycleReason::None,
+                accept_tick,
             )
             .await?;
         }
-
-        self.intents.enqueue(QueuedIntent {
-            intent: payload_intent,
-            metadata,
-        });
 
         Ok(())
     }

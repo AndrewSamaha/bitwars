@@ -191,12 +191,13 @@ impl RedisClient {
     }
 
     /// Read new intent entries from the intents stream without blocking the caller.
-    /// Returns (last_id, payloads) where last_id is the id of the last entry read, and payloads are raw bytes of 'data' fields.
+    /// Returns a Vec of (stream_entry_id, payload_bytes) pairs so the caller can
+    /// advance the cursor entry-by-entry (needed for tick-bounded ingress in M1).
     pub async fn read_new_intents(
         &mut self,
         last_id: &str,
         count: usize,
-    ) -> anyhow::Result<Option<(String, Vec<Vec<u8>>)>> {
+    ) -> anyhow::Result<Option<Vec<(String, Vec<u8>)>>> {
         let stream = self.intents_stream();
         let mut cmd = redis::cmd("XREAD");
         if count > 0 {
@@ -223,16 +224,15 @@ impl RedisClient {
                 }
                 if let Some(RedisValue::Bulk(stream_entry)) = top.get(0) {
                     if let [RedisValue::Data(_name), RedisValue::Bulk(items)] = &stream_entry[..] {
-                        let mut out: Vec<Vec<u8>> = Vec::new();
-                        let mut new_last_id = String::from(last_id);
+                        let mut out: Vec<(String, Vec<u8>)> = Vec::new();
                         for item in items.iter() {
                             if let RedisValue::Bulk(parts) = item {
                                 if parts.len() >= 2 {
-                                    if let RedisValue::Data(id_bytes) = &parts[0] {
-                                        if let Ok(id_str) = String::from_utf8(id_bytes.clone()) {
-                                            new_last_id = id_str;
-                                        }
-                                    }
+                                    let entry_id = if let RedisValue::Data(id_bytes) = &parts[0] {
+                                        String::from_utf8(id_bytes.clone()).unwrap_or_default()
+                                    } else {
+                                        continue;
+                                    };
                                     if let RedisValue::Bulk(fieldvals) = &parts[1] {
                                         let mut i = 0;
                                         while i + 1 < fieldvals.len() {
@@ -241,7 +241,7 @@ impl RedisClient {
                                             if let RedisValue::Data(field_name) = field {
                                                 if field_name == b"data" {
                                                     if let RedisValue::Data(payload) = value {
-                                                        out.push(payload.clone());
+                                                        out.push((entry_id.clone(), payload.clone()));
                                                     }
                                                 }
                                             }
@@ -254,7 +254,7 @@ impl RedisClient {
                         if out.is_empty() {
                             return Ok(None);
                         }
-                        return Ok(Some((new_last_id, out)));
+                        return Ok(Some(out));
                     }
                 }
             }

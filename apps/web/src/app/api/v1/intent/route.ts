@@ -6,6 +6,13 @@ import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
 import { requireAuthOr401 } from "@/features/users/utils/auth";
 
+// Map string policy names to proto enum values
+const POLICY_MAP: Record<string, IntentPolicy> = {
+  REPLACE_ACTIVE: IntentPolicy.REPLACE_ACTIVE,
+  APPEND: IntentPolicy.APPEND,
+  CLEAR_THEN_APPEND: IntentPolicy.CLEAR_THEN_APPEND,
+};
+
 // POST /api/v1/intent
 // Body (JSON):
 // {
@@ -13,7 +20,8 @@ import { requireAuthOr401 } from "@/features/users/utils/auth";
 //   "entity_id": 1,
 //   "target": { "x": 50.0, "y": 75.0 },
 //   "client_cmd_id": "uuidv7-...",
-//   "client_seq": 1
+//   "client_seq": 1,
+//   "policy": "REPLACE_ACTIVE" | "APPEND" | "CLEAR_THEN_APPEND"   (optional, default REPLACE_ACTIVE)
 // }
 export async function POST(req: NextRequest) {
   try {
@@ -52,6 +60,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "client_seq must be a positive integer" }, { status: 400 });
     }
 
+    // M1: Parse policy from body (default to REPLACE_ACTIVE)
+    const policyStr = (body?.policy ?? "REPLACE_ACTIVE").toString().toUpperCase();
+    const policy = POLICY_MAP[policyStr] ?? IntentPolicy.REPLACE_ACTIVE;
+
     const entityId = BigInt(entityIdVal);
     const targetMsg = create(Vec2Schema, { x: Number(target.x), y: Number(target.y) });
     const move = create(MoveToLocationIntentSchema, {
@@ -72,7 +84,7 @@ export async function POST(req: NextRequest) {
       clientSeq: BigInt(clientSeqVal),
       serverTick: 0n,
       protocolVersion: 1,
-      policy: IntentPolicy.REPLACE_ACTIVE,
+      policy,
       payload: { case: "move", value: move },
     });
 

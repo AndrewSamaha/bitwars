@@ -30,6 +30,7 @@ enum LifecycleReason {
   OUT_OF_ORDER = 4;
   INVALID_TARGET = 5;
   PROTOCOL_MISMATCH = 6;
+  ENTITY_BUSY = 7;
 }
 
 // Represents an in-flight destination for an entity (server-side).
