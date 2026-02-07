@@ -3,6 +3,7 @@ import { sseFormat } from "@/lib/db/utils/sse";
 import { mapDeltaToJson } from "@/lib/db/utils/protobuf";
 import { EventsStreamRecordSchema } from "@bitwars/shared/gen/intent_pb";
 import { fromBinary } from "@bufbuild/protobuf";
+import { stringify as uuidStringify } from "uuid";
 
 function bufferToEventsStreamRecord(buf: Buffer) {
   try {
@@ -10,6 +11,18 @@ function bufferToEventsStreamRecord(buf: Buffer) {
   } catch (err) {
     return undefined;
   }
+}
+
+/**
+ * Convert 16-byte UUID bytes to a dashed UUID string (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+ * Returns empty string for missing/invalid input.
+ *
+ * CONVENTION: All UUID bytes crossing the SSE boundary must be serialised as
+ * dashed UUID strings. See .cursor/rules/uuid-serialization.mdc
+ */
+function uuidBytesToString(bytes: Uint8Array | undefined): string {
+  if (!bytes || bytes.length !== 16) return "";
+  return uuidStringify(bytes);
 }
 
 export async function emitEventFromBuffer(
@@ -28,8 +41,8 @@ export async function emitEventFromBuffer(
     case "lifecycle": {
       const payload = {
         type: "lifecycle",
-        intentId: Buffer.from(record.record.value.intentId ?? new Uint8Array()).toString("hex"),
-        clientCmdId: Buffer.from(record.record.value.clientCmdId ?? new Uint8Array()).toString("hex"),
+        intentId: uuidBytesToString(record.record.value.intentId),
+        clientCmdId: uuidBytesToString(record.record.value.clientCmdId),
         playerId: record.record.value.playerId,
         serverTick: record.record.value.serverTick.toString(),
         state: record.record.value.state,

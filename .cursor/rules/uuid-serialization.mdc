@@ -1,0 +1,70 @@
+---
+description: Convention for serializing UUID bytes across service boundaries
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+  - "**/*.rs"
+alwaysApply: false
+---
+
+# UUID Serialization Convention
+
+## Rule
+
+All UUID identifiers (`client_cmd_id`, `intent_id`, etc.) MUST be represented as
+**dashed UUID strings** (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`) whenever they
+cross a service or serialization boundary as a human-readable string.
+
+Never use raw hex (`xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`) as the string
+representation at any boundary that a client or log consumer will read.
+
+## Why
+
+UUIDs are stored as `bytes` (16 bytes) in protobuf messages on the wire.
+When converting to strings:
+
+- **Dashed format** is what `uuid` libraries produce by default in both Rust
+  (`Uuid::to_string()`) and TypeScript (`uuid.stringify()` / `uuid.v7()`).
+- **Raw hex** (`hex::encode`, `Buffer.toString("hex")`) produces a 32-char
+  dashless string that does not match, causing silent comparison failures.
+
+## Where each format is used
+
+| Context | Format | Notes |
+|---|---|---|
+| Protobuf wire (Redis streams) | `bytes` (16 bytes) | Binary, no string |
+| Rust logging / telemetry | Dashed UUID | Via `format_uuid()` in `engine/intent.rs` |
+| Rust Redis dedupe keys | Raw hex | Internal to engine, never exposed to clients |
+| SSE → client (delta.ts) | **Dashed UUID** | Via `uuidBytesToString()` using `uuid.stringify()` |
+| Client queue / UI | Dashed UUID | Via `uuid.v7()` |
+
+## How to convert
+
+**TypeScript** (protobuf bytes → string at SSE boundary):
+
+```typescript
+import { stringify as uuidStringify } from "uuid";
+
+function uuidBytesToString(bytes: Uint8Array | undefined): string {
+  if (!bytes || bytes.length !== 16) return "";
+  return uuidStringify(bytes);
+}
+```
+
+**Rust** (protobuf bytes → string for logs/telemetry):
+
+```rust
+pub fn format_uuid(bytes: &[u8]) -> String {
+    if bytes.len() == 16 {
+        if let Ok(uuid) = uuid::Uuid::from_slice(bytes) {
+            return uuid.to_string(); // dashed format
+        }
+    }
+    hex::encode(bytes) // fallback for malformed input
+}
+```
+
+## Canonical reference implementation
+
+- `apps/web/src/lib/db/utils/delta.ts` — `uuidBytesToString()`
+- `services/rts-engine/src/engine/intent.rs` — `format_uuid()`
