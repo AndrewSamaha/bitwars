@@ -15,6 +15,14 @@ pub struct GameConfig {
     pub redis_url: String,
     pub default_stop_radius: f32,
     pub default_entity_speed: f32,
+    /// M1: Maximum number of intents ingested per tick (backpressure).
+    pub max_cmds_per_tick: u32,
+    /// M1: Maximum milliseconds spent processing intents per tick (0 = unlimited).
+    pub max_batch_ms: u64,
+    /// When true, attempt to restore game state from the latest Redis snapshot
+    /// on startup instead of generating a fresh world. When false (default),
+    /// flush all Redis streams for this game and start clean.
+    pub restore_gamestate: bool,
 }
 
 impl Default for GameConfig {
@@ -34,7 +42,10 @@ impl Default for GameConfig {
             eps_vel: 0.0005,
             redis_url: "redis://127.0.0.1/".into(),
             default_stop_radius: 0.75,
-            default_entity_speed: 10.0,
+            default_entity_speed: 90.0,
+            max_cmds_per_tick: 64,
+            max_batch_ms: 5,
+            restore_gamestate: false,
         }
     }
 }
@@ -48,7 +59,19 @@ impl GameConfig {
         if let Ok(v) = std::env::var("GAMESTATE_REDIS_URL") {
             cfg.redis_url = v;
         }
-        // (add more env overrides if you like)
+        if let Ok(v) = std::env::var("MAX_CMDS_PER_TICK") {
+            if let Ok(n) = v.parse::<u32>() {
+                cfg.max_cmds_per_tick = n;
+            }
+        }
+        if let Ok(v) = std::env::var("MAX_BATCH_MS") {
+            if let Ok(n) = v.parse::<u64>() {
+                cfg.max_batch_ms = n;
+            }
+        }
+        if let Ok(v) = std::env::var("RESTORE_GAMESTATE_ON_RESTART") {
+            cfg.restore_gamestate = matches!(v.to_lowercase().as_str(), "1" | "true" | "yes");
+        }
         cfg
     }
 }

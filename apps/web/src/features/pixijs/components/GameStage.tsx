@@ -7,7 +7,7 @@ import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
-import { v7 as uuidv7 } from "uuid";
+import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
@@ -16,7 +16,6 @@ export default function GameStage() {
   // Keep latest selectors in a ref so event handlers see current selection/action
   const latestSelectorsRef = useRef(selectors);
   useEffect(() => { latestSelectorsRef.current = selectors; }, [selectors]);
-  const clientSeqRef = useRef<number>(0);
 
   useEffect(() => {
     // Observe readiness until the first snapshot is applied
@@ -26,6 +25,22 @@ export default function GameStage() {
         window.clearInterval(poll);
       }
     }, 100);
+
+    // M1: Wire the queue manager's send callback to POST /api/v1/intent
+    intentQueue.setSendCallback(async (params: SendIntentParams) => {
+      await fetch('/api/v1/intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'Move',
+          entity_id: params.entityId,
+          target: params.target,
+          client_cmd_id: params.clientCmdId,
+          client_seq: params.clientSeq,
+          policy: params.policy,
+        }),
+      });
+    });
 
     const initWorld = async () => {
         const app = new Application();
@@ -51,6 +66,11 @@ export default function GameStage() {
         ground.rect(-4000, -4000, 8000, 8000).fill(0x000000, 0);
         ground.eventMode = 'static';
         worldContainer.addChild(ground);
+
+        // M1: Container for waypoint indicator graphics (drawn each frame)
+        const waypointContainer = new Container();
+        (waypointContainer as any).label = 'waypoints';
+        worldContainer.addChild(waypointContainer);
 
         // Keyboard: M to set Move, Escape to clear (reads latest selectors via ref)
         const onKeyDown = (ev: KeyboardEvent) => {
@@ -154,9 +174,58 @@ export default function GameStage() {
               if (existing) existing.parent?.removeChild(existing);
             }
           }
+
+          // 4) M1: Render waypoint indicators for entities with queued intents
+          waypointContainer.removeChildren();
+          for (const entityId of intentQueue.getActiveEntityIds()) {
+            const waypoints = intentQueue.getWaypoints(entityId);
+            let prevX: number | undefined;
+            let prevY: number | undefined;
+
+            // Try to find entity current position as first line anchor
+            for (const e of game.world.with("pos", "id")) {
+              if (Number((e as any).id) === entityId) {
+                prevX = e.pos.x;
+                prevY = e.pos.y;
+                break;
+              }
+            }
+
+            for (let i = 0; i < waypoints.length; i++) {
+              const wp = waypoints[i]!;
+              const g = new Graphics();
+
+              // Draw connecting line from previous point
+              if (prevX !== undefined && prevY !== undefined) {
+                g.moveTo(prevX, prevY);
+                g.lineTo(wp.x, wp.y);
+                g.stroke({ width: 1, color: wp.active ? 0x44ff44 : 0x888888, alpha: 0.5 });
+              }
+
+              // Draw waypoint marker (diamond for active, circle for queued)
+              if (wp.active) {
+                g.moveTo(wp.x, wp.y - 8);
+                g.lineTo(wp.x + 8, wp.y);
+                g.lineTo(wp.x, wp.y + 8);
+                g.lineTo(wp.x - 8, wp.y);
+                g.closePath();
+                g.stroke({ width: 2, color: 0x44ff44 });
+              } else {
+                g.circle(wp.x, wp.y, 6);
+                g.stroke({ width: 1.5, color: 0x888888 });
+                // Queue index label (1-based, skipping active)
+                // Simple numeric indicator not easily done with Graphics alone;
+                // the IntentQueuePanel shows the numbered list instead.
+              }
+
+              waypointContainer.addChild(g);
+              prevX = wp.x;
+              prevY = wp.y;
+            }
+          }
         };
 
-        // Ground click
+        // Ground click — M1: delegates to IntentQueueManager with modifier keys
         ground.on('pointerdown', async (ev: any) => {
           try {
             const sel = latestSelectorsRef.current;
@@ -172,31 +241,29 @@ export default function GameStage() {
             const global = ev.global;
             const local = worldContainer.toLocal(global);
 
-            // Build request payload
             const entityIdNum = Number(first);
             if (!Number.isFinite(entityIdNum)) return;
-            const nextClientSeq = clientSeqRef.current + 1;
-            clientSeqRef.current = nextClientSeq;
-            const body = {
-              type: 'Move',
-              entity_id: entityIdNum,
-              target: { x: Number(local.x), y: Number(local.y) },
-              client_cmd_id: uuidv7(),
-              client_seq: nextClientSeq,
-            };
 
-            // POST to API
-            await fetch('/api/v1/intent', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            });
+            // Read modifier keys from the original DOM event
+            const origEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
+            const shift = !!origEvent?.shiftKey;
+            const ctrl = !!origEvent?.ctrlKey || !!origEvent?.metaKey;
 
-            // Clear action mode after enqueue
-            setSelectedAction(null);
+            // M1: Delegate to queue manager (handles policy, queueing, and sending)
+            intentQueue.handleMoveCommand(
+              entityIdNum,
+              { x: Number(local.x), y: Number(local.y) },
+              { shift, ctrl },
+            );
+
+            // Only clear action mode on plain click (REPLACE_ACTIVE).
+            // Shift/Ctrl clicks keep Move mode active for chaining waypoints.
+            if (!shift && !ctrl) {
+              setSelectedAction(null);
+            }
           } catch (e) {
             // best-effort; do not throw in render loop
-            console.error('move intent post failed', e);
+            console.error('move intent failed', e);
           }
         });
 

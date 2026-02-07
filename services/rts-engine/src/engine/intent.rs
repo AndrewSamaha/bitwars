@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use tracing::{info, warn};
 
@@ -15,38 +15,37 @@ pub struct IntentMetadata {
     pub policy: pb::IntentPolicy,
 }
 
-#[derive(Clone)]
-pub struct QueuedIntent {
-    pub intent: pb::Intent,
-    pub metadata: IntentMetadata,
-}
-
 pub struct ActiveIntent {
     pub action: pb::ActionState,
     pub metadata: IntentMetadata,
 }
 
-#[derive(Default)]
-pub struct PolicyOutcome {
+/// Result of trying to activate an intent (M1: no server-side queue).
+pub struct ActivationOutcome {
+    /// Intents that were canceled by this activation (REPLACE_ACTIVE preemption).
     pub canceled: Vec<(u64, IntentMetadata)>,
-    pub blocked: bool,
+    /// The intent was started: (entity_id, metadata). None if rejected.
+    pub started: Option<(u64, IntentMetadata)>,
+    /// True if the intent was rejected because the entity already has an active intent
+    /// and the policy does not allow preemption (APPEND / CLEAR_THEN_APPEND when busy).
+    pub rejected_busy: bool,
 }
 
-/// Minimal intent manager that holds per-entity queues and current action state.
+/// M1 intent manager: active-only, no server-side queue.
 ///
-/// Notes:
-/// - This is framework-agnostic and does not require adopting an ECS.
-/// - Integrate with Engine by calling `ingest`, then `process_pending`, then `follow_targets` before `integrate()`.
+/// The client maintains per-entity FIFO queues; the server only tracks
+/// one active intent per entity at a time.
+///
+/// Integrate with Engine by calling `try_activate` during intent ingestion,
+/// then `follow_targets` before `integrate()` each tick.
 pub struct IntentManager {
-    intent_queues: HashMap<u64, VecDeque<QueuedIntent>>, // entity_id -> FIFO queue
-    current_action: HashMap<u64, ActiveIntent>,          // entity_id -> executing action
+    current_action: HashMap<u64, ActiveIntent>,
     default_stop_radius: f32,
 }
 
 impl IntentManager {
     pub fn new(default_stop_radius: f32) -> Self {
         Self {
-            intent_queues: HashMap::new(),
             current_action: HashMap::new(),
             default_stop_radius,
         }
@@ -60,39 +59,64 @@ impl IntentManager {
         }
     }
 
-    pub fn enqueue(&mut self, intent: QueuedIntent) {
-        if let Some(eid) = Self::intent_entity_id(&intent.intent) {
-            let q = self.intent_queues.entry(eid).or_insert_with(VecDeque::new);
-            q.push_back(intent);
-        } else {
-            warn!("dropping intent with no kind");
-        }
-    }
+    /// Try to activate an intent for the target entity.
+    ///
+    /// M1 rules:
+    /// - `REPLACE_ACTIVE` (or unspecified): cancel current intent (if any), start new.
+    /// - `APPEND` / `CLEAR_THEN_APPEND`: reject with `ENTITY_BUSY` if entity already
+    ///   has an active intent. Client should not send these while entity is busy.
+    /// - Any policy when entity is idle: start immediately.
+    pub fn try_activate(
+        &mut self,
+        intent: pb::Intent,
+        metadata: IntentMetadata,
+    ) -> ActivationOutcome {
+        let Some(entity_id) = Self::intent_entity_id(&intent) else {
+            warn!("intent with no entity id, cannot activate");
+            return ActivationOutcome {
+                canceled: vec![],
+                started: None,
+                rejected_busy: false,
+            };
+        };
 
-    /// If an entity has no current action, start the next one from its queue.
-    /// Returns metadata for intents that transitioned to IN_PROGRESS.
-    pub fn process_pending(&mut self) -> Vec<(u64, IntentMetadata)> {
-        let mut started: Vec<(u64, IntentMetadata)> = Vec::new();
-        let entity_ids: Vec<u64> = self.intent_queues.keys().cloned().collect();
-        for eid in entity_ids {
-            if self.current_action.contains_key(&eid) {
-                continue;
+        let has_active = self.current_action.contains_key(&entity_id);
+        let mut canceled = Vec::new();
+
+        match metadata.policy {
+            pb::IntentPolicy::Unspecified | pb::IntentPolicy::ReplaceActive => {
+                // Cancel current if present, then start new
+                if let Some(active) = self.current_action.remove(&entity_id) {
+                    log_cancel(&active.metadata, entity_id, "replace_active");
+                    canceled.push((entity_id, active.metadata));
+                }
             }
-            let maybe_next = self.intent_queues.get_mut(&eid).and_then(|q| q.pop_front());
-            if let Some(QueuedIntent { intent, metadata }) = maybe_next {
-                let action = make_action_state_from_intent(intent, self.default_stop_radius);
-                log_start(&metadata, &action, eid);
-                self.current_action.insert(
-                    eid,
-                    ActiveIntent {
-                        action,
-                        metadata: metadata.clone(),
-                    },
-                );
-                started.push((eid, metadata));
+            pb::IntentPolicy::Append | pb::IntentPolicy::ClearThenAppend => {
+                if has_active {
+                    // Entity is busy; client should not have sent this
+                    return ActivationOutcome {
+                        canceled: vec![],
+                        started: None,
+                        rejected_busy: true,
+                    };
+                }
             }
         }
-        started
+
+        // Start the intent
+        let action = make_action_state_from_intent(intent, self.default_stop_radius);
+        log_start(&metadata, &action, entity_id);
+        let started_meta = metadata.clone();
+        self.current_action.insert(
+            entity_id,
+            ActiveIntent { action, metadata },
+        );
+
+        ActivationOutcome {
+            canceled,
+            started: Some((entity_id, started_meta)),
+            rejected_busy: false,
+        }
     }
 
     /// Advances current move actions by `dt` at a given `speed`.
@@ -156,58 +180,9 @@ impl IntentManager {
         notifications
     }
 
-    pub fn apply_policy_before_enqueue(
-        &mut self,
-        intent: &pb::Intent,
-        policy: pb::IntentPolicy,
-    ) -> PolicyOutcome {
-        let Some(entity_id) = Self::intent_entity_id(intent) else {
-            warn!("policy application skipped for intent with no entity id");
-            return PolicyOutcome::default();
-        };
-
-        let mut outcome = PolicyOutcome::default();
-
-        match policy {
-            pb::IntentPolicy::Unspecified | pb::IntentPolicy::ReplaceActive => {
-                if let Some(active) = self.current_action.remove(&entity_id) {
-                    log_cancel(&active.metadata, entity_id, "replace_active");
-                    outcome.canceled.push((entity_id, active.metadata));
-                }
-            }
-            pb::IntentPolicy::ClearThenAppend => {
-                if let Some(active) = self.current_action.remove(&entity_id) {
-                    log_cancel(&active.metadata, entity_id, "clear_then_append");
-                    outcome.canceled.push((entity_id, active.metadata));
-                }
-                if let Some(queue) = self.intent_queues.get_mut(&entity_id) {
-                    while let Some(QueuedIntent { metadata, .. }) = queue.pop_front() {
-                        log_cancel(&metadata, entity_id, "clear_then_append_queue");
-                        outcome.canceled.push((entity_id, metadata));
-                    }
-                }
-            }
-            pb::IntentPolicy::Append => {}
-        }
-
-        let still_active = self.current_action.contains_key(&entity_id);
-        let queue_blocked = self
-            .intent_queues
-            .get(&entity_id)
-            .map(|q| !q.is_empty())
-            .unwrap_or(false);
-        outcome.blocked = still_active || queue_blocked;
-
-        outcome
-    }
-
-    pub fn snapshot(
-        &self,
-    ) -> (
-        &HashMap<u64, VecDeque<QueuedIntent>>,
-        &HashMap<u64, ActiveIntent>,
-    ) {
-        (&self.intent_queues, &self.current_action)
+    /// Read-only view of active intents (M1: no server-side queues).
+    pub fn active_intents(&self) -> &HashMap<u64, ActiveIntent> {
+        &self.current_action
     }
 }
 
@@ -252,6 +227,7 @@ fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -
 fn find_entity_mut<'a>(state: &'a mut GameState, id: u64) -> Option<&'a mut pb::Entity> {
     state.entities.iter_mut().find(|e| e.id == id)
 }
+
 fn trace_start(metadata: &IntentMetadata, kind: &str, entity_id: u64) {
     info!(
         entity_id,
@@ -339,95 +315,95 @@ mod tests {
         }
     }
 
-    fn make_action_state(intent: &pb::Intent) -> pb::ActionState {
-        let exec = match intent.kind.as_ref() {
-            Some(pb::intent::Kind::Move(m)) => Some(pb::action_state::Exec::Move(pb::MoveState {
-                target: Some(pb::MotionTarget {
-                    target: m.target.clone(),
-                    stop_radius: 0.75,
-                }),
-            })),
-            Some(pb::intent::Kind::Attack(a)) => Some(pb::action_state::Exec::Attack(pb::AttackState {
-                target_id: a.target_id,
-                last_known_pos: None,
-            })),
-            Some(pb::intent::Kind::Build(b)) => Some(pb::action_state::Exec::Build(pb::BuildState {
-                blueprint_id: b.blueprint_id.clone(),
-                location: b.location.clone(),
-                progress: 0.0,
-            })),
-            None => None,
-        };
-        pb::ActionState {
-            intent: Some(intent.clone()),
-            exec,
-        }
-    }
-
     #[test]
-    fn replace_active_cancels_current_intent() {
+    fn replace_active_cancels_current_and_starts_new() {
         let mut manager = IntentManager::new(0.75);
         let entity_id = 7_u64;
-        let existing_intent = make_move_intent(entity_id, (10.0, 5.0));
-        let existing_meta = make_metadata(1, pb::IntentPolicy::ReplaceActive);
 
-        manager.current_action.insert(
-            entity_id,
-            ActiveIntent {
-                action: make_action_state(&existing_intent),
-                metadata: existing_meta.clone(),
-            },
-        );
+        // First, activate an intent
+        let first_intent = make_move_intent(entity_id, (10.0, 5.0));
+        let first_meta = make_metadata(1, pb::IntentPolicy::ReplaceActive);
+        let outcome = manager.try_activate(first_intent, first_meta.clone());
+        assert!(outcome.started.is_some());
+        assert!(outcome.canceled.is_empty());
+        assert!(!outcome.rejected_busy);
 
-        let incoming_intent = make_move_intent(entity_id, (20.0, -4.0));
-        let outcome = manager.apply_policy_before_enqueue(
-            &incoming_intent,
-            pb::IntentPolicy::ReplaceActive,
-        );
-
-        assert_eq!(outcome.canceled.len(), 1, "active intent should be canceled");
+        // Now replace it
+        let second_intent = make_move_intent(entity_id, (20.0, -4.0));
+        let second_meta = make_metadata(2, pb::IntentPolicy::ReplaceActive);
+        let outcome = manager.try_activate(second_intent, second_meta);
+        assert!(outcome.started.is_some());
+        assert_eq!(outcome.canceled.len(), 1, "first intent should be canceled");
         assert_eq!(outcome.canceled[0].0, entity_id);
-        assert_eq!(outcome.canceled[0].1.intent_id, existing_meta.intent_id);
-        assert!(!outcome.blocked, "no active or queued intents remain after replace");
+        assert_eq!(outcome.canceled[0].1.intent_id, first_meta.intent_id);
+        assert!(!outcome.rejected_busy);
     }
 
     #[test]
-    fn append_policy_flags_blocked_when_queue_not_empty() {
+    fn append_rejects_when_entity_busy() {
         let mut manager = IntentManager::new(0.75);
         let entity_id = 3_u64;
-        let queued_intent = QueuedIntent {
-            intent: make_move_intent(entity_id, (1.0, 1.0)),
-            metadata: make_metadata(2, pb::IntentPolicy::Append),
-        };
 
-        let mut queue = VecDeque::new();
-        queue.push_back(queued_intent);
-        manager.intent_queues.insert(entity_id, queue);
+        // Activate first intent
+        let first = make_move_intent(entity_id, (1.0, 1.0));
+        let first_meta = make_metadata(1, pb::IntentPolicy::ReplaceActive);
+        let outcome = manager.try_activate(first, first_meta);
+        assert!(outcome.started.is_some());
 
-        let new_intent = make_move_intent(entity_id, (2.0, 2.0));
-        let outcome = manager.apply_policy_before_enqueue(&new_intent, pb::IntentPolicy::Append);
-
+        // Try APPEND while busy -> should be rejected
+        let second = make_move_intent(entity_id, (2.0, 2.0));
+        let second_meta = make_metadata(2, pb::IntentPolicy::Append);
+        let outcome = manager.try_activate(second, second_meta);
+        assert!(outcome.started.is_none());
+        assert!(outcome.rejected_busy, "APPEND should be rejected when entity is busy");
         assert!(outcome.canceled.is_empty());
-        assert!(outcome.blocked, "existing queue should mark blocked=true");
     }
 
     #[test]
-    fn lifecycle_progression_moves_from_pending_to_finished() {
+    fn clear_then_append_rejects_when_entity_busy() {
+        let mut manager = IntentManager::new(0.75);
+        let entity_id = 3_u64;
+
+        // Activate first intent
+        let first = make_move_intent(entity_id, (1.0, 1.0));
+        let first_meta = make_metadata(1, pb::IntentPolicy::ReplaceActive);
+        manager.try_activate(first, first_meta);
+
+        // Try CLEAR_THEN_APPEND while busy -> should be rejected
+        let second = make_move_intent(entity_id, (5.0, 5.0));
+        let second_meta = make_metadata(2, pb::IntentPolicy::ClearThenAppend);
+        let outcome = manager.try_activate(second, second_meta);
+        assert!(outcome.started.is_none());
+        assert!(outcome.rejected_busy);
+    }
+
+    #[test]
+    fn append_starts_when_entity_idle() {
+        let mut manager = IntentManager::new(0.75);
+        let entity_id = 5_u64;
+
+        // Entity has no active intent; APPEND should start immediately
+        let intent = make_move_intent(entity_id, (10.0, 10.0));
+        let meta = make_metadata(1, pb::IntentPolicy::Append);
+        let outcome = manager.try_activate(intent, meta);
+        assert!(outcome.started.is_some());
+        assert!(!outcome.rejected_busy);
+        assert!(outcome.canceled.is_empty());
+    }
+
+    #[test]
+    fn lifecycle_immediate_finish_at_target() {
         let mut manager = IntentManager::new(0.75);
         let entity_id = 11_u64;
         let metadata = make_metadata(3, pb::IntentPolicy::ReplaceActive);
         let move_intent = make_move_intent(entity_id, (0.0, 0.0));
 
-        manager.enqueue(QueuedIntent {
-            intent: move_intent.clone(),
-            metadata: metadata.clone(),
-        });
+        // Activate immediately (no queue)
+        let outcome = manager.try_activate(move_intent, metadata.clone());
+        assert!(outcome.started.is_some());
+        assert_eq!(outcome.started.as_ref().unwrap().0, entity_id);
 
-        let started = manager.process_pending();
-        assert_eq!(started.len(), 1, "intent should transition to in-progress");
-        assert_eq!(started[0].0, entity_id);
-        assert_eq!(started[0].1.intent_id, metadata.intent_id);
-
+        // Entity is already at (0,0), target is (0,0) -> should finish immediately
         let mut state = GameState {
             tick: 0,
             entities: vec![pb::Entity {

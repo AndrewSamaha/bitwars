@@ -359,6 +359,7 @@ pub enum LifecycleReason {
     OutOfOrder = 4,
     InvalidTarget = 5,
     ProtocolMismatch = 6,
+    EntityBusy = 7,
 }
 impl LifecycleReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -374,6 +375,7 @@ impl LifecycleReason {
             Self::OutOfOrder => "OUT_OF_ORDER",
             Self::InvalidTarget => "INVALID_TARGET",
             Self::ProtocolMismatch => "PROTOCOL_MISMATCH",
+            Self::EntityBusy => "ENTITY_BUSY",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -386,6 +388,7 @@ impl LifecycleReason {
             "OUT_OF_ORDER" => Some(Self::OutOfOrder),
             "INVALID_TARGET" => Some(Self::InvalidTarget),
             "PROTOCOL_MISMATCH" => Some(Self::ProtocolMismatch),
+            "ENTITY_BUSY" => Some(Self::EntityBusy),
             _ => None,
         }
     }
