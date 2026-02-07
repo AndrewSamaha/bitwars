@@ -19,6 +19,10 @@ pub struct GameConfig {
     pub max_cmds_per_tick: u32,
     /// M1: Maximum milliseconds spent processing intents per tick (0 = unlimited).
     pub max_batch_ms: u64,
+    /// When true, attempt to restore game state from the latest Redis snapshot
+    /// on startup instead of generating a fresh world. When false (default),
+    /// flush all Redis streams for this game and start clean.
+    pub restore_gamestate: bool,
 }
 
 impl Default for GameConfig {
@@ -41,6 +45,7 @@ impl Default for GameConfig {
             default_entity_speed: 90.0,
             max_cmds_per_tick: 64,
             max_batch_ms: 5,
+            restore_gamestate: false,
         }
     }
 }
@@ -63,6 +68,9 @@ impl GameConfig {
             if let Ok(n) = v.parse::<u64>() {
                 cfg.max_batch_ms = n;
             }
+        }
+        if let Ok(v) = std::env::var("RESTORE_GAMESTATE_ON_RESTART") {
+            cfg.restore_gamestate = matches!(v.to_lowercase().as_str(), "1" | "true" | "yes");
         }
         cfg
     }

@@ -1,6 +1,6 @@
 use prost::Message;
 use redis::{AsyncCommands, Value as RedisValue};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::engine::state::GameState;
 use crate::pb::events_stream_record;
@@ -261,6 +261,85 @@ impl RedisClient {
             _ => {}
         }
         Ok(None)
+    }
+
+    /// Delete all Redis keys/streams associated with this game.
+    /// Used on startup when RESTORE_GAMESTATE_ON_RESTART is false (clean slate).
+    pub async fn flush_game_streams(&mut self) -> anyhow::Result<()> {
+        let keys = vec![
+            self.intents_stream(),
+            self.events_stream(),
+            self.snapshots_stream(),
+            self.snapshot_key(),
+            self.snapshot_meta_key(),
+        ];
+        info!(game_id = %self.game_id, keys = ?keys, "flushing game streams (clean start)");
+        for key in &keys {
+            let _: () = redis::cmd("DEL")
+                .arg(key)
+                .query_async(&mut self.conn)
+                .await?;
+        }
+
+        // Also flush dedupe keys for this game (pattern: rts:match:<game_id>:dedupe:*)
+        let pattern = format!("rts:match:{}:dedupe:*", self.game_id);
+        let dedupe_keys: Vec<String> = redis::cmd("KEYS")
+            .arg(&pattern)
+            .query_async(&mut self.conn)
+            .await
+            .unwrap_or_default();
+        if !dedupe_keys.is_empty() {
+            info!(count = dedupe_keys.len(), "flushing dedupe keys");
+            for key in &dedupe_keys {
+                let _: () = redis::cmd("DEL")
+                    .arg(key)
+                    .query_async(&mut self.conn)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Read the latest snapshot and its boundary stream ID from Redis.
+    /// Returns (GameState, boundary_stream_id) or None if no snapshot exists.
+    pub async fn read_latest_snapshot(&mut self) -> anyhow::Result<Option<(GameState, String)>> {
+        let snap_key = self.snapshot_key();
+        let meta_key = self.snapshot_meta_key();
+
+        let snap_bytes: Option<Vec<u8>> = self.conn.get(&snap_key).await?;
+        let snap_bytes = match snap_bytes {
+            Some(b) if !b.is_empty() => b,
+            _ => {
+                warn!(game_id = %self.game_id, "no snapshot found in Redis");
+                return Ok(None);
+            }
+        };
+
+        let snapshot = Snapshot::decode(snap_bytes.as_slice())
+            .map_err(|e| anyhow::anyhow!("failed to decode snapshot: {}", e))?;
+
+        // Read boundary_stream_id from metadata hash
+        let boundary: String = redis::cmd("HGET")
+            .arg(&meta_key)
+            .arg("boundary_stream_id")
+            .query_async(&mut self.conn)
+            .await
+            .unwrap_or_else(|_| "0-0".to_string());
+
+        let state = GameState {
+            tick: snapshot.tick as u64,
+            entities: snapshot.entities,
+        };
+
+        info!(
+            game_id = %self.game_id,
+            tick = state.tick,
+            entities = state.entities.len(),
+            boundary = %boundary,
+            "restored snapshot from Redis"
+        );
+
+        Ok(Some((state, boundary)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.

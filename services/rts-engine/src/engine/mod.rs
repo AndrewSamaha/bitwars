@@ -221,6 +221,59 @@ mod integration_tests {
 
 impl Engine {
     pub async fn new(cfg: GameConfig) -> anyhow::Result<Self> {
+        let mut redis = RedisClient::connect(&cfg.redis_url, cfg.game_id.clone()).await?;
+        let telemetry = Telemetry::from_env()?;
+        if let Some(ref t) = telemetry {
+            info!(dataset = t.dataset(), "axiom telemetry enabled");
+        }
+
+        let default_stop_radius = cfg.default_stop_radius;
+
+        if cfg.restore_gamestate {
+            // ── Restore mode: load latest snapshot + replay intents since boundary ──
+            info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
+
+            if let Some((state, boundary)) = redis.read_latest_snapshot().await? {
+                info!(
+                    tick = state.tick,
+                    boundary = %boundary,
+                    entities = state.entities.len(),
+                    "restored world from snapshot"
+                );
+
+                // Start reading intents from the boundary so any intents that arrived
+                // after the snapshot are replayed during the first ticks.
+                let last_intent_id = boundary.clone();
+
+                let mut engine = Self {
+                    prev_state: state.clone(),
+                    state,
+                    last_delta_id: if boundary == "0-0" { None } else { Some(boundary) },
+                    cfg,
+                    redis,
+                    intents: IntentManager::new(default_stop_radius),
+                    last_intent_id,
+                    player_last_seq: HashMap::new(),
+                    lifecycle_emitted: HashSet::new(),
+                    telemetry,
+                };
+                // Publish a fresh snapshot so newly connecting clients see current state
+                let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
+                engine
+                    .redis
+                    .publish_snapshot(&engine.state, snap_boundary)
+                    .await?;
+                return Ok(engine);
+            }
+
+            warn!("no snapshot found in Redis; falling back to fresh world");
+            // Fall through to clean-start path
+        }
+
+        // ── Clean-start mode (default): flush Redis and generate fresh world ──
+        info!(game_id = %cfg.game_id, "clean start; flushing game streams");
+        redis.flush_game_streams().await?;
+
         let mut rng = StdRng::seed_from_u64(42);
         let state = init_world(&cfg, &mut rng);
         info!(
@@ -228,24 +281,14 @@ impl Engine {
             cfg.num_entities, cfg.tps, cfg.friction
         );
 
-        let redis = RedisClient::connect(&cfg.redis_url, cfg.game_id.clone()).await?;
-        let telemetry = Telemetry::from_env()?;
-        if let Some(ref t) = telemetry {
-            info!(dataset = t.dataset(), "axiom telemetry enabled");
-        }
-
-        // Initial snapshot with boundary "0-0"
-        // Capture needed config values before moving `cfg` into the struct
-        let default_stop_radius = cfg.default_stop_radius;
         let mut engine = Self {
             prev_state: state.clone(),
             state,
             last_delta_id: None,
             cfg,
             redis,
-            // Initialize with captured value to avoid use-after-move of `cfg`
             intents: IntentManager::new(default_stop_radius),
-            // Start reading intents from the beginning (change to "$" to only read new ones)
+            // Stream is empty after flush, so "0-0" is correct
             last_intent_id: "0-0".to_string(),
             player_last_seq: HashMap::new(),
             lifecycle_emitted: HashSet::new(),

@@ -52,6 +52,21 @@ Adding dependencies to a specific package is a bit more involved. You need to ru
 pnpm -F bitwars add @bufbuild/protobuf
 ```
 
+## Environment Variables
+
+Configuration is loaded from the root `.env` file. The `dev` and `fe:run` scripts use `dotenv-cli` to inject these into the process.
+
+| Variable | Default | Description |
+|---|---|---|
+| `GAME_ID` | `demo-001` | Unique identifier for the game/match |
+| `GAMESTATE_REDIS_URL` | `redis://127.0.0.1/` | Redis connection URL |
+| `RTS_ENGINE_LOG_LEVEL` | `INFO` | Tracing log level for the Rust engine |
+| `RESTORE_GAMESTATE_ON_RESTART` | `false` | When `true`, the engine restores world state from the latest Redis snapshot on startup and replays only post-snapshot intents. When `false` (default), all game Redis streams are flushed and a fresh world is generated — no replay of old intents. Set to `true` for crash recovery; leave `false` during development. |
+| `MAX_CMDS_PER_TICK` | `64` | Maximum intents ingested per engine tick (backpressure) |
+| `MAX_BATCH_MS` | `5` | Maximum ms spent processing intents per tick (0 = unlimited) |
+| `AXIOM_TOKEN` | *(none)* | Axiom API token for telemetry (optional) |
+| `AXIOM_DATASET` | *(none)* | Axiom dataset name for telemetry (optional) |
+
 ## rts-engine
 This is the Rust server that will run the game loop. It integrates with Redis and protobuf-generated types.
 
