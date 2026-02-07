@@ -73,7 +73,7 @@ Each milestone targets a vertical slice that can be shown end-to-end: client iss
 
 ---
 
-## M1: Client-Side Intent Queueing + Replace/Append Semantics (Revised)
+## M1: DONE Client-Side Intent Queueing + Replace/Append Semantics (Revised)
 
 ### Goals
 
