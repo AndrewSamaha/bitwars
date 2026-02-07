@@ -38,7 +38,7 @@ impl Default for GameConfig {
             eps_vel: 0.0005,
             redis_url: "redis://127.0.0.1/".into(),
             default_stop_radius: 0.75,
-            default_entity_speed: 10.0,
+            default_entity_speed: 90.0,
             max_cmds_per_tick: 64,
             max_batch_ms: 5,
         }
