@@ -174,21 +174,42 @@ message IntentEnvelope {
 
 ---
 
-## M3: Pathfinding Integration and Movement Polish (No Queue Assumptions)
+## M3: Movement Polish (Pathfinding Deferred)
+
+> **Scope change:** Pathfinding (grid/navmesh, incremental replanning, obstacle
+> detour) is deferred to a future milestone.  There is no concept of obstacles
+> or terrain in the game yet, so building pathfinding now would require inventing
+> placeholder geometry with no guarantee those abstractions survive real game
+> design decisions (tile-based? navmesh? destructible?).  Pathfinding will slot
+> in naturally once obstacles are introduced, likely after M5 or M6 when there
+> are multiple ability types and game objects to navigate around.
+>
+> M3 retains the **movement polish** deliverables, which have immediate value:
+> the engine already has `stop_radius` and `MotionTarget` in the schema, but
+> arrival stabilisation, facing, and oscillation prevention have not been
+> formally tested or hardened.
 
 ### Goals
 
-- Grid or navmesh pathfinder with incremental replanning; add **stop radius** and **arrival facing**.
+- Harden arrival behavior: configurable **stop radius**, **arrival facing**, no oscillation.
+- Clean cancel-mid-move when `REPLACE_ACTIVE` preempts.
 
 ### Deliverables
 
-- Path component + path-follow system; recompute budget ≤ configured µs/tick.
 - No oscillation at destination; configurable `stop_radius` and final `facing`.
-- Clear behavior when a `REPLACE_ACTIVE` arrives mid-path (cancel old path cleanly).
+- Clear behavior when a `REPLACE_ACTIVE` arrives mid-move (cancel old motion cleanly, no residual velocity).
+- Arrival stabilization verified in chaos/replay tests with golden hashes.
 
 ### Acceptance Criteria
 
-- Obstacle detour demo; arrival stabilization within ≤ 2 ticks; replay equals golden hash.
+- Arrival stabilization within ≤ 2 ticks of reaching stop radius; replay equals golden hash.
+- Mid-move preemption leaves no residual velocity or drift.
+
+### Deferred to future milestone
+
+- Grid or navmesh pathfinder with incremental replanning.
+- Path component + path-follow system; recompute budget ≤ configured µs/tick.
+- Obstacle detour demo.
 
 ---
 
@@ -336,7 +357,9 @@ message IntentEnvelope {
 - M0 gameplay → M0.1 guardrails (lifecycle/IDs/ticks/replay/latency).
 - **M1 implements client queues + server active-only execution**, with replace preemption.
 - M2 hardens ordering/idempotency and makes reconnect bulletproof.
-- M3–M6 expand movement/abilities/resources without assuming server-side FIFO.
+- M3 (movement polish) is small and improves the existing demo immediately.
+- Pathfinding is deferred until obstacles/terrain exist (likely after M5 or M6).
+- M4–M6 expand entities/abilities/resources without assuming server-side FIFO.
 - M7–M9 add scripting and version/evolution controls, with explicit client-queue migration.
 - M10 formalizes observability/replay already seeded in M0.1 and exercised along the way.
 
