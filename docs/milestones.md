@@ -150,7 +150,7 @@ message IntentEnvelope {
 
 ---
 
-## M2: Networking Robustness + Reconnect Sync (Adjusted)
+## M2: DONE — Networking Robustness + Reconnect Sync (Adjusted)
 
 ### Goals
 
@@ -164,12 +164,12 @@ message IntentEnvelope {
 - 3. **DONE** Reconnect handshake endpoint (`GET /api/v2/reconnect`) + client-side `reconcileWithServer()` on `IntentQueueManager`:
   - returns `{server_tick, protocol_version, per-entity active_intent_id/state, last_processed_client_seq}`.
   - Client calls on every SSE open (initial + reconnect); advances `clientSeq`, syncs active slots, drains idle queues.
-- 4. Chaos harness: reorder, drop, dupe; assertions for single apply and correct final state.
+- 4. **DONE** Chaos harness (`crates/sim/tests/chaos.rs`): 11 tests covering reorder, drop, dupe, and combined scenarios with golden xxh3 hash assertions. In-memory dedupe added to `sim::Engine`.
 
 ### Acceptance Criteria
 
-- Synthetic tests pass for reorder/dupe scenarios; world hashes match golden results.
-- Reconnect scenario reliably resumes client queues without duplicated or skipped intents.
+- **DONE** Synthetic tests pass for reorder/dupe scenarios; world hashes match golden results (`cargo test -p sim chaos` — 11 tests).
+- **DONE** Reconnect scenario reliably resumes client queues without duplicated or skipped intents (reconnect handshake + `reconcileWithServer()`).
 - **DONE** (M0.1) Wire major mismatch rejected with clear error.
 
 ---

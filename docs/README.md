@@ -21,6 +21,7 @@ This directory contains specifications, designs, and decision records for the pr
   - [Intent CLI](./tools/intent-cli.md)
   - [Latency Probe](./tools/latency-probe.md)
   - [Redis to Files](./tools/redis-to-files.md)
+  - [Chaos Harness (M2)](./tools/chaos-harness.md)
 
 ## Contributing to Docs
 

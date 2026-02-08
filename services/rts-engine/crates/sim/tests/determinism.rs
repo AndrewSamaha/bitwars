@@ -87,15 +87,17 @@ fn test_idempotent_operations() {
         payload: Some(Payload::Move(move_intent)),
     };
 
-    // Apply intent twice
+    // First apply succeeds
     engine.accept(&envelope).unwrap();
     let json1 = to_sorted_json(&engine.state).unwrap();
-    
-    engine.accept(&envelope).unwrap();
+
+    // Second apply is rejected as duplicate (idempotent — state unchanged)
+    let result = engine.accept(&envelope);
+    assert!(result.is_err(), "duplicate client_cmd_id should be rejected");
     let json2 = to_sorted_json(&engine.state).unwrap();
 
-    // Results should be identical (idempotent)
-    assert_eq!(json1, json2, "Idempotent operations should produce identical results");
+    // World state is unchanged after the duplicate rejection
+    assert_eq!(json1, json2, "Idempotent: state must not change after duplicate rejection");
 }
 
 #[test]
