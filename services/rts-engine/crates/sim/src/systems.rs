@@ -1,32 +1,85 @@
-use crate::state::WorldState;
+use std::collections::HashMap;
 
-/// Movement system that advances entities toward their targets
-pub fn movement(state: &mut WorldState) {
-    // This is a simplified movement system
-    // In a full implementation, this would read from action states
-    // and move entities based on their current movement targets
-    
+use crate::state::{SerializableVec2, WorldState};
+use crate::MotionTarget;
+
+/// Steer entities toward their motion targets and integrate positions.
+///
+/// For each entity with an active `MotionTarget`:
+///
+/// - **Already within `stop_radius`**: zero velocity, mark as arrived.
+/// - **Would overshoot** the stop boundary this tick (`speed × dt ≥ effective
+///   distance`): snap position to the boundary, zero velocity, mark as arrived.
+///   This is the anti-oscillation mechanism — the entity either keeps moving at
+///   full speed or snaps to the arrived state; there is no intermediate frame
+///   where it overshoots and corrects.
+/// - **Otherwise**: set velocity toward target at `speed`, then advance position
+///   by `vel × dt`.
+///
+/// Entities without a motion target are not touched — their velocity and
+/// position are left as-is.
+///
+/// Returns entity IDs that arrived this tick.  Their motion targets are removed
+/// and velocity is zeroed.
+pub fn tick_movement(
+    state: &mut WorldState,
+    targets: &mut HashMap<u64, MotionTarget>,
+    speed: f32,
+    dt: f32,
+) -> Vec<u64> {
+    let mut finished = Vec::new();
+
     for entity in &mut state.entities {
-        if let (Some(pos), Some(vel)) = (&mut entity.pos, &mut entity.vel) {
-            // Apply velocity to position
-            pos.x += vel.x * (1.0 / 60.0); // Assuming 60 TPS
-            pos.y += vel.y * (1.0 / 60.0);
-            
-            // Apply friction to velocity
-            let friction = 0.95; // Simple friction
-            vel.x *= friction;
-            vel.y *= friction;
+        let Some(target) = targets.get(&entity.id) else {
+            continue;
+        };
+
+        let pos = match &mut entity.pos {
+            Some(p) => p,
+            None => continue,
+        };
+        let vel = entity.vel.get_or_insert(SerializableVec2 { x: 0.0, y: 0.0 });
+
+        let dx = target.x - pos.x;
+        let dy = target.y - pos.y;
+        let dist_sq = dx * dx + dy * dy;
+        let stop_r = target.stop_radius;
+        let sr_sq = stop_r * stop_r;
+
+        if dist_sq <= sr_sq {
+            // Already within stop radius — arrive immediately.
+            vel.x = 0.0;
+            vel.y = 0.0;
+            finished.push(entity.id);
+            continue;
         }
-    }
-}
 
-/// Physics integration system
-pub fn integrate(state: &mut WorldState, dt: f32) {
-    for entity in &mut state.entities {
-        if let (Some(pos), Some(vel)) = (&mut entity.pos, &mut entity.vel) {
-            // Apply velocity to position
+        let dist = dist_sq.sqrt();
+        let dir_x = dx / dist;
+        let dir_y = dy / dist;
+        let effective_dist = dist - stop_r;
+        let step = speed * dt;
+
+        if step >= effective_dist {
+            // Would overshoot — snap to stop boundary and arrive.
+            pos.x = target.x - dir_x * stop_r;
+            pos.y = target.y - dir_y * stop_r;
+            vel.x = 0.0;
+            vel.y = 0.0;
+            finished.push(entity.id);
+        } else {
+            // Steer toward target and integrate.
+            vel.x = dir_x * speed;
+            vel.y = dir_y * speed;
             pos.x += vel.x * dt;
             pos.y += vel.y * dt;
         }
     }
+
+    // Remove finished targets.
+    for id in &finished {
+        targets.remove(id);
+    }
+
+    finished
 }

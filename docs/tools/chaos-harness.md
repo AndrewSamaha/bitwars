@@ -1,4 +1,4 @@
-# Chaos Harness (M2)
+# Chaos Harness (M2) & Movement Tests (M3)
 
 ## Overview
 
@@ -9,18 +9,24 @@ These tests satisfy the M2 acceptance criterion: *"Synthetic tests pass for reor
 ## Location
 
 ```
-services/rts-engine/crates/sim/tests/chaos.rs     # test scenarios + golden hashes
-services/rts-engine/crates/sim/src/lib.rs          # sim::Engine (includes in-memory dedupe)
+services/rts-engine/crates/sim/tests/chaos.rs      # M2: reorder/dupe/drop scenarios + golden hashes
+services/rts-engine/crates/sim/tests/movement.rs   # M3: arrival, oscillation, mid-move preemption + golden hashes
+services/rts-engine/crates/sim/tests/determinism.rs # M0.1: deterministic replay + idempotency
+services/rts-engine/crates/sim/src/lib.rs           # sim::Engine (dedupe + motion targets)
+services/rts-engine/crates/sim/src/systems.rs       # tick_movement (steering + overshoot clamping)
 ```
 
 ## Running
 
 ```bash
-# All sim tests (chaos + determinism)
+# All sim tests (chaos + determinism + movement)
 cargo test -p sim
 
 # Only chaos tests
 cargo test -p sim chaos
+
+# Only movement polish tests
+cargo test -p sim movement
 ```
 
 No Redis, no network, no running engine required.  The sim crate is a pure in-memory simulation.
@@ -68,13 +74,26 @@ When intents are lost, the affected entities simply remain at their original pos
 |---|---|---|
 | `chaos_combined_reorder_dupe` | [C, A, B, A, C] — reorder + dupe | Hash identical to canonical [A, B, C] |
 
+## M3 movement tests
+
+The movement test suite (`movement.rs`) verifies the M3 movement polish deliverables using the same golden-hash technique as the chaos harness.
+
+| Test | What it proves |
+|---|---|
+| `arrival_within_stop_radius` | Entity reaches stop boundary, velocity zeroes, position stable for 10+ ticks |
+| `no_oscillation_near_boundary` | Overshoot clamp snaps entity to boundary on first tick when `step ≥ effective_dist` |
+| `immediate_arrival_at_target` | Entity already at target finishes immediately; motion target cleaned up |
+| `replace_active_mid_move_no_residual` | REPLACE_ACTIVE zeroes velocity instantly; new direction dominates next tick |
+| `stationary_entity_no_drift` | Entity with no intent stays put for 100 ticks |
+| `two_entities_same_target` | Both arrive at stop boundary independently; both stabilise |
+
 ## How golden hashes work
 
-Each test computes the final world state as sorted JSON (via `to_sorted_json`), then hashes it with xxh3-64.  The hash is compared against a constant at the bottom of `chaos.rs`:
+Each test computes the final world state as sorted JSON (via `to_sorted_json`), then hashes it with xxh3-64.  The hash is compared against a constant at the bottom of `chaos.rs` and `movement.rs`:
 
 ```rust
-const GOLDEN_TWO_ENTITY: u64 = 7768459978369806801;
-const GOLDEN_DROP_ENTITY2: u64 = 9873066833661636225;
+const GOLDEN_TWO_ENTITY: u64 = 1504965851243601467;
+const GOLDEN_DROP_ENTITY2: u64 = 15728293238854734021;
 // ...
 ```
 
@@ -125,12 +144,12 @@ The hashes will **not** break for:
 
 4. Verify the change is intentional (review the diff to the sim crate).
 
-5. Update the `GOLDEN_*` constants in `chaos.rs` with the new hash values from the test output.
+5. Update the `GOLDEN_*` constants in `chaos.rs` and/or `movement.rs` with the new hash values from the test output.
 
 6. Re-run and confirm all tests pass:
 
    ```bash
-   cargo test -p sim chaos
+   cargo test -p sim
    ```
 
 **Tip:** To regenerate a single hash, set its constant to `0` and run the test.  The assertion message will show the actual hash.
