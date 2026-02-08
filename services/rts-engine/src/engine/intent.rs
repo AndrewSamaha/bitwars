@@ -120,12 +120,18 @@ impl IntentManager {
     }
 
     /// Advances current move actions by `dt` at a given `speed`.
+    ///
+    /// Applies overshoot clamping: if an entity's next step would carry it
+    /// past the `stop_radius` boundary, the entity is snapped to the boundary
+    /// and velocity is zeroed.  This prevents the classic oscillation pattern
+    /// where a fast entity ping-pongs past the target.
+    ///
     /// Returns metadata for intents that transitioned to FINISHED.
     pub fn follow_targets(
         &mut self,
         state: &mut GameState,
         speed: f32,
-        _dt: f32,
+        dt: f32,
     ) -> Vec<(u64, IntentMetadata)> {
         let mut finished: Vec<u64> = Vec::new();
 
@@ -158,8 +164,21 @@ impl IntentManager {
                             let dist = dist2.sqrt();
                             let dir_x = dx / dist;
                             let dir_y = dy / dist;
-                            vel.x = dir_x * speed;
-                            vel.y = dir_y * speed;
+                            let effective_dist = dist - stop_r;
+                            let step = speed * dt;
+                            if step >= effective_dist {
+                                // Overshoot prevention: snap to stop boundary
+                                // and arrive immediately.  Without this clamp a
+                                // fast entity would ping-pong past the target.
+                                pos.x = to.x - dir_x * stop_r;
+                                pos.y = to.y - dir_y * stop_r;
+                                vel.x = 0.0;
+                                vel.y = 0.0;
+                                finished.push(*eid);
+                            } else {
+                                vel.x = dir_x * speed;
+                                vel.y = dir_y * speed;
+                            }
                         }
                     } else {
                         warn!("follow_targets: entity id {} not found", eid);

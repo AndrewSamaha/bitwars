@@ -174,7 +174,7 @@ message IntentEnvelope {
 
 ---
 
-## M3: Movement Polish (Pathfinding Deferred)
+## M3: **DONE** — Movement Polish (Pathfinding Deferred)
 
 > **Scope change:** Pathfinding (grid/navmesh, incremental replanning, obstacle
 > detour) is deferred to a future milestone.  There is no concept of obstacles
@@ -186,30 +186,45 @@ message IntentEnvelope {
 >
 > M3 retains the **movement polish** deliverables, which have immediate value:
 > the engine already has `stop_radius` and `MotionTarget` in the schema, but
-> arrival stabilisation, facing, and oscillation prevention have not been
-> formally tested or hardened.
+> arrival stabilisation and oscillation prevention had not been formally tested
+> or hardened.
 
 ### Goals
 
-- Harden arrival behavior: configurable **stop radius**, **arrival facing**, no oscillation.
+- Harden arrival behavior: configurable **stop radius**, no oscillation.
 - Clean cancel-mid-move when `REPLACE_ACTIVE` preempts.
 
 ### Deliverables
 
-- No oscillation at destination; configurable `stop_radius` and final `facing`.
-- Clear behavior when a `REPLACE_ACTIVE` arrives mid-move (cancel old motion cleanly, no residual velocity).
-- Arrival stabilization verified in chaos/replay tests with golden hashes.
+- **DONE** — No oscillation at destination; configurable `stop_radius`. Overshoot
+  clamping in both `sim` and `rts-engine`: when `speed × dt ≥ effective distance`,
+  the entity snaps to the stop boundary instead of overshooting and oscillating.
+  (`sim/src/systems.rs::tick_movement`, `rts-engine/src/engine/intent.rs::follow_targets`)
+- **DONE** — Clear behavior when `REPLACE_ACTIVE` arrives mid-move: velocity is
+  zeroed immediately on replacement, preventing residual drift from the old
+  direction. (`sim/src/intent.rs::apply_intent`)
+- **DONE** — Arrival stabilization verified in `sim/tests/movement.rs` (6 tests)
+  with golden hashes: arrival within stop radius, no-oscillation at boundary,
+  immediate arrival, replace-active mid-move, stationary no-drift,
+  two-entities-same-target. Chaos and determinism golden hashes regenerated.
 
 ### Acceptance Criteria
 
-- Arrival stabilization within ≤ 2 ticks of reaching stop radius; replay equals golden hash.
-- Mid-move preemption leaves no residual velocity or drift.
+- **DONE** — Arrival stabilization within ≤ 1 tick of reaching stop radius (overshoot
+  clamp snaps on the exact tick); replay equals golden hash.
+- **DONE** — Mid-move preemption leaves no residual velocity or drift.
 
 ### Deferred to future milestone
 
 - Grid or navmesh pathfinder with incremental replanning.
 - Path component + path-follow system; recompute budget ≤ configured µs/tick.
 - Obstacle detour demo.
+- **Facing / orientation**: The velocity vector encodes direction while moving
+  (`atan2(vel.y, vel.x)`), but a zero velocity vector has no direction.  A
+  dedicated `facing` field on `Entity` is not needed today — there are no
+  buildings, turrets, or abilities that depend on orientation while stationary.
+  Add `float facing` to the proto schema when a consumer exists (likely M5
+  abilities or when static structures are introduced).
 
 ---
 
