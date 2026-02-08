@@ -161,8 +161,9 @@ message IntentEnvelope {
 
 - 1. **DONE** (M1) Server dedupe store keyed by `(player_id, client_cmd_id)` with TTL.
 - 2. **DONE** Per-entity last-processed tracking (per-player `last_processed_client_seq` + per-entity active-intent state persisted to Redis as JSON). See [ADR-003](./adr/003-serialization-strategy-hot-vs-reconnect.md) for serialisation strategy.
-- 3. Reconnect handshake endpoint/stream message:
+- 3. **DONE** Reconnect handshake endpoint (`GET /api/v2/reconnect`) + client-side `reconcileWithServer()` on `IntentQueueManager`:
   - returns `{server_tick, protocol_version, per-entity active_intent_id/state, last_processed_client_seq}`.
+  - Client calls on every SSE open (initial + reconnect); advances `clientSeq`, syncs active slots, drains idle queues.
 - 4. Chaos harness: reorder, drop, dupe; assertions for single apply and correct final state.
 
 ### Acceptance Criteria

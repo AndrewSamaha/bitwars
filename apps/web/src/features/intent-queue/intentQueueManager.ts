@@ -1,5 +1,5 @@
 /**
- * M1 Client-Side Intent Queue Manager
+ * Client-Side Intent Queue Manager (M1 + M2)
  *
  * Maintains per-player, per-entity FIFO queues persisted to localStorage.
  * The server only tracks one active intent per entity; the client decides
@@ -9,6 +9,11 @@
  *  - Click          = REPLACE_ACTIVE  (clear local queue, send immediately)
  *  - Shift+Click    = APPEND          (append locally; send only if entity idle)
  *  - Ctrl+Click     = CLEAR_THEN_APPEND (clear queue, append one; send if idle)
+ *
+ * M2 additions:
+ *  - reconcileWithServer(): call on reconnect to sync local queue state with
+ *    the server's tracking data (last_processed_client_seq, active intents).
+ *    Prevents duplicate or skipped intents after a page refresh or disconnect.
  */
 
 import { v7 as uuidv7 } from "uuid";
@@ -53,6 +58,21 @@ export type SendIntentParams = {
 
 type SendCallback = (params: SendIntentParams) => Promise<void>;
 type StateChangeListener = () => void;
+
+// ── M2: Reconnect handshake response shape ─────────────────────────────────
+
+export type ReconnectHandshake = {
+  server_tick: number;
+  protocol_version: number;
+  last_processed_client_seq: number;
+  active_intents: Array<{
+    entity_id: number;
+    intent_id: string;
+    client_cmd_id: string;
+    player_id: string;
+    started_tick: number;
+  }>;
+};
 
 // ── Lifecycle state / reason numeric values (matches proto enum) ───────────
 
@@ -134,6 +154,127 @@ class IntentQueueManager {
         this.notify();
       }
     }
+  }
+
+  /**
+   * M2: Reconcile local queue state with the server after a reconnect.
+   *
+   * Fetches the reconnect handshake from the server and:
+   * 1. Advances clientSeq to at least last_processed_client_seq so future
+   *    intents won't be rejected as out-of-order.
+   * 2. For each entity, syncs the local "active" slot with the server's view:
+   *    - If the server has an active intent whose client_cmd_id matches our
+   *      local active, keep it (server is still working on it).
+   *    - If the server has an active intent we don't know about, mark it
+   *      locally so we don't send another until it finishes.
+   *    - If the server has no active intent but we do, our active was lost
+   *      (server restarted, intent finished while we were away, etc.) —
+   *      clear it and drain the queue.
+   * 3. For any entity that is now idle with queued intents, sends the next.
+   *
+   * Returns the handshake payload for callers that need server_tick /
+   * protocol_version, or null if the fetch failed.
+   */
+  async reconcileWithServer(): Promise<ReconnectHandshake | null> {
+    let handshake: ReconnectHandshake;
+    try {
+      const resp = await fetch("/api/v2/reconnect");
+      if (!resp.ok) {
+        console.warn("[IntentQueue] reconnect handshake failed:", resp.status);
+        return null;
+      }
+      handshake = await resp.json();
+    } catch (err) {
+      console.warn("[IntentQueue] reconnect handshake error:", err);
+      return null;
+    }
+
+    // 1. Advance clientSeq so future sends aren't rejected as out-of-order
+    if (handshake.last_processed_client_seq > this.clientSeq) {
+      console.log(
+        `[IntentQueue] advancing clientSeq ${this.clientSeq} -> ${handshake.last_processed_client_seq}`
+      );
+      this.clientSeq = handshake.last_processed_client_seq;
+    }
+
+    // Build a lookup of server-side active intents by entity_id
+    const serverActiveByEntity = new Map<number, (typeof handshake.active_intents)[0]>();
+    for (const ai of handshake.active_intents) {
+      serverActiveByEntity.set(ai.entity_id, ai);
+    }
+
+    // 2. Reconcile each entity's active slot
+    const entitiesToDrain: number[] = [];
+
+    // Check entities we know about locally
+    for (const [entityIdStr, entityState] of this.entities) {
+      const entityId = Number(entityIdStr);
+      const serverActive = serverActiveByEntity.get(entityId);
+      serverActiveByEntity.delete(entityId); // mark as handled
+
+      if (entityState.active) {
+        if (serverActive && serverActive.client_cmd_id === entityState.active.clientCmdId) {
+          // Server is still executing our active intent — keep it, update intentId if needed
+          if (serverActive.intent_id && !entityState.active.intentId) {
+            entityState.active.intentId = serverActive.intent_id;
+          }
+        } else if (serverActive) {
+          // Server has a different active intent for this entity (shouldn't happen
+          // normally, but could if another client controls the same entity).
+          // Replace our local active with the server's view.
+          entityState.active = {
+            clientCmdId: serverActive.client_cmd_id,
+            entityId,
+            target: { x: 0, y: 0 }, // target unknown from handshake; will be overwritten on FINISHED
+            intentId: serverActive.intent_id,
+            serverTick: String(serverActive.started_tick),
+          };
+        } else {
+          // Server has no active intent — ours was lost. Clear and drain.
+          entityState.active = null;
+          entitiesToDrain.push(entityId);
+        }
+      } else {
+        // We have no local active
+        if (serverActive) {
+          // Server has one we didn't know about — mark busy so we don't send
+          entityState.active = {
+            clientCmdId: serverActive.client_cmd_id,
+            entityId,
+            target: { x: 0, y: 0 },
+            intentId: serverActive.intent_id,
+            serverTick: String(serverActive.started_tick),
+          };
+        } else {
+          // Both agree: idle. Drain queue if anything is queued.
+          if (entityState.queue.length > 0) {
+            entitiesToDrain.push(entityId);
+          }
+        }
+      }
+    }
+
+    // Handle server-active entities we didn't have locally at all
+    for (const [entityId, serverActive] of serverActiveByEntity) {
+      const entityState = this.getOrCreate(entityId);
+      entityState.active = {
+        clientCmdId: serverActive.client_cmd_id,
+        entityId,
+        target: { x: 0, y: 0 },
+        intentId: serverActive.intent_id,
+        serverTick: String(serverActive.started_tick),
+      };
+    }
+
+    this.persist();
+    this.notify();
+
+    // 3. Drain queues for entities that are now idle
+    for (const entityId of entitiesToDrain) {
+      await this.sendNextFromQueue(entityId);
+    }
+
+    return handshake;
   }
 
   /**

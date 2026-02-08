@@ -158,8 +158,33 @@ export default function GameStateStreamBridge() {
       }
     };
 
+    // Track whether we've connected before (to distinguish initial vs reconnect)
+    let hasConnectedBefore = false;
+
     const onOpen = () => {
-      log.info("GameStateStreamBridge:es:open", { streamId: streamIdRef.current, msSinceMount: Date.now() - mountedAtRef.current });
+      const msSinceMount = Date.now() - mountedAtRef.current;
+      log.info("GameStateStreamBridge:es:open", { streamId: streamIdRef.current, msSinceMount, isReconnect: hasConnectedBefore });
+
+      // M2: On every open (initial + reconnect), reconcile the intent queue
+      // with the server's tracking state so we don't duplicate or skip intents.
+      intentQueue.reconcileWithServer().then((handshake) => {
+        if (handshake) {
+          log.info("GameStateStreamBridge:reconnect:ok", {
+            streamId: streamIdRef.current,
+            serverTick: handshake.server_tick,
+            protocolVersion: handshake.protocol_version,
+            lastSeq: handshake.last_processed_client_seq,
+            activeIntents: handshake.active_intents.length,
+            isReconnect: hasConnectedBefore,
+          });
+        } else {
+          log.warn("GameStateStreamBridge:reconnect:failed", { streamId: streamIdRef.current, isReconnect: hasConnectedBefore });
+        }
+      }).catch((err) => {
+        log.warn("GameStateStreamBridge:reconnect:error", { streamId: streamIdRef.current, error: (err as any)?.message || String(err) });
+      });
+
+      hasConnectedBefore = true;
     };
     const onError = (evt: Event) => {
       // EventSource suppresses details; log readyState to detect disconnects.
