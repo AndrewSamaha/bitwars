@@ -1,10 +1,49 @@
 use prost::Message;
 use redis::{AsyncCommands, Value as RedisValue};
+use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use crate::engine::intent::{format_uuid, IntentMetadata};
 use crate::engine::state::GameState;
 use crate::pb::events_stream_record;
 use crate::pb::{self, Delta, EventsStreamRecord, LifecycleEvent, Snapshot};
+
+// ── M2: Per-entity tracking types ───────────────────────────────────────────
+//
+// These structs are serialised as JSON (not protobuf) because they are only
+// read on the **reconnect path**, never on the hot tick loop.  Protobuf is
+// preferred for anything on the tick-critical path (deltas, snapshots,
+// lifecycle events) where decode speed and wire size matter.  For reconnect
+// data that is written once per intent state-change and read once per
+// reconnect, JSON keeps the code simple and the data human-readable in
+// redis-cli / RedisInsight without a separate decode step.
+
+/// Snapshot of a single entity's active intent, persisted to Redis so the
+/// reconnect handshake can report what the server is currently executing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityActiveIntent {
+    pub entity_id: u64,
+    pub intent_id: String,
+    pub client_cmd_id: String,
+    pub player_id: String,
+    pub started_tick: u64,
+}
+
+/// Everything the reconnect handshake needs for one player.
+#[derive(Debug, Clone)]
+pub struct PlayerTrackingState {
+    pub last_processed_client_seq: u64,
+    pub active_intents: Vec<EntityActiveIntent>,
+}
+
+/// Full tracking state for all players (used on engine restore).
+#[derive(Debug, Clone, Default)]
+pub struct AllTrackingState {
+    /// player_id → last_processed_client_seq
+    pub player_seqs: Vec<(String, u64)>,
+    /// All active intents across all entities
+    pub active_intents: Vec<EntityActiveIntent>,
+}
 
 pub struct RedisClient {
     pub game_id: String,
@@ -39,6 +78,16 @@ impl RedisClient {
 
     fn snapshot_meta_key(&self) -> String {
         format!("snapshot_meta:{}", self.game_id)
+    }
+
+    /// M2: Hash holding per-player last-processed client_seq.
+    fn player_seq_key(&self) -> String {
+        format!("rts:match:{}:player_seq", self.game_id)
+    }
+
+    /// M2: Hash holding per-entity active-intent JSON blobs.
+    fn active_intents_key(&self) -> String {
+        format!("rts:match:{}:active_intents", self.game_id)
     }
 
     pub async fn connect(url: &str, game_id: String) -> anyhow::Result<Self> {
@@ -272,6 +321,8 @@ impl RedisClient {
             self.snapshots_stream(),
             self.snapshot_key(),
             self.snapshot_meta_key(),
+            self.player_seq_key(),
+            self.active_intents_key(),
         ];
         info!(game_id = %self.game_id, keys = ?keys, "flushing game streams (clean start)");
         for key in &keys {
@@ -409,5 +460,137 @@ impl RedisClient {
             _ => {}
         }
         Ok(None)
+    }
+
+    // ── M2: Per-entity last-processed tracking ─────────────────────────────
+    //
+    // Written as JSON (see module-level comment on serialisation strategy).
+    // Writes happen on the intent hot path (2 HSET per accept, 1 HDEL per
+    // finish/cancel) so they are kept minimal—single-field HSET / HDEL.
+    // Reads happen only on reconnect or engine restore.
+
+    /// Persist the last successfully-processed `client_seq` for a player.
+    pub async fn persist_player_seq(
+        &mut self,
+        player_id: &str,
+        seq: u64,
+    ) -> anyhow::Result<()> {
+        let key = self.player_seq_key();
+        let _: () = redis::cmd("HSET")
+            .arg(&key)
+            .arg(player_id)
+            .arg(seq)
+            .query_async(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    /// Record the active intent for an entity.  Written on intent activation;
+    /// cleared by `clear_active_intent` on finish / cancel.
+    pub async fn persist_active_intent(
+        &mut self,
+        entity_id: u64,
+        metadata: &IntentMetadata,
+        ttl_secs: u64,
+    ) -> anyhow::Result<()> {
+        let entry = EntityActiveIntent {
+            entity_id,
+            intent_id: format_uuid(&metadata.intent_id),
+            client_cmd_id: format_uuid(&metadata.client_cmd_id),
+            player_id: metadata.player_id.clone(),
+            started_tick: metadata.server_tick,
+        };
+        let json = serde_json::to_string(&entry)?;
+        let key = self.active_intents_key();
+        let field = entity_id.to_string();
+        let _: () = redis::cmd("HSET")
+            .arg(&key)
+            .arg(&field)
+            .arg(&json)
+            .query_async(&mut self.conn)
+            .await?;
+
+        // Refresh the TTL on the whole hash each time we write, so the safety
+        // net stays well ahead of the most recent activity.
+        let ttl: i64 = ttl_secs.try_into().unwrap_or(i64::MAX);
+        let _: () = self.conn.expire(&key, ttl).await?;
+        Ok(())
+    }
+
+    /// Remove the active-intent entry for an entity (on FINISHED / CANCELED).
+    pub async fn clear_active_intent(&mut self, entity_id: u64) -> anyhow::Result<()> {
+        let key = self.active_intents_key();
+        let field = entity_id.to_string();
+        let _: () = redis::cmd("HDEL")
+            .arg(&key)
+            .arg(&field)
+            .query_async(&mut self.conn)
+            .await?;
+        Ok(())
+    }
+
+    /// Read tracking state for a specific player (reconnect handshake).
+    pub async fn read_tracking_for_player(
+        &mut self,
+        player_id: &str,
+    ) -> anyhow::Result<PlayerTrackingState> {
+        let seq_key = self.player_seq_key();
+        let seq_val: Option<u64> = redis::cmd("HGET")
+            .arg(&seq_key)
+            .arg(player_id)
+            .query_async(&mut self.conn)
+            .await
+            .unwrap_or(None);
+
+        let active_key = self.active_intents_key();
+        let all_fields: Vec<(String, String)> = redis::cmd("HGETALL")
+            .arg(&active_key)
+            .query_async(&mut self.conn)
+            .await
+            .unwrap_or_default();
+
+        let mut active_intents = Vec::new();
+        for (_field, json) in all_fields {
+            if let Ok(entry) = serde_json::from_str::<EntityActiveIntent>(&json) {
+                if entry.player_id == player_id {
+                    active_intents.push(entry);
+                }
+            }
+        }
+
+        Ok(PlayerTrackingState {
+            last_processed_client_seq: seq_val.unwrap_or(0),
+            active_intents,
+        })
+    }
+
+    /// Read full tracking state for all players (engine restore on startup).
+    pub async fn read_all_tracking(&mut self) -> anyhow::Result<AllTrackingState> {
+        let seq_key = self.player_seq_key();
+        let seq_fields: Vec<(String, u64)> = redis::cmd("HGETALL")
+            .arg(&seq_key)
+            .query_async(&mut self.conn)
+            .await
+            .unwrap_or_default();
+
+        let active_key = self.active_intents_key();
+        let active_fields: Vec<(String, String)> = redis::cmd("HGETALL")
+            .arg(&active_key)
+            .query_async(&mut self.conn)
+            .await
+            .unwrap_or_default();
+
+        let mut active_intents = Vec::new();
+        for (_field, json) in active_fields {
+            match serde_json::from_str::<EntityActiveIntent>(&json) {
+                Ok(entry) => active_intents.push(entry),
+                Err(e) => warn!(error = %e, "skipping malformed active_intent entry"),
+            }
+        }
+
+        Ok(AllTrackingState {
+            player_seqs: seq_fields,
+            active_intents,
+        })
     }
 }

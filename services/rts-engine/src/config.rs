@@ -23,6 +23,12 @@ pub struct GameConfig {
     /// on startup instead of generating a fresh world. When false (default),
     /// flush all Redis streams for this game and start clean.
     pub restore_gamestate: bool,
+    /// M2: TTL (in seconds) for per-entity active-intent tracking entries in
+    /// Redis. These entries are written as JSON (not protobuf) because they are
+    /// only read on the reconnect path, never on the hot tick loop. A generous
+    /// TTL acts as a safety net so stale entries from crashed games don't linger
+    /// forever; the normal lifecycle (finish / cancel) DELs them promptly.
+    pub tracking_ttl_secs: u64,
 }
 
 impl Default for GameConfig {
@@ -46,6 +52,7 @@ impl Default for GameConfig {
             max_cmds_per_tick: 64,
             max_batch_ms: 5,
             restore_gamestate: false,
+            tracking_ttl_secs: 3600, // 1 hour
         }
     }
 }
@@ -71,6 +78,11 @@ impl GameConfig {
         }
         if let Ok(v) = std::env::var("RESTORE_GAMESTATE_ON_RESTART") {
             cfg.restore_gamestate = matches!(v.to_lowercase().as_str(), "1" | "true" | "yes");
+        }
+        if let Ok(v) = std::env::var("TRACKING_TTL_SECS") {
+            if let Ok(n) = v.parse::<u64>() {
+                cfg.tracking_ttl_secs = n;
+            }
         }
         cfg
     }

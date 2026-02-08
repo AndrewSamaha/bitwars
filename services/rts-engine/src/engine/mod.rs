@@ -241,6 +241,28 @@ impl Engine {
                     "restored world from snapshot"
                 );
 
+                // M2: Restore per-player last-processed seq from Redis so that
+                // client_seq validation works correctly after restart.  Active
+                // intents are NOT restored into IntentManager (they are lost on
+                // restart); clear the tracking hash so the reconnect handshake
+                // reports entities as idle.
+                let tracking = redis.read_all_tracking().await?;
+                let mut player_last_seq = HashMap::new();
+                for (pid, seq) in &tracking.player_seqs {
+                    info!(player_id = %pid, last_seq = seq, "restored player_last_seq");
+                    player_last_seq.insert(pid.clone(), *seq);
+                }
+                if !tracking.active_intents.is_empty() {
+                    info!(
+                        count = tracking.active_intents.len(),
+                        "clearing stale active_intents (intents lost on restart)"
+                    );
+                    // Clear each entry so reconnect handshake sees entities as idle
+                    for entry in &tracking.active_intents {
+                        let _ = redis.clear_active_intent(entry.entity_id).await;
+                    }
+                }
+
                 // Start reading intents from the boundary so any intents that arrived
                 // after the snapshot are replayed during the first ticks.
                 let last_intent_id = boundary.clone();
@@ -253,7 +275,7 @@ impl Engine {
                     redis,
                     intents: IntentManager::new(default_stop_radius),
                     last_intent_id,
-                    player_last_seq: HashMap::new(),
+                    player_last_seq,
                     lifecycle_emitted: HashSet::new(),
                     telemetry,
                 };
@@ -346,7 +368,11 @@ impl Engine {
             let finished =
                 self.intents
                     .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
-            for (_entity, metadata) in finished {
+            for (entity_id, metadata) in finished {
+                // M2: clear tracking before emitting lifecycle event
+                if let Err(err) = self.redis.clear_active_intent(entity_id).await {
+                    warn!(error = ?err, entity_id, "failed to clear active intent tracking");
+                }
                 if let Err(err) = self
                     .emit_lifecycle_event(
                         &metadata,
@@ -517,6 +543,8 @@ impl Engine {
         // Update seq tracking (only for non-zero seq values)
         if client_seq > 0 {
             self.player_last_seq.insert(player_id.clone(), client_seq);
+            // M2: persist to Redis so reconnect handshake can report last_processed_client_seq
+            self.redis.persist_player_seq(&player_id, client_seq).await?;
         }
         self.redis
             .store_client_cmd(&player_id, &client_cmd_id, &intent_id, DEDUPE_TTL_SECS)
@@ -561,8 +589,9 @@ impl Engine {
         // M1: Try to activate immediately (no server-side queue).
         let outcome = self.intents.try_activate(payload_intent, metadata.clone());
 
-        // Emit CANCELED for any preempted intents (REPLACE_ACTIVE)
-        for (_, canceled_metadata) in outcome.canceled.iter() {
+        // M2: Clear tracking for any preempted intents, then emit CANCELED
+        for (entity_id, canceled_metadata) in outcome.canceled.iter() {
+            self.redis.clear_active_intent(*entity_id).await?;
             self.emit_lifecycle_event(
                 canceled_metadata,
                 pb::LifecycleState::Canceled,
@@ -590,7 +619,12 @@ impl Engine {
             return Err(anyhow!("entity busy"));
         }
 
-        if outcome.started.is_some() {
+        if let Some((entity_id, _)) = outcome.started {
+            // M2: persist active intent to Redis for reconnect tracking
+            self.redis
+                .persist_active_intent(entity_id, &metadata, self.cfg.tracking_ttl_secs)
+                .await?;
+
             // Emit ACCEPTED then immediately IN_PROGRESS (M1: no intermediate queue)
             self.emit_lifecycle_event(
                 &metadata,

@@ -159,17 +159,17 @@ message IntentEnvelope {
 
 ### Deliverables
 
-- Server dedupe store keyed by `(player_id, client_cmd_id)` with TTL.
-- **Per-entity last-processed tracking** (or per-player with entity scoping) sufficient to answer: “what have you applied?”
-- Reconnect handshake endpoint/stream message:
+- 1. **DONE** (M1) Server dedupe store keyed by `(player_id, client_cmd_id)` with TTL.
+- 2. **DONE** Per-entity last-processed tracking (per-player `last_processed_client_seq` + per-entity active-intent state persisted to Redis as JSON). See [ADR-003](./adr/003-serialization-strategy-hot-vs-reconnect.md) for serialisation strategy.
+- 3. Reconnect handshake endpoint/stream message:
   - returns `{server_tick, protocol_version, per-entity active_intent_id/state, last_processed_client_seq}`.
-- Chaos harness: reorder, drop, dupe; assertions for single apply and correct final state.
+- 4. Chaos harness: reorder, drop, dupe; assertions for single apply and correct final state.
 
 ### Acceptance Criteria
 
 - Synthetic tests pass for reorder/dupe scenarios; world hashes match golden results.
 - Reconnect scenario reliably resumes client queues without duplicated or skipped intents.
-- Wire major mismatch rejected with clear error.
+- **DONE** (M0.1) Wire major mismatch rejected with clear error.
 
 ---
 
