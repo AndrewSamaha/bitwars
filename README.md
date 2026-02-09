@@ -38,11 +38,22 @@ bitwars/
 │  └─ web/                (Next.js 15 app; dev scripts and API routes under `/api`)
 ├─ crates/                (currently empty)
 ├─ packages/
+│  ├─ content/            (Entity type definitions; build generates TS list for the front-end)
 │  ├─ schemas/            (Protobuf schema definitions)
 │  └─ shared/             (TypeScript types generated from protobuf schemas)
 └─ services/
    └─ rts-engine/         (Rust server/engine; Redis client, examples, protobuf build)
 ```
+
+### Content pack (`packages/content`) and entity types on the front-end
+
+The **content pack** is the source of truth for entity type definitions (e.g. worker, scout). The Rust engine loads `packages/content/entities.yaml` at startup for per-entity stats (speed, mass, etc.). The same file is used to drive what the front-end preloads.
+
+- **`entities.yaml`** – Defines `entity_types` (each key is an `entity_type_id`). Edit this file to add or change entity types.
+- **Build script** – `packages/content/scripts/generate-preload-entity-types.js` runs at build time (via Turborepo when building or running the web app). It reads `entities.yaml`, extracts the `entity_type_id` keys, and writes **`preload-entity-types.ts`** with an exported list (e.g. `PRELOAD_ENTITY_TYPES = ["worker", "scout"]`).
+- **Front-end use** – The web app imports `PRELOAD_ENTITY_TYPES` from `@bitwars/content` and uses it to preload sprite textures (`/assets/${entity_type_id}/idle.png`) before the first frame. That way entities render with the correct sprite as soon as they appear, with no async texture swap.
+
+Turborepo runs the content package’s `build` before the web app’s `build` or `dev`, so the generated list is always up to date when the app runs.
 
 ### Using pnpm in monorepo
 Adding dependencies at the root level is easy, you simply run your pnpm commands at root.

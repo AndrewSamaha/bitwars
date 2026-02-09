@@ -1,0 +1,47 @@
+# Entity type definitions — M4: Data-Driven Entities
+#
+# This file is the source of truth for entity properties. The engine loads it
+# at startup and computes a deterministic content hash (canonicalized JSON,
+# xxh3-64) for version pinning.
+#
+# Rules:
+# - entity_type_id is the YAML key (e.g. "worker"). Never recycle IDs.
+# - All numeric values are floats. Add new fields with serde defaults so
+#   existing definitions don't break.
+
+entity_types:
+  theta:
+    speed: 0.0
+    stop_radius: 0.75
+    mass: 500.0
+    health: 100.0
+
+  worker:
+    speed: 90.0
+    stop_radius: 0.75
+    mass: 1.0
+    health: 100.0
+
+  habitat:
+    speed: 70.0
+    stop_radius: 0.5
+    mass: 4.0
+    health: 200.0
+
+  processor:
+    speed: 60.0
+    stop_radius: 0.5
+    mass: 7.0
+    health: 150.0
+
+  factory:
+    speed: 60.0
+    stop_radius: 0.5
+    mass: 7.0
+    health: 150.0
+
+  scout:
+    speed: 140.0
+    stop_radius: 0.5
+    mass: 0.6
+    health: 60.0

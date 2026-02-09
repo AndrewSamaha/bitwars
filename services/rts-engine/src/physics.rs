@@ -1,4 +1,5 @@
 use crate::config::GameConfig;
+use crate::content::ContentPack;
 use crate::engine::state::GameState;
 use crate::pb::Vec2;
 use rand::Rng;
@@ -24,6 +25,7 @@ fn v_exp_damp(v: &Vec2, friction: f32, dt: f32) -> Vec2 {
 
 pub fn apply_random_forces(
     cfg: &GameConfig,
+    content: Option<&ContentPack>,
     state: &mut GameState,
     rng: &mut rand::rngs::StdRng,
     dt: f32,
@@ -32,9 +34,14 @@ pub fn apply_random_forces(
         let vel = e.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
         let fx = rng.gen_range(cfg.force_min..=cfg.force_max);
         let fy = rng.gen_range(cfg.force_min..=cfg.force_max);
+        // M4: per-entity-type mass
+        let mass = content
+            .and_then(|c| c.get(&e.entity_type_id))
+            .map(|def| def.mass)
+            .unwrap_or(cfg.default_mass);
         let a = Vec2 {
-            x: fx / cfg.default_mass,
-            y: fy / cfg.default_mass,
+            x: fx / mass,
+            y: fy / mass,
         };
         *vel = v_add(vel, &v_scale(&a, dt));
     }

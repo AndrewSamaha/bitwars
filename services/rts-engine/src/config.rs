@@ -29,6 +29,15 @@ pub struct GameConfig {
     /// TTL acts as a safety net so stale entries from crashed games don't linger
     /// forever; the normal lifecycle (finish / cancel) DELs them promptly.
     pub tracking_ttl_secs: u64,
+    /// M4: Path to the content pack YAML file.  When set, entity type
+    /// definitions are loaded from this file and used for per-entity stats
+    /// (speed, stop_radius, mass).  When empty, all entities use the
+    /// default_* values above.
+    pub content_pack_path: String,
+    /// M4: Spawn manifest — list of (entity_type_id, count) pairs.
+    /// Used by `init_world` when a content pack is loaded.  When empty,
+    /// falls back to `num_entities` untyped entities.
+    pub spawn_manifest: Vec<(String, usize)>,
 }
 
 impl Default for GameConfig {
@@ -53,6 +62,15 @@ impl Default for GameConfig {
             max_batch_ms: 5,
             restore_gamestate: false,
             tracking_ttl_secs: 3600, // 1 hour
+            content_pack_path: String::new(),
+            spawn_manifest: vec![
+                ("theta".into(), 1),
+                ("worker".into(), 1),
+                ("factory".into(), 1),
+                ("scout".into(), 1),
+                ("habitat".into(), 1),
+                ("processor".into(), 1)
+            ],
         }
     }
 }
@@ -83,6 +101,9 @@ impl GameConfig {
             if let Ok(n) = v.parse::<u64>() {
                 cfg.tracking_ttl_secs = n;
             }
+        }
+        if let Ok(v) = std::env::var("CONTENT_PACK_PATH") {
+            cfg.content_pack_path = v;
         }
         cfg
     }

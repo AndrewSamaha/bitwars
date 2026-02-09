@@ -7,6 +7,7 @@ export const biToNumOrStr = (v: bigint): number | string => {
   return Number.isSafeInteger(num) ? num : v.toString();
 };
 
+// Entity has entity_type_id (proto field 2); TS codegen may use camelCase
 export const mapDeltaToJson = (d: Delta) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
@@ -21,10 +22,14 @@ export const mapDeltaToJson = (d: Delta) => ({
 export const mapSnapshotToJson = (s: Snapshot) => ({
   type: "snapshot" as const,
   tick: biToNumOrStr(s.tick),
-  entities: (s.entities ?? []).map((e) => ({
-    id: biToNumOrStr(e.id),
-    ...(e.pos ? { pos: { x: e.pos.x, y: e.pos.y } } : {}),
-    ...(e.vel ? { vel: { x: e.vel.x, y: e.vel.y } } : {}),
-    ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
-  })),
+  entities: (s.entities ?? []).map((e) => {
+    const eAny = e as { entityTypeId?: string };
+    return {
+      id: biToNumOrStr(e.id),
+      ...(eAny.entityTypeId ? { entity_type_id: eAny.entityTypeId } : {}),
+      ...(e.pos ? { pos: { x: e.pos.x, y: e.pos.y } } : {}),
+      ...(e.vel ? { vel: { x: e.vel.x, y: e.vel.y } } : {}),
+      ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
+    };
+  }),
 });

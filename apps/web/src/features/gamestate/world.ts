@@ -9,13 +9,15 @@ export type Scale = { scale: number };
 export type ProtoPosition = { pos: { x: number; y: number } };
 export type ProtoVelocity = { vel: { x: number; y: number } };
 export type EntityId = { id: number | string };
+export type EntityTypeId = { entity_type_id?: string };
 export type UIState = { hover: boolean };
 
-// Entity uses proto-shaped components (pos, vel, id) and render extras
+// Entity uses proto-shaped components (pos, vel, id, entity_type_id) and render extras
 export type Entity = Partial<
   ProtoPosition &
   ProtoVelocity &
   EntityId &
+  EntityTypeId &
   ContainerRef &
   Scale &
   { selectable?: true } &

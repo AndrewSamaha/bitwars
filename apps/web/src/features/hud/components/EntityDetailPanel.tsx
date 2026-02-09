@@ -29,14 +29,19 @@ export default function EntityDetailPanel() {
   const { isTerminalOpen } = selectors;
   const leftOffsetRem = getEntityDetailLeftOffset(isTerminalOpen);
 
-  // Build a quick lookup of current positions by entity id (stringified)
+  // Build a quick lookup of current positions and entity_type_id by entity id (stringified)
   const idToPos = new Map<string, { x: number; y: number }>();
+  const idToType = new Map<string, string>();
   try {
     for (const e of game.world.with("pos", "id")) {
       const id = String((e as any).id);
       const pos = (e as any).pos as { x: number; y: number } | undefined;
+      const entityTypeId = (e as any).entity_type_id as string | undefined;
       if (id != null && pos) {
         idToPos.set(id, pos);
+      }
+      if (id != null) {
+        idToType.set(id, entityTypeId ?? "—");
       }
     }
   } catch {}
@@ -70,8 +75,10 @@ export default function EntityDetailPanel() {
             <ul className="text-xs space-y-1">
               {selectedEntities.map((id) => {
                 const pos = idToPos.get(id);
+                const entityTypeId = idToType.get(id) ?? "—";
                 return (
-                  <li key={id} className="flex items-center justify-between">
+                  <li key={id} className="flex items-center justify-between gap-4">
+                    <span className="font-mono">{entityTypeId}</span>
                     <span className="font-mono">id: {id}</span>
                     <span className="font-mono text-muted-foreground">
                       {pos ? `x: ${pos.x.toFixed(1)}, y: ${pos.y.toFixed(1)}` : "pos: —"}

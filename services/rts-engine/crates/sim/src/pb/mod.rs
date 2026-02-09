@@ -6,10 +6,12 @@ pub struct Vec2 {
     #[prost(float, tag = "2")]
     pub y: f32,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Entity {
     #[prost(uint64, tag = "1")]
     pub id: u64,
+    #[prost(string, tag = "2")]
+    pub entity_type_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
     pub pos: ::core::option::Option<Vec2>,
     #[prost(message, optional, tag = "4")]

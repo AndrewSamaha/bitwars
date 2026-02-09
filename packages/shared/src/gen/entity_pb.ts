@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity.proto.
  */
 export const file_entity: GenFile = /*@__PURE__*/
-  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMiagoGRW50aXR5EgoKAmlkGAEgASgEEhoKA3BvcxgDIAEoCzINLmJpdHdhcnMuVmVjMhIaCgN2ZWwYBCABKAsyDS5iaXR3YXJzLlZlYzISHAoFZm9yY2UYBSABKAsyDS5iaXR3YXJzLlZlYzJiBnByb3RvMw", [file_vec2]);
+  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMiggEKBkVudGl0eRIKCgJpZBgBIAEoBBIWCg5lbnRpdHlfdHlwZV9pZBgCIAEoCRIaCgNwb3MYAyABKAsyDS5iaXR3YXJzLlZlYzISGgoDdmVsGAQgASgLMg0uYml0d2Fycy5WZWMyEhwKBWZvcmNlGAUgASgLMg0uYml0d2Fycy5WZWMyYgZwcm90bzM", [file_vec2]);
 
 /**
  * @generated from message bitwars.Entity
@@ -22,6 +22,11 @@ export type Entity = Message<"bitwars.Entity"> & {
    * @generated from field: uint64 id = 1;
    */
   id: bigint;
+
+  /**
+   * @generated from field: string entity_type_id = 2;
+   */
+  entityTypeId: string;
 
   /**
    * @generated from field: bitwars.Vec2 pos = 3;

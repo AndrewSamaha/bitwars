@@ -54,12 +54,14 @@ fn scenarios() -> Vec<ReplayScenario> {
                 vec![
                     Entity {
                         id: 1,
+                        entity_type_id: String::new(),
                         pos: Some(Vec2 { x: 0.0, y: 0.0 }),
                         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                         force: Some(Vec2 { x: 0.0, y: 0.0 }),
                     },
                     Entity {
                         id: 2,
+                        entity_type_id: String::new(),
                         pos: Some(Vec2 { x: 5.0, y: 5.0 }),
                         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                         force: Some(Vec2 { x: 0.0, y: 0.0 }),

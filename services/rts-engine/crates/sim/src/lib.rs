@@ -22,6 +22,13 @@ pub struct MotionTarget {
     pub stop_radius: f32,
 }
 
+/// M4: Per-entity-type stats used by the sim for movement.
+#[derive(Clone, Debug)]
+pub struct SimEntityTypeDef {
+    pub speed: f32,
+    pub stop_radius: f32,
+}
+
 /// Core simulation engine that can run without Redis or network.
 ///
 /// Includes in-memory dedupe by `client_cmd_id`, mirroring the Redis-backed
@@ -35,6 +42,8 @@ pub struct Engine {
     pub state: WorldState,
     seen_cmds: HashSet<Vec<u8>>,
     motion_targets: HashMap<u64, MotionTarget>,
+    /// M4: per-entity-type definitions for speed/stop_radius.
+    entity_types: HashMap<String, SimEntityTypeDef>,
     speed: f32,
     dt: f32,
     stop_radius: f32,
@@ -47,6 +56,7 @@ impl Engine {
             state,
             seen_cmds: HashSet::new(),
             motion_targets: HashMap::new(),
+            entity_types: HashMap::new(),
             speed: DEFAULT_SPEED,
             dt: DEFAULT_DT,
             stop_radius: DEFAULT_STOP_RADIUS,
@@ -71,6 +81,34 @@ impl Engine {
         self
     }
 
+    /// M4: Set per-entity-type definitions for speed/stop_radius.
+    pub fn with_entity_types(mut self, types: HashMap<String, SimEntityTypeDef>) -> Self {
+        self.entity_types = types;
+        self
+    }
+
+    /// Resolve stop_radius for a given entity type (fallback to default).
+    fn resolve_stop_radius(&self, entity_type_id: &str) -> f32 {
+        if entity_type_id.is_empty() {
+            return self.stop_radius;
+        }
+        self.entity_types
+            .get(entity_type_id)
+            .map(|def| def.stop_radius)
+            .unwrap_or(self.stop_radius)
+    }
+
+    /// Resolve speed for a given entity type (fallback to default).
+    fn resolve_speed(&self, entity_type_id: &str) -> f32 {
+        if entity_type_id.is_empty() {
+            return self.speed;
+        }
+        self.entity_types
+            .get(entity_type_id)
+            .map(|def| def.speed)
+            .unwrap_or(self.speed)
+    }
+
     /// Accept an intent envelope and apply it to the world state.
     ///
     /// Returns `Err(Reject::Duplicate)` if the same `client_cmd_id` has
@@ -83,10 +121,13 @@ impl Engine {
                 return Err(Reject::Duplicate);
             }
         }
+        // M4: Resolve per-entity-type stop_radius for the target entity
+        let entity_type_id = self.resolve_entity_type_id(env);
+        let stop_radius = self.resolve_stop_radius(&entity_type_id);
         crate::intent::apply_intent(
             &mut self.state,
             &mut self.motion_targets,
-            self.stop_radius,
+            stop_radius,
             env,
         )
     }
@@ -102,12 +143,29 @@ impl Engine {
             &mut self.motion_targets,
             self.speed,
             self.dt,
+            &self.entity_types,
         )
     }
 
     /// Read-only view of active motion targets.
     pub fn motion_targets(&self) -> &HashMap<u64, MotionTarget> {
         &self.motion_targets
+    }
+
+    /// M4: Resolve the entity_type_id for the entity targeted by an intent.
+    fn resolve_entity_type_id(&self, env: &IntentEnvelope) -> String {
+        let entity_id = match &env.payload {
+            Some(crate::pb::intent_envelope::Payload::Move(m)) => m.entity_id,
+            Some(crate::pb::intent_envelope::Payload::Attack(a)) => a.entity_id,
+            Some(crate::pb::intent_envelope::Payload::Build(b)) => b.entity_id,
+            None => return String::new(),
+        };
+        self.state
+            .entities
+            .iter()
+            .find(|e| e.id == entity_id)
+            .map(|e| e.entity_type_id.clone())
+            .unwrap_or_default()
     }
 }
 

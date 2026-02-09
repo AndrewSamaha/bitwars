@@ -90,6 +90,11 @@ impl RedisClient {
         format!("rts:match:{}:active_intents", self.game_id)
     }
 
+    /// M4: Key holding the content hash (xxh3 hex string).
+    fn content_version_key(&self) -> String {
+        format!("rts:match:{}:content_version", self.game_id)
+    }
+
     pub async fn connect(url: &str, game_id: String) -> anyhow::Result<Self> {
         let client = redis::Client::open(url.to_string())?;
         let conn = client.get_multiplexed_async_connection().await?;
@@ -592,5 +597,37 @@ impl RedisClient {
             player_seqs: seq_fields,
             active_intents,
         })
+    }
+
+    // ── M4: Content version ────────────────────────────────────────────────
+
+    /// Publish the content hash so the reconnect handshake and content
+    /// endpoint can verify client-server content alignment.
+    pub async fn publish_content_version(&mut self, hash: &str) -> anyhow::Result<()> {
+        let key = self.content_version_key();
+        self.conn.set::<_, _, ()>(&key, hash).await?;
+        info!(key = %key, hash = %hash, "published content_version to Redis");
+        Ok(())
+    }
+
+    /// M4: Key holding the full content definitions as canonical JSON.
+    fn content_defs_key(&self) -> String {
+        format!("rts:match:{}:content_defs", self.game_id)
+    }
+
+    /// Publish the full entity type definitions as canonical JSON so the
+    /// `/api/v2/content` endpoint can serve them to clients.
+    pub async fn publish_content_defs(&mut self, json: &str) -> anyhow::Result<()> {
+        let key = self.content_defs_key();
+        self.conn.set::<_, _, ()>(&key, json).await?;
+        info!(key = %key, bytes = json.len(), "published content_defs to Redis");
+        Ok(())
+    }
+
+    /// Read the content hash (returns empty string if not set).
+    pub async fn read_content_version(&mut self) -> anyhow::Result<String> {
+        let key = self.content_version_key();
+        let val: Option<String> = self.conn.get(&key).await?;
+        Ok(val.unwrap_or_default())
     }
 }
