@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from "react";
 import { useLogger } from "@/lib/axiom/client";
 import { game, type Entity } from "../world";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
+import { contentManager } from "@/features/content/contentManager";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -13,6 +14,7 @@ type SnapshotPayload = {
   tick: number | string;
   entities: Array<{
     id: number | string;
+    entity_type_id?: string;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -24,6 +26,7 @@ type DeltaPayload = {
   tick: number | string;
   updates: Array<{
     id: number | string;
+    entity_type_id?: string;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -68,6 +71,7 @@ export default function GameStateStreamBridge() {
       for (const s of payload.entities) {
         const ent: Entity = {
           id: s.id,
+          ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
           // force exists but is currently unused by systems
@@ -104,6 +108,7 @@ export default function GameStateStreamBridge() {
           // Upsert: create a new entity if it doesn't exist yet
           const ent: Entity = {
             id: u.id,
+            ...(u.entity_type_id ? { entity_type_id: u.entity_type_id } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
           };
@@ -167,16 +172,31 @@ export default function GameStateStreamBridge() {
 
       // M2: On every open (initial + reconnect), reconcile the intent queue
       // with the server's tracking state so we don't duplicate or skip intents.
-      intentQueue.reconcileWithServer().then((handshake) => {
+      intentQueue.reconcileWithServer().then(async (handshake) => {
         if (handshake) {
           log.info("GameStateStreamBridge:reconnect:ok", {
             streamId: streamIdRef.current,
             serverTick: handshake.server_tick,
             protocolVersion: handshake.protocol_version,
+            contentVersion: handshake.content_version ?? "",
             lastSeq: handshake.last_processed_client_seq,
             activeIntents: handshake.active_intents.length,
             isReconnect: hasConnectedBefore,
           });
+
+          // M4: Validate content version and fetch if stale
+          const serverContentVersion = handshake.content_version ?? "";
+          if (serverContentVersion) {
+            const ok = await contentManager.validateAndSync(serverContentVersion);
+            if (ok) {
+              log.info("GameStateStreamBridge:content:synced", {
+                streamId: streamIdRef.current,
+                contentVersion: contentManager.getContentVersion(),
+              });
+            } else {
+              log.warn("GameStateStreamBridge:content:sync-failed", { streamId: streamIdRef.current });
+            }
+          }
         } else {
           log.warn("GameStateStreamBridge:reconnect:failed", { streamId: streamIdRef.current, isReconnect: hasConnectedBefore });
         }

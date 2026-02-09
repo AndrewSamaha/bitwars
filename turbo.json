@@ -2,21 +2,42 @@
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
     "gen:ts": {
-      "outputs": ["packages/shared/src/gen/**"]
+      "outputs": [
+        "packages/shared/src/gen/**"
+      ]
     },
     "build": {
-      "dependsOn": ["^build", "@bitwars/schemas#gen:ts"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**", "build/**", "target/**"]
+      "dependsOn": [
+        "^build",
+        "@bitwars/schemas#gen:ts"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**",
+        "build/**",
+        "target/**",
+        "preload-entity-types.ts"
+      ]
     },
     "dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["^dev", "@bitwars/schemas#gen:ts", "@bitwars/shared#build"]
+      "dependsOn": [
+        "^build",
+        "^dev",
+        "@bitwars/schemas#gen:ts",
+        "@bitwars/shared#build"
+      ]
     },
     "test": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["^test", "@bitwars/schemas#gen:ts", "@bitwars/shared#build"]
+      "dependsOn": [
+        "^test",
+        "@bitwars/schemas#gen:ts",
+        "@bitwars/shared#build"
+      ]
     }
   }
 }

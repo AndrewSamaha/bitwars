@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use tracing::{info, warn};
 
+use crate::content::EntityTypeDef;
 use crate::engine::state::GameState;
 use crate::pb;
 
@@ -40,15 +41,46 @@ pub struct ActivationOutcome {
 /// then `follow_targets` before `integrate()` each tick.
 pub struct IntentManager {
     current_action: HashMap<u64, ActiveIntent>,
+    /// M4: per-entity-type definitions for speed/stop_radius lookups.
+    entity_types: HashMap<String, EntityTypeDef>,
     default_stop_radius: f32,
+    default_speed: f32,
 }
 
 impl IntentManager {
-    pub fn new(default_stop_radius: f32) -> Self {
+    pub fn new(
+        entity_types: HashMap<String, EntityTypeDef>,
+        default_stop_radius: f32,
+        default_speed: f32,
+    ) -> Self {
         Self {
             current_action: HashMap::new(),
+            entity_types,
             default_stop_radius,
+            default_speed,
         }
+    }
+
+    /// Resolve stop_radius for a given entity type (fallback to default).
+    fn resolve_stop_radius(&self, entity_type_id: &str) -> f32 {
+        if entity_type_id.is_empty() {
+            return self.default_stop_radius;
+        }
+        self.entity_types
+            .get(entity_type_id)
+            .map(|def| def.stop_radius)
+            .unwrap_or(self.default_stop_radius)
+    }
+
+    /// Resolve speed for a given entity type (fallback to default).
+    fn resolve_speed(&self, entity_type_id: &str) -> f32 {
+        if entity_type_id.is_empty() {
+            return self.default_speed;
+        }
+        self.entity_types
+            .get(entity_type_id)
+            .map(|def| def.speed)
+            .unwrap_or(self.default_speed)
     }
 
     fn intent_entity_id(intent: &pb::Intent) -> Option<u64> {
@@ -70,6 +102,7 @@ impl IntentManager {
         &mut self,
         intent: pb::Intent,
         metadata: IntentMetadata,
+        entity_type_id: &str,
     ) -> ActivationOutcome {
         let Some(entity_id) = Self::intent_entity_id(&intent) else {
             warn!("intent with no entity id, cannot activate");
@@ -103,8 +136,9 @@ impl IntentManager {
             }
         }
 
-        // Start the intent
-        let action = make_action_state_from_intent(intent, self.default_stop_radius);
+        // Start the intent (M4: per-entity-type stop_radius)
+        let stop_radius = self.resolve_stop_radius(entity_type_id);
+        let action = make_action_state_from_intent(intent, stop_radius);
         log_start(&metadata, &action, entity_id);
         let started_meta = metadata.clone();
         self.current_action.insert(
@@ -130,7 +164,7 @@ impl IntentManager {
     pub fn follow_targets(
         &mut self,
         state: &mut GameState,
-        speed: f32,
+        _default_speed: f32,
         dt: f32,
     ) -> Vec<(u64, IntentMetadata)> {
         let mut finished: Vec<u64> = Vec::new();
@@ -150,6 +184,16 @@ impl IntentManager {
                     };
                     let stop_r = mt.stop_radius;
                     if let Some(entity) = find_entity_mut(state, *eid) {
+                        // M4: per-entity-type speed (inlined to avoid borrow conflict)
+                        let speed = if entity.entity_type_id.is_empty() {
+                            self.default_speed
+                        } else {
+                            self.entity_types
+                                .get(&entity.entity_type_id)
+                                .map(|def| def.speed)
+                                .unwrap_or(self.default_speed)
+                        };
+
                         let pos = entity.pos.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                         let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                         let dx = to.x - pos.x;
@@ -336,13 +380,13 @@ mod tests {
 
     #[test]
     fn replace_active_cancels_current_and_starts_new() {
-        let mut manager = IntentManager::new(0.75);
+        let mut manager = IntentManager::new(HashMap::new(), 0.75, 90.0);
         let entity_id = 7_u64;
 
         // First, activate an intent
         let first_intent = make_move_intent(entity_id, (10.0, 5.0));
         let first_meta = make_metadata(1, pb::IntentPolicy::ReplaceActive);
-        let outcome = manager.try_activate(first_intent, first_meta.clone());
+        let outcome = manager.try_activate(first_intent, first_meta.clone(), "");
         assert!(outcome.started.is_some());
         assert!(outcome.canceled.is_empty());
         assert!(!outcome.rejected_busy);
@@ -350,7 +394,7 @@ mod tests {
         // Now replace it
         let second_intent = make_move_intent(entity_id, (20.0, -4.0));
         let second_meta = make_metadata(2, pb::IntentPolicy::ReplaceActive);
-        let outcome = manager.try_activate(second_intent, second_meta);
+        let outcome = manager.try_activate(second_intent, second_meta, "");
         assert!(outcome.started.is_some());
         assert_eq!(outcome.canceled.len(), 1, "first intent should be canceled");
         assert_eq!(outcome.canceled[0].0, entity_id);
@@ -360,19 +404,19 @@ mod tests {
 
     #[test]
     fn append_rejects_when_entity_busy() {
-        let mut manager = IntentManager::new(0.75);
+        let mut manager = IntentManager::new(HashMap::new(), 0.75, 90.0);
         let entity_id = 3_u64;
 
         // Activate first intent
         let first = make_move_intent(entity_id, (1.0, 1.0));
         let first_meta = make_metadata(1, pb::IntentPolicy::ReplaceActive);
-        let outcome = manager.try_activate(first, first_meta);
+        let outcome = manager.try_activate(first, first_meta, "");
         assert!(outcome.started.is_some());
 
         // Try APPEND while busy -> should be rejected
         let second = make_move_intent(entity_id, (2.0, 2.0));
         let second_meta = make_metadata(2, pb::IntentPolicy::Append);
-        let outcome = manager.try_activate(second, second_meta);
+        let outcome = manager.try_activate(second, second_meta, "");
         assert!(outcome.started.is_none());
         assert!(outcome.rejected_busy, "APPEND should be rejected when entity is busy");
         assert!(outcome.canceled.is_empty());
@@ -380,31 +424,31 @@ mod tests {
 
     #[test]
     fn clear_then_append_rejects_when_entity_busy() {
-        let mut manager = IntentManager::new(0.75);
+        let mut manager = IntentManager::new(HashMap::new(), 0.75, 90.0);
         let entity_id = 3_u64;
 
         // Activate first intent
         let first = make_move_intent(entity_id, (1.0, 1.0));
         let first_meta = make_metadata(1, pb::IntentPolicy::ReplaceActive);
-        manager.try_activate(first, first_meta);
+        manager.try_activate(first, first_meta, "");
 
         // Try CLEAR_THEN_APPEND while busy -> should be rejected
         let second = make_move_intent(entity_id, (5.0, 5.0));
         let second_meta = make_metadata(2, pb::IntentPolicy::ClearThenAppend);
-        let outcome = manager.try_activate(second, second_meta);
+        let outcome = manager.try_activate(second, second_meta, "");
         assert!(outcome.started.is_none());
         assert!(outcome.rejected_busy);
     }
 
     #[test]
     fn append_starts_when_entity_idle() {
-        let mut manager = IntentManager::new(0.75);
+        let mut manager = IntentManager::new(HashMap::new(), 0.75, 90.0);
         let entity_id = 5_u64;
 
         // Entity has no active intent; APPEND should start immediately
         let intent = make_move_intent(entity_id, (10.0, 10.0));
         let meta = make_metadata(1, pb::IntentPolicy::Append);
-        let outcome = manager.try_activate(intent, meta);
+        let outcome = manager.try_activate(intent, meta, "");
         assert!(outcome.started.is_some());
         assert!(!outcome.rejected_busy);
         assert!(outcome.canceled.is_empty());
@@ -412,13 +456,13 @@ mod tests {
 
     #[test]
     fn lifecycle_immediate_finish_at_target() {
-        let mut manager = IntentManager::new(0.75);
+        let mut manager = IntentManager::new(HashMap::new(), 0.75, 90.0);
         let entity_id = 11_u64;
         let metadata = make_metadata(3, pb::IntentPolicy::ReplaceActive);
         let move_intent = make_move_intent(entity_id, (0.0, 0.0));
 
         // Activate immediately (no queue)
-        let outcome = manager.try_activate(move_intent, metadata.clone());
+        let outcome = manager.try_activate(move_intent, metadata.clone(), "");
         assert!(outcome.started.is_some());
         assert_eq!(outcome.started.as_ref().unwrap().0, entity_id);
 
@@ -427,6 +471,7 @@ mod tests {
             tick: 0,
             entities: vec![pb::Entity {
                 id: entity_id,
+                entity_type_id: String::new(),
                 pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),

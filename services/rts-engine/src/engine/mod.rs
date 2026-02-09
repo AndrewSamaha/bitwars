@@ -10,6 +10,7 @@ use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
 
 use crate::config::GameConfig;
+use crate::content::ContentPack;
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::RedisClient;
@@ -67,6 +68,7 @@ mod uuid_tests {
 
 pub struct Engine {
     cfg: GameConfig,
+    content: Option<ContentPack>,
     state: GameState,
     prev_state: GameState,
     last_delta_id: Option<String>,
@@ -227,7 +229,26 @@ impl Engine {
             info!(dataset = t.dataset(), "axiom telemetry enabled");
         }
 
+        // M4: Load content pack if configured
+        let content = if !cfg.content_pack_path.is_empty() {
+            let pack = ContentPack::load(std::path::Path::new(&cfg.content_pack_path))?;
+            info!(
+                content_hash = %pack.content_hash,
+                entity_types = pack.entity_types.len(),
+                "loaded content pack"
+            );
+            Some(pack)
+        } else {
+            info!("no CONTENT_PACK_PATH set; using default entity stats");
+            None
+        };
+
         let default_stop_radius = cfg.default_stop_radius;
+        let default_speed = cfg.default_entity_speed;
+        let entity_types = content
+            .as_ref()
+            .map(|c| c.entity_types.clone())
+            .unwrap_or_default();
 
         if cfg.restore_gamestate {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
@@ -271,9 +292,10 @@ impl Engine {
                     prev_state: state.clone(),
                     state,
                     last_delta_id: if boundary == "0-0" { None } else { Some(boundary) },
+                    content,
                     cfg,
                     redis,
-                    intents: IntentManager::new(default_stop_radius),
+                    intents: IntentManager::new(entity_types.clone(), default_stop_radius, default_speed),
                     last_intent_id,
                     player_last_seq,
                     lifecycle_emitted: HashSet::new(),
@@ -285,6 +307,14 @@ impl Engine {
                     .redis
                     .publish_snapshot(&engine.state, snap_boundary)
                     .await?;
+
+                // M4: Publish content hash + definitions in restore path too
+                if let Some(ref pack) = engine.content {
+                    engine.redis.publish_content_version(&pack.content_hash).await?;
+                    let json = pack.to_json()?;
+                    engine.redis.publish_content_defs(&json).await?;
+                }
+
                 return Ok(engine);
             }
 
@@ -297,19 +327,20 @@ impl Engine {
         redis.flush_game_streams().await?;
 
         let mut rng = StdRng::seed_from_u64(42);
-        let state = init_world(&cfg, &mut rng);
+        let state = init_world(&cfg, content.as_ref(), &mut rng);
         info!(
             "Initialized world: entities={}, tps={}, friction={}",
-            cfg.num_entities, cfg.tps, cfg.friction
+            state.entities.len(), cfg.tps, cfg.friction
         );
 
         let mut engine = Self {
             prev_state: state.clone(),
             state,
             last_delta_id: None,
+            content,
             cfg,
             redis,
-            intents: IntentManager::new(default_stop_radius),
+            intents: IntentManager::new(entity_types, default_stop_radius, default_speed),
             // Stream is empty after flush, so "0-0" is correct
             last_intent_id: "0-0".to_string(),
             player_last_seq: HashMap::new(),
@@ -317,7 +348,31 @@ impl Engine {
             telemetry,
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
+
+        // M4: Publish content hash + definitions to Redis
+        if let Some(ref pack) = engine.content {
+            engine.redis.publish_content_version(&pack.content_hash).await?;
+            let json = pack.to_json()?;
+            engine.redis.publish_content_defs(&json).await?;
+        }
+
         Ok(engine)
+    }
+
+    /// M4: Resolve entity_type_id for the target entity of an intent.
+    fn resolve_entity_type_id(&self, intent: &pb::Intent) -> String {
+        let entity_id = match intent.kind.as_ref() {
+            Some(pb::intent::Kind::Move(m)) => m.entity_id,
+            Some(pb::intent::Kind::Attack(a)) => a.entity_id,
+            Some(pb::intent::Kind::Build(b)) => b.entity_id,
+            None => return String::new(),
+        };
+        self.state
+            .entities
+            .iter()
+            .find(|e| e.id == entity_id)
+            .map(|e| e.entity_type_id.clone())
+            .unwrap_or_default()
     }
 
     pub async fn run(&mut self) -> anyhow::Result<()> {
@@ -586,8 +641,11 @@ impl Engine {
             }
         };
 
+        // M4: Look up entity_type_id for per-type stat resolution.
+        let entity_type_id = self.resolve_entity_type_id(&payload_intent);
+
         // M1: Try to activate immediately (no server-side queue).
-        let outcome = self.intents.try_activate(payload_intent, metadata.clone());
+        let outcome = self.intents.try_activate(payload_intent, metadata.clone(), &entity_type_id);
 
         // M2: Clear tracking for any preempted intents, then emit CANCELED
         for (entity_id, canceled_metadata) in outcome.canceled.iter() {

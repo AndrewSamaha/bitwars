@@ -21,6 +21,7 @@ const DEFAULT_GAME_ID = "demo-001";
  * {
  *   server_tick:                number,   // tick from the latest snapshot metadata
  *   protocol_version:          number,   // engine protocol major (currently 1)
+ *   content_version:           string,   // M4: xxh3 hex hash of content pack ("" if none)
  *   last_processed_client_seq: number,   // last client_seq the server applied for this player
  *   active_intents: [                    // per-entity active intents belonging to this player
  *     {
@@ -54,6 +55,10 @@ export async function GET() {
     const snapshotMetaKey = `snapshot_meta:${GAME_ID}`;
     const meta: Record<string, string> = await (redis as any).hgetall(snapshotMetaKey) ?? {};
     const serverTick = Number(meta?.tick ?? 0);
+
+    // M4: Read content_version
+    const contentVersionKey = `rts:match:${GAME_ID}:content_version`;
+    const contentVersion: string = (await (redis as any).get(contentVersionKey)) ?? "";
 
     // Read last_processed_client_seq for this player
     const playerSeqKey = `rts:match:${GAME_ID}:player_seq`;
@@ -92,6 +97,7 @@ export async function GET() {
     return NextResponse.json({
       server_tick: serverTick,
       protocol_version: PROTOCOL_VERSION,
+      content_version: contentVersion,
       last_processed_client_seq: lastProcessedClientSeq,
       active_intents: activeIntents,
     });

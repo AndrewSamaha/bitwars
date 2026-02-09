@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::state::{SerializableVec2, WorldState};
-use crate::MotionTarget;
+use crate::{MotionTarget, SimEntityTypeDef};
 
 /// Steer entities toward their motion targets and integrate positions.
 ///
@@ -21,11 +21,15 @@ use crate::MotionTarget;
 ///
 /// Returns entity IDs that arrived this tick.  Their motion targets are removed
 /// and velocity is zeroed.
+///
+/// M4: If `entity_types` contains a definition for the entity's `entity_type_id`,
+/// that definition's speed is used.  Otherwise `default_speed` is used.
 pub fn tick_movement(
     state: &mut WorldState,
     targets: &mut HashMap<u64, MotionTarget>,
-    speed: f32,
+    default_speed: f32,
     dt: f32,
+    entity_types: &HashMap<String, SimEntityTypeDef>,
 ) -> Vec<u64> {
     let mut finished = Vec::new();
 
@@ -39,6 +43,16 @@ pub fn tick_movement(
             None => continue,
         };
         let vel = entity.vel.get_or_insert(SerializableVec2 { x: 0.0, y: 0.0 });
+
+        // M4: per-entity-type speed
+        let speed = if entity.entity_type_id.is_empty() {
+            default_speed
+        } else {
+            entity_types
+                .get(&entity.entity_type_id)
+                .map(|def| def.speed)
+                .unwrap_or(default_speed)
+        };
 
         let dx = target.x - pos.x;
         let dy = target.y - pos.y;

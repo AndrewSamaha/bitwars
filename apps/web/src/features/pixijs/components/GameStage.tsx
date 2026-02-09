@@ -1,6 +1,7 @@
 "use client";
-import { Application, Assets, Container, Sprite, Graphics } from "pixi.js";
+import { Application, Assets, Container, Sprite, Graphics, type Texture } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
+import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
 import { game } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
@@ -83,7 +84,26 @@ export default function GameStage() {
           }
         };
         window.addEventListener('keydown', onKeyDown);
-        const texture = await Assets.load('/assets/corvette/idle.png');
+
+        // M4: Texture cache by entity_type_id. Path: /assets/${entity_type_id}/idle.png
+        // Preload all entity types from content pack (build-time list from entities.yaml)
+        const DEFAULT_ENTITY_TYPE = 'corvette';
+        const typesToPreload = [
+          ...new Set([DEFAULT_ENTITY_TYPE, ...PRELOAD_ENTITY_TYPES]),
+        ];
+        const textureCache = new Map<string, Texture>();
+        await Promise.all(
+          typesToPreload.map(async (id) => {
+            const tex = await Assets.load(`/assets/${id}/idle.png`);
+            textureCache.set(id, tex);
+          })
+        );
+
+        function getTextureForEntityType(entityTypeId: string | undefined): Texture {
+          const typeId = entityTypeId?.trim() || DEFAULT_ENTITY_TYPE;
+          return textureCache.get(typeId) ?? textureCache.get(DEFAULT_ENTITY_TYPE)!;
+        }
+
         // Track which entities we've attached sprites to, to avoid re-attaching due to query/index lag
         const attached = new WeakSet<any>();
 
@@ -94,7 +114,8 @@ export default function GameStage() {
             if (attached.has(e)) continue;
             const entityContainer = new Container();
             entityContainer.eventMode = 'static';
-            // create primary sprite as child
+            const typeId = (e as { entity_type_id?: string }).entity_type_id;
+            const texture = getTextureForEntityType(typeId);
             const sprite = Sprite.from(texture);
             sprite.anchor.set(0.5);
             entityContainer.addChild(sprite);

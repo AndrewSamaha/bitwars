@@ -1,0 +1,13 @@
+{
+  "name": "@bitwars/content",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/generate-preload-entity-types.js"
+  },
+  "exports": {
+    ".": "./preload-entity-types.ts",
+    "./preload-entity-types": "./preload-entity-types.ts"
+  },
+  "main": "./preload-entity-types.ts"
+}

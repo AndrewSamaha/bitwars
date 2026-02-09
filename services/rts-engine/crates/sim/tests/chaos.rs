@@ -43,6 +43,7 @@ fn make_cmd_id(seed: u8) -> Vec<u8> {
 fn make_entity(id: u64, x: f32, y: f32) -> Entity {
     Entity {
         id,
+        entity_type_id: String::new(),
         pos: Some(Vec2 { x, y }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),

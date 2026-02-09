@@ -8,6 +8,7 @@ fn test_deterministic_replay() {
     // Create a simple world state with an entity
     let entity = sim::pb::Entity {
         id: 1,
+        entity_type_id: String::new(),
         pos: Some(Vec2 { x: 0.0, y: 0.0 }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
@@ -60,6 +61,7 @@ fn test_idempotent_operations() {
     // Create a world state with an entity
     let entity = sim::pb::Entity {
         id: 1,
+        entity_type_id: String::new(),
         pos: Some(Vec2 { x: 0.0, y: 0.0 }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
@@ -106,12 +108,14 @@ fn test_stable_json_serialization() {
     let entities = vec![
         sim::pb::Entity {
             id: 2,
+            entity_type_id: String::new(),
             pos: Some(Vec2 { x: 1.0, y: 2.0 }),
             vel: Some(Vec2 { x: 0.1, y: 0.2 }),
             force: Some(Vec2 { x: 0.0, y: 0.0 }),
         },
         sim::pb::Entity {
             id: 1,
+            entity_type_id: String::new(),
             pos: Some(Vec2 { x: 0.0, y: 0.0 }),
             vel: Some(Vec2 { x: 0.0, y: 0.0 }),
             force: Some(Vec2 { x: 0.0, y: 0.0 }),

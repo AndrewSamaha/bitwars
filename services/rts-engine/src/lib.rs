@@ -1,4 +1,5 @@
 pub mod config;
+pub mod content;
 pub mod delta;
 pub mod engine;
 pub mod io;
@@ -18,6 +19,7 @@ mod tests {
         let v = pb::Vec2 { x: 1.0, y: 2.0 };
         let _e = pb::Entity {
             id: 1,
+            entity_type_id: String::new(),
             pos: Some(v),
             vel: None,
             force: None,

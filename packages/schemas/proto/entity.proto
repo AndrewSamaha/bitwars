@@ -4,8 +4,9 @@ package bitwars;
 import "vec2.proto";
 
 message Entity {
-  uint64 id = 1;
-  Vec2   pos = 3;
-  Vec2   vel = 4;
-  Vec2 force = 5;
+  uint64 id             = 1;
+  string entity_type_id = 2;
+  Vec2   pos            = 3;
+  Vec2   vel            = 4;
+  Vec2   force          = 5;
 }

@@ -22,12 +22,14 @@ fn main() -> anyhow::Result<()> {
     // Example snapshot: tick=42, two entities with positions/velocities
     let e1 = Entity {
         id: 1,
+        entity_type_id: String::new(),
         pos: Some(Vec2 { x: 10.0, y: 20.0 }),
         vel: Some(Vec2 { x: 1.5, y: -0.5 }),
         force: None,
     };
     let e2 = Entity {
         id: 2,
+        entity_type_id: String::new(),
         pos: Some(Vec2 { x: -3.0, y: 7.25 }),
         vel: None,
         force: Some(Vec2 { x: 0.0, y: 0.2 }),

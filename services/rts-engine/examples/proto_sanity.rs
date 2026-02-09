@@ -4,6 +4,7 @@ fn main() {
     let v = pb::Vec2 { x: 1.0, y: -2.5 };
     let e = pb::Entity {
         id: 42,
+        entity_type_id: String::new(),
         pos: Some(v.clone()),
         vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
         force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
