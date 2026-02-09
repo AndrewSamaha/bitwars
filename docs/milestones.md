@@ -228,7 +228,7 @@ message IntentEnvelope {
 
 ---
 
-## M4: Data-Driven Entities (Static), Content Hash, and Pinning (Handshake Explicit)
+## M4: **DONE** Data-Driven Entities (Static), Content Hash, and Pinning (Handshake Explicit)
 
 ### Goals
 
@@ -243,6 +243,11 @@ message IntentEnvelope {
 ### Acceptance Criteria
 
 - M0–M3 behaviors unchanged under content pinning; client refuses unknown major protocol.
+
+### Tech Debt / ToDo
+- Need to add player/server ownership of entities
+- Need to have players spawn with one or more entities
+- Need to have a way to indicate player/entity ownership in the UI
 
 ---
 
