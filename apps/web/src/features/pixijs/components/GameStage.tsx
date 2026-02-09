@@ -77,7 +77,6 @@ export default function GameStage() {
         const onKeyDown = (ev: KeyboardEvent) => {
           const sel = latestSelectorsRef.current;
           if (ev.key === 'm' || ev.key === 'M') {
-            console.log({ key: ev.key, selectedEntities: sel.selectedEntities });
             if (sel.hasSelection) setSelectedAction('Move');
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
@@ -134,10 +133,8 @@ export default function GameStage() {
               .on('pointerdown', (ev: any) => {
                 // Select this entity on click
                 const id = (e as any).id;
-                console.log({clickedEntityId: id})
                 if (id !== undefined && id !== null) {
                   setSelection([String(id)]);
-                  console.log({settingSelectedEntityId: [String(id)]})
                 }
                 ev.stopPropagation(); // don't trigger ground handler
               });
