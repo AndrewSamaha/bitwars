@@ -93,6 +93,7 @@ export default function GameStage() {
         const textureCache = new Map<string, Texture>();
         await Promise.all(
           typesToPreload.map(async (id) => {
+            console.log({ preloadTextureId: id })
             const tex = await Assets.load(`/assets/${id}/idle.png`);
             textureCache.set(id, tex);
           })

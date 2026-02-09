@@ -65,7 +65,10 @@ impl Default for GameConfig {
             content_pack_path: String::new(),
             spawn_manifest: vec![
                 ("worker".into(), 1),
+                ("factory".into(), 1),
                 ("scout".into(), 1),
+                ("habitat".into(), 1),
+                ("processor".into(), 1)
             ],
         }
     }
