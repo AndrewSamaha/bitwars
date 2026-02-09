@@ -64,6 +64,7 @@ impl Default for GameConfig {
             tracking_ttl_secs: 3600, // 1 hour
             content_pack_path: String::new(),
             spawn_manifest: vec![
+                ("theta".into(), 1),
                 ("worker".into(), 1),
                 ("factory".into(), 1),
                 ("scout".into(), 1),

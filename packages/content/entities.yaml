@@ -10,6 +10,12 @@
 #   existing definitions don't break.
 
 entity_types:
+  theta:
+    speed: 0.0
+    stop_radius: 0.75
+    mass: 500.0
+    health: 100.0
+
   worker:
     speed: 90.0
     stop_radius: 0.75
