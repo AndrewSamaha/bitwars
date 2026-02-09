@@ -51,7 +51,8 @@ export function TooltipOverlay() {
         fontSize: 12
       }}
     >
-      <div>Ship ID: {(hoveredEntity as any).id}</div>
+      <div><b>{(hoveredEntity as any).entity_type_id ?? "—"}</b></div>
+      <div><b>id:</b> {(hoveredEntity as any).id}</div>
       <div><b>pos:</b> {Math.round(hoveredEntity.pos?.x ?? 0)}, {Math.round(hoveredEntity.pos?.y ?? 0)}</div>
       <div><b>vel:</b> {Math.round(hoveredEntity.vel?.x ?? 0)}, {Math.round(hoveredEntity.vel?.y ?? 0)}</div>
     </div>
