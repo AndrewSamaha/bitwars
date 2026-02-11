@@ -361,7 +361,20 @@ message IntentEnvelope {
 
 ---
 
-## Cross-Cutting Invariants (apply to all milestones from M0.1 onward)
+# Unaccounted for Future Requirements
+
+- Scrollable client side map
+- Client-side mini map
+- Client-side component to show current resources
+- Ability for some units to build other units, building takes time and resources. 
+- Attack invariants -- when units are assigned to a attack a unit, they approach until within attack range, attack and continue attacking at some frequency until either the attack is interrupted by the player (e.g., the player creates a new intent), the attacked unit is destroyed or moves out of range, the attacking unit is destroyed. If the attacked unit moves out of range, the attacking unit will continue to pursue if it is able to. Some units do ranged attack and clients show an missle, bullet, or laser-type thing to indicate the attack happened.
+- Area of effect damage -- some units do area of effect damage around them at some frequency, damage can fall off with the square of the distance (e.g., radiation)
+- Resource gathering -- some entities have a resource that can be gathered by other entities. Entities need to be within range to gather. When they have as much as they can carry, entities will automatically travel back to the nearest resource refinement center belonging to that player, dump off their resources, and travel back to within range of the resource to begin collecting again.
+- procedurally generated background that is generated using world coordinates so it is consistent in the same place across all clients
+- Player ownership of units -- players spawn with a minimal set of units that only they control, and they have to collect resources and build more units
+- Computationally and network 'cheap' implementation of fog-of-war so players can only see things near their units
+
+# Invariants
 
 - **Determinism:** Same input stream + same tick schedule ⇒ same world hash (`xxh3` over sorted entities).
 - **Idempotency:** Reapplying any subset of already-applied commands/deltas does not change world hash.
