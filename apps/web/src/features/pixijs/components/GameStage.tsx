@@ -117,9 +117,9 @@ export default function GameStage() {
           }
         }
 
-        // M5.3: Minimap (1/10 scale, unit dots, viewport rect) — screen space, bottom-right
-        const MINIMAP_WORLD_EXTENT = 4000;
-        const MINIMAP_SCALE = 1 / 10;
+        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, bottom-right
+        // 200 px → 20_000 world units ⇒ 1 minimap pixel = 100 world units
+        const MINIMAP_HALF_EXTENT = 10_000;
         const MINIMAP_SIZE_PX = 200;
         const MINIMAP_MARGIN = 10;
         const MINIMAP_UNIT_DOT_RADIUS = 2;
@@ -131,14 +131,23 @@ export default function GameStage() {
         minimapContainer.addChild(minimapGraphics);
         app.stage.addChild(minimapContainer);
 
-        function worldToMinimapPx(wx: number, wy: number): { px: number; py: number } {
-          const range = MINIMAP_WORLD_EXTENT * 2;
-          const px = ((wx + MINIMAP_WORLD_EXTENT) / range) * MINIMAP_SIZE_PX;
-          const py = ((wy + MINIMAP_WORLD_EXTENT) / range) * MINIMAP_SIZE_PX;
+        function worldToMinimapPx(
+          wx: number,
+          wy: number,
+          centerX: number,
+          centerY: number,
+        ): { px: number; py: number } {
+          const range = MINIMAP_HALF_EXTENT * 2;
+          const px = ((wx - centerX + MINIMAP_HALF_EXTENT) / range) * MINIMAP_SIZE_PX;
+          const py = ((wy - centerY + MINIMAP_HALF_EXTENT) / range) * MINIMAP_SIZE_PX;
           return { px, py };
         }
 
         function updateMinimap() {
+          const centerWorld = worldContainer.toLocal({
+            x: app.screen.width / 2,
+            y: app.screen.height / 2,
+          });
           minimapContainer.position.set(
             app.screen.width - MINIMAP_SIZE_PX - MINIMAP_MARGIN,
             app.screen.height - MINIMAP_SIZE_PX - MINIMAP_MARGIN,
@@ -147,10 +156,10 @@ export default function GameStage() {
           // Background
           minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).fill({ color: 0x0a_0c_10, alpha: 0.9 });
           minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).stroke({ width: 1, color: 0x3a_3e_4a });
-          // Viewport rect (visible world AABB at 1/10 scale)
+          // Viewport rect (visible world AABB)
           const viewportAabb = getViewportWorldAABB(worldContainer, app.screen.width, app.screen.height, 0);
-          const vmin = worldToMinimapPx(viewportAabb.minX, viewportAabb.minY);
-          const vmax = worldToMinimapPx(viewportAabb.maxX, viewportAabb.maxY);
+          const vmin = worldToMinimapPx(viewportAabb.minX, viewportAabb.minY, centerWorld.x, centerWorld.y);
+          const vmax = worldToMinimapPx(viewportAabb.maxX, viewportAabb.maxY, centerWorld.x, centerWorld.y);
           const vx = Math.max(0, Math.min(vmin.px, MINIMAP_SIZE_PX - 1));
           const vy = Math.max(0, Math.min(vmin.py, MINIMAP_SIZE_PX - 1));
           const vw = Math.max(1, Math.min(vmax.px - vmin.px, MINIMAP_SIZE_PX - vx));
@@ -159,7 +168,7 @@ export default function GameStage() {
           // Unit dots
           for (const e of game.world.with("pos", "id")) {
             const pos = (e as { pos: { x: number; y: number } }).pos;
-            const { px, py } = worldToMinimapPx(pos.x, pos.y);
+            const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
             if (px >= 0 && px <= MINIMAP_SIZE_PX && py >= 0 && py <= MINIMAP_SIZE_PX) {
               minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color: 0x88_cc_ff });
             }
