@@ -1,0 +1,27 @@
+# Spawn config: per-player spawn points and loadouts.
+# Set SPAWN_CONFIG_PATH to this file (or your own) to use onPlayerSpawn-style spawning.
+#
+# spawn_points: one [x, y] or { x, y } per player slot (same order as player_ids in engine config).
+# loadouts: one map per slot; keys are entity_type_id (from content pack), values are count.
+# neutrals_near_spawn: optional server-owned entities spawned near each player's spawn.
+
+spawn_points:
+  - [800, 0]    # player 1
+  - [-800, 0]   # player 2
+
+loadouts:
+  # Slot 0: 2 workers, 1 scout, 1 habitat
+  - worker: 2
+    scout: 1
+    habitat: 1
+  # Slot 1: 1 factory, 3 workers, 1 processor
+  - factory: 1
+    worker: 3
+    processor: 1
+
+# Optional: neutrals near each spawn (owner = "neutral")
+neutrals_near_spawn:
+  - type: theta
+    count: 1
+    offset_x: 150
+    offset_y: 0

@@ -5,15 +5,40 @@ import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import EntitiesStreamCounter from "@/features/gamestate/components/EntitiesStreamCounter";
+import { game } from "@/features/gamestate/world";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount";
+import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 
 const SHOW_STREAM_COUNTER = false;
 
+function runLs(myPlayerId: string | null): string {
+  if (myPlayerId == null) {
+    return "Not logged in. List shows only your entities after you log in.";
+  }
+  const entities: Array<{ id: number | string; entity_type_id: string }> = [];
+  for (const e of game.world.with("id")) {
+    const owner = (e as { owner_player_id?: string }).owner_player_id;
+    if (owner !== myPlayerId) continue;
+    const id = (e as { id: number | string }).id;
+    const entity_type_id = (e as { entity_type_id?: string }).entity_type_id ?? "(no type)";
+    entities.push({ id, entity_type_id });
+  }
+  entities.sort((a, b) => Number(a.id) - Number(b.id));
+  if (entities.length === 0) {
+    return "No entities owned by you.";
+  }
+  const header = "id      entity_type";
+  const lines = entities.map((e) => `${e.id}       ${e.entity_type_id}`);
+  return [header, ...lines].join("\n");
+}
+
 export default function TerminalPanel() {
+  const { player } = usePlayer();
   const { selectors, actions, refs } = useHUD();
   const { isTerminalOpen, currentCommand, commandHistory } = selectors;
   const { terminalRef, inputRef } = refs;
+  const myPlayerId = player?.id ?? null;
 
   // Scroll to bottom when history changes
   useEffect(() => {
@@ -35,10 +60,17 @@ export default function TerminalPanel() {
       const cmd = currentCommand.trim();
       if (!cmd) return;
 
-      actions.pushCommandHistory({ command: cmd, output: `${cmd}: command not found` });
+      const lower = cmd.toLowerCase();
+      let output: string;
+      if (lower === "ls") {
+        output = runLs(myPlayerId);
+      } else {
+        output = `${cmd}: command not found`;
+      }
+      actions.pushCommandHistory({ command: cmd, output });
       actions.setTerminalInput("");
     },
-    [currentCommand, actions]
+    [currentCommand, actions, myPlayerId]
   );
 
   const handleTerminalClick = useCallback(() => {

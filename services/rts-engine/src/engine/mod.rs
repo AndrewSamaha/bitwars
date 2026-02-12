@@ -11,6 +11,7 @@ use uuid::{Uuid, Version};
 
 use crate::config::GameConfig;
 use crate::content::ContentPack;
+use crate::spawn_config::SpawnConfig;
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::RedisClient;
@@ -326,8 +327,33 @@ impl Engine {
         info!(game_id = %cfg.game_id, "clean start; flushing game streams");
         redis.flush_game_streams().await?;
 
+        let spawn_config: Option<SpawnConfig> = if cfg.spawn_config_path.is_empty() {
+            None
+        } else {
+            match SpawnConfig::load(std::path::Path::new(&cfg.spawn_config_path)) {
+                Ok(sc) => {
+                    info!(
+                        path = %cfg.spawn_config_path,
+                        spawn_points = sc.spawn_points.len(),
+                        loadouts = sc.loadouts.len(),
+                        "loaded spawn config"
+                    );
+                    Some(sc)
+                }
+                Err(e) => {
+                    warn!(path = %cfg.spawn_config_path, error = %e, "failed to load spawn config; using legacy spawn");
+                    None
+                }
+            }
+        };
+
         let mut rng = StdRng::seed_from_u64(42);
-        let state = init_world(&cfg, content.as_ref(), &mut rng);
+        let state = init_world(
+            &cfg,
+            content.as_ref(),
+            spawn_config.as_ref(),
+            &mut rng,
+        );
         info!(
             "Initialized world: entities={}, tps={}, friction={}",
             state.entities.len(), cfg.tps, cfg.friction

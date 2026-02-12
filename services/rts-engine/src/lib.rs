@@ -1,5 +1,6 @@
 pub mod config;
 pub mod content;
+pub mod spawn_config;
 pub mod delta;
 pub mod engine;
 pub mod io;
