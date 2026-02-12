@@ -247,6 +247,7 @@ message IntentEnvelope {
 ---
 
 ## M5: Camera + World Space + Map UX (Client-first)
+see docs/milestones/m5/m5-camera-worldspace-mapux.md for details
 
 ### Goals
 
