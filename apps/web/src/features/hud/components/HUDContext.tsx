@@ -242,7 +242,7 @@ type HUDContextValue = {
     currentCommand: string;
     commandHistory: CommandHistory[];
     camera: Container | null;
-    hoveredEntity: Entity | null
+    hoveredEntity: Entity | null;
     app: Application | null;
   };
   // Terminal refs (not persisted)

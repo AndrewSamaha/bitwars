@@ -5,10 +5,24 @@ import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
 import { game } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
+import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
+
+/** World units per second when panning with WASD / arrows */
+const PAN_SPEED = 400;
+
+const PAN_KEYS = new Set([
+  "KeyW", "KeyA", "KeyS", "KeyD",
+  "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+]);
+
+function isFocusInEditable(): boolean {
+  const el = document.activeElement;
+  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+}
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
@@ -17,6 +31,8 @@ export default function GameStage() {
   // Keep latest selectors in a ref so event handlers see current selection/action
   const latestSelectorsRef = useRef(selectors);
   useEffect(() => { latestSelectorsRef.current = selectors; }, [selectors]);
+  // M5.1: Pan keys currently held (KeyW, KeyA, ...); ticker reads this and applies pan
+  const panKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     // Observe readiness until the first snapshot is applied
@@ -52,15 +68,14 @@ export default function GameStage() {
             resolution: devicePixelRatio
         });
         setApp(app);
-        setCamera(app.stage);
-
         ref.current!.appendChild(app.canvas);
 
-        // Pixi scene graph root for world
+        // Pixi scene graph root for world (M5.1: this is the camera — we pan by updating its position)
         const worldContainer = new Container();
         worldContainer.position.set(800, 500);
         worldContainer.scale.set(.5);
         app.stage.addChild(worldContainer);
+        setCamera(worldContainer);
         // Ground capture for clicks (very large transparent rect)
         const ground = new Graphics();
         (ground as any).label = 'ground';
@@ -73,16 +88,27 @@ export default function GameStage() {
         (waypointContainer as any).label = 'waypoints';
         worldContainer.addChild(waypointContainer);
 
-        // Keyboard: M to set Move, Escape to clear (reads latest selectors via ref)
+        // Keyboard: M to set Move, Escape to clear; WASD/arrows to pan (M5.1)
         const onKeyDown = (ev: KeyboardEvent) => {
           const sel = latestSelectorsRef.current;
           if (ev.key === 'm' || ev.key === 'M') {
             if (sel.hasSelection) setSelectedAction('Move');
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
+          } else if (PAN_KEYS.has(ev.code)) {
+            if (!isFocusInEditable()) {
+              panKeysRef.current.add(ev.code);
+              ev.preventDefault();
+            }
+          }
+        };
+        const onKeyUp = (ev: KeyboardEvent) => {
+          if (PAN_KEYS.has(ev.code)) {
+            panKeysRef.current.delete(ev.code);
           }
         };
         window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
 
         // M4: Texture cache by entity_type_id. Path: /assets/${entity_type_id}/idle.png
         // Preload all entity types from content pack (build-time list from entities.yaml)
@@ -286,9 +312,26 @@ export default function GameStage() {
           }
         });
 
-        app.ticker.add(() => {
+        app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
             if (!game.ready) return;
+            // M5.1: Apply camera pan from WASD/arrows (delta-time so speed is frame-rate independent)
+            const keys = panKeysRef.current;
+            if (keys.size > 0) {
+              let dx = 0;
+              let dy = 0;
+              if (keys.has("KeyA") || keys.has("ArrowLeft")) dx += 1;
+              if (keys.has("KeyD") || keys.has("ArrowRight")) dx -= 1;
+              if (keys.has("KeyW") || keys.has("ArrowUp")) dy += 1;
+              if (keys.has("KeyS") || keys.has("ArrowDown")) dy -= 1;
+              if (dx !== 0 || dy !== 0) {
+                const len = Math.hypot(dx, dy);
+                const norm = len > 0 ? 1 / len : 1;
+                const dt = ticker.deltaMS / 1000;
+                worldContainer.position.x += (dx * norm * PAN_SPEED * dt);
+                worldContainer.position.y += (dy * norm * PAN_SPEED * dt);
+              }
+            }
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             render();
@@ -296,7 +339,8 @@ export default function GameStage() {
 
         return () => {
           app.destroy(true, { children: true, texture: false });
-          window.removeEventListener('keydown', onKeyDown);
+          window.removeEventListener("keydown", onKeyDown);
+          window.removeEventListener("keyup", onKeyUp);
         };
     }
     let cleanup: (() => void) | undefined;
@@ -319,6 +363,7 @@ export default function GameStage() {
       {/* Canvas mount point */}
       <div ref={ref} className="absolute inset-0" />
       {ready && <TooltipOverlay />}
+      {ready && <CoordsOverlay />}
       {/* Overlay loading indicator while world is not ready */}
       {!ready && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/40">
