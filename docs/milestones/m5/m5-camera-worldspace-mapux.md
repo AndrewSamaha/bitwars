@@ -1,4 +1,4 @@
-# M5: Camera + World Space + Map UX — Approach
+# M5: Camera + World Space + Map UX — As Built
 
 ## Summary
 
@@ -8,131 +8,109 @@ M5 is **client-only**: it establishes a stable **world-coordinate space** and **
 - Establish a stable world space and camera transform.  
 - Improve demoability and “RTS feel” without expanding server scope.
 
-**Deliverables:**  
-1. Client camera (WASD pan, world coords on screen, correct screen→world).  
-2. Deterministic procedural background from world coordinates.  
-3. Minimap v1 (1/10 scale, unit dots, viewport rect; full reveal).
+**Deliverables (implemented):**  
+1. Client camera (WASD/arrow pan, grid coords on screen, correct screen→world).  
+2. Deterministic procedural Voronoi **borders** (screen-space sampling, edge test; no colored cell grid).  
+3. Minimap v1 (camera-centered, 1 px = 100 world units, unit dots, viewport rect; full reveal).
 
 ---
 
-## 1. Client camera
+## 1. Client camera (M5.1)
 
-**Current state (from `GameStage.tsx`):**  
-- `worldContainer` is fixed at `(800, 500)` with `scale 0.5`.  
-- “Camera” is effectively this fixed offset/scale; `setCamera(app.stage)` stores the stage, not a pannable camera.  
-- Click-to-move already uses **world** space: `worldContainer.toLocal(global)` → `{ x, y }` passed to move intent. So the pipeline is “screen → world → server” and is correct as long as all view transforms live on the same container we call `toLocal` on.
+**As built:**
 
-**Approach:**
+- **Camera**  
+  `worldContainer` is the camera: we pan by updating its `position`. `setCamera(worldContainer)` so HUD/overlays can use the same transform. Initial position (800, 500), scale 0.5.
 
-- **Single source of view transform**  
-  Treat `worldContainer` (or a parent of it) as the “camera”: the only thing that moves/scales the world on screen. All pan/zoom changes go there so that `worldContainer.toLocal(global)` stays the single way to get world coords from a pointer.
+- **WASD / arrow pan**  
+  - Keys: W, A, S, D and ArrowUp, ArrowDown, ArrowLeft, ArrowRight.  
+  - W/ArrowUp move the world **up** (camera up); S/ArrowDown move world down; A/ArrowLeft move world left; D/ArrowRight move world right.  
+  - Pan applied in the main ticker with delta-time (`ticker.deltaMS`) so speed is frame-rate independent (`PAN_SPEED = 400` world units/sec).  
+  - Pan is **not** applied when focus is in an input or textarea (e.g. terminal), to avoid typing into the terminal.
 
-- **WASD panning**  
-  - Add a key listener (e.g. in `GameStage` or a small input hook) for W/A/S/D (and optionally arrow keys).  
-  - Each key drives a pan velocity or a fixed pan step per keydown/repeat.  
-  - Apply pan by updating `worldContainer.position` (or the camera parent) each frame.  
-  - Tune pan speed so the world feels responsive but not jarring; consider making speed configurable (e.g. constant or scaled by delta time).
+- **Coordinates on screen**  
+  - **CoordsOverlay** (bottom-left) shows **grid (cell) coordinates** at the **center of the screen**, not world coordinates.  
+  - Formula: `cx = floor(centerWorld.x / CELL_SIZE)`, `cy = floor(centerWorld.y / CELL_SIZE)` with `CELL_SIZE` from the procedural background (1200). Same grid as Voronoi.  
+  - Center in world is computed each tick via `camera.toLocal({ x: app.screen.width/2, y: app.screen.height/2 })`.  
+  - Label: `grid cx, cy`.
 
-- **World coordinates on screen**  
-  - Add a small HUD element (e.g. corner text) that shows “world (x, y)”.  
-  - Compute (x, y) from the current pointer position using the same path as click-to-move: `worldContainer.toLocal(global)` (or from a “cursor in world” position updated on pointer move).  
-  - Optionally also show coordinates at a fixed screen point (e.g. center) so players see “world at center” when not moving the mouse.
+- **Click targeting**  
+  Move and selection still use `worldContainer.toLocal(global)`; only `worldContainer.position` changes for pan, so click-to-move and selection remain correct.
 
-- **Preserving click targeting**  
-  - Do **not** change how move/selection work: they already use `worldContainer.toLocal(global)`.  
-  - Ensure any new camera logic only changes `worldContainer` (or its parent) position/scale; do not add a second transform path for clicks.  
-  - After implementing pan, sanity-check: pan away, click somewhere, and confirm the unit moves to the correct world position (and that selection still hits the right entity).
-
-**Acceptance:**  
-Panning does not break click-to-move or selection; both still use correct world coordinates.
+**Files:**  
+- `apps/web/src/features/pixijs/components/GameStage.tsx` (pan keys, ticker, camera).  
+- `apps/web/src/features/hud/components/CoordsOverlay.tsx` (grid coords at center).
 
 ---
 
-## 2. Deterministic procedural background
+## 2. Deterministic procedural background (M5.2)
 
-**Spec (from `docs/milestones/m5/procedurally-generated-background.md`):**  
-- Infinite background from **world coordinates** and a **hardcoded seed** (no shared cell data).  
-- Voronoi-like sectors: fixed cell size `S`, integer cell `(cx, cy)` from `floor(x/S)`, `floor(y/S)`; for each point, consider a small neighborhood (e.g. 3×3), generate site offsets with a deterministic hash of `(cellX, cellY, SEED)`; sector = nearest site; sector ID/color from sector ID.  
-- Optional: use nearest and second-nearest site to draw faint borders where `d2 - d1` is small.
+**As built:**
 
-**Approach:**
+- **Voronoi borders only**  
+  We do **not** draw a colored cell grid. We draw only **Voronoi edge** samples in **screen space**: for each sample point on a screen-space grid, we convert to world, compute nearest and second-nearest site distances (`d1`, `d2`), and if `(d2 - d1) < EDGE_THRESHOLD_SQ` we draw a small rect (border dot). This produces visible Voronoi boundaries.
 
-- **Rendering layer**  
-  - Add a background layer **under** the existing ground (so entities and ground clicks stay on top).  
-  - Background is drawn from **world space** (same coordinate system as entities).  
-  - Options: Pixi `Graphics` drawn in world space (e.g. in a container that shares the same transform as the world), or a tiled/canvas texture generated from world coords.  
-  - Ensure this layer is a child of the same container that receives the camera transform (so it pans/zooms with the world).
-
-- **Determinism**  
-  - Single hardcoded `SEED` (e.g. constant in one place).  
-  - All inputs to the procedural math: world position and `SEED` only (no time, no random).  
-  - Same `(x, y)` + `SEED` → same sector ID and color on every client and every run.
-
-- **Performance**  
-  - Only generate/draw what’s visible (viewport in world space).  
-  - Compute viewport bounds from camera transform and screen size (inverse of screen→world), then generate sectors/cells that intersect that bounds (with optional margin).  
-  - If using tiles/cells, cache by cell key so the same cell doesn’t recompute every frame.
-
-- **Sector ID and color**  
-  - Sector ID = winning cell `(cellX, cellY)` or `hash(cellX, cellY, SEED)`.  
-  - Color: e.g. `palette[hash(sectorID) % palette.length]` with a fixed palette.
-
-**Acceptance:**  
-Background is identical for all clients at the same world coordinates (and deterministic across reloads).
-
----
-
-## 3. Minimap v1
-
-**Requirements:**  
-- 1/10 scale.  
-- Shows unit dots and viewport rectangle.  
-- Full reveal (no fog).
-
-**Approach:**
-
-- **Coordinate system**  
-  - Minimap has its own “minimap world” space: `minimapWorld = world / 10` (or equivalently scale world by 0.1 when drawing).  
-  - Define a fixed “minimap world extent” (e.g. symmetric around origin or based on initial entity positions + margin) so the minimap has a fixed size in pixels and a known world range.
+- **Spec / algorithm**  
+  - Fixed `CELL_SIZE` (1200), hardcoded `SEED`. Deterministic hash from `(cellX, cellY, SEED)` → `(u, v) ∈ [0,1)²`; site = `((cellX+u)*CELL_SIZE, (cellY+v)*CELL_SIZE)`.  
+  - For each **screen** sample `(sx, sy)` with step `SAMPLE_SPACING` (10 px): `pWorld = camera.toLocal({ x: sx, y: sy })`; then 3×3 neighbor cells, compute site positions, get `d1Sq` and `d2Sq` (nearest and second-nearest squared distances); `edge = d2Sq - d1Sq`; if `edge < EDGE_THRESHOLD_SQ` draw a 2×2 px rect at `(sx, sy)` with `BORDER_COLOR`.  
+  - All inputs to the procedural math are world position and SEED only (no time, no random). Deterministic across clients and reloads.
 
 - **Rendering**  
-  - Separate Pixi container or canvas (e.g. in the HUD layer, not inside the pannable world container).  
-  - **Units:** For each entity with a position, draw a dot at `(pos.x/10, pos.y/10)` in minimap space, then map that to minimap pixel rect (scale + offset so the chosen world extent fits in the minimap widget).  
-  - **Viewport rect:** From camera transform and screen size, compute the visible world AABB in world coordinates. Scale that AABB by 0.1 and draw a rectangle in the same minimap space so the rect shows “what the main view is showing”.
+  - A single Pixi `Graphics` (**voronoiBorderGraphics**) is added to **app.stage** (screen space), so it draws on top of the world.  
+  - Each update: clear, then loop over sample grid and draw border dots.  
+  - **Throttling:** Updates run every **100 ms** or when the camera has moved more than **25** world units, to avoid recomputing every frame.
 
-- **Data flow**  
-  - Unit positions: same source as main view (e.g. `game.world.with("pos", "id")` or equivalent).  
-  - Viewport: derive from the same `worldContainer` (or camera) position/scale and app/canvas size so the rect stays in sync when the user pans.
+- **No colored grid**  
+  The earlier world-space colored cell grid was removed; only the screen-space Voronoi border overlay remains.
+
+**Files:**  
+- `apps/web/src/features/pixijs/utils/proceduralBackground.ts` (hash, `getSiteForCell`, `getSectorAt`, `getVoronoiDistancesAt`, `getViewportWorldAABB`, constants).  
+- `apps/web/src/features/pixijs/components/GameStage.tsx` (voronoi border Graphics on stage, sample loop, throttle).
+
+---
+
+## 3. Minimap v1 (M5.3)
+
+**As built:**
 
 - **Placement**  
-  - Fixed corner (e.g. bottom-right), fixed size, above or below other HUD (terminal, entity panel).  
-  - Ensure it doesn’t block critical clicks; optionally make it non-interactive or use it later for “click to move camera”.
+  Fixed **200×200 px** widget, **bottom-right** with 10 px margin. Pixi `Container` on `app.stage` (screen space). Position updated each frame so it stays bottom-right on resize. `eventMode = 'none'`.
 
-**Acceptance:**  
-Minimap tracks camera position (viewport rect) and unit positions correctly at 1/10 scale.
+- **Coordinate system**  
+  - Minimap is **centered on the camera** (screen center in world space), not on world origin.  
+  - Each frame: `centerWorld = camera.toLocal({ x: app.screen.width/2, y: app.screen.height/2 })`.  
+  - World range shown: **±10_000** world units from that center (20_000 × 20_000 world area).  
+  - **Scale: 1 minimap pixel = 100 world units** (200 px → 20_000 world units).  
+  - Mapping: `px = ((wx - centerX + MINIMAP_HALF_EXTENT) / (2 * MINIMAP_HALF_EXTENT)) * MINIMAP_SIZE_PX` (same for y).
 
----
+- **Content**  
+  - **Background:** Dark filled rect + thin border.  
+  - **Viewport rect:** Visible world AABB from `getViewportWorldAABB(camera, width, height, 0)`; corners mapped to minimap pixels; stroked blue rect. Clamped to the minimap bounds.  
+  - **Unit dots:** For each entity in `game.world.with("pos", "id")`, map `pos` to minimap pixels; if inside the 200×200 rect, draw a small filled circle (radius 2, light blue).
 
-## Implementation order (suggested)
+- **Full reveal**  
+  No fog; all units in the shown world range are drawn.
 
-1. **Camera (pan + coords)**  
-   - Implement WASD pan and world-coord display; verify click-to-move and selection still use correct world coords.  
-   - Establishes the single transform and the viewport-in-world concept needed for background and minimap.
-
-2. **Procedural background**  
-   - Add the deterministic Voronoi layer in world space; hook it to viewport bounds so only visible region is generated.  
-   - Validates world-space rendering and determinism without depending on the minimap.
-
-3. **Minimap**  
-   - Add minimap with unit dots and viewport rect, using the same camera/world data.  
-   - Depends on having a stable camera and world extent.
+**Files:**  
+- `apps/web/src/features/pixijs/components/GameStage.tsx` (minimap container, `worldToMinimapPx`, `updateMinimap` in ticker).
 
 ---
 
-## Risks and notes
+## Implementation notes
 
-- **Screen→world after pan:** As long as the only moving part is `worldContainer` (or its parent), `toLocal(global)` remains correct. Avoid introducing a separate camera object that isn’t the same transform used for hit-testing.
-- **Background cost:** If the procedural pass is heavy, keep it to viewport + small margin and cache by cell; consider a simple tile/cell grid first, then add Voronoi styling per cell.
-- **Minimap extent:** “Full reveal” means we don’t hide anything, but we still need a chosen world extent for the minimap so the 1/10 scale maps to a fixed pixel size; define that extent (e.g. from config or from current world bounds + padding) and document it.
+- **Screen→world**  
+  Single transform: `worldContainer`. All screen→world uses `camera.toLocal(...)` (camera is `worldContainer`). No separate camera object for hit-testing.
 
-This order and structure should cover the M5 deliverables and acceptance criteria without touching server or simulation code.
+- **Voronoi performance**  
+  Border updates are throttled (100 ms or 25 world units camera move). Sample grid step is 10 px (configurable via `SAMPLE_SPACING`).
+
+- **Minimap scale**  
+  Scale is controlled by `MINIMAP_HALF_EXTENT` (10_000 → 1 px = 100 world units). Changing it changes how much world the 200 px widget shows.
+
+---
+
+## Acceptance (met)
+
+- Panning does not break click-to-move or selection; both use correct world coordinates.  
+- Voronoi borders are deterministic (same world + SEED → same edges); identical for all clients at the same world coordinates.  
+- Minimap tracks camera position (viewport rect) and unit positions correctly at the chosen scale (1 px = 100 world units), centered on the camera.

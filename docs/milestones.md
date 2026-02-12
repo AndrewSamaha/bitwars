@@ -246,30 +246,26 @@ message IntentEnvelope {
 
 ---
 
-## M5: Camera + World Space + Map UX (Client-first)
-see docs/milestones/m5/m5-camera-worldspace-mapux.md for details
+## M5: **Done** Camera + World Space + Map UX (Client-first)
+
+See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
 
 ### Goals
 
 - Establish a stable **world-coordinate space** and camera transform for all future gameplay.
 - Improve demoability and “RTS feel” without expanding server simulation scope.
 
-### Deliverables
+### Deliverables (implemented)
 
-- Client camera:
-  - Pan/scroll over the world (WASD).
-  - Show absolute world coordinates on screen
-  - Correct screen→world coordinate conversion for click-to-move and selection.
-- Deterministic, procedural background generated from **world coordinates** (consistent for all clients). See docs/milestones/m5/procedurally-generated-background.md for details
-- Minimap v1 (full reveal for now):
-  - 1/10th scale
-  - Shows unit dots and viewport rectangle.
+- **Client camera:** WASD + arrow pan (delta-time, focus guard); grid coordinates at screen center (bottom-left HUD); correct screen→world for click-to-move and selection. Camera = `worldContainer`.
+- **Procedural background:** Deterministic Voronoi **borders** only (screen-space sampling, d1/d2 edge test, throttled updates). No colored cell grid. See docs/milestones/m5/procedurally-generated-background.md for Voronoi spec.
+- **Minimap v1:** 200×200 px, bottom-right; centered on camera; 1 minimap pixel = 100 world units; unit dots + viewport rectangle; full reveal.
 
 ### Acceptance Criteria
 
 - Panning does not break click targeting (move/selection still land in correct world coordinates).
-- Background is identical for all clients at the same world coordinates.
-- Minimap tracks camera position correctly.
+- Voronoi borders are identical for all clients at the same world coordinates (deterministic).
+- Minimap tracks camera position and unit positions correctly.
 
 ---
 
