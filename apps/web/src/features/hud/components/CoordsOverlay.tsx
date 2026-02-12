@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
+import { CELL_SIZE } from "@/features/pixijs/utils/proceduralBackground";
 
 /**
- * M5.1: Shows world coordinates at the center of the screen.
- * Re-renders on app tick so coords stay in sync when the camera pans.
+ * M5.1: Shows grid (cell) coordinates at the center of the screen.
+ * Same cell size as the procedural Voronoi background.
  */
 export function CoordsOverlay() {
   const { selectors } = useHUD();
@@ -24,16 +25,16 @@ export function CoordsOverlay() {
   const centerX = app.screen.width / 2;
   const centerY = app.screen.height / 2;
   const centerWorld = camera.toLocal({ x: centerX, y: centerY });
-  const x = Math.round(centerWorld.x);
-  const y = Math.round(centerWorld.y);
+  const cx = Math.floor(centerWorld.x / CELL_SIZE);
+  const cy = Math.floor(centerWorld.y / CELL_SIZE);
 
   return (
     <div
       className="pointer-events-none absolute bottom-4 left-4 rounded bg-black/70 px-2 py-1 font-mono text-xs text-white/90"
       aria-live="polite"
-      aria-label={`World coordinates at center ${x}, ${y}`}
+      aria-label={`Grid coordinates at center ${cx}, ${cy}`}
     >
-      world {x}, {y}
+      grid {cx}, {cy}
     </div>
   );
 }

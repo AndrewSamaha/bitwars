@@ -10,6 +10,14 @@ import { useHUD } from "@/features/hud/components/HUDContext";
 import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
+import {
+  CELL_SIZE,
+  SEED,
+  SAMPLE_SPACING,
+  EDGE_THRESHOLD_SQ,
+  BORDER_COLOR,
+  getVoronoiDistancesAt,
+} from "@/features/pixijs/utils/proceduralBackground";
 
 /** World units per second when panning with WASD / arrows */
 const PAN_SPEED = 400;
@@ -76,6 +84,38 @@ export default function GameStage() {
         worldContainer.scale.set(.5);
         app.stage.addChild(worldContainer);
         setCamera(worldContainer);
+
+        // M5.2: Voronoi border overlay in screen space (sample grid → edge test → draw dots)
+        const voronoiBorderGraphics = new Graphics();
+        (voronoiBorderGraphics as any).label = "voronoiBorders";
+        voronoiBorderGraphics.eventMode = "none";
+        app.stage.addChild(voronoiBorderGraphics);
+
+        let lastVoronoiUpdate = -1000;
+        let lastCamX = worldContainer.position.x;
+        let lastCamY = worldContainer.position.y;
+        const VORONOI_UPDATE_INTERVAL_MS = 100;
+        const VORONOI_CAMERA_MOVE_THRESHOLD = 25;
+        const BORDER_DOT_SIZE = 2;
+
+        function updateVoronoiBorders() {
+          voronoiBorderGraphics.clear();
+          const w = app.screen.width;
+          const h = app.screen.height;
+          for (let sy = 0; sy <= h; sy += SAMPLE_SPACING) {
+            for (let sx = 0; sx <= w; sx += SAMPLE_SPACING) {
+              const pWorld = worldContainer.toLocal({ x: sx, y: sy });
+              const { d1Sq, d2Sq } = getVoronoiDistancesAt(pWorld.x, pWorld.y, CELL_SIZE, SEED);
+              const edge = d2Sq - d1Sq;
+              if (edge < EDGE_THRESHOLD_SQ) {
+                voronoiBorderGraphics
+                  .rect(sx, sy, BORDER_DOT_SIZE, BORDER_DOT_SIZE)
+                  .fill({ color: BORDER_COLOR });
+              }
+            }
+          }
+        }
+
         // Ground capture for clicks (very large transparent rect)
         const ground = new Graphics();
         (ground as any).label = 'ground';
@@ -332,6 +372,21 @@ export default function GameStage() {
                 worldContainer.position.y += (dy * norm * PAN_SPEED * dt);
               }
             }
+            // M5.2: Update Voronoi border overlay when throttled (interval or camera moved)
+            const now = performance.now();
+            const camX = worldContainer.position.x;
+            const camY = worldContainer.position.y;
+            if (
+              now - lastVoronoiUpdate > VORONOI_UPDATE_INTERVAL_MS ||
+              Math.abs(camX - lastCamX) > VORONOI_CAMERA_MOVE_THRESHOLD ||
+              Math.abs(camY - lastCamY) > VORONOI_CAMERA_MOVE_THRESHOLD
+            ) {
+              updateVoronoiBorders();
+              lastVoronoiUpdate = now;
+              lastCamX = camX;
+              lastCamY = camY;
+            }
+
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             render();
