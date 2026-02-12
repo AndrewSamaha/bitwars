@@ -1,8 +1,8 @@
 # Development Milestones (Incremental, Demo-Oriented)
 
-**Last updated:** 2025-10-02 08:00:00 -0400
+**Last updated:** 2026-02-11 -0500
 
-This roadmap lays out small, demonstrable steps toward the full data-driven, scriptable, long-running RTS intent system.
+This roadmap lays out small, demonstrable steps toward a data-driven RTS intent system.
 Each milestone targets a vertical slice that can be shown end-to-end: client issues intents → server validates/executes → client receives deltas and updates UI.
 
 ---
@@ -244,135 +244,216 @@ message IntentEnvelope {
 
 - M0–M3 behaviors unchanged under content pinning; client refuses unknown major protocol.
 
-### Tech Debt / ToDo
-- Need to add player/server ownership of entities
-- Need to have players spawn with one or more entities
-- Need to have a way to indicate player/entity ownership in the UI
-
 ---
 
-## M5: Abilities as First-Class Intents (Client Queue Still Applies)
+## M5: Camera + World Space + Map UX (Client-first)
 
 ### Goals
 
-- Generalize intents to `Ability`; model `Move` as `Ability(move)` with targeting schema; add cooldowns.
+- Establish a stable **world-coordinate space** and camera transform for all future gameplay.
+- Improve demoability and “RTS feel” without expanding server simulation scope.
 
 ### Deliverables
 
-- Ability registry (server-native), targeting validation, cooldown tracking.
-- Client queue UI shows ability name + target + “may fail” warnings (cooldown/resource).
-- Server rejection reasons surfaced in UI; client decides whether to keep or drop subsequent queued items on reject.
+- Client camera:
+  - Pan/scroll over the world (WASD).
+  - Show absolute world coordinates on screen
+  - Correct screen→world coordinate conversion for click-to-move and selection.
+- Deterministic, procedural background generated from **world coordinates** (consistent for all clients). See docs/milestones/m5/procedurally-generated-background.md for details
+- Minimap v1 (full reveal for now):
+  - 1/10th scale
+  - Shows unit dots and viewport rectangle.
 
 ### Acceptance Criteria
 
-- `Move` respects cooldown; invalid targets rejected with clear reasons; replace semantics still preempt.
+- Panning does not break click targeting (move/selection still land in correct world coordinates).
+- Background is identical for all clients at the same world coordinates.
+- Minimap tracks camera position correctly.
 
 ---
 
-## M6: Reservations and Basic Resources (v1)
+## M6: Player Ownership + Spawn + Control Gating
 
 ### Goals
 
-- Simple resource ledger + reservation/escrow; example ability “Dash” that consumes resource and has cast time.
+- Introduce **player ownership** for entities.
+- Ensure players spawn with a minimal owned set and can only command what they own.
 
 ### Deliverables
 
-- Escrow keyed by `intent_id`; refund rules on cancel; progress tracking for cast/channel.
-- Client queue behavior for “cast time” intents: show progress; allow `REPLACE_ACTIVE` to cancel and refund.
+- Schema/content:
+  - `owner_player_id` (or equivalent) on entities; support `neutral` ownership for resources.
+- Server:
+  - Spawn rules on join: each player receives starting entities at a spawn point.
+  - Validation: reject intents targeting entities not owned by the issuing player.
+- Client:
+  - Selection/command UI only operates on owned units.
+  - Owned-vs-nonowned visuals (simple outline tint is fine).
 
 ### Acceptance Criteria
 
-- Double-spend prevention proven with two players racing; refunds verified on cancel paths.
+- With two clients connected, each can only issue commands for their own units; server rejects cross-control deterministically.
+- Reconnect continues to reconcile ownership-correct active intents.
 
 ---
 
-## M7: Server-Side Scripting (Lua) Pilot — Guardrails First
+## M7: Resource Ledger + Resource HUD
 
 ### Goals
 
-- Sandboxed Lua for one ability (e.g., `Dash`): `canExecute` and `onTick`.
+- Add the authoritative numbers layer needed for gathering and production.
+- Make resources visible in the UI early to support later milestones.
 
 ### Deliverables
 
-- Deterministic RNG seeded by `match_id`; CPU/memory quotas (instruction step + wall-clock).
-- `SCRIPT_ERROR` unwinds reservations and active intent safely; client receives clear failure reason.
+- Server:
+  - Per-player resource ledger (authoritative).
+  - Deltas/events for resource changes keyed by `player_id`.
+- Client:
+  - HUD component that shows current resources and updates live.
+  - Resource state is pinned to `{protocol_version, content_version}` like other state.
 
 ### Acceptance Criteria
 
-- Scripted `Dash` runs deterministically across replays; failures do not corrupt state.
+- Resource totals in the HUD match server state across reconnect and replay.
+- Ledger updates remain deterministic (golden hash unchanged under replay).
 
 ---
 
-## M8: Ability Library and Versioning (Match-Pinned)
+## M8: Resource Nodes + Gathering Loop + Refinery Deposit
 
 ### Goals
 
-- Match-scoped mapping `ability_id -> current_version`; version-aware dispatch; echo `ability_id@version_used`.
+- Deliver a full economy loop: gather → carry → deposit → repeat.
+- Introduce a **maintained/continuous behavior** intent pattern (without scripting).
 
 ### Deliverables
 
-- VM/module cache keyed by version; upgrade affects **new** intent executions only.
-- Client persists queued intents with `{ability_id, desired_version?}` or “server decides”, plus UX warning if queue was built under older content.
+- Entities:
+  - Resource node entity with remaining amount (finite or infinite for v1).
+  - Refinery building entity (owned, static).
+  - Worker unit with carry capacity.
+- Server (simulation rules):
+  - Gather behavior:
+    - Move into gather range.
+    - Gather ticks until carry is full or node is empty.
+    - Auto-travel to **nearest owned refinery**; deposit; return to node; repeat.
+  - Interruption:
+    - `REPLACE_ACTIVE` cancels gathering immediately and the worker obeys the new command.
+- Client:
+  - Basic feedback: gathering state indicator; node/refinery icons; minimap icons.
 
 ### Acceptance Criteria
 
-- Upgrading an ability toggles behavior for new intents; in-flight intent keeps prior version, verified in replay.
+- A worker can be redirected mid-loop and immediately stops the old behavior.
+- Two players gathering from the same node behaves deterministically (tie rules documented).
 
 ---
 
-## M9: Long-Running Match Evolution (Maintenance Tick) — Adjusted for Client Queues
+## M9: Unit Production (Costs, Build Time, Spawn)
 
 ### Goals
 
-- Maintenance tick concept; simulate content pack upgrade and reconcile client-queued intents.
+- Convert resources into new units over time.
+- Provide a second, demo-friendly economic loop: gather → build → rally.
 
 ### Deliverables
 
-- Server publishes a “maintenance/upgrade notice” including `{content_version_old -> new, effective_tick}`.
-- Client-side migration rules for **queued (not-yet-sent) intents**:
-  - drop incompatible,
-  - rewrite targets where possible,
-  - or prompt user / mark as “needs review.”
-- Server-side policy for **active** intents during upgrade (finish current, cancel, or migrate).
+- Server:
+  - Production ability on a building (refinery or separate producer building).
+  - Resource costs applied deterministically (pay upfront or reserve; rules documented).
+  - Build timer; unit spawns on completion at a spawn offset / rally point.
+  - Cancel rules (refund policy documented).
+- Client:
+  - Build UI (simple buttons) + production progress indicator.
+  - Optional: client maintains a **local build queue** (UX) while server remains active-only.
 
 ### Acceptance Criteria
 
-- Demo shows upgrade: active intent handled per policy; client queue is migrated/trimmed and continues to execute.
+- Replays reproduce identical unit spawn timing and positions.
+- Cancel/refund behavior is deterministic and visible in HUD.
 
 ---
 
-## M10: Observability and Replay v1 — Deepen the Seeds (Queue Metrics Shift)
+## M10: Combat v1 — Attack Target / Attack-Move + Ranged Projectiles
 
 ### Goals
 
-- Structured logs for lifecycle/script errors; metrics for acceptance/reject rates and preemption.
-- Replay replays the **client→server intent stream** tied to a `{protocol_version, content_version}` with golden runs in CI.
+- Introduce maintained combat behaviors with clear interruption semantics.
+- Add projectile visuals/events for ranged attacks.
 
 ### Deliverables
 
-- Log schema; metrics export; `replay:from-stream` tooling.
-- Metrics include:
-  - server: active intents, cancels, rejects, dedupe hits
-  - client (optional telemetry): local queue lengths and drop reasons
+- Server:
+  - Health, damage, and death/despawn.
+  - Attack behavior:
+    - Acquire/maintain target.
+    - Move into attack range.
+    - Attack at fixed cadence.
+    - Pursue if target moves out of range (if allowed by unit).
+    - Stop on interruption, target death, or attacker death.
+  - Projectile event stream (visual-only is OK): emit “shot fired” events with positions and tick.
+- Client:
+  - Show projectiles (missile/bullet/laser style).
+  - Hit feedback and health bars.
 
 ### Acceptance Criteria
 
-- Replays produce identical outcomes across runs with same `{content_version, protocol_version}`; CI golden job passes.
+- `REPLACE_ACTIVE` immediately interrupts attack; server emits clear lifecycle reason.
+- Combat outcomes are deterministic under replay (including projectile events if derived from sim ticks).
 
 ---
 
-# Unaccounted for Future Requirements
+## M11: AoE + Periodic Effects (Distance Falloff)
 
-- Scrollable client side map
-- Client-side mini map
-- Client-side component to show current resources
-- Ability for some units to build other units, building takes time and resources. 
-- Attack invariants -- when units are assigned to a attack a unit, they approach until within attack range, attack and continue attacking at some frequency until either the attack is interrupted by the player (e.g., the player creates a new intent), the attacked unit is destroyed or moves out of range, the attacking unit is destroyed. If the attacked unit moves out of range, the attacking unit will continue to pursue if it is able to. Some units do ranged attack and clients show an missle, bullet, or laser-type thing to indicate the attack happened.
-- Area of effect damage -- some units do area of effect damage around them at some frequency, damage can fall off with the square of the distance (e.g., radiation)
-- Resource gathering -- some entities have a resource that can be gathered by other entities. Entities need to be within range to gather. When they have as much as they can carry, entities will automatically travel back to the nearest resource refinement center belonging to that player, dump off their resources, and travel back to within range of the resource to begin collecting again.
-- procedurally generated background that is generated using world coordinates so it is consistent in the same place across all clients
-- Player ownership of units -- players spawn with a minimal set of units that only they control, and they have to collect resources and build more units
-- Computationally and network 'cheap' implementation of fog-of-war so players can only see things near their units
+### Goals
+
+- Support area damage patterns (e.g., radiation aura) with distance-based falloff.
+- Keep computation/networking cheap and deterministic.
+
+### Deliverables
+
+- Server:
+  - AoE source component/system:
+    - Applies damage periodically to entities in radius.
+    - Falloff by distance (e.g., inverse-square or a simple squared-distance curve).
+  - Clear stacking rule for overlapping AoEs (additive or max—document it).
+- Client:
+  - Optional radius visualization for debugging and tuning.
+
+### Acceptance Criteria
+
+- Overlapping AoEs produce predictable results (documented stacking/order).
+- Replay produces identical world hash.
+
+---
+
+## M12: Fog-of-War v1 (Cheap + Network-Friendly)
+
+### Goals
+
+- Prevent players from seeing everything while keeping CPU/bandwidth reasonable.
+- Integrate fog with minimap and selection.
+
+### Deliverables
+
+- Server:
+  - Visibility radius per unit type (from content defs).
+  - Per-player visible set computed on a configurable cadence (every tick or every N ticks).
+  - Delta filtering:
+    - Entities outside visibility omitted or reduced to “last-known” (choose and document).
+- Client:
+  - Fog rendering:
+    - Unexplored = hidden
+    - Explored but not visible = darkened (optional in v1; OK to do visible-only first)
+  - Minimap integrates fog/visibility.
+
+### Acceptance Criteria
+
+- A client cannot infer unseen enemy unit positions from deltas beyond what rules explicitly allow.
+- Bandwidth scales with visible entities rather than total world size in basic tests.
+
+---
 
 # Invariants
 
@@ -381,6 +462,7 @@ message IntentEnvelope {
 - **Latency budgets (dev/LAN):** Submit → first referenced delta ≤ 50ms p50 / 150ms p95.
 - **Backpressure:** Define behavior when server is overloaded (`max_cmds_per_tick`, batch ms, reject reasons) and surface it in UI & logs.
 - **Client queue persistence:** Client queues survive refresh/restart; reconnect handshake prevents duplicates/skips.
+- **Visibility (post-M12):** A player’s client must not receive state for unseen enemy entities except what the rules explicitly allow (e.g., last-known ghosts if implemented).
 - **Persistence:** On server restart, recover from latest snapshot + input stream offset at minimum.
 
 ---
@@ -390,11 +472,14 @@ message IntentEnvelope {
 - M0 gameplay → M0.1 guardrails (lifecycle/IDs/ticks/replay/latency).
 - **M1 implements client queues + server active-only execution**, with replace preemption.
 - M2 hardens ordering/idempotency and makes reconnect bulletproof.
-- M3 (movement polish) is small and improves the existing demo immediately.
-- Pathfinding is deferred until obstacles/terrain exist (likely after M5 or M6).
-- M4–M6 expand entities/abilities/resources without assuming server-side FIFO.
-- M7–M9 add scripting and version/evolution controls, with explicit client-queue migration.
-- M10 formalizes observability/replay already seeded in M0.1 and exercised along the way.
+- M3 (movement polish) improves the existing demo immediately; pathfinding remains deferred until obstacles/terrain exist.
+- M4 introduces content pinning and deterministic content hashing.
+- M5 improves client world navigation (camera/minimap/background) to support all later demos.
+- M6 establishes ownership/spawn/control gating.
+- M7 adds the resource ledger + HUD.
+- M8–M9 deliver the economy loop (gather → deposit → build).
+- M10–M11 deliver combat (targeted + AoE).
+- M12 adds fog-of-war and per-player visibility filtering.
 
 ---
 
