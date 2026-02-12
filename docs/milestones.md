@@ -285,12 +285,13 @@ See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
   - Validation: reject intents targeting entities not owned by the issuing player.
 - Client:
   - Selection/command UI only operates on owned units.
-  - Owned-vs-nonowned visuals (simple outline tint is fine).
+  - Owned-vs-nonowned visuals (simple outline tint is fine). Player and other player units appear as different colors on the minimap.
 
 ### Acceptance Criteria
 
 - With two clients connected, each can only issue commands for their own units; server rejects cross-control deterministically.
 - Reconnect continues to reconcile ownership-correct active intents.
+- Cannot issue intents, actions, abilities, etc on entities the player does not own
 
 ---
 
