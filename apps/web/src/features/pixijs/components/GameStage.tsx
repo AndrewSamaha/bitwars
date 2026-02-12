@@ -5,10 +5,33 @@ import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
 import { game } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
+import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
+import {
+  CELL_SIZE,
+  SEED,
+  SAMPLE_SPACING,
+  EDGE_THRESHOLD_SQ,
+  BORDER_COLOR,
+  getVoronoiDistancesAt,
+  getViewportWorldAABB,
+} from "@/features/pixijs/utils/proceduralBackground";
+
+/** World units per second when panning with WASD / arrows */
+const PAN_SPEED = 400;
+
+const PAN_KEYS = new Set([
+  "KeyW", "KeyA", "KeyS", "KeyD",
+  "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+]);
+
+function isFocusInEditable(): boolean {
+  const el = document.activeElement;
+  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+}
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
@@ -17,6 +40,8 @@ export default function GameStage() {
   // Keep latest selectors in a ref so event handlers see current selection/action
   const latestSelectorsRef = useRef(selectors);
   useEffect(() => { latestSelectorsRef.current = selectors; }, [selectors]);
+  // M5.1: Pan keys currently held (KeyW, KeyA, ...); ticker reads this and applies pan
+  const panKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     // Observe readiness until the first snapshot is applied
@@ -52,15 +77,104 @@ export default function GameStage() {
             resolution: devicePixelRatio
         });
         setApp(app);
-        setCamera(app.stage);
-
         ref.current!.appendChild(app.canvas);
 
-        // Pixi scene graph root for world
+        // Pixi scene graph root for world (M5.1: this is the camera — we pan by updating its position)
         const worldContainer = new Container();
         worldContainer.position.set(800, 500);
         worldContainer.scale.set(.5);
         app.stage.addChild(worldContainer);
+        setCamera(worldContainer);
+
+        // M5.2: Voronoi border overlay in screen space (sample grid → edge test → draw dots)
+        const voronoiBorderGraphics = new Graphics();
+        (voronoiBorderGraphics as any).label = "voronoiBorders";
+        voronoiBorderGraphics.eventMode = "none";
+        app.stage.addChild(voronoiBorderGraphics);
+
+        let lastVoronoiUpdate = -1000;
+        let lastCamX = worldContainer.position.x;
+        let lastCamY = worldContainer.position.y;
+        const VORONOI_UPDATE_INTERVAL_MS = 100;
+        const VORONOI_CAMERA_MOVE_THRESHOLD = 25;
+        const BORDER_DOT_SIZE = 2;
+
+        function updateVoronoiBorders() {
+          voronoiBorderGraphics.clear();
+          const w = app.screen.width;
+          const h = app.screen.height;
+          for (let sy = 0; sy <= h; sy += SAMPLE_SPACING) {
+            for (let sx = 0; sx <= w; sx += SAMPLE_SPACING) {
+              const pWorld = worldContainer.toLocal({ x: sx, y: sy });
+              const { d1Sq, d2Sq } = getVoronoiDistancesAt(pWorld.x, pWorld.y, CELL_SIZE, SEED);
+              const edge = d2Sq - d1Sq;
+              if (edge < EDGE_THRESHOLD_SQ) {
+                voronoiBorderGraphics
+                  .rect(sx, sy, BORDER_DOT_SIZE, BORDER_DOT_SIZE)
+                  .fill({ color: BORDER_COLOR });
+              }
+            }
+          }
+        }
+
+        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, bottom-right
+        // 200 px → 20_000 world units ⇒ 1 minimap pixel = 100 world units
+        const MINIMAP_HALF_EXTENT = 10_000;
+        const MINIMAP_SIZE_PX = 200;
+        const MINIMAP_MARGIN = 10;
+        const MINIMAP_UNIT_DOT_RADIUS = 2;
+        const minimapGraphics = new Graphics();
+        (minimapGraphics as any).label = "minimap";
+        minimapGraphics.eventMode = "none";
+        const minimapContainer = new Container();
+        (minimapContainer as any).label = "minimapContainer";
+        minimapContainer.addChild(minimapGraphics);
+        app.stage.addChild(minimapContainer);
+
+        function worldToMinimapPx(
+          wx: number,
+          wy: number,
+          centerX: number,
+          centerY: number,
+        ): { px: number; py: number } {
+          const range = MINIMAP_HALF_EXTENT * 2;
+          const px = ((wx - centerX + MINIMAP_HALF_EXTENT) / range) * MINIMAP_SIZE_PX;
+          const py = ((wy - centerY + MINIMAP_HALF_EXTENT) / range) * MINIMAP_SIZE_PX;
+          return { px, py };
+        }
+
+        function updateMinimap() {
+          const centerWorld = worldContainer.toLocal({
+            x: app.screen.width / 2,
+            y: app.screen.height / 2,
+          });
+          minimapContainer.position.set(
+            app.screen.width - MINIMAP_SIZE_PX - MINIMAP_MARGIN,
+            app.screen.height - MINIMAP_SIZE_PX - MINIMAP_MARGIN,
+          );
+          minimapGraphics.clear();
+          // Background
+          minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).fill({ color: 0x0a_0c_10, alpha: 0.9 });
+          minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).stroke({ width: 1, color: 0x3a_3e_4a });
+          // Viewport rect (visible world AABB)
+          const viewportAabb = getViewportWorldAABB(worldContainer, app.screen.width, app.screen.height, 0);
+          const vmin = worldToMinimapPx(viewportAabb.minX, viewportAabb.minY, centerWorld.x, centerWorld.y);
+          const vmax = worldToMinimapPx(viewportAabb.maxX, viewportAabb.maxY, centerWorld.x, centerWorld.y);
+          const vx = Math.max(0, Math.min(vmin.px, MINIMAP_SIZE_PX - 1));
+          const vy = Math.max(0, Math.min(vmin.py, MINIMAP_SIZE_PX - 1));
+          const vw = Math.max(1, Math.min(vmax.px - vmin.px, MINIMAP_SIZE_PX - vx));
+          const vh = Math.max(1, Math.min(vmax.py - vmin.py, MINIMAP_SIZE_PX - vy));
+          minimapGraphics.rect(vx, vy, vw, vh).stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
+          // Unit dots
+          for (const e of game.world.with("pos", "id")) {
+            const pos = (e as { pos: { x: number; y: number } }).pos;
+            const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
+            if (px >= 0 && px <= MINIMAP_SIZE_PX && py >= 0 && py <= MINIMAP_SIZE_PX) {
+              minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color: 0x88_cc_ff });
+            }
+          }
+        }
+
         // Ground capture for clicks (very large transparent rect)
         const ground = new Graphics();
         (ground as any).label = 'ground';
@@ -73,16 +187,27 @@ export default function GameStage() {
         (waypointContainer as any).label = 'waypoints';
         worldContainer.addChild(waypointContainer);
 
-        // Keyboard: M to set Move, Escape to clear (reads latest selectors via ref)
+        // Keyboard: M to set Move, Escape to clear; WASD/arrows to pan (M5.1)
         const onKeyDown = (ev: KeyboardEvent) => {
           const sel = latestSelectorsRef.current;
           if (ev.key === 'm' || ev.key === 'M') {
             if (sel.hasSelection) setSelectedAction('Move');
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
+          } else if (PAN_KEYS.has(ev.code)) {
+            if (!isFocusInEditable()) {
+              panKeysRef.current.add(ev.code);
+              ev.preventDefault();
+            }
+          }
+        };
+        const onKeyUp = (ev: KeyboardEvent) => {
+          if (PAN_KEYS.has(ev.code)) {
+            panKeysRef.current.delete(ev.code);
           }
         };
         window.addEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
 
         // M4: Texture cache by entity_type_id. Path: /assets/${entity_type_id}/idle.png
         // Preload all entity types from content pack (build-time list from entities.yaml)
@@ -286,9 +411,44 @@ export default function GameStage() {
           }
         });
 
-        app.ticker.add(() => {
+        app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
             if (!game.ready) return;
+            // M5.1: Apply camera pan from WASD/arrows (delta-time so speed is frame-rate independent)
+            const keys = panKeysRef.current;
+            if (keys.size > 0) {
+              let dx = 0;
+              let dy = 0;
+              if (keys.has("KeyA") || keys.has("ArrowLeft")) dx += 1;
+              if (keys.has("KeyD") || keys.has("ArrowRight")) dx -= 1;
+              if (keys.has("KeyW") || keys.has("ArrowUp")) dy += 1;
+              if (keys.has("KeyS") || keys.has("ArrowDown")) dy -= 1;
+              if (dx !== 0 || dy !== 0) {
+                const len = Math.hypot(dx, dy);
+                const norm = len > 0 ? 1 / len : 1;
+                const dt = ticker.deltaMS / 1000;
+                worldContainer.position.x += (dx * norm * PAN_SPEED * dt);
+                worldContainer.position.y += (dy * norm * PAN_SPEED * dt);
+              }
+            }
+            // M5.2: Update Voronoi border overlay when throttled (interval or camera moved)
+            const now = performance.now();
+            const camX = worldContainer.position.x;
+            const camY = worldContainer.position.y;
+            if (
+              now - lastVoronoiUpdate > VORONOI_UPDATE_INTERVAL_MS ||
+              Math.abs(camX - lastCamX) > VORONOI_CAMERA_MOVE_THRESHOLD ||
+              Math.abs(camY - lastCamY) > VORONOI_CAMERA_MOVE_THRESHOLD
+            ) {
+              updateVoronoiBorders();
+              lastVoronoiUpdate = now;
+              lastCamX = camX;
+              lastCamY = camY;
+            }
+
+            // M5.3: Minimap (viewport rect + unit dots)
+            updateMinimap();
+
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             render();
@@ -296,7 +456,8 @@ export default function GameStage() {
 
         return () => {
           app.destroy(true, { children: true, texture: false });
-          window.removeEventListener('keydown', onKeyDown);
+          window.removeEventListener("keydown", onKeyDown);
+          window.removeEventListener("keyup", onKeyUp);
         };
     }
     let cleanup: (() => void) | undefined;
@@ -319,6 +480,7 @@ export default function GameStage() {
       {/* Canvas mount point */}
       <div ref={ref} className="absolute inset-0" />
       {ready && <TooltipOverlay />}
+      {ready && <CoordsOverlay />}
       {/* Overlay loading indicator while world is not ready */}
       {!ready && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/40">
