@@ -24,6 +24,7 @@ mod tests {
             pos: Some(v),
             vel: None,
             force: None,
+            owner_player_id: String::new(),
         };
     }
 }

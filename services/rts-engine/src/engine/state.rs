@@ -19,10 +19,8 @@ pub struct GameState {
 
 /// Initialise the game world.
 ///
-/// When `spawn_config` is present and valid for the number of players, uses onPlayerSpawn-style
-/// flow: for each player slot, spawns that player's loadout at their spawn point and optional
-/// server-owned neutrals nearby. Otherwise falls back to legacy spawn_manifest round-robin or
-/// num_entities untyped entities.
+/// When `spawn_config` is present and valid, no player entities are spawned at init (spawn on join).
+/// Otherwise falls back to legacy spawn_manifest round-robin or num_entities untyped entities.
 fn owner_for_index(player_ids: &[String], entity_index: usize) -> String {
     if player_ids.is_empty() {
         return String::new();
@@ -32,7 +30,7 @@ fn owner_for_index(player_ids: &[String], entity_index: usize) -> String {
 
 /// Spawns all entities for one player at their spawn location (player-owned units + optional neutrals nearby).
 /// Returns the next free entity id after spawning.
-fn on_player_spawn(
+pub fn on_player_spawn(
     entities: &mut Vec<Entity>,
     next_id: u64,
     player_id: &str,
@@ -40,7 +38,7 @@ fn on_player_spawn(
     spawn_y: f32,
     loadout: &Loadout,
     neutrals_near_spawn: &[NeutralNearSpawn],
-    rng: &mut rand::rngs::StdRng,
+    rng: &mut impl rand::Rng,
 ) -> u64 {
     let mut id = next_id;
 
@@ -95,28 +93,15 @@ pub fn init_world(
 ) -> GameState {
     let mut entities = Vec::new();
     let mut next_id: u64 = 1;
-    let num_players = cfg.player_ids.len();
 
+    // M6: With spawn config, do not spawn any player entities at match start; they spawn on join.
     if let Some(sc) = spawn_config {
-        if sc.is_valid_for_players(num_players) && content.is_some() {
-            for slot in 0..num_players {
-                let player_id = &cfg.player_ids[slot];
-                let point = &sc.spawn_points[slot];
-                let loadout = &sc.loadouts[slot];
-                next_id = on_player_spawn(
-                    &mut entities,
-                    next_id,
-                    player_id,
-                    point.x(),
-                    point.y(),
-                    loadout,
-                    &sc.neutrals_near_spawn,
-                    rng,
-                );
-            }
+        if sc.is_valid() && content.is_some() {
             return GameState { tick: 0, entities };
         }
     }
+
+    let _num_players = cfg.player_ids.len();
 
     // Legacy: spawn_manifest with round-robin ownership
     let mut entity_index: usize = 0;

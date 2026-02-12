@@ -1,20 +1,26 @@
-# Spawn config: per-player spawn points and loadouts.
-# Set SPAWN_CONFIG_PATH to this file (or your own) to use onPlayerSpawn-style spawning.
+# Spawn config: spawn on join + random loadout.
+# Set SPAWN_CONFIG_PATH to this file. No player entities spawn at match start;
+# when a player joins (first stream connect), the engine assigns one spawn point
+# and one loadout chosen at random from the loadouts list.
 #
-# spawn_points: one [x, y] or { x, y } per player slot (same order as player_ids in engine config).
-# loadouts: one map per slot; keys are entity_type_id (from content pack), values are count.
-# neutrals_near_spawn: optional server-owned entities spawned near each player's spawn.
+# game_origin: [x, y] center of world (default [0, 0]); used for procedural spawn if spawn_points is empty.
+# max_distance_from_origin: max distance for procedural spawn (default 10000).
+# spawn_points: list of [x, y]; one is assigned per joining player in order. If empty, positions are random within max_distance_from_origin.
+# loadouts: list of loadout options; each player gets one chosen at random.
+# neutrals_near_spawn: optional server-owned entities near each player's spawn.
+
+# game_origin: [0, 0]   # optional, default
+# max_distance_from_origin: 10000   # optional, default
 
 spawn_points:
-  - [800, 0]    # player 1
-  - [-800, 0]   # player 2
+  - [800, 0]
+  - [-800, 0]
 
+# Pool of loadouts; one is picked at random per player on join
 loadouts:
-  # Slot 0: 2 workers, 1 scout, 1 habitat
   - worker: 2
     scout: 1
     habitat: 1
-  # Slot 1: 1 factory, 3 workers, 1 processor
   - factory: 1
     worker: 3
     processor: 1

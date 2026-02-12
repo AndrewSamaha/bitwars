@@ -8,6 +8,7 @@ fn main() {
         pos: Some(v.clone()),
         vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
         force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+        owner_player_id: String::new(),
     };
     let s = pb::Snapshot {
         tick: 0,

@@ -4,6 +4,8 @@ import { createSseChannel } from "@/lib/db/utils/sse-channel";
 import { bootstrapAndCatchUp } from "@/lib/db/utils/bootstrap";
 import { emitEventFromBuffer } from "@/lib/db/utils/delta";
 import { logger, withAxiom } from "@/lib/axiom/server";
+import { requireAuthOr401 } from "@/features/users/utils/auth";
+import { redis } from "@/lib/db/connection";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,6 +30,19 @@ export const GET = withAxiom(async (req: Request) => {
   const channel = createSseChannel({ heartbeatMs: HEARTBEAT_INTERVAL_MS, log });
 
   logger.info("v2/stream:init", { GAME_ID, sid, sinceParam, lastEventId });
+
+  // M6: On first stream connect for an authenticated player, enqueue them for spawn (once per match).
+  const { auth } = await requireAuthOr401();
+  const playerId = auth?.playerId as string | undefined;
+  if (playerId) {
+    const joinRequestedKey = `rts:match:${GAME_ID}:join_requested`;
+    const pendingJoinsKey = `rts:match:${GAME_ID}:pending_joins`;
+    const added = await redis.sadd(joinRequestedKey, playerId);
+    if (added === 1) {
+      await redis.rpush(pendingJoinsKey, playerId);
+      logger.info("v2/stream:join_enqueued", { GAME_ID, playerId });
+    }
+  }
 
   const end = async () => {
     await channel.close();
