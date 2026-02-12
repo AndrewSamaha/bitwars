@@ -38,6 +38,9 @@ pub struct GameConfig {
     /// Used by `init_world` when a content pack is loaded.  When empty,
     /// falls back to `num_entities` untyped entities.
     pub spawn_manifest: Vec<(String, usize)>,
+    /// M6: Player IDs for ownership assignment. Entities are assigned in round-robin
+    /// (entity 0 -> player_ids[0], 1 -> player_ids[1], ...). Empty = no ownership.
+    pub player_ids: Vec<String>,
 }
 
 impl Default for GameConfig {
@@ -71,6 +74,7 @@ impl Default for GameConfig {
                 ("habitat".into(), 1),
                 ("processor".into(), 1)
             ],
+            player_ids: vec!["player-1".into(), "player-2".into()],
         }
     }
 }

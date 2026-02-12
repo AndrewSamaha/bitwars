@@ -15,6 +15,14 @@ pub struct GameState {
 /// If the config has a non-empty `spawn_manifest` and a content pack is
 /// provided, entities are spawned with their `entity_type_id` set.
 /// Otherwise falls back to `num_entities` untyped entities.
+/// M6: Resolve owner for entity at given index (round-robin over player_ids).
+fn owner_for_index(player_ids: &[String], entity_index: usize) -> String {
+    if player_ids.is_empty() {
+        return String::new();
+    }
+    player_ids[entity_index % player_ids.len()].clone()
+}
+
 pub fn init_world(
     cfg: &GameConfig,
     content: Option<&ContentPack>,
@@ -22,10 +30,12 @@ pub fn init_world(
 ) -> GameState {
     let mut entities = Vec::new();
     let mut next_id: u64 = 1;
+    let mut entity_index: usize = 0;
 
     if !cfg.spawn_manifest.is_empty() && content.is_some() {
         for (type_id, count) in &cfg.spawn_manifest {
             for _ in 0..*count {
+                let owner = owner_for_index(&cfg.player_ids, entity_index);
                 entities.push(Entity {
                     id: next_id,
                     entity_type_id: type_id.clone(),
@@ -35,13 +45,16 @@ pub fn init_world(
                     }),
                     vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                     force: Some(Vec2 { x: 0.0, y: 0.0 }),
+                    owner_player_id: owner,
                 });
                 next_id += 1;
+                entity_index += 1;
             }
         }
     } else {
         // Legacy fallback: num_entities untyped entities
         for id in 1..=cfg.num_entities as u64 {
+            let owner = owner_for_index(&cfg.player_ids, entity_index);
             entities.push(Entity {
                 id,
                 entity_type_id: String::new(),
@@ -51,7 +64,9 @@ pub fn init_world(
                 }),
                 vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(Vec2 { x: 0.0, y: 0.0 }),
+                owner_player_id: owner,
             });
+            entity_index += 1;
         }
     }
 

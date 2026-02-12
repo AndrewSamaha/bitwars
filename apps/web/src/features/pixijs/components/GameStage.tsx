@@ -7,6 +7,7 @@ import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
+import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
@@ -23,6 +24,13 @@ import {
 /** World units per second when panning with WASD / arrows */
 const PAN_SPEED = 400;
 
+/** M6: Tint for entities not owned by the current player */
+const NON_OWNED_TINT = 0x66_66_66;
+/** M6: Minimap dot colors by ownership */
+const MINIMAP_MY_COLOR = 0x44_aa_ff;
+const MINIMAP_OTHER_COLOR = 0xee_66_44;
+const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
+
 const PAN_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
@@ -36,10 +44,14 @@ function isFocusInEditable(): boolean {
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState<boolean>(game.ready);
+  const { player } = usePlayer();
   const { actions: { setHovered, setApp, setCamera, setSelection, setSelectedAction }, selectors } = useHUD();
   // Keep latest selectors in a ref so event handlers see current selection/action
   const latestSelectorsRef = useRef(selectors);
   useEffect(() => { latestSelectorsRef.current = selectors; }, [selectors]);
+  // M6: Current player id for ownership gating and visuals (ref so initWorld closure sees latest)
+  const myPlayerIdRef = useRef<string | null>(null);
+  myPlayerIdRef.current = player?.id ?? null;
   // M5.1: Pan keys currently held (KeyW, KeyA, ...); ticker reads this and applies pan
   const panKeysRef = useRef<Set<string>>(new Set());
 
@@ -165,12 +177,18 @@ export default function GameStage() {
           const vw = Math.max(1, Math.min(vmax.px - vmin.px, MINIMAP_SIZE_PX - vx));
           const vh = Math.max(1, Math.min(vmax.py - vmin.py, MINIMAP_SIZE_PX - vy));
           minimapGraphics.rect(vx, vy, vw, vh).stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
-          // Unit dots
+          // Unit dots (M6: color by ownership — my / other / neutral)
+          const myId = myPlayerIdRef.current;
           for (const e of game.world.with("pos", "id")) {
             const pos = (e as { pos: { x: number; y: number } }).pos;
+            const ownerId = (e as { owner_player_id?: string }).owner_player_id;
+            let color = MINIMAP_NEUTRAL_COLOR;
+            if (ownerId !== undefined && ownerId !== "" && ownerId !== "neutral") {
+              color = myId != null && ownerId === myId ? MINIMAP_MY_COLOR : MINIMAP_OTHER_COLOR;
+            }
             const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
             if (px >= 0 && px <= MINIMAP_SIZE_PX && py >= 0 && py <= MINIMAP_SIZE_PX) {
-              minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color: 0x88_cc_ff });
+              minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
             }
           }
         }
@@ -257,7 +275,11 @@ export default function GameStage() {
                 setHovered(null);
               })
               .on('pointerdown', (ev: any) => {
-                // Select this entity on click
+                // M6: Only select entities owned by the current player
+                const myId = myPlayerIdRef.current;
+                const ownerId = (e as any).owner_player_id;
+                const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
+                if (!isOwned) return;
                 const id = (e as any).id;
                 if (id !== undefined && id !== null) {
                   setSelection([String(id)]);
@@ -298,21 +320,24 @@ export default function GameStage() {
               }
             }
 
-            // 3) Project ECS hover state to Pixi (proto only)
+            // 3) Project ECS hover state + M6 ownership tint to Pixi (proto only)
             // First child is primary sprite
             const primary = container.children.find((c) => c instanceof Sprite) as Sprite | undefined;
+            const myId = myPlayerIdRef.current;
+            const ownerId = (e as any).owner_player_id;
+            const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
+            const baseTint = isOwned ? CLEAN_COLOR : NON_OWNED_TINT;
             if ((e as any).hover) {
-              if (primary) (primary as any).tint = SELECTED_COLOR;
-              // ensure a hover indicator exists as a child after sprite
+              if (primary) (primary as any).tint = isOwned ? SELECTED_COLOR : NON_OWNED_TINT;
+              // ensure a hover indicator exists as a child after sprite (only for owned so we don't highlight enemy)
               let hoverIndicator = container.children.find((c) => c.label === 'hoverIndicator') as Graphics | undefined;
-              if (!hoverIndicator) {
+              if (isOwned && !hoverIndicator) {
                 hoverIndicator = createHoverIndicator();
                 container.addChild(hoverIndicator);
               }
               setHovered(e);
-              
             } else {
-              if (primary) (primary as any).tint = CLEAN_COLOR;
+              if (primary) (primary as any).tint = baseTint;
               // remove hover indicator if present
               const existing = container.children.find((c) => c.label === 'hoverIndicator');
               if (existing) existing.parent?.removeChild(existing);

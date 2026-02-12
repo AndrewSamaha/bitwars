@@ -31,6 +31,7 @@ enum LifecycleReason {
   INVALID_TARGET = 5;
   PROTOCOL_MISMATCH = 6;
   ENTITY_BUSY = 7;
+  NOT_OWNED = 8;  // M6: entity not owned by issuing player
 }
 
 // Represents an in-flight destination for an entity (server-side).

@@ -7,8 +7,9 @@ import "entity.proto";
 // Sparse delta: only include fields that changed meaningfully.
 // proto3 'optional' yields Option<T> in Rust (prost) and presence in TS.
 message EntityDelta {
-  uint64 id      = 1;
-  optional Vec2 pos = 2;
-  optional Vec2 vel = 3;
-  optional Vec2 force = 4;
+  uint64 id                  = 1;
+  optional Vec2 pos          = 2;
+  optional Vec2 vel          = 3;
+  optional Vec2 force        = 4;
+  optional string owner_player_id = 5;  // M6: set when ownership changes
 }

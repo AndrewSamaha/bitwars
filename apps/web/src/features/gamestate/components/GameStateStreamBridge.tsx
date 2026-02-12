@@ -15,6 +15,7 @@ type SnapshotPayload = {
   entities: Array<{
     id: number | string;
     entity_type_id?: string;
+    owner_player_id?: string;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -27,6 +28,7 @@ type DeltaPayload = {
   updates: Array<{
     id: number | string;
     entity_type_id?: string;
+    owner_player_id?: string;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -72,6 +74,7 @@ export default function GameStateStreamBridge() {
         const ent: Entity = {
           id: s.id,
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
+          ...(s.owner_player_id !== undefined ? { owner_player_id: s.owner_player_id } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
           // force exists but is currently unused by systems
@@ -102,6 +105,7 @@ export default function GameStateStreamBridge() {
             if (!existing.vel) existing.vel = { x: u.vel.x, y: u.vel.y };
             else { existing.vel.x = u.vel.x; existing.vel.y = u.vel.y; }
           }
+          if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
           existingEntities++;
           // force currently ignored; add when systems need it
         } else {
@@ -109,6 +113,7 @@ export default function GameStateStreamBridge() {
           const ent: Entity = {
             id: u.id,
             ...(u.entity_type_id ? { entity_type_id: u.entity_type_id } : {}),
+            ...(u.owner_player_id !== undefined ? { owner_player_id: u.owner_player_id } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
           };

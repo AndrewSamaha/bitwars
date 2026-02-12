@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity.proto.
  */
 export const file_entity: GenFile = /*@__PURE__*/
-  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMiggEKBkVudGl0eRIKCgJpZBgBIAEoBBIWCg5lbnRpdHlfdHlwZV9pZBgCIAEoCRIaCgNwb3MYAyABKAsyDS5iaXR3YXJzLlZlYzISGgoDdmVsGAQgASgLMg0uYml0d2Fycy5WZWMyEhwKBWZvcmNlGAUgASgLMg0uYml0d2Fycy5WZWMyYgZwcm90bzM", [file_vec2]);
+  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMimwEKBkVudGl0eRIKCgJpZBgBIAEoBBIWCg5lbnRpdHlfdHlwZV9pZBgCIAEoCRIaCgNwb3MYAyABKAsyDS5iaXR3YXJzLlZlYzISGgoDdmVsGAQgASgLMg0uYml0d2Fycy5WZWMyEhwKBWZvcmNlGAUgASgLMg0uYml0d2Fycy5WZWMyEhcKD293bmVyX3BsYXllcl9pZBgGIAEoCWIGcHJvdG8z", [file_vec2]);
 
 /**
  * @generated from message bitwars.Entity
@@ -42,6 +42,13 @@ export type Entity = Message<"bitwars.Entity"> & {
    * @generated from field: bitwars.Vec2 force = 5;
    */
   force?: Vec2;
+
+  /**
+   * M6: empty = unowned/legacy, "neutral" = neutral, else player id
+   *
+   * @generated from field: string owner_player_id = 6;
+   */
+  ownerPlayerId: string;
 };
 
 /**

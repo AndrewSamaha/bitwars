@@ -641,6 +641,59 @@ impl Engine {
             }
         };
 
+        // M6: Ownership check — reject if entity not owned by issuing player.
+        let entity_id = match payload_intent.kind.as_ref() {
+            Some(pb::intent::Kind::Move(m)) => m.entity_id,
+            Some(pb::intent::Kind::Attack(a)) => a.entity_id,
+            Some(pb::intent::Kind::Build(b)) => b.entity_id,
+            None => {
+                self.emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::InvalidTarget,
+                    accept_tick,
+                )
+                .await?;
+                return Err(anyhow!("intent missing kind"));
+            }
+        };
+        let entity_owner = self
+            .state
+            .entities
+            .iter()
+            .find(|e| e.id == entity_id)
+            .map(|e| e.owner_player_id.clone());
+        match entity_owner {
+            None => {
+                self.emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::InvalidTarget,
+                    accept_tick,
+                )
+                .await?;
+                warn!(entity_id = entity_id, player_id = %player_id, "rejected: entity not found");
+                return Err(anyhow!("entity not found"));
+            }
+            Some(owner) if owner != player_id => {
+                self.emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::NotOwned,
+                    accept_tick,
+                )
+                .await?;
+                warn!(
+                    entity_id = entity_id,
+                    player_id = %player_id,
+                    owner = %owner,
+                    "rejected: entity not owned by player"
+                );
+                return Err(anyhow!("entity not owned"));
+            }
+            Some(_) => {}
+        }
+
         // M4: Look up entity_type_id for per-type stat resolution.
         let entity_type_id = self.resolve_entity_type_id(&payload_intent);
 
