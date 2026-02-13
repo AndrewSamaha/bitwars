@@ -5,12 +5,14 @@ import type React from "react"
 import GameStage from "@/features/pixijs/components/GameStage"
 import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge"
 import { HUDProvider } from "@/features/hud/components/HUDContext"
+import { PlayerProvider } from "@/features/users/components/identity/PlayerContext"
 import TerminalPanel from "@/features/hud/components/TerminalPanel"
 import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel"
 import IntentQueuePanel from "@/features/intent-queue/IntentQueuePanel"
 
 export default function GamePage() {
   return (
+    <PlayerProvider>
     <HUDProvider>
       <div className="min-h-screen bg-black relative overflow-hidden">
         {/* Bridge SSE stream into ECS */}
@@ -24,5 +26,6 @@ export default function GamePage() {
         <GameStage />
       </div>
     </HUDProvider>
+    </PlayerProvider>
   )
 }

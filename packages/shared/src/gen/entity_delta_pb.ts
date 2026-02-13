@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity_delta.proto.
  */
 export const file_entity_delta: GenFile = /*@__PURE__*/
-  fileDesc("ChJlbnRpdHlfZGVsdGEucHJvdG8SB2JpdHdhcnMimAEKC0VudGl0eURlbHRhEgoKAmlkGAEgASgEEh8KA3BvcxgCIAEoCzINLmJpdHdhcnMuVmVjMkgAiAEBEh8KA3ZlbBgDIAEoCzINLmJpdHdhcnMuVmVjMkgBiAEBEiEKBWZvcmNlGAQgASgLMg0uYml0d2Fycy5WZWMySAKIAQFCBgoEX3Bvc0IGCgRfdmVsQggKBl9mb3JjZWIGcHJvdG8z", [file_vec2, file_entity]);
+  fileDesc("ChJlbnRpdHlfZGVsdGEucHJvdG8SB2JpdHdhcnMiygEKC0VudGl0eURlbHRhEgoKAmlkGAEgASgEEh8KA3BvcxgCIAEoCzINLmJpdHdhcnMuVmVjMkgAiAEBEh8KA3ZlbBgDIAEoCzINLmJpdHdhcnMuVmVjMkgBiAEBEiEKBWZvcmNlGAQgASgLMg0uYml0d2Fycy5WZWMySAKIAQESHAoPb3duZXJfcGxheWVyX2lkGAUgASgJSAOIAQFCBgoEX3Bvc0IGCgRfdmVsQggKBl9mb3JjZUISChBfb3duZXJfcGxheWVyX2lkYgZwcm90bzM", [file_vec2, file_entity]);
 
 /**
  * Sparse delta: only include fields that changed meaningfully.
@@ -41,6 +41,13 @@ export type EntityDelta = Message<"bitwars.EntityDelta"> & {
    * @generated from field: optional bitwars.Vec2 force = 4;
    */
   force?: Vec2;
+
+  /**
+   * M6: set when ownership changes
+   *
+   * @generated from field: optional string owner_player_id = 5;
+   */
+  ownerPlayerId?: string;
 };
 
 /**

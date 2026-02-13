@@ -269,7 +269,7 @@ See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
 
 ---
 
-## M6: Player Ownership + Spawn + Control Gating
+## M6: **Done** Player Ownership + Spawn + Control Gating
 
 ### Goals
 

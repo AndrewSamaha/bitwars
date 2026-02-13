@@ -1,5 +1,6 @@
 pub mod config;
 pub mod content;
+pub mod spawn_config;
 pub mod delta;
 pub mod engine;
 pub mod io;
@@ -23,6 +24,7 @@ mod tests {
             pos: Some(v),
             vel: None,
             force: None,
+            owner_player_id: String::new(),
         };
     }
 }

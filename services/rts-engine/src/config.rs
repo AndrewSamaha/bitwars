@@ -38,6 +38,12 @@ pub struct GameConfig {
     /// Used by `init_world` when a content pack is loaded.  When empty,
     /// falls back to `num_entities` untyped entities.
     pub spawn_manifest: Vec<(String, usize)>,
+    /// M6: Player IDs for ownership assignment. Entities are assigned in round-robin
+    /// (entity 0 -> player_ids[0], 1 -> player_ids[1], ...). Empty = no ownership.
+    pub player_ids: Vec<String>,
+    /// Path to spawn config YAML (spawn points, per-slot loadouts, neutrals). When set and valid,
+    /// init_world uses onPlayerSpawn-style spawning instead of spawn_manifest round-robin.
+    pub spawn_config_path: String,
 }
 
 impl Default for GameConfig {
@@ -71,6 +77,8 @@ impl Default for GameConfig {
                 ("habitat".into(), 1),
                 ("processor".into(), 1)
             ],
+            player_ids: vec!["player-1".into(), "player-2".into()],
+            spawn_config_path: String::new(),
         }
     }
 }
@@ -104,6 +112,9 @@ impl GameConfig {
         }
         if let Ok(v) = std::env::var("CONTENT_PACK_PATH") {
             cfg.content_pack_path = v;
+        }
+        if let Ok(v) = std::env::var("SPAWN_CONFIG_PATH") {
+            cfg.spawn_config_path = v;
         }
         cfg
     }

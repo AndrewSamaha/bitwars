@@ -4,13 +4,14 @@ pub mod state;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Context, Result};
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use tokio::time::{interval, Duration, Instant};
 use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
 
 use crate::config::GameConfig;
 use crate::content::ContentPack;
+use crate::spawn_config::SpawnConfig;
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::RedisClient;
@@ -18,9 +19,10 @@ use crate::io::telemetry::Telemetry;
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
 use prost::Message;
-use state::{init_world, log_sample, GameState};
+use crate::spawn_config::NEUTRAL_OWNER;
+use state::{init_world, log_sample, on_player_spawn, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 1;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 2;
 const DEDUPE_TTL_SECS: usize = 600;
 
 fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {
@@ -69,6 +71,7 @@ mod uuid_tests {
 pub struct Engine {
     cfg: GameConfig,
     content: Option<ContentPack>,
+    spawn_config: Option<SpawnConfig>,
     state: GameState,
     prev_state: GameState,
     last_delta_id: Option<String>,
@@ -78,6 +81,10 @@ pub struct Engine {
     player_last_seq: HashMap<String, u64>,
     lifecycle_emitted: HashSet<(Vec<u8>, pb::LifecycleState)>,
     telemetry: Option<Telemetry>,
+    /// M6: Players that have already been given a spawn (idempotency).
+    joined_players: HashSet<String>,
+    /// M6: Next spawn point index when using list of spawn_points (restored as joined_players.len()).
+    next_spawn_index: usize,
 }
 
 #[cfg(test)]
@@ -288,11 +295,33 @@ impl Engine {
                 // after the snapshot are replayed during the first ticks.
                 let last_intent_id = boundary.clone();
 
+                // M6: Restore joined_players from entities (distinct owner_player_id != neutral)
+                let joined_players: HashSet<String> = state
+                    .entities
+                    .iter()
+                    .filter_map(|e| {
+                        let o = e.owner_player_id.as_str();
+                        if o.is_empty() || o == NEUTRAL_OWNER {
+                            None
+                        } else {
+                            Some(o.to_string())
+                        }
+                    })
+                    .collect();
+                let next_spawn_index = joined_players.len();
+
+                let spawn_config_restore: Option<SpawnConfig> = if cfg.spawn_config_path.is_empty() {
+                    None
+                } else {
+                    SpawnConfig::load(std::path::Path::new(&cfg.spawn_config_path)).ok()
+                };
+
                 let mut engine = Self {
                     prev_state: state.clone(),
                     state,
                     last_delta_id: if boundary == "0-0" { None } else { Some(boundary) },
                     content,
+                    spawn_config: spawn_config_restore,
                     cfg,
                     redis,
                     intents: IntentManager::new(entity_types.clone(), default_stop_radius, default_speed),
@@ -300,6 +329,8 @@ impl Engine {
                     player_last_seq,
                     lifecycle_emitted: HashSet::new(),
                     telemetry,
+                    joined_players,
+                    next_spawn_index,
                 };
                 // Publish a fresh snapshot so newly connecting clients see current state
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
@@ -326,8 +357,33 @@ impl Engine {
         info!(game_id = %cfg.game_id, "clean start; flushing game streams");
         redis.flush_game_streams().await?;
 
+        let spawn_config: Option<SpawnConfig> = if cfg.spawn_config_path.is_empty() {
+            None
+        } else {
+            match SpawnConfig::load(std::path::Path::new(&cfg.spawn_config_path)) {
+                Ok(sc) => {
+                    info!(
+                        path = %cfg.spawn_config_path,
+                        spawn_points = sc.spawn_points.len(),
+                        loadouts = sc.loadouts.len(),
+                        "loaded spawn config"
+                    );
+                    Some(sc)
+                }
+                Err(e) => {
+                    warn!(path = %cfg.spawn_config_path, error = %e, "failed to load spawn config; using legacy spawn");
+                    None
+                }
+            }
+        };
+
         let mut rng = StdRng::seed_from_u64(42);
-        let state = init_world(&cfg, content.as_ref(), &mut rng);
+        let state = init_world(
+            &cfg,
+            content.as_ref(),
+            spawn_config.as_ref(),
+            &mut rng,
+        );
         info!(
             "Initialized world: entities={}, tps={}, friction={}",
             state.entities.len(), cfg.tps, cfg.friction
@@ -338,6 +394,7 @@ impl Engine {
             state,
             last_delta_id: None,
             content,
+            spawn_config,
             cfg,
             redis,
             intents: IntentManager::new(entity_types, default_stop_radius, default_speed),
@@ -346,6 +403,8 @@ impl Engine {
             player_last_seq: HashMap::new(),
             lifecycle_emitted: HashSet::new(),
             telemetry,
+            joined_players: HashSet::new(),
+            next_spawn_index: 0,
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
 
@@ -357,6 +416,63 @@ impl Engine {
         }
 
         Ok(engine)
+    }
+
+    /// M6: Spawn for one player on join (idempotent). Picks spawn point, random loadout, calls on_player_spawn.
+    fn ensure_spawned(&mut self, player_id: &str) -> Result<()> {
+        if self.joined_players.contains(player_id) {
+            return Ok(());
+        }
+        let sc = match &self.spawn_config {
+            Some(s) if s.is_valid() => s,
+            _ => return Ok(()),
+        };
+        let _content = match &self.content {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+
+        let (spawn_x, spawn_y) = if sc.spawn_points.is_empty() {
+            let mut rng = rand::thread_rng();
+            let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+            let dist = rng.gen_range(0.0..sc.max_distance_from_origin);
+            (
+                sc.origin_x() + angle.cos() * dist,
+                sc.origin_y() + angle.sin() * dist,
+            )
+        } else {
+            let idx = self.next_spawn_index % sc.spawn_points.len();
+            self.next_spawn_index += 1;
+            let pt = &sc.spawn_points[idx];
+            (pt.x(), pt.y())
+        };
+
+        let loadout_idx = rand::thread_rng().gen_range(0..sc.loadouts.len());
+        let loadout = &sc.loadouts[loadout_idx];
+
+        let next_id = self
+            .state
+            .entities
+            .iter()
+            .map(|e| e.id)
+            .max()
+            .unwrap_or(0) + 1;
+
+        let mut rng = rand::thread_rng();
+        on_player_spawn(
+            &mut self.state.entities,
+            next_id,
+            player_id,
+            spawn_x,
+            spawn_y,
+            loadout,
+            &sc.neutrals_near_spawn,
+            &mut rng,
+        );
+
+        self.joined_players.insert(player_id.to_string());
+        info!(player_id = %player_id, spawn_x = %spawn_x, spawn_y = %spawn_y, "spawned on join");
+        Ok(())
     }
 
     /// M4: Resolve entity_type_id for the target entity of an intent.
@@ -384,6 +500,13 @@ impl Engine {
 
         loop {
             ticker.tick().await;
+
+            // M6: Process pending joins (spawn on join)
+            while let Ok(Some(player_id)) = self.redis.pop_next_pending_join().await {
+                if let Err(e) = self.ensure_spawned(&player_id) {
+                    warn!(player_id = %player_id, error = ?e, "ensure_spawned failed");
+                }
+            }
 
             // Phase B: Ingest intents from Redis stream (tick-bounded)
             let batch_start = Instant::now();
@@ -640,6 +763,59 @@ impl Engine {
                 return Err(anyhow!("envelope missing payload"));
             }
         };
+
+        // M6: Ownership check — reject if entity not owned by issuing player.
+        let entity_id = match payload_intent.kind.as_ref() {
+            Some(pb::intent::Kind::Move(m)) => m.entity_id,
+            Some(pb::intent::Kind::Attack(a)) => a.entity_id,
+            Some(pb::intent::Kind::Build(b)) => b.entity_id,
+            None => {
+                self.emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::InvalidTarget,
+                    accept_tick,
+                )
+                .await?;
+                return Err(anyhow!("intent missing kind"));
+            }
+        };
+        let entity_owner = self
+            .state
+            .entities
+            .iter()
+            .find(|e| e.id == entity_id)
+            .map(|e| e.owner_player_id.clone());
+        match entity_owner {
+            None => {
+                self.emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::InvalidTarget,
+                    accept_tick,
+                )
+                .await?;
+                warn!(entity_id = entity_id, player_id = %player_id, "rejected: entity not found");
+                return Err(anyhow!("entity not found"));
+            }
+            Some(owner) if owner != player_id => {
+                self.emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::NotOwned,
+                    accept_tick,
+                )
+                .await?;
+                warn!(
+                    entity_id = entity_id,
+                    player_id = %player_id,
+                    owner = %owner,
+                    "rejected: entity not owned by player"
+                );
+                return Err(anyhow!("entity not owned"));
+            }
+            Some(_) => {}
+        }
 
         // M4: Look up entity_type_id for per-type stat resolution.
         let entity_type_id = self.resolve_entity_type_id(&payload_intent);

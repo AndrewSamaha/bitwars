@@ -18,10 +18,13 @@ pub struct Entity {
     pub vel: ::core::option::Option<Vec2>,
     #[prost(message, optional, tag = "5")]
     pub force: ::core::option::Option<Vec2>,
+    /// M6: empty = unowned/legacy, "neutral" = neutral, else player id
+    #[prost(string, tag = "6")]
+    pub owner_player_id: ::prost::alloc::string::String,
 }
 /// Sparse delta: only include fields that changed meaningfully.
 /// proto3 'optional' yields Option<T> in Rust (prost) and presence in TS.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EntityDelta {
     #[prost(uint64, tag = "1")]
     pub id: u64,
@@ -31,6 +34,9 @@ pub struct EntityDelta {
     pub vel: ::core::option::Option<Vec2>,
     #[prost(message, optional, tag = "4")]
     pub force: ::core::option::Option<Vec2>,
+    /// M6: set when ownership changes
+    #[prost(string, optional, tag = "5")]
+    pub owner_player_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
@@ -362,6 +368,8 @@ pub enum LifecycleReason {
     InvalidTarget = 5,
     ProtocolMismatch = 6,
     EntityBusy = 7,
+    /// M6: entity not owned by issuing player
+    NotOwned = 8,
 }
 impl LifecycleReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -378,6 +386,7 @@ impl LifecycleReason {
             Self::InvalidTarget => "INVALID_TARGET",
             Self::ProtocolMismatch => "PROTOCOL_MISMATCH",
             Self::EntityBusy => "ENTITY_BUSY",
+            Self::NotOwned => "NOT_OWNED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -391,6 +400,7 @@ impl LifecycleReason {
             "INVALID_TARGET" => Some(Self::InvalidTarget),
             "PROTOCOL_MISMATCH" => Some(Self::ProtocolMismatch),
             "ENTITY_BUSY" => Some(Self::EntityBusy),
+            "NOT_OWNED" => Some(Self::NotOwned),
             _ => None,
         }
     }

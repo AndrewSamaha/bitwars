@@ -95,6 +95,16 @@ impl RedisClient {
         format!("rts:match:{}:content_version", self.game_id)
     }
 
+    /// M6: List of player_ids to spawn (backend RPUSHes, engine LPOPs).
+    fn pending_joins_key(&self) -> String {
+        format!("rts:match:{}:pending_joins", self.game_id)
+    }
+
+    /// M6: Set of player_ids for which backend has already enqueued a join (avoid duplicate push).
+    fn join_requested_key(&self) -> String {
+        format!("rts:match:{}:join_requested", self.game_id)
+    }
+
     pub async fn connect(url: &str, game_id: String) -> anyhow::Result<Self> {
         let client = redis::Client::open(url.to_string())?;
         let conn = client.get_multiplexed_async_connection().await?;
@@ -328,6 +338,8 @@ impl RedisClient {
             self.snapshot_meta_key(),
             self.player_seq_key(),
             self.active_intents_key(),
+            self.pending_joins_key(),
+            self.join_requested_key(),
         ];
         info!(game_id = %self.game_id, keys = ?keys, "flushing game streams (clean start)");
         for key in &keys {
@@ -629,5 +641,14 @@ impl RedisClient {
         let key = self.content_version_key();
         let val: Option<String> = self.conn.get(&key).await?;
         Ok(val.unwrap_or_default())
+    }
+
+    // ── M6: Spawn on join ───────────────────────────────────────────────────
+
+    /// Pop the next pending player_id from the join queue (LPOP). Returns None when list is empty.
+    pub async fn pop_next_pending_join(&mut self) -> anyhow::Result<Option<String>> {
+        let key = self.pending_joins_key();
+        let val: Option<String> = self.conn.lpop(&key, None).await?;
+        Ok(val)
     }
 }

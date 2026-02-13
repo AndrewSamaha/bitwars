@@ -7,8 +7,9 @@ export const PlayerSchema = z.object({
   name: z.string(),
   normalizedName: z.string(),
   color: z.string(),
-  createdAt: z.date(),
-  lastSeen: z.date(),
+  // Coerce so API JSON (date as ISO string) validates; z.date() alone rejects strings
+  createdAt: z.coerce.date(),
+  lastSeen: z.coerce.date(),
   createdAtMs: z.number(),
   lastSeenMs: z.number(),
   detail: z.record(z.string(), z.unknown()).optional(),

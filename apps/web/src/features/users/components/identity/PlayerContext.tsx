@@ -149,3 +149,9 @@ export function useRequiredPlayer() {
   if (!ctx.player) throw new Error('No player in context');
   return ctx.player;
 }
+
+/** M6: Current player id for ownership checks (null when not logged in). */
+export function useCurrentPlayerId(): string | null {
+  const ctx = usePlayer();
+  return ctx.player?.id ?? null;
+}
