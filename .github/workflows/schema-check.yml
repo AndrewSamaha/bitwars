@@ -62,14 +62,14 @@ jobs:
             echo "PR has label 'compat: non-breaking'; compat check passed."
             exit 0
           fi
-          MAJOR_CONST="ENGINE_PROTOCOL_MAJOR"
-          BASE_VAL=$(git show "$BASE_SHA:services/rts-engine/src/engine/mod.rs" 2>/dev/null | grep "$MAJOR_CONST" | grep -oE '[0-9]+' | head -1 || echo "0")
-          HEAD_VAL=$(git show "$HEAD_SHA:services/rts-engine/src/engine/mod.rs" 2>/dev/null | grep "$MAJOR_CONST" | grep -oE '[0-9]+' | head -1 || echo "0")
+          # Extract the numeric value after "= " (avoids matching "32" from "u32" on the same line)
+          BASE_VAL=$(git show "$BASE_SHA:services/rts-engine/src/engine/mod.rs" 2>/dev/null | grep "ENGINE_PROTOCOL_MAJOR" | sed -nE 's/.*= *([0-9]+).*/\1/p' | head -1 || echo "0")
+          HEAD_VAL=$(git show "$HEAD_SHA:services/rts-engine/src/engine/mod.rs" 2>/dev/null | grep "ENGINE_PROTOCOL_MAJOR" | sed -nE 's/.*= *([0-9]+).*/\1/p' | head -1 || echo "0")
+          echo "Comparing base SHA -> ($BASE_SHA) to commit SHA -> ($HEAD_SHA)"
+          echo "ENGINE_PROTOCOL_MAJOR values from both commits: ($BASE_VAL → $HEAD_VAL)"
           if [ -n "$BASE_VAL" ] && [ -n "$HEAD_VAL" ] && [ "$HEAD_VAL" -gt "$BASE_VAL" ]; then
             echo "ENGINE_PROTOCOL_MAJOR bumped ($BASE_VAL → $HEAD_VAL); compat check passed."
             exit 0
           fi
-          echo "Comparing base SHA -> ($BASE_SHA) to commit SHA -> ($HEAD_VAL)"
-          echo "ENGINE_PROTOCOL_MAJOR bumped ($BASE_VAL → $HEAD_VAL); compat check passed."
           echo "::error::Proto files changed without ENGINE_PROTOCOL_MAJOR bump. Add label 'compat: non-breaking' or bump the constant in services/rts-engine/src/engine/mod.rs."
           exit 1
