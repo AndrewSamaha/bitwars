@@ -69,5 +69,7 @@ jobs:
             echo "ENGINE_PROTOCOL_MAJOR bumped ($BASE_VAL → $HEAD_VAL); compat check passed."
             exit 0
           fi
+          echo "Comparing base SHA -> ($BASE_SHA) to commit SHA -> ($HEAD_VAL)"
+          echo "ENGINE_PROTOCOL_MAJOR bumped ($BASE_VAL → $HEAD_VAL); compat check passed."
           echo "::error::Proto files changed without ENGINE_PROTOCOL_MAJOR bump. Add label 'compat: non-breaking' or bump the constant in services/rts-engine/src/engine/mod.rs."
           exit 1
