@@ -477,6 +477,7 @@ mod tests {
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: String::new(),
             }],
+            ledger: crate::engine::state::ResourceLedger::new(),
         };
 
         let finished = manager.follow_targets(&mut state, 5.0, 0.016);

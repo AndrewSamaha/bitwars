@@ -33,11 +33,27 @@ pub struct EntityDelta {
     pub force: ::core::option::Option<Vec2>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResourceEntry {
+    #[prost(string, tag = "1")]
+    pub resource_type: ::prost::alloc::string::String,
+    #[prost(int64, tag = "2")]
+    pub amount: i64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerResourceLedger {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub resources: ::prost::alloc::vec::Vec<ResourceEntry>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
     #[prost(int64, tag = "2")]
     pub tick: i64,
     #[prost(message, repeated, tag = "3")]
     pub entities: ::prost::alloc::vec::Vec<Entity>,
+    #[prost(message, repeated, tag = "4")]
+    pub player_ledgers: ::prost::alloc::vec::Vec<PlayerResourceLedger>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotMeta {

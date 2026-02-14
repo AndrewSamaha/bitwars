@@ -31,13 +31,16 @@ export default async function Layout({
   const token = cookieStore.get('player_token')?.value;
 
   if (!token) {
+    console.log('[play/layout] redirect: no player_token cookie');
     redirect('/');
   }
 
   const payload = await verifyToken(token!);
   if (!payload) {
+    console.log('[play/layout] redirect: token verify failed (invalid or expired)');
     redirect('/');
   }
+  console.log('[play/layout] auth ok', { playerId: (payload as { playerId?: string }).playerId });
 
   // Optionally, you could pass payload via context or props if needed
   return <>{children}</>;

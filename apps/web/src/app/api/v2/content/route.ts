@@ -23,14 +23,16 @@ const DEFAULT_GAME_ID = "demo-001";
  *   content_version: string,          // xxh3 hex hash
  *   entity_types: {                   // entity_type_id → definition
  *     "worker": { speed: 60, stop_radius: 0.75, mass: 1, health: 100 },
- *     "scout":  { speed: 120, stop_radius: 0.5, mass: 0.6, health: 60 },
+ *     ...
+ *   },
+ *   resource_types: {                 // M7: resource_type_id → { display_name, order }
+ *     "gold": { display_name: "Gold", order: 0 },
  *     ...
  *   }
  * }
  *
- * The canonical JSON for entity_types is stored in Redis by the engine at
- * startup (key: rts:match:{GAME_ID}:content_defs).  If missing, returns an
- * empty object with no content_version.
+ * The engine stores both entity_types and resource_types in Redis at
+ * rts:match:{GAME_ID}:content_defs. If missing, returns empty objects.
  */
 export async function GET() {
   try {
@@ -45,11 +47,14 @@ export async function GET() {
         (redis as any).get(contentDefsKey),
       ]);
 
-    const entityTypes = contentDefsJson ? JSON.parse(contentDefsJson) : {};
+    const parsed = contentDefsJson ? JSON.parse(contentDefsJson) : {};
+    const entityTypes = parsed.entity_types ?? {};
+    const resourceTypes = parsed.resource_types ?? {};
 
     return NextResponse.json({
       content_version: contentVersion ?? "",
       entity_types: entityTypes,
+      resource_types: resourceTypes,
     });
   } catch (e: any) {
     return NextResponse.json(

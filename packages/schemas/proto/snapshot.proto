@@ -3,7 +3,19 @@ package bitwars;
 
 import "entity.proto";
 
+// M7: Per-player resource totals. Resource types are data-driven (string IDs).
+message ResourceEntry {
+  string resource_type = 1;
+  int64 amount = 2;
+}
+
+message PlayerResourceLedger {
+  string player_id = 1;
+  repeated ResourceEntry resources = 2;
+}
+
 message Snapshot {
   int64 tick = 2;
   repeated Entity entities = 3;
+  repeated PlayerResourceLedger player_ledgers = 4;
 }

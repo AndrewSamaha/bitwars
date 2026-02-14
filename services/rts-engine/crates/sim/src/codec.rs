@@ -7,7 +7,23 @@ use prost::Message;
 /// Convert a protobuf snapshot to a WorldState
 pub fn from_snapshot_proto(snapshot: &[u8]) -> Result<WorldState> {
     let snapshot = Snapshot::decode(snapshot)?;
-    Ok(WorldState::new(snapshot.tick as u64, snapshot.entities))
+    let ledger = snapshot
+        .player_ledgers
+        .iter()
+        .map(|pl| {
+            let resources = pl
+                .resources
+                .iter()
+                .map(|e| (e.resource_type.clone(), e.amount))
+                .collect();
+            (pl.player_id.clone(), resources)
+        })
+        .collect();
+    Ok(WorldState::new_with_ledger(
+        snapshot.tick as u64,
+        snapshot.entities,
+        ledger,
+    ))
 }
 
 /// Convert a WorldState to sorted JSON for stable hashing

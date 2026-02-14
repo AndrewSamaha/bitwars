@@ -1,31 +1,23 @@
-"use client"
+import { redirect } from "next/navigation";
+import { requireAuthOrRedirect } from "@/features/users/utils/auth";
+import { getPlayerById } from "@/features/users/queries/read/getPlayerById";
+import ClientGamePage from "./ClientGamePage";
 
-import type React from "react"
+/**
+ * Server component: load the current player so the client tree gets initialPlayer.
+ * This avoids the Strict Mode remount race where the second mount had no player
+ * and GameStreamGate redirected to /.
+ */
+export default async function PlayPage() {
+  const auth = await requireAuthOrRedirect("/");
+  const player = await getPlayerById(auth.playerId);
+  if (!player) redirect("/");
+  // Serialize for RSC -> client: dates become ISO strings
+  const initialPlayer = {
+    ...player,
+    createdAt: player.createdAt.toISOString(),
+    lastSeen: player.lastSeen.toISOString(),
+  };
 
-import GameStage from "@/features/pixijs/components/GameStage"
-import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge"
-import { HUDProvider } from "@/features/hud/components/HUDContext"
-import { PlayerProvider } from "@/features/users/components/identity/PlayerContext"
-import TerminalPanel from "@/features/hud/components/TerminalPanel"
-import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel"
-import IntentQueuePanel from "@/features/intent-queue/IntentQueuePanel"
-
-export default function GamePage() {
-  return (
-    <PlayerProvider>
-    <HUDProvider>
-      <div className="min-h-screen bg-black relative overflow-hidden">
-        {/* Bridge SSE stream into ECS */}
-        <GameStateStreamBridge />
-        {/* Floating Terminal */}
-        <TerminalPanel />
-        <EntityDetailPanel />
-        {/* M1: Intent queue panel */}
-        <IntentQueuePanel />
-        {/* Game Stage */}
-        <GameStage />
-      </div>
-    </HUDProvider>
-    </PlayerProvider>
-  )
+  return <ClientGamePage initialPlayer={initialPlayer} />;
 }

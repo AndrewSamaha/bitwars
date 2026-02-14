@@ -5,9 +5,14 @@ import { useLogger } from "@/lib/axiom/client";
 import { game, type Entity } from "../world";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
+import { useHUD } from "@/features/hud/components/HUDContext";
+import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
+
+type ResourceEntryPayload = { resource_type: string; amount: number };
+type PlayerLedgerPayload = { player_id: string; resources: ResourceEntryPayload[] };
 
 type SnapshotPayload = {
   type: "snapshot";
@@ -20,6 +25,7 @@ type SnapshotPayload = {
     vel?: Pos;
     force?: Pos;
   }>;
+  player_ledgers?: PlayerLedgerPayload[];
 };
 
 type DeltaPayload = {
@@ -40,12 +46,25 @@ type DeltaPayload = {
 // - On delta: upserts entities by id and patches provided components
 export default function GameStateStreamBridge() {
   const log = useLogger();
+  const hud = useHUD();
+  const { player } = usePlayer();
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
   const streamIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
   const firstDeltaLoggedRef = useRef<number>(0);
   const mountedAtRef = useRef<number>(Date.now());
+  /** M7: Current player id — from /me (player.id) first, fallback to reconnect handshake. */
+  const currentPlayerIdRef = useRef<string | null>(null);
   log.info("GameStateStreamBridge:init", { streamId: streamIdRef.current });
+
+  // M7: Single source for "my" player id and resources from /me — set ref and apply resource_ledger to HUD when player loads.
+  useEffect(() => {
+    currentPlayerIdRef.current = player?.id ?? null;
+    if (player?.resource_ledger && Object.keys(player.resource_ledger).length > 0) {
+      console.log("[GameStateStreamBridge] setResources from /me", player.resource_ledger);
+      hud.actions.setResources(player.resource_ledger);
+    }
+  }, [player?.id, player?.resource_ledger, hud.actions]);
 
   useEffect(() => {
     const byId = byIdRef.current;
@@ -57,6 +76,15 @@ export default function GameStateStreamBridge() {
     log.info("GameStateStreamBridge:es:create", { streamId: streamIdRef.current, url: streamUrl });
 
     const normalizeId = (id: number | string) => String(id);
+
+    const logEntitiesAndOwnership = (label: string) => {
+      const myPlayerId = currentPlayerIdRef.current;
+      const entities = Array.from(byId.entries()).map(([id, e]) => ({
+        id,
+        owner_player_id: (e as { owner_player_id?: string }).owner_player_id,
+      }));
+      console.log(`[GameState] ${label}`, { myPlayerId, entityCount: entities.length, entities });
+    };
 
     const applySnapshot = (payload: SnapshotPayload) => {
       // Remove old streamed entities (and destroy any attached sprites)
@@ -82,12 +110,30 @@ export default function GameStateStreamBridge() {
         world.add(ent);
         byId.set(normalizeId(s.id), ent);
       }
+      // M7: Apply server resource state for current player to HUD
+      const playerId = currentPlayerIdRef.current;
+      const ledgers = payload.player_ledgers ?? [];
+      if (playerId && ledgers.length > 0) {
+        const myLedger = ledgers.find((pl) => pl.player_id === playerId);
+        if (myLedger?.resources?.length) {
+          const patch: Record<string, number> = {};
+          for (const r of myLedger.resources) {
+            if (r.resource_type && typeof r.amount === "number") patch[r.resource_type] = r.amount;
+            else if (r.resource_type && typeof r.amount === "string") patch[r.resource_type] = Number(r.amount) || 0;
+          }
+          if (Object.keys(patch).length > 0) {
+            console.log("[GameStateStreamBridge] setResources from snapshot", patch);
+            hud.actions.setResources(patch);
+          }
+        }
+      }
       log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length });
       // Signal that the world is ready for ticking/rendering
       if (!game.ready) {
         game.ready = true;
         log.info("GameStateStreamBridge:world:ready", { streamId: streamIdRef.current });
       }
+      logEntitiesAndOwnership("after snapshot");
     };
 
     const applyDelta = (payload: DeltaPayload) => {
@@ -123,6 +169,7 @@ export default function GameStateStreamBridge() {
         }
       }
       log.debug("GameStateStreamBridge:delta:applied", { streamId: streamIdRef.current, existingEntities, newEntities });
+      if (payload.updates.length > 0) logEntitiesAndOwnership("after delta");
     };
 
     const onSnapshot = (e: MessageEvent) => {
@@ -179,6 +226,7 @@ export default function GameStateStreamBridge() {
       // with the server's tracking state so we don't duplicate or skip intents.
       intentQueue.reconcileWithServer().then(async (handshake) => {
         if (handshake) {
+          if (handshake.player_id) currentPlayerIdRef.current = handshake.player_id; // fallback if player not yet from /me
           log.info("GameStateStreamBridge:reconnect:ok", {
             streamId: streamIdRef.current,
             serverTick: handshake.server_tick,

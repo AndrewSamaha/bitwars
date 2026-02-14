@@ -31,8 +31,10 @@ export const GET = withAxiom(async (req: Request) => {
 
   logger.info("v2/stream:init", { GAME_ID, sid, sinceParam, lastEventId });
 
+  const { auth, res } = await requireAuthOr401();
+  if (res) return res; // 401 when not authenticated; ensures only authenticated clients get stream and join enqueue.
+
   // M6: On first stream connect for an authenticated player, enqueue them for spawn (once per match).
-  const { auth } = await requireAuthOr401();
   const playerId = auth?.playerId as string | undefined;
   if (playerId) {
     const joinRequestedKey = `rts:match:${GAME_ID}:join_requested`;

@@ -1,13 +1,10 @@
 #[derive(Clone)]
 pub struct GameConfig {
     pub game_id: String,
-    pub num_entities: usize,
     pub tps: u32,
     pub force_min: f32,
     pub force_max: f32,
     pub friction: f32,
-    pub spawn_min: f32,
-    pub spawn_max: f32,
     pub default_mass: f32,
     pub snapshot_every_secs: u64,
     pub eps_pos: f32,
@@ -29,20 +26,11 @@ pub struct GameConfig {
     /// TTL acts as a safety net so stale entries from crashed games don't linger
     /// forever; the normal lifecycle (finish / cancel) DELs them promptly.
     pub tracking_ttl_secs: u64,
-    /// M4: Path to the content pack YAML file.  When set, entity type
-    /// definitions are loaded from this file and used for per-entity stats
-    /// (speed, stop_radius, mass).  When empty, all entities use the
-    /// default_* values above.
+    /// M4: Path to the content pack YAML file. When set, entity type definitions
+    /// are loaded from this file. Required for spawn-on-join (entity stats).
     pub content_pack_path: String,
-    /// M4: Spawn manifest — list of (entity_type_id, count) pairs.
-    /// Used by `init_world` when a content pack is loaded.  When empty,
-    /// falls back to `num_entities` untyped entities.
-    pub spawn_manifest: Vec<(String, usize)>,
-    /// M6: Player IDs for ownership assignment. Entities are assigned in round-robin
-    /// (entity 0 -> player_ids[0], 1 -> player_ids[1], ...). Empty = no ownership.
-    pub player_ids: Vec<String>,
-    /// Path to spawn config YAML (spawn points, per-slot loadouts, neutrals). When set and valid,
-    /// init_world uses onPlayerSpawn-style spawning instead of spawn_manifest round-robin.
+    /// Path to spawn config YAML (spawn points, loadouts, neutrals). Required:
+    /// engine uses config-based init only and exits if this is missing or invalid.
     pub spawn_config_path: String,
 }
 
@@ -50,13 +38,10 @@ impl Default for GameConfig {
     fn default() -> Self {
         Self {
             game_id: "demo-001".into(),
-            num_entities: 2,
             tps: 60,
             force_min: -200.0,
             force_max: 200.0,
             friction: 0.3,
-            spawn_min: -500.0,
-            spawn_max: 500.0,
             default_mass: 1.0,
             snapshot_every_secs: 2,
             eps_pos: 0.0005,
@@ -69,15 +54,6 @@ impl Default for GameConfig {
             restore_gamestate: false,
             tracking_ttl_secs: 3600, // 1 hour
             content_pack_path: String::new(),
-            spawn_manifest: vec![
-                ("theta".into(), 1),
-                ("worker".into(), 1),
-                ("factory".into(), 1),
-                ("scout".into(), 1),
-                ("habitat".into(), 1),
-                ("processor".into(), 1)
-            ],
-            player_ids: vec!["player-1".into(), "player-2".into()],
             spawn_config_path: String::new(),
         }
     }

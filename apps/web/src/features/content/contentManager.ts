@@ -27,9 +27,17 @@ export type EntityTypeDef = {
   health: number;
 };
 
+/** M7: Resource type definition for HUD display (name, order). */
+export type ResourceTypeDef = {
+  display_name: string;
+  order?: number;
+};
+
 export type ContentData = {
   content_version: string;
   entity_types: Record<string, EntityTypeDef>;
+  /** M7: Resource type definitions (id → display_name, order). */
+  resource_types?: Record<string, ResourceTypeDef>;
 };
 
 // ── Storage key ────────────────────────────────────────────────────────────
@@ -62,6 +70,11 @@ class ContentManager {
   /** Look up an entity type definition by id. */
   getEntityType(entityTypeId: string): EntityTypeDef | undefined {
     return this.data?.entity_types[entityTypeId];
+  }
+
+  /** M7: Look up a resource type definition by id. */
+  getResourceType(resourceTypeId: string): ResourceTypeDef | undefined {
+    return this.data?.resource_types?.[resourceTypeId];
   }
 
   /**
@@ -162,7 +175,7 @@ class ContentManager {
       if (!raw) return;
       const parsed = JSON.parse(raw) as ContentData;
       if (parsed?.content_version && parsed?.entity_types) {
-        this.data = parsed;
+        this.data = { ...parsed, resource_types: parsed.resource_types ?? {} };
       }
     } catch {
       /* ignore corrupted data */

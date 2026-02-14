@@ -13,6 +13,7 @@ fn main() {
     let s = pb::Snapshot {
         tick: 0,
         entities: vec![e],
+        player_ledgers: vec![],
     };
     println!("OK: {} entities", s.entities.len());
 }

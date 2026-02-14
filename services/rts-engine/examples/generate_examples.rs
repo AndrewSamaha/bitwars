@@ -39,6 +39,7 @@ fn main() -> anyhow::Result<()> {
     let snapshot = Snapshot {
         tick: 42,
         entities: vec![e1, e2],
+        player_ledgers: vec![],
     };
 
     // Encode with prost::Message
