@@ -20,8 +20,9 @@ const DEFAULT_GAME_ID = "demo-001";
  * Response shape:
  * {
  *   server_tick:                number,   // tick from the latest snapshot metadata
- *   protocol_version:          number,   // engine protocol major (currently 1)
+ *   protocol_version:          number,   // engine protocol major (currently 2)
  *   content_version:           string,   // M4: xxh3 hex hash of content pack ("" if none)
+ *   player_id:                 string,   // M7: current player id (for resource ledger display)
  *   last_processed_client_seq: number,   // last client_seq the server applied for this player
  *   active_intents: [                    // per-entity active intents belonging to this player
  *     {
@@ -49,7 +50,7 @@ export async function GET() {
 
     // Protocol version must match the engine constant (ENGINE_PROTOCOL_MAJOR).
     // This is a static value; if it ever becomes dynamic, read it from Redis.
-    const PROTOCOL_VERSION = 1;
+    const PROTOCOL_VERSION = 3;
 
     // Read server_tick from the latest snapshot metadata
     const snapshotMetaKey = `snapshot_meta:${GAME_ID}`;
@@ -98,6 +99,7 @@ export async function GET() {
       server_tick: serverTick,
       protocol_version: PROTOCOL_VERSION,
       content_version: contentVersion,
+      player_id: playerId,
       last_processed_client_seq: lastProcessedClientSeq,
       active_intents: activeIntents,
     });

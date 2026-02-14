@@ -12,7 +12,53 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file snapshot.proto.
  */
 export const file_snapshot: GenFile = /*@__PURE__*/
-  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyI7CghTbmFwc2hvdBIMCgR0aWNrGAIgASgDEiEKCGVudGl0aWVzGAMgAygLMg8uYml0d2Fycy5FbnRpdHliBnByb3RvMw", [file_entity]);
+  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyI2Cg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDIlQKFFBsYXllclJlc291cmNlTGVkZ2VyEhEKCXBsYXllcl9pZBgBIAEoCRIpCglyZXNvdXJjZXMYAiADKAsyFi5iaXR3YXJzLlJlc291cmNlRW50cnkicgoIU25hcHNob3QSDAoEdGljaxgCIAEoAxIhCghlbnRpdGllcxgDIAMoCzIPLmJpdHdhcnMuRW50aXR5EjUKDnBsYXllcl9sZWRnZXJzGAQgAygLMh0uYml0d2Fycy5QbGF5ZXJSZXNvdXJjZUxlZGdlcmIGcHJvdG8z", [file_entity]);
+
+/**
+ * M7: Per-player resource totals. Resource types are data-driven (string IDs).
+ *
+ * @generated from message bitwars.ResourceEntry
+ */
+export type ResourceEntry = Message<"bitwars.ResourceEntry"> & {
+  /**
+   * @generated from field: string resource_type = 1;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: int64 amount = 2;
+   */
+  amount: bigint;
+};
+
+/**
+ * Describes the message bitwars.ResourceEntry.
+ * Use `create(ResourceEntrySchema)` to create a new message.
+ */
+export const ResourceEntrySchema: GenMessage<ResourceEntry> = /*@__PURE__*/
+  messageDesc(file_snapshot, 0);
+
+/**
+ * @generated from message bitwars.PlayerResourceLedger
+ */
+export type PlayerResourceLedger = Message<"bitwars.PlayerResourceLedger"> & {
+  /**
+   * @generated from field: string player_id = 1;
+   */
+  playerId: string;
+
+  /**
+   * @generated from field: repeated bitwars.ResourceEntry resources = 2;
+   */
+  resources: ResourceEntry[];
+};
+
+/**
+ * Describes the message bitwars.PlayerResourceLedger.
+ * Use `create(PlayerResourceLedgerSchema)` to create a new message.
+ */
+export const PlayerResourceLedgerSchema: GenMessage<PlayerResourceLedger> = /*@__PURE__*/
+  messageDesc(file_snapshot, 1);
 
 /**
  * @generated from message bitwars.Snapshot
@@ -27,6 +73,11 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
    * @generated from field: repeated bitwars.Entity entities = 3;
    */
   entities: Entity[];
+
+  /**
+   * @generated from field: repeated bitwars.PlayerResourceLedger player_ledgers = 4;
+   */
+  playerLedgers: PlayerResourceLedger[];
 };
 
 /**
@@ -34,5 +85,5 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
  * Use `create(SnapshotSchema)` to create a new message.
  */
 export const SnapshotSchema: GenMessage<Snapshot> = /*@__PURE__*/
-  messageDesc(file_snapshot, 0);
+  messageDesc(file_snapshot, 2);
 

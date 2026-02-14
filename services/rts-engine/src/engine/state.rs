@@ -1,31 +1,38 @@
-use tracing::info;
+use std::collections::HashMap;
 
-use crate::config::GameConfig;
-use crate::content::ContentPack;
+use tracing::debug;
+
 use crate::pb::{Entity, Vec2};
 use crate::spawn_config::{Loadout, NeutralNearSpawn, SpawnConfig, NEUTRAL_OWNER};
-use rand::Rng;
 
 /// World-space radius for random jitter when spawning multiple units at one spawn point (so they don't stack).
 const SPAWN_JITTER_RADIUS: f32 = 25.0;
 /// Jitter for neutral entities near spawn (when offset is zero, or in addition to offset).
 const NEUTRAL_JITTER_RADIUS: f32 = 15.0;
 
+/// M7: Per-player resource totals. Outer key = player_id, inner key = resource_type_id.
+pub type ResourceLedger = HashMap<String, HashMap<String, i64>>;
+
 #[derive(Clone)]
 pub struct GameState {
     pub tick: u64,
     pub entities: Vec<Entity>,
+    /// M7: Authoritative per-player resource ledger (player_id → resource_type → amount).
+    pub ledger: ResourceLedger,
 }
 
-/// Initialise the game world.
-///
-/// When `spawn_config` is present and valid, no player entities are spawned at init (spawn on join).
-/// Otherwise falls back to legacy spawn_manifest round-robin or num_entities untyped entities.
-fn owner_for_index(player_ids: &[String], entity_index: usize) -> String {
-    if player_ids.is_empty() {
-        return String::new();
+/// Initialise the game world (config-based only). No player entities at init; they spawn on join.
+/// Caller must ensure spawn_config is valid; panics if not.
+pub fn init_world(spawn_config: &SpawnConfig) -> GameState {
+    assert!(
+        spawn_config.is_valid(),
+        "init_world requires valid spawn config (at least one loadout)"
+    );
+    GameState {
+        tick: 0,
+        entities: Vec::new(),
+        ledger: ResourceLedger::new(),
     }
-    player_ids[entity_index % player_ids.len()].clone()
 }
 
 /// Spawns all entities for one player at their spawn location (player-owned units + optional neutrals nearby).
@@ -85,66 +92,6 @@ pub fn on_player_spawn(
     id
 }
 
-pub fn init_world(
-    cfg: &GameConfig,
-    content: Option<&ContentPack>,
-    spawn_config: Option<&SpawnConfig>,
-    rng: &mut rand::rngs::StdRng,
-) -> GameState {
-    let mut entities = Vec::new();
-    let mut next_id: u64 = 1;
-
-    // M6: With spawn config, do not spawn any player entities at match start; they spawn on join.
-    if let Some(sc) = spawn_config {
-        if sc.is_valid() && content.is_some() {
-            return GameState { tick: 0, entities };
-        }
-    }
-
-    let _num_players = cfg.player_ids.len();
-
-    // Legacy: spawn_manifest with round-robin ownership
-    let mut entity_index: usize = 0;
-    if !cfg.spawn_manifest.is_empty() && content.is_some() {
-        for (type_id, count) in &cfg.spawn_manifest {
-            for _ in 0..*count {
-                let owner = owner_for_index(&cfg.player_ids, entity_index);
-                entities.push(Entity {
-                    id: next_id,
-                    entity_type_id: type_id.clone(),
-                    pos: Some(Vec2 {
-                        x: rng.gen_range(cfg.spawn_min..=cfg.spawn_max),
-                        y: rng.gen_range(cfg.spawn_min..=cfg.spawn_max),
-                    }),
-                    vel: Some(Vec2 { x: 0.0, y: 0.0 }),
-                    force: Some(Vec2 { x: 0.0, y: 0.0 }),
-                    owner_player_id: owner,
-                });
-                next_id += 1;
-                entity_index += 1;
-            }
-        }
-    } else {
-        for id in 1..=cfg.num_entities as u64 {
-            let owner = owner_for_index(&cfg.player_ids, entity_index);
-            entities.push(Entity {
-                id,
-                entity_type_id: String::new(),
-                pos: Some(Vec2 {
-                    x: rng.gen_range(cfg.spawn_min..=cfg.spawn_max),
-                    y: rng.gen_range(cfg.spawn_min..=cfg.spawn_max),
-                }),
-                vel: Some(Vec2 { x: 0.0, y: 0.0 }),
-                force: Some(Vec2 { x: 0.0, y: 0.0 }),
-                owner_player_id: owner,
-            });
-            entity_index += 1;
-        }
-    }
-
-    GameState { tick: 0, entities }
-}
-
 pub fn log_sample(state: &GameState) {
     let mut out = String::new();
     for e in state.entities.iter().take(3) {
@@ -155,5 +102,5 @@ pub fn log_sample(state: &GameState) {
             ));
         }
     }
-    info!("tick={} | {}", state.tick, out);
+    debug!("tick={} | {}", state.tick, out);
 }

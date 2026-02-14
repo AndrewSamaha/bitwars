@@ -31,3 +31,9 @@ neutrals_near_spawn:
     count: 1
     offset_x: 150
     offset_y: 0
+
+# M7: Starting resources granted to each player on spawn (resource_type_id → amount)
+starting_resources:
+  food: 500
+  minerals: 200
+  energy: 250

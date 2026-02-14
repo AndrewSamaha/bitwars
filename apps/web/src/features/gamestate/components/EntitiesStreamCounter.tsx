@@ -29,7 +29,7 @@ export default function EntitiesStreamCounter() {
       try {
         const resp = await fetch('/api/players/me', { method: 'GET', headers: { Accept: 'application/json' } });
         if (resp.status === 401 || resp.status === 403) {
-          // Not authenticated -> navigate to login
+          console.log('[EntitiesStreamCounter] redirect: EventSource error + /me returned', resp.status);
           router.push('/');
           return;
         }
@@ -38,6 +38,7 @@ export default function EntitiesStreamCounter() {
       }
       // If EventSource has definitively closed, navigate to login as a fallback
       if (es.readyState === EventSource.CLOSED && errorCountRef.current > 1) {
+        console.log('[EntitiesStreamCounter] redirect: EventSource CLOSED and errorCount > 1');
         router.push('/');
       }
     };

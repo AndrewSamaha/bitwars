@@ -54,6 +54,9 @@ pub struct NeutralNearSpawn {
 /// One loadout: entity_type_id -> count. Keys are type ids, values are counts.
 pub type Loadout = HashMap<String, usize>;
 
+/// M7: Starting resources per player (resource_type_id → amount). Applied when a player spawns.
+pub type StartingResources = HashMap<String, i64>;
+
 /// Root spawn config: optional game origin, max distance for procedural spawn,
 /// list of spawn points (assigned one per player on join), list of loadout options
 /// (one chosen at random per player on join), and optional neutrals near each spawn.
@@ -75,6 +78,9 @@ pub struct SpawnConfig {
     /// Optional: server-owned entities spawned near each player's spawn (e.g. neutral creeps).
     #[serde(default)]
     pub neutrals_near_spawn: Vec<NeutralNearSpawn>,
+    /// M7: Starting resources granted to each player on spawn (resource_type_id → amount).
+    #[serde(default)]
+    pub starting_resources: StartingResources,
 }
 
 fn default_max_distance_from_origin() -> f32 {

@@ -77,13 +77,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "client_cmd_id must decode to 16 bytes" }, { status: 400 });
     }
 
+    // Must match ENGINE_PROTOCOL_MAJOR in services/rts-engine (currently 2).
     const envelope = create(IntentEnvelopeSchema, {
       clientCmdId: clientCmdBytes,
       intentId: new Uint8Array(),
       playerId,
       clientSeq: BigInt(clientSeqVal),
       serverTick: 0n,
-      protocolVersion: 1,
+      protocolVersion: 2,
       policy,
       payload: { case: "move", value: move },
     });

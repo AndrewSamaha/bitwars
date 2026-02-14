@@ -4,7 +4,7 @@ pub mod state;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Context, Result};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::Rng;
 use tokio::time::{interval, Duration, Instant};
 use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
@@ -22,7 +22,7 @@ use prost::Message;
 use crate::spawn_config::NEUTRAL_OWNER;
 use state::{init_world, log_sample, on_player_spawn, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 2;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 3;
 const DEDUPE_TTL_SECS: usize = 600;
 
 fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {
@@ -68,10 +68,38 @@ mod uuid_tests {
     }
 }
 
+/// Load spawn config from cfg.spawn_config_path. Exits the process if path is empty or load fails.
+fn load_spawn_config_or_exit(cfg: &GameConfig) -> SpawnConfig {
+    if cfg.spawn_config_path.is_empty() {
+        eprintln!("FATAL: SPAWN_CONFIG_PATH is not set. The engine requires a spawn config (config-based init only).");
+        std::process::exit(1);
+    }
+    match SpawnConfig::load(std::path::Path::new(&cfg.spawn_config_path)) {
+        Ok(sc) => {
+            if !sc.is_valid() {
+                eprintln!(
+                    "FATAL: Spawn config at {} is invalid (e.g. no loadouts).",
+                    cfg.spawn_config_path
+                );
+                std::process::exit(1);
+            }
+            info!(spawn_config = ?sc, "spawn config loaded");
+            sc
+        }
+        Err(e) => {
+            eprintln!(
+                "FATAL: Failed to load spawn config from {}: {}",
+                cfg.spawn_config_path, e
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
 pub struct Engine {
     cfg: GameConfig,
     content: Option<ContentPack>,
-    spawn_config: Option<SpawnConfig>,
+    spawn_config: SpawnConfig,
     state: GameState,
     prev_state: GameState,
     last_delta_id: Option<String>,
@@ -92,10 +120,22 @@ mod integration_tests {
     use super::*;
     use prost::Message;
     use redis::Value as RedisValue;
+    use std::path::Path;
     use uuid::Uuid;
 
     fn test_redis_url() -> String {
         std::env::var("TEST_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string())
+    }
+
+    /// Paths to spawn config and content pack (must exist when test runs from crate root).
+    fn test_spawn_and_content_paths() -> (String, String) {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let spawn = manifest.join("config/spawn.example.yaml");
+        let content = manifest.join("../../packages/content/entities.yaml");
+        (
+            spawn.to_string_lossy().into_owned(),
+            content.to_string_lossy().into_owned(),
+        )
     }
 
     #[tokio::test]
@@ -106,6 +146,7 @@ mod integration_tests {
         let game_id = format!("itest-{}", Uuid::now_v7());
         let events_stream = format!("rts:match:{}:events", game_id);
         let intents_stream = format!("rts:match:{}:intents", game_id);
+        let pending_joins_key = format!("rts:match:{}:pending_joins", game_id);
 
         let client = redis::Client::open(redis_url.clone())?;
         let mut conn = client.get_multiplexed_async_connection().await?;
@@ -116,18 +157,31 @@ mod integration_tests {
             .await?;
         drop(conn);
 
+        let (spawn_path, content_path) = test_spawn_and_content_paths();
         let mut cfg = GameConfig::default();
         cfg.game_id = game_id.clone();
         cfg.redis_url = redis_url.clone();
-        cfg.num_entities = 1;
+        cfg.spawn_config_path = spawn_path;
+        cfg.content_pack_path = content_path;
 
         let mut engine = Engine::new(cfg).await?;
+        assert!(engine.state.entities.is_empty(), "config-based init starts with no entities");
+
+        let mut rconn = client.get_multiplexed_async_connection().await?;
+        redis::cmd("RPUSH")
+            .arg(&pending_joins_key)
+            .arg("player-1")
+            .query_async::<_, ()>(&mut rconn)
+            .await?;
+        drop(rconn);
+        engine.run_one_tick().await?;
+
         let entity = engine
             .state
             .entities
             .first()
             .cloned()
-            .expect("world should have at least one entity");
+            .expect("world should have at least one entity after run_one_tick (spawn on join)");
 
         let move_intent = pb::MoveToLocationIntent {
             entity_id: entity.id,
@@ -310,11 +364,7 @@ impl Engine {
                     .collect();
                 let next_spawn_index = joined_players.len();
 
-                let spawn_config_restore: Option<SpawnConfig> = if cfg.spawn_config_path.is_empty() {
-                    None
-                } else {
-                    SpawnConfig::load(std::path::Path::new(&cfg.spawn_config_path)).ok()
-                };
+                let spawn_config_restore = load_spawn_config_or_exit(&cfg);
 
                 let mut engine = Self {
                     prev_state: state.clone(),
@@ -357,33 +407,15 @@ impl Engine {
         info!(game_id = %cfg.game_id, "clean start; flushing game streams");
         redis.flush_game_streams().await?;
 
-        let spawn_config: Option<SpawnConfig> = if cfg.spawn_config_path.is_empty() {
-            None
-        } else {
-            match SpawnConfig::load(std::path::Path::new(&cfg.spawn_config_path)) {
-                Ok(sc) => {
-                    info!(
-                        path = %cfg.spawn_config_path,
-                        spawn_points = sc.spawn_points.len(),
-                        loadouts = sc.loadouts.len(),
-                        "loaded spawn config"
-                    );
-                    Some(sc)
-                }
-                Err(e) => {
-                    warn!(path = %cfg.spawn_config_path, error = %e, "failed to load spawn config; using legacy spawn");
-                    None
-                }
-            }
-        };
-
-        let mut rng = StdRng::seed_from_u64(42);
-        let state = init_world(
-            &cfg,
-            content.as_ref(),
-            spawn_config.as_ref(),
-            &mut rng,
+        let spawn_config = load_spawn_config_or_exit(&cfg);
+        info!(
+            path = %cfg.spawn_config_path,
+            spawn_points = spawn_config.spawn_points.len(),
+            loadouts = spawn_config.loadouts.len(),
+            "loaded spawn config"
         );
+
+        let state = init_world(&spawn_config);
         info!(
             "Initialized world: entities={}, tps={}, friction={}",
             state.entities.len(), cfg.tps, cfg.friction
@@ -423,13 +455,16 @@ impl Engine {
         if self.joined_players.contains(player_id) {
             return Ok(());
         }
-        let sc = match &self.spawn_config {
-            Some(s) if s.is_valid() => s,
-            _ => return Ok(()),
-        };
+        let sc = &self.spawn_config;
         let _content = match &self.content {
             Some(c) => c,
-            None => return Ok(()),
+            None => {
+                warn!(
+                    player_id = %player_id,
+                    "skip spawn: no content pack loaded (set CONTENT_PACK_PATH)"
+                );
+                return Ok(());
+            }
         };
 
         let (spawn_x, spawn_y) = if sc.spawn_points.is_empty() {
@@ -458,6 +493,8 @@ impl Engine {
             .max()
             .unwrap_or(0) + 1;
 
+        let entity_count_before = self.state.entities.len();
+
         let mut rng = rand::thread_rng();
         on_player_spawn(
             &mut self.state.entities,
@@ -470,8 +507,28 @@ impl Engine {
             &mut rng,
         );
 
+        let spawned: Vec<(u64, String)> = self.state.entities[entity_count_before..]
+            .iter()
+            .map(|e| (e.id, e.entity_type_id.clone()))
+            .collect();
+        info!(
+            player_id = %player_id,
+            spawn_x = %spawn_x,
+            spawn_y = %spawn_y,
+            entity_count = spawned.len(),
+            entities = ?spawned,
+            "spawned on join"
+        );
+
+        // M7: Grant starting resources from spawn config (deterministic).
+        if !sc.starting_resources.is_empty() {
+            let resources = self.state.ledger.entry(player_id.to_string()).or_default();
+            for (resource_type, amount) in &sc.starting_resources {
+                *resources.entry(resource_type.clone()).or_insert(0) += amount;
+            }
+        }
+
         self.joined_players.insert(player_id.to_string());
-        info!(player_id = %player_id, spawn_x = %spawn_x, spawn_y = %spawn_y, "spawned on join");
         Ok(())
     }
 
@@ -491,6 +548,88 @@ impl Engine {
             .unwrap_or_default()
     }
 
+    /// Run one tick (for tests). Does not wait for ticker.
+    pub async fn run_one_tick(&mut self) -> Result<()> {
+        let dt = 1.0 / self.cfg.tps as f32;
+        let snapshot_interval = (self.cfg.tps as u64) * self.cfg.snapshot_every_secs;
+
+        // M6: Process pending joins (spawn on join)
+        while let Ok(Some(player_id)) = self.redis.pop_next_pending_join().await {
+            info!(player_id = %player_id, "processing join from pending_joins");
+            if let Err(e) = self.ensure_spawned(&player_id) {
+                warn!(player_id = %player_id, error = ?e, "ensure_spawned failed");
+            }
+        }
+
+        let batch_start = Instant::now();
+        let mut cmds_this_tick: u32 = 0;
+        let read_count = self.cfg.max_cmds_per_tick as usize;
+        if let Ok(Some(entries)) =
+            self.redis.read_new_intents(&self.last_intent_id, read_count).await
+        {
+            for (entry_id, bytes) in entries {
+                if cmds_this_tick >= self.cfg.max_cmds_per_tick {
+                    warn!(tick = self.state.tick, limit = self.cfg.max_cmds_per_tick, "max_cmds_per_tick reached, deferring remaining");
+                    break;
+                }
+                if self.cfg.max_batch_ms > 0
+                    && batch_start.elapsed().as_millis() as u64 >= self.cfg.max_batch_ms
+                {
+                    warn!(tick = self.state.tick, elapsed_ms = batch_start.elapsed().as_millis() as u64, limit_ms = self.cfg.max_batch_ms, "max_batch_ms reached, deferring remaining");
+                    break;
+                }
+                if let Err(err) = self.process_raw_intent(bytes.as_slice()).await {
+                    warn!(error = ?err, "failed to handle intent payload from Redis");
+                }
+                cmds_this_tick += 1;
+                self.last_intent_id = entry_id;
+            }
+        }
+
+        let finished =
+            self.intents
+                .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
+        for (entity_id, metadata) in finished {
+            if let Err(err) = self.redis.clear_active_intent(entity_id).await {
+                warn!(error = ?err, entity_id, "failed to clear active intent tracking");
+            }
+            if let Err(err) = self
+                .emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Finished,
+                    pb::LifecycleReason::None,
+                    self.state.tick,
+                )
+                .await
+            {
+                warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
+            }
+        }
+        integrate(&self.cfg, &mut self.state, dt);
+        self.state.tick += 1;
+
+        let delta = compute_delta(
+            &self.prev_state,
+            &self.state,
+            self.cfg.eps_pos,
+            self.cfg.eps_vel,
+        );
+        if !delta.updates.is_empty() {
+            if let Ok(id) = self.redis.publish_delta(&delta).await {
+                self.last_delta_id = Some(id);
+            }
+        }
+        if self.state.tick % snapshot_interval == 0 {
+            let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
+            let _ = self.redis.publish_snapshot(&self.state, boundary).await;
+        }
+        if self.state.tick % (self.cfg.tps as u64) == 0 {
+            log_sample(&self.state);
+        }
+        self.prev_state = self.state.clone();
+        Ok(())
+    }
+
     pub async fn run(&mut self) -> anyhow::Result<()> {
         let dt = 1.0 / self.cfg.tps as f32;
         let mut ticker = interval(Duration::from_micros(
@@ -503,6 +642,7 @@ impl Engine {
 
             // M6: Process pending joins (spawn on join)
             while let Ok(Some(player_id)) = self.redis.pop_next_pending_join().await {
+                info!(player_id = %player_id, "processing join from pending_joins");
                 if let Err(e) = self.ensure_spawned(&player_id) {
                     warn!(player_id = %player_id, error = ?e, "ensure_spawned failed");
                 }

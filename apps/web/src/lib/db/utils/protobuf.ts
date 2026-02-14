@@ -23,18 +23,28 @@ export const mapDeltaToJson = (d: Delta) => ({
   }),
 });
 
-export const mapSnapshotToJson = (s: Snapshot) => ({
-  type: "snapshot" as const,
-  tick: biToNumOrStr(s.tick),
-  entities: (s.entities ?? []).map((e) => {
-    const eAny = e as { entityTypeId?: string; ownerPlayerId?: string };
-    return {
-      id: biToNumOrStr(e.id),
-      ...(eAny.entityTypeId ? { entity_type_id: eAny.entityTypeId } : {}),
-      ...(e.pos ? { pos: { x: e.pos.x, y: e.pos.y } } : {}),
-      ...(e.vel ? { vel: { x: e.vel.x, y: e.vel.y } } : {}),
-      ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
-      ...(eAny.ownerPlayerId !== undefined ? { owner_player_id: eAny.ownerPlayerId } : {}),
-    };
-  }),
-});
+export const mapSnapshotToJson = (s: Snapshot) => {
+  const player_ledgers = (s.playerLedgers ?? []).map((pl) => ({
+    player_id: pl.playerId ?? "",
+    resources: (pl.resources ?? []).map((r) => ({
+      resource_type: r.resourceType ?? "",
+      amount: biToNumOrStr(r.amount),
+    })),
+  }));
+  return {
+    type: "snapshot" as const,
+    tick: biToNumOrStr(s.tick),
+    entities: (s.entities ?? []).map((e) => {
+      const eAny = e as { entityTypeId?: string; ownerPlayerId?: string };
+      return {
+        id: biToNumOrStr(e.id),
+        ...(eAny.entityTypeId ? { entity_type_id: eAny.entityTypeId } : {}),
+        ...(e.pos ? { pos: { x: e.pos.x, y: e.pos.y } } : {}),
+        ...(e.vel ? { vel: { x: e.vel.x, y: e.vel.y } } : {}),
+        ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
+        ...(eAny.ownerPlayerId !== undefined ? { owner_player_id: eAny.ownerPlayerId } : {}),
+      };
+    }),
+    player_ledgers,
+  };
+};

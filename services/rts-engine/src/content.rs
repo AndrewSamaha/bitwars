@@ -11,10 +11,12 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// A loaded content pack with entity type definitions and a content hash.
+/// A loaded content pack with entity and resource type definitions and a content hash.
 #[derive(Clone, Debug)]
 pub struct ContentPack {
     pub entity_types: HashMap<String, EntityTypeDef>,
+    /// M7: Resource type definitions for display (id → display_name, order).
+    pub resource_types: HashMap<String, ResourceTypeDef>,
     /// Hex-encoded xxh3-64 hash of the canonicalized JSON representation.
     pub content_hash: String,
 }
@@ -28,10 +30,20 @@ pub struct EntityTypeDef {
     pub health: f32,
 }
 
+/// M7: Per-resource-type definition for display (name, order) in HUD.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ResourceTypeDef {
+    pub display_name: String,
+    #[serde(default)]
+    pub order: i32,
+}
+
 /// Raw deserialization target matching the YAML structure.
 #[derive(Deserialize)]
 struct ContentFile {
     entity_types: HashMap<String, EntityTypeDef>,
+    #[serde(default)]
+    resource_types: HashMap<String, ResourceTypeDef>,
 }
 
 impl ContentPack {
@@ -42,17 +54,21 @@ impl ContentPack {
         let file: ContentFile = serde_yaml::from_str(&raw)
             .with_context(|| format!("failed to parse content pack YAML: {}", path.display()))?;
 
-        let content_hash = canonical_hash(&file.entity_types)?;
+        let content_hash = canonical_hash(&file.entity_types, &file.resource_types)?;
 
         Ok(Self {
             entity_types: file.entity_types,
+            resource_types: file.resource_types,
             content_hash,
         })
     }
 
-    /// Serialize the entity type definitions to JSON (for API responses).
+    /// Serialize entity and resource type definitions to JSON (for API responses).
     pub fn to_json(&self) -> Result<String> {
-        let wrapper = serde_json::json!({ "entity_types": &self.entity_types });
+        let wrapper = serde_json::json!({
+            "entity_types": &self.entity_types,
+            "resource_types": &self.resource_types,
+        });
         Ok(serde_json::to_string_pretty(&wrapper)?)
     }
 
@@ -60,21 +76,26 @@ impl ContentPack {
     pub fn get(&self, entity_type_id: &str) -> Option<&EntityTypeDef> {
         self.entity_types.get(entity_type_id)
     }
+
+    /// M7: Look up a resource type definition, returning `None` for unknown types.
+    pub fn get_resource_type(&self, resource_type_id: &str) -> Option<&ResourceTypeDef> {
+        self.resource_types.get(resource_type_id)
+    }
 }
 
-/// Compute a deterministic hash from entity type definitions.
+/// Compute a deterministic hash from entity and resource type definitions.
 ///
-/// The definitions are serialized to JSON with sorted keys (via
-/// `BTreeMap` ordering) and no extra whitespace, then hashed with xxh3-64.
-/// This means two YAML files with different formatting but identical data
-/// produce the same hash.
-fn canonical_hash(entity_types: &HashMap<String, EntityTypeDef>) -> Result<String> {
-    // BTreeMap sorts keys deterministically.
-    let sorted: std::collections::BTreeMap<&String, &EntityTypeDef> =
-        entity_types.iter().collect();
-    let json = serde_json::to_string(&sorted)
-        .context("failed to serialize entity types to canonical JSON")?;
-    let hash = xxhash_rust::xxh3::xxh3_64(json.as_bytes());
+/// Both maps are serialized to JSON with sorted keys (via `BTreeMap` ordering)
+/// and no extra whitespace, then hashed with xxh3-64.
+fn canonical_hash(
+    entity_types: &HashMap<String, EntityTypeDef>,
+    resource_types: &HashMap<String, ResourceTypeDef>,
+) -> Result<String> {
+    let et: std::collections::BTreeMap<&String, &EntityTypeDef> = entity_types.iter().collect();
+    let rt: std::collections::BTreeMap<&String, &ResourceTypeDef> = resource_types.iter().collect();
+    let json = serde_json::json!({ "entity_types": et, "resource_types": rt });
+    let json_str = serde_json::to_string(&json).context("failed to serialize content to canonical JSON")?;
+    let hash = xxhash_rust::xxh3::xxh3_64(json_str.as_bytes());
     Ok(format!("{:016x}", hash))
 }
 
@@ -94,8 +115,9 @@ mod tests {
             EntityTypeDef { speed: 140.0, stop_radius: 0.5, mass: 0.6, health: 60.0 },
         );
 
-        let h1 = canonical_hash(&types).unwrap();
-        let h2 = canonical_hash(&types).unwrap();
+        let empty_resources: HashMap<String, ResourceTypeDef> = HashMap::new();
+        let h1 = canonical_hash(&types, &empty_resources).unwrap();
+        let h2 = canonical_hash(&types, &empty_resources).unwrap();
         assert_eq!(h1, h2, "hash must be deterministic across calls");
         assert_eq!(h1.len(), 16, "hex xxh3-64 should be 16 chars");
     }
@@ -122,9 +144,10 @@ mod tests {
             EntityTypeDef { speed: 90.0, stop_radius: 0.75, mass: 1.0, health: 100.0 },
         );
 
+        let empty_resources: HashMap<String, ResourceTypeDef> = HashMap::new();
         assert_eq!(
-            canonical_hash(&types_a).unwrap(),
-            canonical_hash(&types_b).unwrap(),
+            canonical_hash(&types_a, &empty_resources).unwrap(),
+            canonical_hash(&types_b, &empty_resources).unwrap(),
             "hash must be independent of insertion order"
         );
     }
@@ -140,6 +163,7 @@ mod tests {
         }
         let pack = ContentPack::load(&content_path).unwrap();
         assert!(pack.entity_types.contains_key("worker"), "should have worker type");
+        assert!(pack.resource_types.get("gold").is_some(), "M7: should have gold resource type");
         assert!(pack.entity_types.contains_key("scout"), "should have scout type");
         assert!(!pack.content_hash.is_empty(), "content hash should be non-empty");
 

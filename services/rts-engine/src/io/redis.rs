@@ -1,12 +1,12 @@
 use prost::Message;
 use redis::{AsyncCommands, Value as RedisValue};
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::engine::intent::{format_uuid, IntentMetadata};
 use crate::engine::state::GameState;
 use crate::pb::events_stream_record;
-use crate::pb::{self, Delta, EventsStreamRecord, LifecycleEvent, Snapshot};
+use crate::pb::{self, Delta, EventsStreamRecord, LifecycleEvent, PlayerResourceLedger, ResourceEntry, Snapshot};
 
 // ── M2: Per-entity tracking types ───────────────────────────────────────────
 //
@@ -153,9 +153,31 @@ impl RedisClient {
         state: &GameState,
         boundary_stream_id: &str,
     ) -> anyhow::Result<()> {
+        let player_ledgers = state
+            .ledger
+            .iter()
+            .map(|(player_id, resources)| {
+                let mut entries: Vec<ResourceEntry> = resources
+                    .iter()
+                    .map(|(resource_type, amount)| ResourceEntry {
+                        resource_type: resource_type.clone(),
+                        amount: *amount,
+                    })
+                    .collect();
+                entries.sort_by(|a, b| a.resource_type.cmp(&b.resource_type));
+                PlayerResourceLedger {
+                    player_id: player_id.clone(),
+                    resources: entries,
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut player_ledgers = player_ledgers;
+        player_ledgers.sort_by(|a, b| a.player_id.cmp(&b.player_id));
+
         let snap = Snapshot {
             tick: state.tick as i64,
             entities: state.entities.clone(),
+            player_ledgers,
         };
         let bytes = snap.encode_to_vec();
 
@@ -179,7 +201,7 @@ impl RedisClient {
             .query_async(&mut self.conn)
             .await?;
 
-        info!(
+        debug!(
             "SET {} (tick={}), HSET {} boundary_stream_id={}",
             snap_key, state.tick, meta_key, boundary_stream_id
         );
@@ -196,7 +218,7 @@ impl RedisClient {
             .query_async(&mut self.conn)
             .await?;
 
-        info!(
+        debug!(
             stream = %stream,
             stream_id = %stream_id,
             tick = state.tick,
@@ -394,9 +416,23 @@ impl RedisClient {
             .await
             .unwrap_or_else(|_| "0-0".to_string());
 
+        let ledger = snapshot
+            .player_ledgers
+            .iter()
+            .map(|pl| {
+                let resources = pl
+                    .resources
+                    .iter()
+                    .map(|e| (e.resource_type.clone(), e.amount))
+                    .collect();
+                (pl.player_id.clone(), resources)
+            })
+            .collect();
+
         let state = GameState {
             tick: snapshot.tick as u64,
             entities: snapshot.entities,
+            ledger,
         };
 
         info!(

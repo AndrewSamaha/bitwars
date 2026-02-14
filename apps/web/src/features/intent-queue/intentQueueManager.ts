@@ -65,6 +65,7 @@ export type ReconnectHandshake = {
   server_tick: number;
   protocol_version: number;
   content_version: string;          // M4: xxh3 hex hash of server content pack
+  player_id?: string;               // M7: current player id (for resource ledger)
   last_processed_client_seq: number;
   active_intents: Array<{
     entity_id: number;

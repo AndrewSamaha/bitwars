@@ -72,12 +72,14 @@ export function PlayerProvider({
       });
 
       if (res.status === 204 || res.status === 404) {
+        console.log('[PlayerContext] /me returned', res.status, '-> setPlayer(null)');
         setPlayer(null);
         setLoading(false);
         return null;
       }
 
       if (!res.ok) {
+        console.log('[PlayerContext] /me non-ok', { status: res.status });
         throw new Error(`Fetch failed (${res.status})`);
       }
 
@@ -87,6 +89,7 @@ export function PlayerProvider({
         throw new Error('Invalid player payload');
       }
 
+      console.log('[PlayerContext] /me success', { id: check.data.id });
       setPlayer(check.data);
       setLoading(false);
       return check.data;
@@ -94,6 +97,7 @@ export function PlayerProvider({
       if (e?.name === 'AbortError') {
         // ignore cancellation noise
       } else {
+        console.log('[PlayerContext] /me fetch failed', e?.message ?? e);
         setError(e?.message ?? 'Failed to load player');
       }
       setLoading(false);
