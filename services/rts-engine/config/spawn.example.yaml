@@ -34,6 +34,6 @@ neutrals_near_spawn:
 
 # M7: Starting resources granted to each player on spawn (resource_type_id → amount)
 starting_resources:
-  gold: 100
-  wood: 50
-  stone: 25
+  food: 500
+  minerals: 200
+  energy: 250

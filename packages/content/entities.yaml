@@ -12,14 +12,14 @@
 
 # M7: Resource types (id = key). Display order and name for HUD; theme-agnostic.
 resource_types:
-  gold:
-    display_name: Gold
+  food:
+    display_name: Food
     order: 0
-  wood:
-    display_name: Wood
+  minerals:
+    display_name: Minerals
     order: 1
-  stone:
-    display_name: Stone
+  energy:
+    display_name: Energy
     order: 2
 
 entity_types:
