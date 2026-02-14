@@ -295,7 +295,7 @@ See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
 
 ---
 
-## M7: Resource Ledger + Resource HUD
+## M7: **Done** Resource Ledger + Resource HUD
 
 ### Goals
 
