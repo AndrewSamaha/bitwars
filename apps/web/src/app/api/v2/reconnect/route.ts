@@ -50,7 +50,7 @@ export async function GET() {
 
     // Protocol version must match the engine constant (ENGINE_PROTOCOL_MAJOR).
     // This is a static value; if it ever becomes dynamic, read it from Redis.
-    const PROTOCOL_VERSION = 2;
+    const PROTOCOL_VERSION = 3;
 
     // Read server_tick from the latest snapshot metadata
     const snapshotMetaKey = `snapshot_meta:${GAME_ID}`;
