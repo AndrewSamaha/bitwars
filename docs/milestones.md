@@ -1,6 +1,6 @@
 # Development Milestones (Incremental, Demo-Oriented)
 
-**Last updated:** 2026-02-11 -0500
+**Last updated:** 2026-02-15 -0500
 
 This roadmap lays out small, demonstrable steps toward a data-driven RTS intent system.
 Each milestone targets a vertical slice that can be shown end-to-end: client issues intents → server validates/executes → client receives deltas and updates UI.
@@ -318,42 +318,48 @@ See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
 
 ---
 
-## M8: Resource Nodes + Gathering Loop + Refinery Deposit
+## M8: Resource Collection v1 (Transport + Proximity Modes)
+
+See detailed plan: [docs/milestones/m8-resource-collection.md](./milestones/m8-resource-collection.md)
 
 ### Goals
 
-- Deliver a full economy loop: gather → carry → deposit → repeat.
-- Introduce a **maintained/continuous behavior** intent pattern (without scripting).
+- Deliver a deterministic resource collection foundation that supports multiple modes.
+- Ship both:
+  - `transport` gathering (gather → carry → deposit),
+  - `proximity` gathering (collect while within effective distance band).
+- Introduce a maintained/continuous behavior intent pattern without mode-specific hacks.
 
 ### Deliverables
 
-- Entities:
-  - Resource node entity with remaining amount (finite or infinite for v1).
-  - Refinery building entity (owned, static).
-  - Worker unit with carry capacity.
-- Server (simulation rules):
-  - Gather behavior:
-    - Move into gather range.
-    - Gather ticks until carry is full or node is empty.
-    - Auto-travel to **nearest owned refinery**; deposit; return to node; repeat.
-  - Interruption:
-    - `REPLACE_ACTIVE` cancels gathering immediately and the worker obeys the new command.
+- Data/content:
+  - Resource definitions declare `collection_mode` (`transport` or `proximity`).
+  - Collector entity types declare compatible resource types.
+  - Distance-band params for proximity collection (`min_effective_distance`, `max_effective_distance`).
+- Server:
+  - Unified resource interaction system handling both modes deterministically.
+  - `transport`: gather/carry/deposit loop via nearest valid deposit structure.
+  - `proximity`: collection only while in effective distance band.
+  - `REPLACE_ACTIVE` cancels collection behavior immediately.
 - Client:
-  - Basic feedback: gathering state indicator; node/refinery icons; minimap icons.
+  - Basic collection-state feedback (collecting, out-of-range, incompatible).
+  - Ledger/HUD remains authoritative to server events.
 
 ### Acceptance Criteria
 
-- A worker can be redirected mid-loop and immediately stops the old behavior.
-- Two players gathering from the same node behaves deterministically (tie rules documented).
+- `transport` and `proximity` both function end-to-end and remain deterministic under replay.
+- Incompatible collector/resource pairs are rejected or no-op with clear reasoning.
+- Interrupting collection via new command immediately stops old maintained behavior.
+- Two players collecting from same source follows documented deterministic tie/order rules.
 
 ---
 
-## M9: Unit Production (Costs, Build Time, Spawn)
+## M9: Unit Production + Collector Specialization
 
 ### Goals
 
 - Convert resources into new units over time.
-- Provide a second, demo-friendly economic loop: gather → build → rally.
+- Extend the economy loop to support specialized collectors per resource family.
 
 ### Deliverables
 
@@ -362,14 +368,17 @@ See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
   - Resource costs applied deterministically (pay upfront or reserve; rules documented).
   - Build timer; unit spawns on completion at a spawn offset / rally point.
   - Cancel rules (refund policy documented).
+  - Resource/collector compatibility rules used in M8 feed directly into production costs and available build options.
 - Client:
   - Build UI (simple buttons) + production progress indicator.
   - Optional: client maintains a **local build queue** (UX) while server remains active-only.
+  - Basic visibility for which collector types can gather which resource families.
 
 ### Acceptance Criteria
 
 - Replays reproduce identical unit spawn timing and positions.
 - Cancel/refund behavior is deterministic and visible in HUD.
+- Specialized collectors materially affect which resources can be acquired and therefore what can be produced.
 
 ---
 
@@ -402,16 +411,19 @@ See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
 
 ---
 
-## M11: AoE + Periodic Effects (Distance Falloff)
+## M11: Environmental Hazards + AoE Periodic Effects (Distance Falloff)
 
 ### Goals
 
+- Introduce environment-driven periodic effects tied to resource/source proximity bands.
 - Support area damage patterns (e.g., radiation aura) with distance-based falloff.
 - Keep computation/networking cheap and deterministic.
 
 ### Deliverables
 
 - Server:
+  - Environmental hazard profiles that can be attached to resources/sources (e.g., `solar`, `theta`).
+  - Hazard rules use distance-band primitives compatible with M8 proximity collection logic.
   - AoE source component/system:
     - Applies damage periodically to entities in radius.
     - Falloff by distance (e.g., inverse-square or a simple squared-distance curve).
@@ -423,6 +435,7 @@ See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
 
 - Overlapping AoEs produce predictable results (documented stacking/order).
 - Replay produces identical world hash.
+- Resource-adjacent hazard behavior is deterministic and compatible with proximity collection windows.
 
 ---
 
@@ -475,8 +488,9 @@ See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
 - M5 improves client world navigation (camera/minimap/background) to support all later demos.
 - M6 establishes ownership/spawn/control gating.
 - M7 adds the resource ledger + HUD.
-- M8–M9 deliver the economy loop (gather → deposit → build).
-- M10–M11 deliver combat (targeted + AoE).
+- M8 establishes dual-mode resource collection (transport + proximity) with collector compatibility.
+- M9 builds production and collector specialization on top of M8’s data model.
+- M10–M11 deliver combat plus environmental hazard mechanics using shared distance-band primitives.
 - M12 adds fog-of-war and per-player visibility filtering.
 
 ---
