@@ -36,7 +36,7 @@ impl SpawnPoint {
     }
 }
 
-/// Describes entities to spawn at a fixed offset from each player's spawn (server-owned).
+/// Describes entities to spawn near each player's spawn (server-owned).
 #[derive(Clone, Debug, Deserialize)]
 pub struct NeutralNearSpawn {
     /// Entity type id from the content pack.
@@ -44,11 +44,12 @@ pub struct NeutralNearSpawn {
     pub entity_type_id: String,
     /// How many to spawn per player.
     pub count: usize,
-    /// Offset from spawn point (default 0). One entity per count at this offset (or random jitter if both 0).
+    /// Min random distance from spawn point for each entity (default 0).
     #[serde(default)]
-    pub offset_x: f32,
+    pub min_distance_from_spawn: f32,
+    /// Max random distance from spawn point for each entity (default 0).
     #[serde(default)]
-    pub offset_y: f32,
+    pub max_distance_from_spawn: f32,
 }
 
 /// One loadout: entity_type_id -> count. Keys are type ids, values are counts.
@@ -73,6 +74,12 @@ pub struct SpawnConfig {
     /// with entities placed within 100 units of that point.
     #[serde(default)]
     pub spawn_points: Vec<SpawnPoint>,
+    /// Min random distance from already placed player-owned units when spawning a new player-owned unit.
+    #[serde(default)]
+    pub min_entity_spawn_distance: f32,
+    /// Max random distance from already placed player-owned units when spawning a new player-owned unit.
+    #[serde(default = "default_max_entity_spawn_distance")]
+    pub max_entity_spawn_distance: f32,
     /// Pool of loadout options. When a player joins, one is chosen at random from this list.
     pub loadouts: Vec<Loadout>,
     /// Optional: server-owned entities spawned near each player's spawn (e.g. neutral creeps).
@@ -85,6 +92,10 @@ pub struct SpawnConfig {
 
 fn default_max_distance_from_origin() -> f32 {
     10_000.0
+}
+
+fn default_max_entity_spawn_distance() -> f32 {
+    25.0
 }
 
 impl SpawnConfig {

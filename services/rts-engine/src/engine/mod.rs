@@ -503,6 +503,8 @@ impl Engine {
             spawn_x,
             spawn_y,
             loadout,
+            sc.min_entity_spawn_distance,
+            sc.max_entity_spawn_distance,
             &sc.neutrals_near_spawn,
             &mut rng,
         );

@@ -6,15 +6,18 @@
 # game_origin: [x, y] center of world (default [0, 0]); used for procedural spawn if spawn_points is empty.
 # max_distance_from_origin: max distance for procedural spawn (default 10000).
 # spawn_points: list of [x, y]; one is assigned per joining player in order. If empty, positions are random within max_distance_from_origin.
+# min_entity_spawn_distance / max_entity_spawn_distance: controls spacing between newly spawned player-owned units.
 # loadouts: list of loadout options; each player gets one chosen at random.
 # neutrals_near_spawn: optional server-owned entities near each player's spawn.
 
-# game_origin: [0, 0]   # optional, default
-# max_distance_from_origin: 10000   # optional, default
+game_origin: [0, 0]   # optional, default
+max_distance_from_origin: 10000   # optional, default
+min_entity_spawn_distance: 200
+max_entity_spawn_distance: 300
 
-spawn_points:
-  - [800, 0]
-  - [-800, 0]
+#spawn_points:
+#  - [800, 0]
+#  - [-800, 0]
 
 # Pool of loadouts; one is picked at random per player on join
 loadouts:
@@ -26,12 +29,22 @@ loadouts:
 neutrals_near_spawn:
   - type: theta
     count: 1
-    offset_x: 150
-    offset_y: 0
+    min_distance_from_spawn: 1200
+    max_distance_from_spawn: 2000
   - type: star_yellow
     count: 1
-    offset_x: 150
-    offset_y: 0
+    min_distance_from_spawn: 200
+    max_distance_from_spawn: 500
+  - type: minerals
+    count: 1
+    min_distance_from_spawn: 200
+    max_distance_from_spawn: 650
+  - type: planet_blue
+    count: 1
+    min_distance_from_spawn: 200
+    max_distance_from_spawn: 800
+
+
 
 # M7: Starting resources granted to each player on spawn (resource_type_id → amount)
 starting_resources:
