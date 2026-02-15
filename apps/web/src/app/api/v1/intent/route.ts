@@ -5,6 +5,7 @@ import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
 import { requireAuthOr401 } from "@/features/users/utils/auth";
+import { ENGINE_PROTOCOL_MAJOR } from "@/lib/constants";
 
 // Map string policy names to proto enum values
 const POLICY_MAP: Record<string, IntentPolicy> = {
@@ -77,14 +78,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "client_cmd_id must decode to 16 bytes" }, { status: 400 });
     }
 
-    // Must match ENGINE_PROTOCOL_MAJOR in services/rts-engine (currently 2).
     const envelope = create(IntentEnvelopeSchema, {
       clientCmdId: clientCmdBytes,
       intentId: new Uint8Array(),
       playerId,
       clientSeq: BigInt(clientSeqVal),
       serverTick: 0n,
-      protocolVersion: 2,
+      protocolVersion: ENGINE_PROTOCOL_MAJOR,
       policy,
       payload: { case: "move", value: move },
     });
