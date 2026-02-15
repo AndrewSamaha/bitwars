@@ -22,7 +22,7 @@ use prost::Message;
 use crate::spawn_config::NEUTRAL_OWNER;
 use state::{init_world, log_sample, on_player_spawn, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 3;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 4;
 const DEDUPE_TTL_SECS: usize = 600;
 
 fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {

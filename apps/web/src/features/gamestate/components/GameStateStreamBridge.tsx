@@ -143,6 +143,7 @@ export default function GameStateStreamBridge() {
         const key = normalizeId(u.id);
         const existing = byId.get(key);
         if (existing) {
+          if (u.entity_type_id !== undefined) existing.entity_type_id = u.entity_type_id;
           if (u.pos) {
             if (!existing.pos) existing.pos = { x: u.pos.x, y: u.pos.y };
             else { existing.pos.x = u.pos.x; existing.pos.y = u.pos.y; }

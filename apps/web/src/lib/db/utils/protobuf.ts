@@ -12,9 +12,10 @@ export const mapDeltaToJson = (d: Delta) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
   updates: (d.updates ?? []).map((u) => {
-    const uAny = u as { ownerPlayerId?: string };
+    const uAny = u as { ownerPlayerId?: string; entityTypeId?: string };
     return {
       id: biToNumOrStr(u.id),
+      ...(uAny.entityTypeId ? { entity_type_id: uAny.entityTypeId } : {}),
       ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
       ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
       ...(u.force ? { force: { x: u.force.x, y: u.force.y } } : {}),

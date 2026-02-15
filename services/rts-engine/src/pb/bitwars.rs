@@ -37,6 +37,9 @@ pub struct EntityDelta {
     /// M6: set when ownership changes
     #[prost(string, optional, tag = "5")]
     pub owner_player_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// set on creation and when type changes
+    #[prost(string, optional, tag = "6")]
+    pub entity_type_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// M7: Per-player resource totals. Resource types are data-driven (string IDs).
 #[derive(Clone, PartialEq, ::prost::Message)]
