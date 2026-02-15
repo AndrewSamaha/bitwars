@@ -77,6 +77,20 @@ Configuration is loaded from the root `.env` file. The `dev` and `fe:run` script
 | `MAX_BATCH_MS` | `5` | Maximum ms spent processing intents per tick (0 = unlimited) |
 | `AXIOM_TOKEN` | *(none)* | Axiom API token for telemetry (optional) |
 | `AXIOM_DATASET` | *(none)* | Axiom dataset name for telemetry (optional) |
+| `NEXT_PUBLIC_DEBUG_MOVE_INPUT` | `0` | Web-only debug flag. Set to `1` to enable move-input observability (console logs + small on-screen badge in `GameStage`). |
+
+### Move Click Detection (Web)
+
+Move-command click detection in the web client is handled at the Pixi stage level (not via a bounded world "ground" hit area). This avoids losing move clicks when the camera/entity is far from world origin.
+
+- Source: `apps/web/src/features/pixijs/components/GameStage.tsx`
+- Approach:
+  - `app.stage` is configured for pointer hit testing over the canvas.
+  - Stage `pointerdown` handles deselect (non-Move mode) and move intent dispatch (Move mode).
+  - Entity clicks in Move mode are allowed to bubble so clicking an entity can still issue a move command.
+  - Minimap clicks are explicitly ignored by move input handling.
+- Observability:
+  - Set `NEXT_PUBLIC_DEBUG_MOVE_INPUT=1` to emit `console.debug` traces and render a tiny top-right "move-input" debug badge showing the latest decision (`ignored:*` or `dispatched`).
 
 ## rts-engine
 This is the Rust server that will run the game loop. It integrates with Redis and protobuf-generated types.

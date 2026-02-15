@@ -35,6 +35,7 @@ const PAN_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
 ]);
+const DEBUG_MOVE_INPUT = process.env.NEXT_PUBLIC_DEBUG_MOVE_INPUT === "1";
 
 function isFocusInEditable(): boolean {
   const el = document.activeElement;
@@ -44,6 +45,7 @@ function isFocusInEditable(): boolean {
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState<boolean>(game.ready);
+  const [moveDebug, setMoveDebug] = useState<string>("idle");
   const { player } = usePlayer();
   const { actions: { setHovered, setApp, setCamera, setSelection, setSelectedAction }, selectors } = useHUD();
   // Keep latest selectors in a ref so event handlers see current selection/action
@@ -81,6 +83,11 @@ export default function GameStage() {
     });
 
     const initWorld = async () => {
+        const updateMoveDebug = (message: string, payload?: Record<string, unknown>) => {
+          if (!DEBUG_MOVE_INPUT) return;
+          const suffix = payload ? ` ${JSON.stringify(payload)}` : "";
+          setMoveDebug(`${message}${suffix}`);
+        };
         const app = new Application();
         await app.init({
             background: BACKGROUND_APP_COLOR,
@@ -96,6 +103,8 @@ export default function GameStage() {
         worldContainer.position.set(800, 500);
         worldContainer.scale.set(.5);
         app.stage.addChild(worldContainer);
+        app.stage.eventMode = "static";
+        app.stage.hitArea = app.screen;
         setCamera(worldContainer);
 
         // M5.2: Voronoi border overlay in screen space (sample grid → edge test → draw dots)
@@ -193,13 +202,6 @@ export default function GameStage() {
           }
         }
 
-        // Ground capture for clicks (very large transparent rect)
-        const ground = new Graphics();
-        (ground as any).label = 'ground';
-        ground.rect(-4000, -4000, 8000, 8000).fill(0x000000, 0);
-        ground.eventMode = 'static';
-        worldContainer.addChild(ground);
-
         // M1: Container for waypoint indicator graphics (drawn each frame)
         const waypointContainer = new Container();
         (waypointContainer as any).label = 'waypoints';
@@ -275,16 +277,23 @@ export default function GameStage() {
                 setHovered(null);
               })
               .on('pointerdown', (ev: any) => {
+                const sel = latestSelectorsRef.current;
+                // In Move mode, entity clicks should bubble to stage and issue a move command.
+                if (sel.selectedAction === "Move") {
+                  return;
+                }
                 // M6: Only select entities owned by the current player
                 const myId = myPlayerIdRef.current;
                 const ownerId = (e as any).owner_player_id;
                 const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
-                if (!isOwned) return;
-                const id = (e as any).id;
-                if (id !== undefined && id !== null) {
-                  setSelection([String(id)]);
+                if (isOwned) {
+                  const id = (e as any).id;
+                  if (id !== undefined && id !== null) {
+                    setSelection([String(id)]);
+                  }
                 }
-                ev.stopPropagation(); // don't trigger ground handler
+                // In non-move mode, entity clicks should not fall through to stage deselect.
+                ev.stopPropagation();
               });
             attached.add(e);
             // default scale if none present
@@ -326,9 +335,10 @@ export default function GameStage() {
             const myId = myPlayerIdRef.current;
             const ownerId = (e as any).owner_player_id;
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
-            const baseTint = isOwned ? CLEAN_COLOR : NON_OWNED_TINT;
+            const isNeutral = ownerId === "neutral";
+            const baseTint = isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
             if ((e as any).hover) {
-              if (primary) (primary as any).tint = isOwned ? SELECTED_COLOR : NON_OWNED_TINT;
+              if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
               // ensure a hover indicator exists as a child after sprite (only for owned so we don't highlight enemy)
               let hoverIndicator = container.children.find((c) => c.label === 'hoverIndicator') as Graphics | undefined;
               if (isOwned && !hoverIndicator) {
@@ -394,24 +404,62 @@ export default function GameStage() {
           }
         };
 
-        // Ground click — M1: delegates to IntentQueueManager with modifier keys
-        ground.on('pointerdown', async (ev: any) => {
+        // Stage click — M1: delegates to IntentQueueManager with modifier keys.
+        // This avoids world-geometry hit-area limits and works regardless of world position.
+        app.stage.on('pointerdown', (ev: any) => {
           try {
-            const sel = latestSelectorsRef.current;
-            // If not in Move mode, treat ground click as deselect
-            if (sel.selectedAction !== 'Move') {
-              if (sel.hasSelection) setSelection([]);
+            const global = ev.global;
+            // Keep minimap as informational-only; clicks there should not issue move intents.
+            const minimapBounds = minimapContainer.getBounds();
+            if (
+              global.x >= minimapBounds.minX &&
+              global.x <= minimapBounds.maxX &&
+              global.y >= minimapBounds.minY &&
+              global.y <= minimapBounds.maxY
+            ) {
+              if (DEBUG_MOVE_INPUT) {
+                console.debug("[MoveInput] ignored: minimap click", { x: global.x, y: global.y });
+              }
+              updateMoveDebug("ignored:minimap", { x: global.x, y: global.y });
               return;
             }
-            if (!sel.hasSelection) return;
+
+            const sel = latestSelectorsRef.current;
+            // If not in Move mode, treat stage click as deselect
+            if (sel.selectedAction !== 'Move') {
+              if (sel.hasSelection) setSelection([]);
+              if (DEBUG_MOVE_INPUT) {
+                console.debug("[MoveInput] ignored: not in Move mode");
+              }
+              updateMoveDebug("ignored:not_move_mode");
+              return;
+            }
+            if (!sel.hasSelection) {
+              if (DEBUG_MOVE_INPUT) {
+                console.debug("[MoveInput] ignored: no selection");
+              }
+              updateMoveDebug("ignored:no_selection");
+              return;
+            }
             const first = sel.firstSelectedId;
-            if (!first) return;
+            if (!first) {
+              if (DEBUG_MOVE_INPUT) {
+                console.debug("[MoveInput] ignored: missing firstSelectedId");
+              }
+              updateMoveDebug("ignored:no_first_selected");
+              return;
+            }
             // Compute world position from global
-            const global = ev.global;
             const local = worldContainer.toLocal(global);
 
             const entityIdNum = Number(first);
-            if (!Number.isFinite(entityIdNum)) return;
+            if (!Number.isFinite(entityIdNum)) {
+              if (DEBUG_MOVE_INPUT) {
+                console.debug("[MoveInput] ignored: invalid selected entity id", { first });
+              }
+              updateMoveDebug("ignored:invalid_entity_id", { first });
+              return;
+            }
 
             // Read modifier keys from the original DOM event
             const origEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
@@ -424,6 +472,22 @@ export default function GameStage() {
               { x: Number(local.x), y: Number(local.y) },
               { shift, ctrl },
             );
+            if (DEBUG_MOVE_INPUT) {
+              console.debug("[MoveInput] dispatched", {
+                entityId: entityIdNum,
+                x: Number(local.x),
+                y: Number(local.y),
+                shift,
+                ctrl,
+              });
+            }
+            updateMoveDebug("dispatched", {
+              entityId: entityIdNum,
+              x: Number(local.x),
+              y: Number(local.y),
+              shift,
+              ctrl,
+            });
 
             // Only clear action mode on plain click (REPLACE_ACTIVE).
             // Shift/Ctrl clicks keep Move mode active for chaining waypoints.
@@ -504,6 +568,11 @@ export default function GameStage() {
     <div className="relative w-full min-h-screen">
       {/* Canvas mount point */}
       <div ref={ref} className="absolute inset-0" />
+      {ready && DEBUG_MOVE_INPUT && (
+        <div className="pointer-events-none absolute right-4 top-4 z-50 rounded bg-black/75 px-2 py-1 font-mono text-[11px] text-green-300">
+          move-input: {moveDebug}
+        </div>
+      )}
       {ready && <TooltipOverlay />}
       {ready && <CoordsOverlay />}
       {/* Overlay loading indicator while world is not ready */}

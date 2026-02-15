@@ -29,7 +29,7 @@ pub struct GameConfig {
     /// M4: Path to the content pack YAML file. When set, entity type definitions
     /// are loaded from this file. Required for spawn-on-join (entity stats).
     pub content_pack_path: String,
-    /// Path to spawn config YAML (spawn points, loadouts, neutrals). Required:
+    /// Path to spawn config YAML (procedural spawn settings, loadouts, neutrals). Required:
     /// engine uses config-based init only and exits if this is missing or invalid.
     pub spawn_config_path: String,
 }
