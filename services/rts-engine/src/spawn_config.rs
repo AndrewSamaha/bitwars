@@ -1,8 +1,9 @@
-//! Spawn configuration: spawn points, pool of loadouts, and optional neutrals.
+//! Spawn configuration: procedural player spawns, loadouts, and optional neutrals.
 //!
 //! When present, init_world does not spawn any player entities at match start.
-//! Players spawn on join: engine assigns one spawn point and one loadout (chosen at random
-//! from the loadouts list) per player when they are enqueued via pending_joins.
+//! Players spawn on join: engine picks a procedural location near game_origin and one
+//! loadout (chosen at random from the loadouts list) per player when they are enqueued via
+//! pending_joins.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -12,29 +13,6 @@ use serde::Deserialize;
 
 /// Owner id for server/neutral entities (not owned by any player).
 pub const NEUTRAL_OWNER: &str = "neutral";
-
-/// One spawn position (x, y) in world space. Deserializes from YAML array [x, y] or object { x, y }.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(untagged)]
-pub enum SpawnPoint {
-    Array([f32; 2]),
-    Struct { x: f32, y: f32 },
-}
-
-impl SpawnPoint {
-    pub fn x(&self) -> f32 {
-        match self {
-            SpawnPoint::Array(a) => a[0],
-            SpawnPoint::Struct { x, .. } => *x,
-        }
-    }
-    pub fn y(&self) -> f32 {
-        match self {
-            SpawnPoint::Array(a) => a[1],
-            SpawnPoint::Struct { y, .. } => *y,
-        }
-    }
-}
 
 /// Describes entities to spawn near each player's spawn (server-owned).
 #[derive(Clone, Debug, Deserialize)]
@@ -59,21 +37,16 @@ pub type Loadout = HashMap<String, usize>;
 pub type StartingResources = HashMap<String, i64>;
 
 /// Root spawn config: optional game origin, max distance for procedural spawn,
-/// list of spawn points (assigned one per player on join), list of loadout options
-/// (one chosen at random per player on join), and optional neutrals near each spawn.
+/// list of loadout options (one chosen at random per player on join), and optional
+/// neutrals near each spawn.
 #[derive(Clone, Debug, Deserialize)]
 pub struct SpawnConfig {
-    /// Center of the world; used for procedural spawn when spawn_points is empty.
+    /// Center of the world; used for procedural player spawns.
     #[serde(default)]
     pub game_origin: [f32; 2],
-    /// Max distance from game_origin for procedural spawn (when spawn_points is empty).
+    /// Max distance from game_origin for procedural player spawns.
     #[serde(default = "default_max_distance_from_origin")]
     pub max_distance_from_origin: f32,
-    /// Spawn positions in world space. When non-empty, one is assigned per joining player (in order).
-    /// When empty, each player gets a random position within max_distance_from_origin of game_origin,
-    /// with entities placed within 100 units of that point.
-    #[serde(default)]
-    pub spawn_points: Vec<SpawnPoint>,
     /// Min random distance from already placed player-owned units when spawning a new player-owned unit.
     #[serde(default)]
     pub min_entity_spawn_distance: f32,

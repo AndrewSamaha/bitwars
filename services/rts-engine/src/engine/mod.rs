@@ -111,8 +111,6 @@ pub struct Engine {
     telemetry: Option<Telemetry>,
     /// M6: Players that have already been given a spawn (idempotency).
     joined_players: HashSet<String>,
-    /// M6: Next spawn point index when using list of spawn_points (restored as joined_players.len()).
-    next_spawn_index: usize,
 }
 
 #[cfg(test)]
@@ -362,8 +360,6 @@ impl Engine {
                         }
                     })
                     .collect();
-                let next_spawn_index = joined_players.len();
-
                 let spawn_config_restore = load_spawn_config_or_exit(&cfg);
 
                 let mut engine = Self {
@@ -380,7 +376,6 @@ impl Engine {
                     lifecycle_emitted: HashSet::new(),
                     telemetry,
                     joined_players,
-                    next_spawn_index,
                 };
                 // Publish a fresh snapshot so newly connecting clients see current state
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
@@ -410,7 +405,6 @@ impl Engine {
         let spawn_config = load_spawn_config_or_exit(&cfg);
         info!(
             path = %cfg.spawn_config_path,
-            spawn_points = spawn_config.spawn_points.len(),
             loadouts = spawn_config.loadouts.len(),
             "loaded spawn config"
         );
@@ -436,7 +430,6 @@ impl Engine {
             lifecycle_emitted: HashSet::new(),
             telemetry,
             joined_players: HashSet::new(),
-            next_spawn_index: 0,
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
 
@@ -450,7 +443,7 @@ impl Engine {
         Ok(engine)
     }
 
-    /// M6: Spawn for one player on join (idempotent). Picks spawn point, random loadout, calls on_player_spawn.
+    /// M6: Spawn for one player on join (idempotent). Picks a procedural spawn location and random loadout.
     fn ensure_spawned(&mut self, player_id: &str) -> Result<()> {
         if self.joined_players.contains(player_id) {
             return Ok(());
@@ -467,20 +460,11 @@ impl Engine {
             }
         };
 
-        let (spawn_x, spawn_y) = if sc.spawn_points.is_empty() {
-            let mut rng = rand::thread_rng();
-            let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-            let dist = rng.gen_range(0.0..sc.max_distance_from_origin);
-            (
-                sc.origin_x() + angle.cos() * dist,
-                sc.origin_y() + angle.sin() * dist,
-            )
-        } else {
-            let idx = self.next_spawn_index % sc.spawn_points.len();
-            self.next_spawn_index += 1;
-            let pt = &sc.spawn_points[idx];
-            (pt.x(), pt.y())
-        };
+        let mut rng = rand::thread_rng();
+        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+        let dist = rng.gen_range(0.0..sc.max_distance_from_origin);
+        let spawn_x = sc.origin_x() + angle.cos() * dist;
+        let spawn_y = sc.origin_y() + angle.sin() * dist;
 
         let loadout_idx = rand::thread_rng().gen_range(0..sc.loadouts.len());
         let loadout = &sc.loadouts[loadout_idx];
