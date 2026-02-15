@@ -19,6 +19,7 @@ loadouts:
   - worker: 1
     collector_solar: 1
     habitat: 1
+    processor: 1
 
 # Optional: neutrals near each spawn (owner = "neutral")
 neutrals_near_spawn:
