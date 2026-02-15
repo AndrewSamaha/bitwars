@@ -18,16 +18,17 @@ spawn_points:
 
 # Pool of loadouts; one is picked at random per player on join
 loadouts:
-  - worker: 2
-    scout: 1
+  - worker: 1
+    collector_solar: 1
     habitat: 1
-  - factory: 1
-    worker: 3
-    processor: 1
 
 # Optional: neutrals near each spawn (owner = "neutral")
 neutrals_near_spawn:
   - type: theta
+    count: 1
+    offset_x: 150
+    offset_y: 0
+  - type: star_yellow
     count: 1
     offset_x: 150
     offset_y: 0

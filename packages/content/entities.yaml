@@ -29,6 +29,31 @@ entity_types:
     mass: 500.0
     health: 100.0
 
+  planet_blue:
+    speed: 0.0
+    stop_radius: 1
+    mass: 500.0
+    health: 100.0
+  
+  star_yellow:
+    speed: 0.0
+    stop_radius: 1
+    mass: 500.0
+    health: 100.0
+
+  minerals:
+    speed: 0.0
+    stop_radius: 1
+    mass: 500.0
+    health: 100.0
+
+  collector_solar:
+    speed: 20.0
+    stop_radius: 1
+    mass: 500.0
+    health: 100.0
+
+
   worker:
     speed: 90.0
     stop_radius: 0.75
@@ -58,3 +83,4 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 60.0
+
