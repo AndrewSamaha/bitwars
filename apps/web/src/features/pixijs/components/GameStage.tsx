@@ -326,9 +326,10 @@ export default function GameStage() {
             const myId = myPlayerIdRef.current;
             const ownerId = (e as any).owner_player_id;
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
-            const baseTint = isOwned ? CLEAN_COLOR : NON_OWNED_TINT;
+            const isNeutral = ownerId === "neutral";
+            const baseTint = isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
             if ((e as any).hover) {
-              if (primary) (primary as any).tint = isOwned ? SELECTED_COLOR : NON_OWNED_TINT;
+              if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
               // ensure a hover indicator exists as a child after sprite (only for owned so we don't highlight enemy)
               let hoverIndicator = container.children.find((c) => c.label === 'hoverIndicator') as Graphics | undefined;
               if (isOwned && !hoverIndicator) {
