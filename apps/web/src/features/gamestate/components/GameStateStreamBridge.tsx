@@ -48,6 +48,7 @@ export default function GameStateStreamBridge() {
   const log = useLogger();
   const hud = useHUD();
   const { player } = usePlayer();
+  const RESOURCE_LEDGER_POLL_MS = 2000;
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
   const streamIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
@@ -65,6 +66,41 @@ export default function GameStateStreamBridge() {
       hud.actions.setResources(player.resource_ledger);
     }
   }, [player?.id, player?.resource_ledger, hud.actions]);
+
+  // M8: Live deltas do not include player_ledgers, so poll /me for authoritative
+  // resource totals and keep the HUD in sync during active collection.
+  useEffect(() => {
+    let mounted = true;
+    let timer: number | undefined;
+
+    const syncResourcesFromMe = async () => {
+      if (!currentPlayerIdRef.current) return;
+      try {
+        const res = await fetch("/api/players/me", {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { resource_ledger?: Record<string, number> };
+        const ledger = data?.resource_ledger;
+        if (!mounted || !ledger || Object.keys(ledger).length === 0) return;
+        hud.actions.setResources(ledger);
+      } catch {
+        // keep stream/render path resilient on transient /me failures
+      }
+    };
+
+    timer = window.setInterval(() => {
+      void syncResourcesFromMe();
+    }, RESOURCE_LEDGER_POLL_MS);
+    void syncResourcesFromMe();
+
+    return () => {
+      mounted = false;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [hud.actions, RESOURCE_LEDGER_POLL_MS]);
 
   useEffect(() => {
     const byId = byIdRef.current;
