@@ -14,6 +14,7 @@ use crate::content::{CollectionMode, ContentPack};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::RedisClient;
+use crate::io::redis::IntentPoint;
 use crate::io::telemetry::Telemetry;
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
@@ -1479,6 +1480,18 @@ impl Engine {
 
         // M4: Look up entity_type_id for per-type stat resolution.
         let entity_type_id = self.resolve_entity_type_id(&payload_intent);
+        let (intent_kind, move_target) = match payload_intent.kind.as_ref() {
+            Some(pb::intent::Kind::Move(m)) => (
+                "move",
+                m.target
+                    .as_ref()
+                    .map(|t| IntentPoint { x: t.x, y: t.y }),
+            ),
+            Some(pb::intent::Kind::Attack(_)) => ("attack", None),
+            Some(pb::intent::Kind::Build(_)) => ("build", None),
+            Some(pb::intent::Kind::Collect(_)) => ("collect", None),
+            None => ("unknown", None),
+        };
 
         // M1: Try to activate immediately (no server-side queue).
         let outcome = self
@@ -1518,7 +1531,13 @@ impl Engine {
         if let Some((entity_id, _)) = outcome.started {
             // M2: persist active intent to Redis for reconnect tracking
             self.redis
-                .persist_active_intent(entity_id, &metadata, self.cfg.tracking_ttl_secs)
+                .persist_active_intent(
+                    entity_id,
+                    &metadata,
+                    intent_kind,
+                    move_target,
+                    self.cfg.tracking_ttl_secs,
+                )
                 .await?;
 
             // Emit ACCEPTED then immediately IN_PROGRESS (M1: no intermediate queue)

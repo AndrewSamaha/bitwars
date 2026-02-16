@@ -41,6 +41,19 @@ type DeltaPayload = {
   }>;
 };
 
+type ActiveIntentOverlay = {
+  intent_kind: "move" | "attack" | "build" | "collect" | string;
+  intent_id?: string;
+  started_tick?: number;
+  move_target?: Pos;
+};
+
+const LIFECYCLE_STATE_ACCEPTED = 2;
+const LIFECYCLE_STATE_IN_PROGRESS = 3;
+const LIFECYCLE_STATE_FINISHED = 5;
+const LIFECYCLE_STATE_CANCELED = 6;
+const LIFECYCLE_STATE_REJECTED = 7;
+
 // Bridges the SSE stream to the miniplex world by handling snapshot and delta events.
 // - On snapshot: clears previously-streamed entities and repopulates them
 // - On delta: upserts entities by id and patches provided components
@@ -56,6 +69,8 @@ export default function GameStateStreamBridge() {
   const mountedAtRef = useRef<number>(Date.now());
   /** M7: Current player id — from /me (player.id) first, fallback to reconnect handshake. */
   const currentPlayerIdRef = useRef<string | null>(null);
+  /** M8b: authoritative active intent overlays keyed by entity id. */
+  const activeIntentByEntityRef = useRef<Map<string, ActiveIntentOverlay>>(new Map());
   log.info("GameStateStreamBridge:init", { streamId: streamIdRef.current });
 
   // M7: Single source for "my" player id and resources from /me — set ref and apply resource_ledger to HUD when player loads.
@@ -113,6 +128,33 @@ export default function GameStateStreamBridge() {
 
     const normalizeId = (id: number | string) => String(id);
 
+    const applyIntentOverlayToEntity = (ent: Entity, overlay: ActiveIntentOverlay | undefined) => {
+      if (!overlay) {
+        delete (ent as any).active_intent_kind;
+        delete (ent as any).active_intent_id;
+        delete (ent as any).active_intent_started_tick;
+        delete (ent as any).active_intent_move_target;
+        return;
+      }
+      (ent as any).active_intent_kind = overlay.intent_kind;
+      (ent as any).active_intent_id = overlay.intent_id;
+      (ent as any).active_intent_started_tick = overlay.started_tick;
+      if (overlay.move_target) {
+        (ent as any).active_intent_move_target = {
+          x: overlay.move_target.x,
+          y: overlay.move_target.y,
+        };
+      } else {
+        delete (ent as any).active_intent_move_target;
+      }
+    };
+
+    const refreshIntentOverlays = () => {
+      for (const [id, ent] of byId.entries()) {
+        applyIntentOverlayToEntity(ent, activeIntentByEntityRef.current.get(id));
+      }
+    };
+
     const logEntitiesAndOwnership = (label: string) => {
       const myPlayerId = currentPlayerIdRef.current;
       const entities = Array.from(byId.entries()).map(([id, e]) => ({
@@ -146,6 +188,7 @@ export default function GameStateStreamBridge() {
         world.add(ent);
         byId.set(normalizeId(s.id), ent);
       }
+      refreshIntentOverlays();
       // M7: Apply server resource state for current player to HUD
       const playerId = currentPlayerIdRef.current;
       const ledgers = payload.player_ledgers ?? [];
@@ -189,6 +232,7 @@ export default function GameStateStreamBridge() {
             else { existing.vel.x = u.vel.x; existing.vel.y = u.vel.y; }
           }
           if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
+          applyIntentOverlayToEntity(existing, activeIntentByEntityRef.current.get(key));
           existingEntities++;
           // force currently ignored; add when systems need it
         } else {
@@ -203,6 +247,7 @@ export default function GameStateStreamBridge() {
           newEntities++;
           world.add(ent);
           byId.set(key, ent);
+          applyIntentOverlayToEntity(ent, activeIntentByEntityRef.current.get(key));
         }
       }
       log.debug("GameStateStreamBridge:delta:applied", { streamId: streamIdRef.current, existingEntities, newEntities });
@@ -238,14 +283,68 @@ export default function GameStateStreamBridge() {
       try {
         const payload = JSON.parse(e.data);
         if (payload && payload.type === "lifecycle") {
+          const clientCmdId = payload.clientCmdId ?? "";
+          const state =
+            typeof payload.state === "number" ? payload.state : Number(payload.state);
+          const serverTick =
+            typeof payload.serverTick === "number"
+              ? payload.serverTick
+              : Number(payload.serverTick ?? 0);
+          const intentId = payload.intentId ?? "";
+
           intentQueue.onLifecycleEvent({
-            clientCmdId: payload.clientCmdId ?? "",
-            intentId: payload.intentId ?? "",
+            clientCmdId,
+            intentId,
             playerId: payload.playerId ?? "",
             serverTick: payload.serverTick ?? "0",
-            state: typeof payload.state === "number" ? payload.state : Number(payload.state),
+            state,
             reason: typeof payload.reason === "number" ? payload.reason : Number(payload.reason),
           });
+
+          const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
+          const entityKey =
+            entityIdFromCmd != null ? String(entityIdFromCmd) : null;
+
+          if (entityKey) {
+            if (
+              state === LIFECYCLE_STATE_ACCEPTED ||
+              state === LIFECYCLE_STATE_IN_PROGRESS
+            ) {
+              const existing = activeIntentByEntityRef.current.get(entityKey);
+              const kindFromCmd = intentQueue.getKindForClientCmd(clientCmdId);
+              const kind = kindFromCmd ?? existing?.intent_kind ?? "move";
+              const moveTarget =
+                kind === "move"
+                  ? (() => {
+                      if (entityIdFromCmd != null) {
+                        const st = intentQueue.getEntityState(entityIdFromCmd);
+                        const active = st.active;
+                        if (active && active.clientCmdId === clientCmdId) return active.target;
+                      }
+                      return (
+                        byId.get(entityKey)?.active_intent_move_target ??
+                        existing?.move_target
+                      );
+                    })()
+                  : undefined;
+              activeIntentByEntityRef.current.set(entityKey, {
+                intent_kind: kind,
+                intent_id: intentId || existing?.intent_id,
+                started_tick:
+                  Number.isFinite(serverTick) && serverTick > 0
+                    ? serverTick
+                    : existing?.started_tick,
+                move_target: moveTarget,
+              });
+            } else if (
+              state === LIFECYCLE_STATE_FINISHED ||
+              state === LIFECYCLE_STATE_CANCELED ||
+              state === LIFECYCLE_STATE_REJECTED
+            ) {
+              activeIntentByEntityRef.current.delete(entityKey);
+            }
+            refreshIntentOverlays();
+          }
         }
       } catch (err) {
         console.error("[GameStateStreamBridge] lifecycle parse error", err);
@@ -273,6 +372,25 @@ export default function GameStateStreamBridge() {
             activeIntents: handshake.active_intents.length,
             isReconnect: hasConnectedBefore,
           });
+
+          // M8b: hydrate active intent overlays from server-tracked reconnect data.
+          const nextIntentMap = new Map<string, ActiveIntentOverlay>();
+          for (const ai of handshake.active_intents ?? []) {
+            const entityKey = String(ai.entity_id);
+            nextIntentMap.set(entityKey, {
+              intent_kind: (ai.intent_kind ?? "").toLowerCase() || "move",
+              intent_id: ai.intent_id,
+              started_tick: Number(ai.started_tick ?? 0),
+              move_target:
+                ai.move_target &&
+                Number.isFinite(Number(ai.move_target.x)) &&
+                Number.isFinite(Number(ai.move_target.y))
+                  ? { x: Number(ai.move_target.x), y: Number(ai.move_target.y) }
+                  : undefined,
+            });
+          }
+          activeIntentByEntityRef.current = nextIntentMap;
+          refreshIntentOverlays();
 
           // M4: Validate content version and fetch if stale
           const serverContentVersion = handshake.content_version ?? "";

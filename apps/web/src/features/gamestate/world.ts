@@ -12,6 +12,12 @@ export type EntityId = { id: number | string };
 export type EntityTypeId = { entity_type_id?: string };
 export type OwnerPlayerId = { owner_player_id?: string };
 export type UIState = { hover: boolean };
+export type ActiveIntentView = {
+  active_intent_kind?: "move" | "attack" | "build" | "collect" | string;
+  active_intent_id?: string;
+  active_intent_started_tick?: number;
+  active_intent_move_target?: { x: number; y: number };
+};
 
 // Entity uses proto-shaped components (pos, vel, id, entity_type_id, owner_player_id) and render extras
 export type Entity = Partial<
@@ -20,6 +26,7 @@ export type Entity = Partial<
   EntityId &
   EntityTypeId &
   OwnerPlayerId &
+  ActiveIntentView &
   ContainerRef &
   Scale &
   { selectable?: true } &

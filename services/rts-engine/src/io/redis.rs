@@ -27,6 +27,18 @@ pub struct EntityActiveIntent {
     pub client_cmd_id: String,
     pub player_id: String,
     pub started_tick: u64,
+    /// intent kind for UI/debug surfaces (`move|attack|build|collect`)
+    #[serde(default)]
+    pub intent_kind: String,
+    /// Optional move target summary for reconnect/UI.
+    #[serde(default)]
+    pub move_target: Option<IntentPoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntentPoint {
+    pub x: f32,
+    pub y: f32,
 }
 
 /// Everything the reconnect handshake needs for one player.
@@ -544,6 +556,8 @@ impl RedisClient {
         &mut self,
         entity_id: u64,
         metadata: &IntentMetadata,
+        intent_kind: &str,
+        move_target: Option<IntentPoint>,
         ttl_secs: u64,
     ) -> anyhow::Result<()> {
         let entry = EntityActiveIntent {
@@ -552,6 +566,8 @@ impl RedisClient {
             client_cmd_id: format_uuid(&metadata.client_cmd_id),
             player_id: metadata.player_id.clone(),
             started_tick: metadata.server_tick,
+            intent_kind: intent_kind.to_string(),
+            move_target,
         };
         let json = serde_json::to_string(&entry)?;
         let key = self.active_intents_key();
