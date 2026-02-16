@@ -66,19 +66,30 @@ export default function GameStage() {
       }
     }, 100);
 
-    // M1: Wire the queue manager's send callback to POST /api/v1/intent
+    // M1/M8: Wire the queue manager's send callback to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
+      const payload =
+        params.kind === "Move"
+          ? {
+              type: "Move",
+              entity_id: params.entityId,
+              target: params.target,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
+            }
+          : {
+              type: "Collect",
+              entity_id: params.entityId,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
+            };
+
       await fetch('/api/v1/intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'Move',
-          entity_id: params.entityId,
-          target: params.target,
-          client_cmd_id: params.clientCmdId,
-          client_seq: params.clientSeq,
-          policy: params.policy,
-        }),
+        body: JSON.stringify(payload),
       });
     });
 
@@ -207,11 +218,20 @@ export default function GameStage() {
         (waypointContainer as any).label = 'waypoints';
         worldContainer.addChild(waypointContainer);
 
-        // Keyboard: M to set Move, Escape to clear; WASD/arrows to pan (M5.1)
+        // Keyboard: M to set Move, C to issue Collect, Escape to clear; WASD/arrows to pan (M5.1/M8)
         const onKeyDown = (ev: KeyboardEvent) => {
           const sel = latestSelectorsRef.current;
           if (ev.key === 'm' || ev.key === 'M') {
             if (sel.hasSelection) setSelectedAction('Move');
+          } else if (ev.key === 'c' || ev.key === 'C') {
+            if (sel.hasSelection) {
+              for (const id of sel.selectedEntities) {
+                const entityIdNum = Number(id);
+                if (Number.isFinite(entityIdNum)) {
+                  intentQueue.handleCollectCommand(entityIdNum, "REPLACE_ACTIVE");
+                }
+              }
+            }
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
           } else if (PAN_KEYS.has(ev.code)) {

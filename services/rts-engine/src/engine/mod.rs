@@ -583,6 +583,7 @@ impl Engine {
             Some(pb::intent::Kind::Move(m)) => m.entity_id,
             Some(pb::intent::Kind::Attack(a)) => a.entity_id,
             Some(pb::intent::Kind::Build(b)) => b.entity_id,
+            Some(pb::intent::Kind::Collect(c)) => c.entity_id,
             None => return String::new(),
         };
         self.state
@@ -833,7 +834,15 @@ impl Engine {
         if self.content.is_none() {
             return;
         }
-        let active_entities: HashSet<u64> = self.intents.active_intents().keys().copied().collect();
+        let collect_active_entities: HashSet<u64> = self
+            .intents
+            .active_intents()
+            .iter()
+            .filter_map(|(id, active)| match active.action.exec.as_ref() {
+                Some(pb::action_state::Exec::Collect(_)) => Some(*id),
+                _ => None,
+            })
+            .collect();
         let collectors = self.build_collector_snapshots();
         let nodes = self.build_resource_node_snapshots();
         let refineries = self.build_refinery_snapshots();
@@ -849,7 +858,9 @@ impl Engine {
         }
 
         for collector in collectors {
-            if active_entities.contains(&collector.id) {
+            // M8 (collect-intent model): autonomous collection only runs while
+            // a maintained Collect intent is active for this entity.
+            if !collect_active_entities.contains(&collector.id) {
                 continue;
             }
             let Some(def) = self
@@ -1393,6 +1404,12 @@ impl Engine {
                     kind: Some(pb::intent::Kind::Build(b)),
                 }
             }
+            Some(intent_envelope::Payload::Collect(c)) => {
+                info!(entity_id = c.entity_id, intent_id = %format_uuid(&intent_id), player = %player_id, "accept intent=Collect");
+                pb::Intent {
+                    kind: Some(pb::intent::Kind::Collect(c)),
+                }
+            }
             None => {
                 warn!(player_id = %player_id, "envelope missing payload");
                 self.emit_lifecycle_event(
@@ -1411,6 +1428,7 @@ impl Engine {
             Some(pb::intent::Kind::Move(m)) => m.entity_id,
             Some(pb::intent::Kind::Attack(a)) => a.entity_id,
             Some(pb::intent::Kind::Build(b)) => b.entity_id,
+            Some(pb::intent::Kind::Collect(c)) => c.entity_id,
             None => {
                 self.emit_lifecycle_event(
                     &metadata,
@@ -1529,6 +1547,7 @@ impl Engine {
             Some(pb::intent::Kind::Move(m)) => intent_envelope::Payload::Move(m),
             Some(pb::intent::Kind::Attack(a)) => intent_envelope::Payload::Attack(a),
             Some(pb::intent::Kind::Build(b)) => intent_envelope::Payload::Build(b),
+            Some(pb::intent::Kind::Collect(c)) => intent_envelope::Payload::Collect(c),
             None => return Err(anyhow!("legacy intent missing kind")),
         };
 
@@ -1536,6 +1555,7 @@ impl Engine {
             Some(pb::intent::Kind::Move(m)) => m.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Attack(a)) => a.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Build(b)) => b.client_cmd_id.as_str(),
+            Some(pb::intent::Kind::Collect(c)) => c.client_cmd_id.as_str(),
             None => "",
         };
 
@@ -1555,6 +1575,7 @@ impl Engine {
             Some(pb::intent::Kind::Move(m)) => m.player_id.clone(),
             Some(pb::intent::Kind::Attack(a)) => a.player_id.clone(),
             Some(pb::intent::Kind::Build(b)) => b.player_id.clone(),
+            Some(pb::intent::Kind::Collect(c)) => c.player_id.clone(),
             None => String::new(),
         };
 

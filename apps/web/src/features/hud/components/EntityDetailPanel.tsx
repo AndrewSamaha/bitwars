@@ -5,6 +5,7 @@ import { useHUD } from "@/features/hud/components/HUDContext";
 import { getEntityDetailLeftOffset } from "@/features/hud/layout/constants";
 import { game } from "@/features/gamestate/world";
 import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
+import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
@@ -48,20 +49,29 @@ export default function EntityDetailPanel() {
 
   if (!selectedEntities?.length) return null;
 
-  // Dynamic actions for a given entity. For now only Move ('m').
+  // Dynamic actions for a given entity.
   const getActionsForEntity = (entityId: string): ActionDef[] => {
-    // Example placeholder: in future, check entity type/capabilities
     return [
       { key: "m", name: "move", enabled: true, value: "Move" },
+      { key: "c", name: "collect", enabled: true, value: "Collect" },
     ];
   };
   // Intersect actions across all selected entities (simple approach: show those enabled for first)
   const firstId = selectedEntities[0]!;
   const availableActions = getActionsForEntity(firstId);
 
-  const onClickAction = (val: "Move") => {
-    // Toggle selection of action
-    actions.setSelectedAction(selectedAction === val ? null : val);
+  const onClickAction = (val: "Move" | "Collect") => {
+    if (val === "Collect") {
+      for (const id of selectedEntities) {
+        const entityIdNum = Number(id);
+        if (Number.isFinite(entityIdNum)) {
+          intentQueue.handleCollectCommand(entityIdNum, "REPLACE_ACTIVE");
+        }
+      }
+      return;
+    }
+    // Toggle Move mode selection
+    actions.setSelectedAction(selectedAction === "Move" ? null : "Move");
   };
 
   return (
