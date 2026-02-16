@@ -10,20 +10,57 @@ use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
 
 use crate::config::GameConfig;
-use crate::content::ContentPack;
-use crate::spawn_config::SpawnConfig;
+use crate::content::{CollectionMode, ContentPack};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::RedisClient;
 use crate::io::telemetry::Telemetry;
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
-use prost::Message;
+use crate::spawn_config::SpawnConfig;
 use crate::spawn_config::NEUTRAL_OWNER;
+use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, GameState};
 
 pub const ENGINE_PROTOCOL_MAJOR: u32 = 4;
 const DEDUPE_TTL_SECS: usize = 600;
+const DEPOSIT_DISTANCE: f32 = 80.0;
+
+#[derive(Clone, Debug)]
+struct CarryState {
+    resource_type: String,
+    amount: f32,
+}
+
+#[derive(Clone)]
+struct ResourceNodeSnapshot {
+    id: u64,
+    x: f32,
+    y: f32,
+    resource_type: String,
+    mode: CollectionMode,
+    min_effective_distance: f32,
+    max_effective_distance: f32,
+}
+
+#[derive(Clone)]
+struct RefinerySnapshot {
+    id: u64,
+    entity_type_id: String,
+    owner_player_id: String,
+    x: f32,
+    y: f32,
+    accepts: Vec<String>,
+}
+
+#[derive(Clone)]
+struct CollectorSnapshot {
+    id: u64,
+    entity_type_id: String,
+    owner_player_id: String,
+    x: f32,
+    y: f32,
+}
 
 fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {
     if bytes.len() != 16 {
@@ -56,14 +93,16 @@ mod uuid_tests {
 
     #[test]
     fn ensure_uuid_v7_rejects_wrong_length() {
-        let err = ensure_uuid_v7(&[0u8; 15], "test-field").expect_err("length mismatch should fail");
+        let err =
+            ensure_uuid_v7(&[0u8; 15], "test-field").expect_err("length mismatch should fail");
         assert!(err.to_string().contains("16 bytes"));
     }
 
     #[test]
     fn ensure_uuid_v7_rejects_wrong_version() {
         let uuid_nil = Uuid::nil();
-        let err = ensure_uuid_v7(uuid_nil.as_bytes(), "test-field").expect_err("wrong version should fail");
+        let err = ensure_uuid_v7(uuid_nil.as_bytes(), "test-field")
+            .expect_err("wrong version should fail");
         assert!(err.to_string().contains("UUIDv7"));
     }
 }
@@ -111,6 +150,10 @@ pub struct Engine {
     telemetry: Option<Telemetry>,
     /// M6: Players that have already been given a spawn (idempotency).
     joined_players: HashSet<String>,
+    /// M8: In-flight transport-mode carry amounts per collector entity.
+    carry_by_entity: HashMap<u64, CarryState>,
+    /// M8: Fractional per-player resources accumulated between integer ledger commits.
+    resource_fractional: HashMap<(String, String), f32>,
 }
 
 #[cfg(test)]
@@ -163,7 +206,10 @@ mod integration_tests {
         cfg.content_pack_path = content_path;
 
         let mut engine = Engine::new(cfg).await?;
-        assert!(engine.state.entities.is_empty(), "config-based init starts with no entities");
+        assert!(
+            engine.state.entities.is_empty(),
+            "config-based init starts with no entities"
+        );
 
         let mut rconn = client.get_multiplexed_async_connection().await?;
         redis::cmd("RPUSH")
@@ -204,11 +250,10 @@ mod integration_tests {
         engine.handle_envelope(envelope).await?;
 
         // follow_targets should finish the intent (entity already at target)
-        let finished = engine.intents.follow_targets(
-            &mut engine.state,
-            engine.cfg.default_entity_speed,
-            0.0,
-        );
+        let finished =
+            engine
+                .intents
+                .follow_targets(&mut engine.state, engine.cfg.default_entity_speed, 0.0);
         for (_, metadata) in finished {
             engine
                 .emit_lifecycle_event(
@@ -246,8 +291,9 @@ mod integration_tests {
                                     if let Ok(record) =
                                         pb::EventsStreamRecord::decode(value.as_slice())
                                     {
-                                        if let Some(pb::events_stream_record::Record::Lifecycle(event)) =
-                                            record.record
+                                        if let Some(pb::events_stream_record::Record::Lifecycle(
+                                            event,
+                                        )) = record.record
                                         {
                                             if let Some(state) =
                                                 pb::LifecycleState::from_i32(event.state)
@@ -278,7 +324,6 @@ mod integration_tests {
         Ok(())
     }
 }
-
 
 impl Engine {
     pub async fn new(cfg: GameConfig) -> anyhow::Result<Self> {
@@ -365,17 +410,27 @@ impl Engine {
                 let mut engine = Self {
                     prev_state: state.clone(),
                     state,
-                    last_delta_id: if boundary == "0-0" { None } else { Some(boundary) },
+                    last_delta_id: if boundary == "0-0" {
+                        None
+                    } else {
+                        Some(boundary)
+                    },
                     content,
                     spawn_config: spawn_config_restore,
                     cfg,
                     redis,
-                    intents: IntentManager::new(entity_types.clone(), default_stop_radius, default_speed),
+                    intents: IntentManager::new(
+                        entity_types.clone(),
+                        default_stop_radius,
+                        default_speed,
+                    ),
                     last_intent_id,
                     player_last_seq,
                     lifecycle_emitted: HashSet::new(),
                     telemetry,
                     joined_players,
+                    carry_by_entity: HashMap::new(),
+                    resource_fractional: HashMap::new(),
                 };
                 // Publish a fresh snapshot so newly connecting clients see current state
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
@@ -386,7 +441,10 @@ impl Engine {
 
                 // M4: Publish content hash + definitions in restore path too
                 if let Some(ref pack) = engine.content {
-                    engine.redis.publish_content_version(&pack.content_hash).await?;
+                    engine
+                        .redis
+                        .publish_content_version(&pack.content_hash)
+                        .await?;
                     let json = pack.to_json()?;
                     engine.redis.publish_content_defs(&json).await?;
                 }
@@ -412,7 +470,9 @@ impl Engine {
         let state = init_world(&spawn_config);
         info!(
             "Initialized world: entities={}, tps={}, friction={}",
-            state.entities.len(), cfg.tps, cfg.friction
+            state.entities.len(),
+            cfg.tps,
+            cfg.friction
         );
 
         let mut engine = Self {
@@ -430,12 +490,17 @@ impl Engine {
             lifecycle_emitted: HashSet::new(),
             telemetry,
             joined_players: HashSet::new(),
+            carry_by_entity: HashMap::new(),
+            resource_fractional: HashMap::new(),
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
 
         // M4: Publish content hash + definitions to Redis
         if let Some(ref pack) = engine.content {
-            engine.redis.publish_content_version(&pack.content_hash).await?;
+            engine
+                .redis
+                .publish_content_version(&pack.content_hash)
+                .await?;
             let json = pack.to_json()?;
             engine.redis.publish_content_defs(&json).await?;
         }
@@ -469,13 +534,7 @@ impl Engine {
         let loadout_idx = rand::thread_rng().gen_range(0..sc.loadouts.len());
         let loadout = &sc.loadouts[loadout_idx];
 
-        let next_id = self
-            .state
-            .entities
-            .iter()
-            .map(|e| e.id)
-            .max()
-            .unwrap_or(0) + 1;
+        let next_id = self.state.entities.iter().map(|e| e.id).max().unwrap_or(0) + 1;
 
         let entity_count_before = self.state.entities.len();
 
@@ -534,6 +593,437 @@ impl Engine {
             .unwrap_or_default()
     }
 
+    fn credit_resource(&mut self, player_id: &str, resource_type: &str, amount: f32) {
+        if amount <= 0.0 {
+            return;
+        }
+        let key = (player_id.to_string(), resource_type.to_string());
+        let total = self.resource_fractional.get(&key).copied().unwrap_or(0.0) + amount;
+        let whole = total.floor() as i64;
+        let remainder = total - whole as f32;
+        if whole > 0 {
+            let ledger = self.state.ledger.entry(player_id.to_string()).or_default();
+            *ledger.entry(resource_type.to_string()).or_insert(0) += whole;
+        }
+        if remainder > 0.0 {
+            self.resource_fractional.insert(key, remainder);
+        } else {
+            self.resource_fractional.remove(&key);
+        }
+    }
+
+    fn clear_fractional_for_entity(&mut self, entity_id: u64) {
+        if let Some(carry) = self.carry_by_entity.remove(&entity_id) {
+            if carry.amount > 0.0 {
+                // Keep deterministic accounting by dropping sub-unit carry on despawn/loss.
+                warn!(entity_id, resource_type = %carry.resource_type, amount = carry.amount, "dropping carry due to missing collector entity");
+            }
+        }
+    }
+
+    fn build_resource_node_snapshots(&self) -> Vec<ResourceNodeSnapshot> {
+        let Some(content) = self.content.as_ref() else {
+            return Vec::new();
+        };
+        let mut nodes = Vec::new();
+        for e in &self.state.entities {
+            let Some(pos) = e.pos.as_ref() else {
+                continue;
+            };
+            let Some(entity_type) = content.get(&e.entity_type_id) else {
+                continue;
+            };
+            let Some(node) = entity_type.resource_node.as_ref() else {
+                continue;
+            };
+            nodes.push(ResourceNodeSnapshot {
+                id: e.id,
+                x: pos.x,
+                y: pos.y,
+                resource_type: node.resource_type.clone(),
+                mode: node.collection_mode.clone(),
+                min_effective_distance: node.min_effective_distance.max(0.0),
+                max_effective_distance: node
+                    .max_effective_distance
+                    .max(node.min_effective_distance.max(0.0)),
+            });
+        }
+        nodes.sort_by_key(|n| n.id);
+        nodes
+    }
+
+    fn build_refinery_snapshots(&self) -> Vec<RefinerySnapshot> {
+        let Some(content) = self.content.as_ref() else {
+            return Vec::new();
+        };
+        let mut refineries = Vec::new();
+        for e in &self.state.entities {
+            let owner = e.owner_player_id.as_str();
+            if owner.is_empty() || owner == NEUTRAL_OWNER {
+                continue;
+            }
+            let Some(pos) = e.pos.as_ref() else {
+                continue;
+            };
+            let Some(entity_type) = content.get(&e.entity_type_id) else {
+                continue;
+            };
+            let Some(refinery) = entity_type.refinery.as_ref() else {
+                continue;
+            };
+            refineries.push(RefinerySnapshot {
+                id: e.id,
+                entity_type_id: e.entity_type_id.clone(),
+                owner_player_id: e.owner_player_id.clone(),
+                x: pos.x,
+                y: pos.y,
+                accepts: refinery.accepts.clone(),
+            });
+        }
+        refineries.sort_by_key(|r| r.id);
+        refineries
+    }
+
+    fn build_collector_snapshots(&self) -> Vec<CollectorSnapshot> {
+        let Some(content) = self.content.as_ref() else {
+            return Vec::new();
+        };
+        let mut collectors = Vec::new();
+        for e in &self.state.entities {
+            let owner = e.owner_player_id.as_str();
+            if owner.is_empty() || owner == NEUTRAL_OWNER {
+                continue;
+            }
+            let Some(pos) = e.pos.as_ref() else {
+                continue;
+            };
+            let Some(entity_type) = content.get(&e.entity_type_id) else {
+                continue;
+            };
+            if entity_type.collector.is_none() {
+                continue;
+            }
+            collectors.push(CollectorSnapshot {
+                id: e.id,
+                entity_type_id: e.entity_type_id.clone(),
+                owner_player_id: e.owner_player_id.clone(),
+                x: pos.x,
+                y: pos.y,
+            });
+        }
+        collectors.sort_by_key(|c| c.id);
+        collectors
+    }
+
+    fn distance_sq(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+        let dx = ax - bx;
+        let dy = ay - by;
+        dx * dx + dy * dy
+    }
+
+    fn pick_best_node<'a>(
+        collector: &CollectorSnapshot,
+        nodes: &'a [ResourceNodeSnapshot],
+        mode: CollectionMode,
+        collects: &[String],
+    ) -> Option<&'a ResourceNodeSnapshot> {
+        nodes
+            .iter()
+            .filter(|n| n.mode == mode && collects.iter().any(|r| r == &n.resource_type))
+            .min_by(|a, b| {
+                let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
+                let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
+                da.partial_cmp(&db)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            })
+    }
+
+    fn pick_best_refinery<'a>(
+        collector: &CollectorSnapshot,
+        refineries: &'a [RefinerySnapshot],
+        resource_type: &str,
+        allowed_entity_types: &[String],
+    ) -> Option<&'a RefinerySnapshot> {
+        refineries
+            .iter()
+            .filter(|r| r.owner_player_id == collector.owner_player_id)
+            .filter(|r| r.accepts.iter().any(|v| v == resource_type))
+            .filter(|r| {
+                allowed_entity_types.is_empty()
+                    || allowed_entity_types
+                        .iter()
+                        .any(|et| et == &r.entity_type_id)
+            })
+            .min_by(|a, b| {
+                let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
+                let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
+                da.partial_cmp(&db)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.id.cmp(&b.id))
+            })
+    }
+
+    fn drive_velocity_toward(
+        entity: &mut pb::Entity,
+        speed: f32,
+        target_x: f32,
+        target_y: f32,
+        stop_distance: f32,
+    ) {
+        let Some(pos) = entity.pos.as_ref() else {
+            return;
+        };
+        let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+        let dx = target_x - pos.x;
+        let dy = target_y - pos.y;
+        let dist_sq = dx * dx + dy * dy;
+        let stop_sq = stop_distance * stop_distance;
+        if dist_sq <= stop_sq {
+            vel.x = 0.0;
+            vel.y = 0.0;
+            return;
+        }
+        let dist = dist_sq.sqrt();
+        if dist <= f32::EPSILON {
+            vel.x = 0.0;
+            vel.y = 0.0;
+            return;
+        }
+        vel.x = (dx / dist) * speed;
+        vel.y = (dy / dist) * speed;
+    }
+
+    fn drive_velocity_to_band(
+        entity: &mut pb::Entity,
+        speed: f32,
+        anchor_x: f32,
+        anchor_y: f32,
+        min_distance: f32,
+        max_distance: f32,
+    ) {
+        let Some(pos) = entity.pos.as_ref() else {
+            return;
+        };
+        let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+        let dx = anchor_x - pos.x;
+        let dy = anchor_y - pos.y;
+        let dist_sq = dx * dx + dy * dy;
+        let dist = dist_sq.sqrt();
+        if dist >= min_distance && dist <= max_distance {
+            vel.x = 0.0;
+            vel.y = 0.0;
+            return;
+        }
+        if dist <= f32::EPSILON {
+            vel.x = speed;
+            vel.y = 0.0;
+            return;
+        }
+        if dist > max_distance {
+            vel.x = (dx / dist) * speed;
+            vel.y = (dy / dist) * speed;
+        } else {
+            vel.x = -(dx / dist) * speed;
+            vel.y = -(dy / dist) * speed;
+        }
+    }
+
+    fn apply_resource_collection(&mut self, dt: f32) {
+        if self.content.is_none() {
+            return;
+        }
+        let active_entities: HashSet<u64> = self.intents.active_intents().keys().copied().collect();
+        let collectors = self.build_collector_snapshots();
+        let nodes = self.build_resource_node_snapshots();
+        let refineries = self.build_refinery_snapshots();
+        let collector_ids: HashSet<u64> = collectors.iter().map(|c| c.id).collect();
+        let stale_carry_ids: Vec<u64> = self
+            .carry_by_entity
+            .keys()
+            .copied()
+            .filter(|id| !collector_ids.contains(id))
+            .collect();
+        for id in stale_carry_ids {
+            self.clear_fractional_for_entity(id);
+        }
+
+        for collector in collectors {
+            if active_entities.contains(&collector.id) {
+                continue;
+            }
+            let Some(def) = self
+                .content
+                .as_ref()
+                .and_then(|content| content.get(&collector.entity_type_id))
+                .cloned()
+            else {
+                continue;
+            };
+            let Some(collector_def) = def.collector else {
+                continue;
+            };
+            let speed = def.speed.max(0.0);
+
+            // Transport mode: carry->deposit has priority when carrying.
+            let carry_snapshot = self.carry_by_entity.get(&collector.id).cloned();
+            if let Some(carry) = carry_snapshot {
+                if carry.amount > 0.0 {
+                    if let Some(refinery) = Self::pick_best_refinery(
+                        &collector,
+                        &refineries,
+                        &carry.resource_type,
+                        &collector_def.deposit_entity_types,
+                    ) {
+                        let dist =
+                            Self::distance_sq(collector.x, collector.y, refinery.x, refinery.y)
+                                .sqrt();
+                        if dist <= DEPOSIT_DISTANCE {
+                            self.credit_resource(
+                                &collector.owner_player_id,
+                                &carry.resource_type,
+                                carry.amount,
+                            );
+                            self.carry_by_entity.remove(&collector.id);
+                            if let Some(entity) = self
+                                .state
+                                .entities
+                                .iter_mut()
+                                .find(|e| e.id == collector.id)
+                            {
+                                let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+                                vel.x = 0.0;
+                                vel.y = 0.0;
+                            }
+                            continue;
+                        }
+                        if let Some(entity) = self
+                            .state
+                            .entities
+                            .iter_mut()
+                            .find(|e| e.id == collector.id)
+                        {
+                            Self::drive_velocity_toward(
+                                entity,
+                                speed,
+                                refinery.x,
+                                refinery.y,
+                                DEPOSIT_DISTANCE,
+                            );
+                        }
+                        continue;
+                    }
+                    // No valid refinery: hold position.
+                    if let Some(entity) = self
+                        .state
+                        .entities
+                        .iter_mut()
+                        .find(|e| e.id == collector.id)
+                    {
+                        let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+                        vel.x = 0.0;
+                        vel.y = 0.0;
+                    }
+                    continue;
+                }
+            }
+
+            let mut handled_transport = false;
+            if let Some(node) = Self::pick_best_node(
+                &collector,
+                &nodes,
+                CollectionMode::Transport,
+                &collector_def.collects,
+            ) {
+                let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
+                if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
+                    let gather = collector_def.transport_rate_per_second.max(0.0) * dt;
+                    if gather > 0.0 {
+                        let carry =
+                            self.carry_by_entity
+                                .entry(collector.id)
+                                .or_insert(CarryState {
+                                    resource_type: node.resource_type.clone(),
+                                    amount: 0.0,
+                                });
+                        if carry.resource_type != node.resource_type {
+                            carry.resource_type = node.resource_type.clone();
+                            carry.amount = 0.0;
+                        }
+                        carry.amount =
+                            (carry.amount + gather).min(collector_def.carry_capacity.max(0.0));
+                    }
+                    if let Some(entity) = self
+                        .state
+                        .entities
+                        .iter_mut()
+                        .find(|e| e.id == collector.id)
+                    {
+                        let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+                        vel.x = 0.0;
+                        vel.y = 0.0;
+                    }
+                } else if let Some(entity) = self
+                    .state
+                    .entities
+                    .iter_mut()
+                    .find(|e| e.id == collector.id)
+                {
+                    Self::drive_velocity_to_band(
+                        entity,
+                        speed,
+                        node.x,
+                        node.y,
+                        node.min_effective_distance,
+                        node.max_effective_distance,
+                    );
+                }
+                handled_transport = true;
+            }
+
+            // Proximity mode only when not engaged in transport mode for this tick.
+            if handled_transport {
+                continue;
+            }
+            if let Some(node) = Self::pick_best_node(
+                &collector,
+                &nodes,
+                CollectionMode::Proximity,
+                &collector_def.collects,
+            ) {
+                let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
+                if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
+                    let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
+                    self.credit_resource(&collector.owner_player_id, &node.resource_type, rate);
+                    if let Some(entity) = self
+                        .state
+                        .entities
+                        .iter_mut()
+                        .find(|e| e.id == collector.id)
+                    {
+                        let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+                        vel.x = 0.0;
+                        vel.y = 0.0;
+                    }
+                } else if let Some(entity) = self
+                    .state
+                    .entities
+                    .iter_mut()
+                    .find(|e| e.id == collector.id)
+                {
+                    Self::drive_velocity_to_band(
+                        entity,
+                        speed,
+                        node.x,
+                        node.y,
+                        node.min_effective_distance,
+                        node.max_effective_distance,
+                    );
+                }
+            }
+        }
+    }
+
     /// Run one tick (for tests). Does not wait for ticker.
     pub async fn run_one_tick(&mut self) -> Result<()> {
         let dt = 1.0 / self.cfg.tps as f32;
@@ -550,18 +1040,29 @@ impl Engine {
         let batch_start = Instant::now();
         let mut cmds_this_tick: u32 = 0;
         let read_count = self.cfg.max_cmds_per_tick as usize;
-        if let Ok(Some(entries)) =
-            self.redis.read_new_intents(&self.last_intent_id, read_count).await
+        if let Ok(Some(entries)) = self
+            .redis
+            .read_new_intents(&self.last_intent_id, read_count)
+            .await
         {
             for (entry_id, bytes) in entries {
                 if cmds_this_tick >= self.cfg.max_cmds_per_tick {
-                    warn!(tick = self.state.tick, limit = self.cfg.max_cmds_per_tick, "max_cmds_per_tick reached, deferring remaining");
+                    warn!(
+                        tick = self.state.tick,
+                        limit = self.cfg.max_cmds_per_tick,
+                        "max_cmds_per_tick reached, deferring remaining"
+                    );
                     break;
                 }
                 if self.cfg.max_batch_ms > 0
                     && batch_start.elapsed().as_millis() as u64 >= self.cfg.max_batch_ms
                 {
-                    warn!(tick = self.state.tick, elapsed_ms = batch_start.elapsed().as_millis() as u64, limit_ms = self.cfg.max_batch_ms, "max_batch_ms reached, deferring remaining");
+                    warn!(
+                        tick = self.state.tick,
+                        elapsed_ms = batch_start.elapsed().as_millis() as u64,
+                        limit_ms = self.cfg.max_batch_ms,
+                        "max_batch_ms reached, deferring remaining"
+                    );
                     break;
                 }
                 if let Err(err) = self.process_raw_intent(bytes.as_slice()).await {
@@ -591,6 +1092,7 @@ impl Engine {
                 warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
             }
         }
+        self.apply_resource_collection(dt);
         integrate(&self.cfg, &mut self.state, dt);
         self.state.tick += 1;
 
@@ -639,20 +1141,31 @@ impl Engine {
             let mut cmds_this_tick: u32 = 0;
             let read_count = self.cfg.max_cmds_per_tick as usize;
 
-            if let Ok(Some(entries)) =
-                self.redis.read_new_intents(&self.last_intent_id, read_count).await
+            if let Ok(Some(entries)) = self
+                .redis
+                .read_new_intents(&self.last_intent_id, read_count)
+                .await
             {
                 for (entry_id, bytes) in entries {
                     // Tick-bounded ingress: respect max_cmds_per_tick
                     if cmds_this_tick >= self.cfg.max_cmds_per_tick {
-                        warn!(tick = self.state.tick, limit = self.cfg.max_cmds_per_tick, "max_cmds_per_tick reached, deferring remaining");
+                        warn!(
+                            tick = self.state.tick,
+                            limit = self.cfg.max_cmds_per_tick,
+                            "max_cmds_per_tick reached, deferring remaining"
+                        );
                         break;
                     }
                     // Tick-bounded ingress: respect max_batch_ms
                     if self.cfg.max_batch_ms > 0
                         && batch_start.elapsed().as_millis() as u64 >= self.cfg.max_batch_ms
                     {
-                        warn!(tick = self.state.tick, elapsed_ms = batch_start.elapsed().as_millis() as u64, limit_ms = self.cfg.max_batch_ms, "max_batch_ms reached, deferring remaining");
+                        warn!(
+                            tick = self.state.tick,
+                            elapsed_ms = batch_start.elapsed().as_millis() as u64,
+                            limit_ms = self.cfg.max_batch_ms,
+                            "max_batch_ms reached, deferring remaining"
+                        );
                         break;
                     }
 
@@ -689,6 +1202,7 @@ impl Engine {
                     warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
                 }
             }
+            self.apply_resource_collection(dt);
             integrate(&self.cfg, &mut self.state, dt);
             self.state.tick += 1;
 
@@ -848,7 +1362,9 @@ impl Engine {
         if client_seq > 0 {
             self.player_last_seq.insert(player_id.clone(), client_seq);
             // M2: persist to Redis so reconnect handshake can report last_processed_client_seq
-            self.redis.persist_player_seq(&player_id, client_seq).await?;
+            self.redis
+                .persist_player_seq(&player_id, client_seq)
+                .await?;
         }
         self.redis
             .store_client_cmd(&player_id, &client_cmd_id, &intent_id, DEDUPE_TTL_SECS)
@@ -947,7 +1463,9 @@ impl Engine {
         let entity_type_id = self.resolve_entity_type_id(&payload_intent);
 
         // M1: Try to activate immediately (no server-side queue).
-        let outcome = self.intents.try_activate(payload_intent, metadata.clone(), &entity_type_id);
+        let outcome = self
+            .intents
+            .try_activate(payload_intent, metadata.clone(), &entity_type_id);
 
         // M2: Clear tracking for any preempted intents, then emit CANCELED
         for (entity_id, canceled_metadata) in outcome.canceled.iter() {
@@ -1022,9 +1540,7 @@ impl Engine {
         };
 
         let client_cmd_bytes = match Uuid::parse_str(legacy_client_cmd) {
-            Ok(uuid) if uuid.get_version() == Some(Version::SortRand) => {
-                uuid.into_bytes().to_vec()
-            }
+            Ok(uuid) if uuid.get_version() == Some(Version::SortRand) => uuid.into_bytes().to_vec(),
             Ok(uuid) => {
                 warn!(
                     client_cmd_id = %uuid,
