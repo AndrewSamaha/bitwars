@@ -1,7 +1,7 @@
-# M8 Resource Collection (Dual Mode Foundation)
+# M8 Resource Collection (Dual Mode + Collect Intent Foundation)
 
 **Status:** Planned  
-**Milestone intent:** Build the resource collection foundation once, so both classic transport gathering and proximity-based collection use the same deterministic system.
+**Milestone intent:** Build the resource collection foundation once, so both classic transport gathering and proximity-based collection use the same deterministic system, driven by an explicit maintained `Collect` intent.
 
 ---
 
@@ -10,6 +10,9 @@
 - Support two collection modes through shared data and shared simulation systems:
   - `transport`: gather at source, carry, deposit at refinery/processor.
   - `proximity`: collect while staying within an effective distance band around a source.
+- Make collection **intent-gated**:
+  - collectors do nothing autonomously when not in `Collect`,
+  - collectors run autonomous collection behavior while `Collect` is active.
 - Keep the model deterministic, replay-friendly, and content-driven.
 - Enable future mechanics without redesign:
   - distance-based collection windows,
@@ -21,6 +24,7 @@
 - Full hazard/damage gameplay tuning (planned for later milestone).
 - Rich UI/VFX polish for collection zones (debug/basic feedback is enough).
 - Complex automation scripting; maintained behavior should remain engine-native.
+- Long-lived stance trees beyond `Collect` (future expansion if needed).
 
 ---
 
@@ -54,9 +58,9 @@ Use consistent distance parameters in resource interaction rules:
 M8 uses them for proximity collection gating.  
 Later milestones can reuse the same primitives for hazard rules.
 
-## 4) Unified per-tick resource interaction system
+## 4) Unified per-tick resource interaction system (while `Collect` active)
 
-Server tick evaluates active collection intents uniformly:
+Server tick evaluates active collection behavior uniformly for entities with active `Collect`:
 
 - Validate ownership and compatibility.
 - Compute collector↔source distance.
@@ -64,6 +68,7 @@ Server tick evaluates active collection intents uniformly:
   - `transport`: gather toward carry capacity; travel to drop-off; deposit; repeat.
   - `proximity`: apply collection while in effective band; no carry/deposit loop required.
 - Apply ledger updates deterministically.
+- If another intent replaces `Collect`, collection behavior stops immediately.
 
 ---
 
@@ -74,19 +79,24 @@ Server tick evaluates active collection intents uniformly:
   - Collector entity types include compatibility profile.
   - Proximity-capable resources declare effective distance band.
 - Server
+  - Add maintained `Collect` intent kind and lifecycle semantics.
   - Single resource interaction pipeline handling both `transport` and `proximity`.
+  - Resource interaction runs only when entity is in active `Collect`.
   - Deterministic gather/deposit loop for `transport`.
   - Deterministic in-range collection for `proximity`.
   - Rejection/no-op reasons for incompatible collector/resource pairs.
-  - `REPLACE_ACTIVE` interrupts collection behavior immediately.
+  - Any other intent (`Move`, `Attack`, `Build`, etc.) replaces/interrupts collection behavior immediately.
 - Client
-  - Basic state feedback (collecting, out-of-range, incompatible, depositing).
+  - Ability to issue `Collect` per selected compatible entity.
+  - Basic state feedback (collecting, returning/depositing, out-of-range, incompatible, blocked, interrupted).
   - Keep HUD/ledger updates consistent with server.
 
 ---
 
 ## Acceptance Criteria
 
+- Without active `Collect`, collectors do not gather.
+- With active `Collect`, collectors execute deterministic mode-specific behavior.
 - `transport` mode:
   - Worker gathers, carries, deposits, and repeats deterministically.
 - `proximity` mode:
@@ -95,7 +105,7 @@ Server tick evaluates active collection intents uniformly:
 - Compatibility:
   - Wrong collector type cannot collect unsupported resource type.
 - Interrupt semantics:
-  - `REPLACE_ACTIVE` immediately halts current collection behavior.
+  - Replacing `Collect` with another intent immediately halts collection behavior.
 - Replay:
   - Deterministic replay/hash checks pass for both modes.
 
@@ -104,6 +114,8 @@ Server tick evaluates active collection intents uniformly:
 ## Test Plan (Minimum)
 
 - Unit/sim tests:
+  - Idle collector with no `Collect` does not gather.
+  - `Collect` activation starts mode-specific behavior.
   - `transport` gather loop (single collector).
   - `proximity` in-band vs out-of-band gating.
   - Compatibility rejection/no-op.
@@ -121,6 +133,8 @@ Server tick evaluates active collection intents uniformly:
   - Example: too close to `solar`/`theta` applies periodic damage.
 - Collector specialization expansion:
   - Additional collector classes for distinct energy/resource families.
+- Maintained-intent expansion:
+  - Reuse `Collect` maintained-action pattern for future “automated while active” loops.
 - UX upgrades:
   - Range ring visualization for effective and hazard bands.
   - Better feedback for in-range/out-of-range/danger states.

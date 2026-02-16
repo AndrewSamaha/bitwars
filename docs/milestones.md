@@ -1,6 +1,6 @@
 # Development Milestones (Incremental, Demo-Oriented)
 
-**Last updated:** 2026-02-15 -0500
+**Last updated:** 2026-02-16 -0500
 
 This roadmap lays out small, demonstrable steps toward a data-driven RTS intent system.
 Each milestone targets a vertical slice that can be shown end-to-end: client issues intents → server validates/executes → client receives deltas and updates UI.
@@ -328,7 +328,8 @@ See detailed plan: [docs/milestones/m8-resource-collection.md](./milestones/m8-r
 - Ship both:
   - `transport` gathering (gather → carry → deposit),
   - `proximity` gathering (collect while within effective distance band).
-- Introduce a maintained/continuous behavior intent pattern without mode-specific hacks.
+- Introduce `Collect` as a maintained/continuous intent pattern without mode-specific hacks.
+- Make collection opt-in by intent: collectors are idle by default when no active `Collect`.
 
 ### Deliverables
 
@@ -337,19 +338,24 @@ See detailed plan: [docs/milestones/m8-resource-collection.md](./milestones/m8-r
   - Collector entity types declare compatible resource types.
   - Distance-band params for proximity collection (`min_effective_distance`, `max_effective_distance`).
 - Server:
+  - New maintained intent kind: `Collect`.
   - Unified resource interaction system handling both modes deterministically.
+  - Collection autonomy executes only while `Collect` is active for that entity.
   - `transport`: gather/carry/deposit loop via nearest valid deposit structure.
   - `proximity`: collection only while in effective distance band.
-  - `REPLACE_ACTIVE` cancels collection behavior immediately.
+  - Any non-Collect active intent (e.g. Move/Attack/Build) interrupts/cancels `Collect` immediately.
 - Client:
-  - Basic collection-state feedback (collecting, out-of-range, incompatible).
+  - Issue `Collect` intent from UI and show active collection state.
+  - Basic collection-state feedback (collecting, returning, out-of-range, incompatible, blocked).
   - Ledger/HUD remains authoritative to server events.
 
 ### Acceptance Criteria
 
 - `transport` and `proximity` both function end-to-end and remain deterministic under replay.
 - Incompatible collector/resource pairs are rejected or no-op with clear reasoning.
-- Interrupting collection via new command immediately stops old maintained behavior.
+- Without active `Collect`, collectors do not autonomously gather/deposit.
+- Issuing `Collect` starts maintained collection behavior for that entity.
+- Issuing another intent immediately stops/replaces maintained collection behavior.
 - Two players collecting from same source follows documented deterministic tie/order rules.
 
 ---
@@ -369,10 +375,11 @@ See detailed plan: [docs/milestones/m8-resource-collection.md](./milestones/m8-r
   - Build timer; unit spawns on completion at a spawn offset / rally point.
   - Cancel rules (refund policy documented).
   - Resource/collector compatibility rules used in M8 feed directly into production costs and available build options.
+  - `Collect` compatibility and execution rules from M8 remain the only path that drives gathering (no implicit auto-harvest fallback).
 - Client:
   - Build UI (simple buttons) + production progress indicator.
   - Optional: client maintains a **local build queue** (UX) while server remains active-only.
-  - Basic visibility for which collector types can gather which resource families.
+  - Basic visibility for which collector types can gather which resource families and which entities currently have `Collect` active.
 
 ### Acceptance Criteria
 
@@ -423,7 +430,7 @@ See detailed plan: [docs/milestones/m8-resource-collection.md](./milestones/m8-r
 
 - Server:
   - Environmental hazard profiles that can be attached to resources/sources (e.g., `solar`, `theta`).
-  - Hazard rules use distance-band primitives compatible with M8 proximity collection logic.
+  - Hazard rules use distance-band primitives compatible with M8 proximity collection logic and `Collect` intent execution.
   - AoE source component/system:
     - Applies damage periodically to entities in radius.
     - Falloff by distance (e.g., inverse-square or a simple squared-distance curve).
@@ -488,7 +495,7 @@ See detailed plan: [docs/milestones/m8-resource-collection.md](./milestones/m8-r
 - M5 improves client world navigation (camera/minimap/background) to support all later demos.
 - M6 establishes ownership/spawn/control gating.
 - M7 adds the resource ledger + HUD.
-- M8 establishes dual-mode resource collection (transport + proximity) with collector compatibility.
+- M8 establishes dual-mode resource collection (transport + proximity) gated by an explicit maintained `Collect` intent, with collector compatibility.
 - M9 builds production and collector specialization on top of M8’s data model.
 - M10–M11 deliver combat plus environmental hazard mechanics using shared distance-band primitives.
 - M12 adds fog-of-war and per-player visibility filtering.
