@@ -149,7 +149,7 @@ export default function GameStage() {
           }
         }
 
-        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, bottom-right
+        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, top-right
         // 200 px → 20_000 world units ⇒ 1 minimap pixel = 100 world units
         const MINIMAP_HALF_EXTENT = 10_000;
         const MINIMAP_SIZE_PX = 200;
@@ -182,7 +182,7 @@ export default function GameStage() {
           });
           minimapContainer.position.set(
             app.screen.width - MINIMAP_SIZE_PX - MINIMAP_MARGIN,
-            app.screen.height - MINIMAP_SIZE_PX - MINIMAP_MARGIN,
+            MINIMAP_MARGIN,
           );
           minimapGraphics.clear();
           // Background
