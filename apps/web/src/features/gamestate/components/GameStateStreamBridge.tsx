@@ -218,6 +218,9 @@ export default function GameStateStreamBridge() {
         }
       }
       log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("bitwars:snapshot-applied"));
+      }
       // Signal that the world is ready for ticking/rendering
       if (!game.ready) {
         game.ready = true;
@@ -370,6 +373,9 @@ export default function GameStateStreamBridge() {
     const onOpen = () => {
       const msSinceMount = Date.now() - mountedAtRef.current;
       log.info("GameStateStreamBridge:es:open", { streamId: streamIdRef.current, msSinceMount, isReconnect: hasConnectedBefore });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("bitwars:stream-open"));
+      }
 
       // M2: On every open (initial + reconnect), reconcile the intent queue
       // with the server's tracking state so we don't duplicate or skip intents.

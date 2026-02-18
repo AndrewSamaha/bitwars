@@ -54,6 +54,7 @@ export default function GameStage() {
   // M6: Current player id for ownership gating and visuals (ref so initWorld closure sees latest)
   const myPlayerIdRef = useRef<string | null>(null);
   myPlayerIdRef.current = player?.id ?? null;
+  const recenterRequestedRef = useRef<boolean>(true);
   // M5.1: Pan keys currently held (KeyW, KeyA, ...); ticker reads this and applies pan
   const panKeysRef = useRef<Set<string>>(new Set());
 
@@ -117,6 +118,37 @@ export default function GameStage() {
         app.stage.eventMode = "static";
         app.stage.hitArea = app.screen;
         setCamera(worldContainer);
+
+        const requestRecenter = () => {
+          recenterRequestedRef.current = true;
+        };
+        window.addEventListener("bitwars:stream-open", requestRecenter as EventListener);
+        window.addEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
+
+        const centerCameraOnOwnedEntities = (): boolean => {
+          const myId = myPlayerIdRef.current;
+          if (!myId) return false;
+          let sumX = 0;
+          let sumY = 0;
+          let count = 0;
+          for (const e of game.world.with("pos", "id")) {
+            const ownerId = (e as any).owner_player_id as string | undefined;
+            if (ownerId !== myId) continue;
+            const pos = (e as any).pos as { x: number; y: number } | undefined;
+            if (!pos) continue;
+            sumX += pos.x;
+            sumY += pos.y;
+            count++;
+          }
+          if (count === 0) return false;
+          const centerX = sumX / count;
+          const centerY = sumY / count;
+          worldContainer.position.set(
+            app.screen.width / 2 - centerX * worldContainer.scale.x,
+            app.screen.height / 2 - centerY * worldContainer.scale.y,
+          );
+          return true;
+        };
 
         // M5.2: Voronoi border overlay in screen space (sample grid → edge test → draw dots)
         const voronoiBorderGraphics = new Graphics();
@@ -570,6 +602,10 @@ export default function GameStage() {
         app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
             if (!game.ready) return;
+            if (recenterRequestedRef.current) {
+              const centered = centerCameraOnOwnedEntities();
+              if (centered) recenterRequestedRef.current = false;
+            }
             // M5.1: Apply camera pan from WASD/arrows (delta-time so speed is frame-rate independent)
             const keys = panKeysRef.current;
             if (keys.size > 0) {
@@ -614,6 +650,8 @@ export default function GameStage() {
           for (const id of Array.from(renderById.keys())) {
             destroyRenderRef(id);
           }
+          window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
+          window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           app.destroy(true, { children: true, texture: false });
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
