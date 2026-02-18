@@ -10,9 +10,11 @@ import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
   const { selectedEntities, selectedAction } = selectors;
+  const selectedIdsKey = selectedEntities.join(",");
   // Access Pixi application to subscribe to ticker
   const { app } = selectors as any;
   const [, forceRerender] = useState(0);
+  const [collectorStateById, setCollectorStateById] = useState<Record<string, any>>({});
 
   // Re-render every Pixi frame so entity positions are fresh
   useEffect(() => {
@@ -23,6 +25,39 @@ export default function EntityDetailPanel() {
       app.ticker.remove(tick);
     };
   }, [app]);
+
+  useEffect(() => {
+    if (!selectedEntities?.length) {
+      setCollectorStateById({});
+      return;
+    }
+    let mounted = true;
+    let timer: number | undefined;
+    const ids = selectedEntities.join(",");
+    const refresh = async () => {
+      try {
+        const res = await fetch(`/api/v2/collector-state?ids=${encodeURIComponent(ids)}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { collector_state_by_entity?: Record<string, any> };
+        if (!mounted) return;
+        setCollectorStateById(data.collector_state_by_entity ?? {});
+      } catch {
+        // keep pane resilient on transient fetch failures
+      }
+    };
+    void refresh();
+    timer = window.setInterval(() => {
+      void refresh();
+    }, 500);
+    return () => {
+      mounted = false;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [selectedIdsKey]);
 
   // Position the detail panel so it never overlaps the TerminalPanel
   // TerminalPanel uses w-96 (24rem) when open and w-12 (3rem) when closed, with left-4 (1rem) margin
@@ -42,6 +77,16 @@ export default function EntityDetailPanel() {
       moveTarget?: { x: number; y: number };
     }
   >();
+  const idToCollectorState = new Map<
+    string,
+    {
+      activity: string;
+      resource_type: string;
+      carry_amount: number;
+      carry_capacity: number;
+      effective_rate_per_second: number;
+    }
+  >();
   try {
     for (const e of game.world.with("pos", "id")) {
       const id = String((e as any).id);
@@ -51,6 +96,15 @@ export default function EntityDetailPanel() {
       const activeIntentId = (e as any).active_intent_id as string | undefined;
       const activeIntentStartedTick = (e as any).active_intent_started_tick as number | undefined;
       const activeIntentMoveTarget = (e as any).active_intent_move_target as { x: number; y: number } | undefined;
+      const collectorState = (e as any).collector_state as
+        | {
+            activity?: string;
+            resource_type?: string;
+            carry_amount?: number;
+            carry_capacity?: number;
+            effective_rate_per_second?: number;
+          }
+        | undefined;
       if (id != null && pos) {
         idToPos.set(id, pos);
       }
@@ -62,6 +116,15 @@ export default function EntityDetailPanel() {
             intentId: activeIntentId,
             startedTick: activeIntentStartedTick,
             moveTarget: activeIntentMoveTarget,
+          });
+        }
+        if (collectorState) {
+          idToCollectorState.set(id, {
+            activity: String(collectorState.activity ?? "idle"),
+            resource_type: String(collectorState.resource_type ?? ""),
+            carry_amount: Number(collectorState.carry_amount ?? 0),
+            carry_capacity: Number(collectorState.carry_capacity ?? 0),
+            effective_rate_per_second: Number(collectorState.effective_rate_per_second ?? 0),
           });
         }
       }
@@ -112,6 +175,7 @@ export default function EntityDetailPanel() {
                 const pos = idToPos.get(id);
                 const entityTypeId = idToType.get(id) ?? "—";
                 const activeIntent = idToActiveIntent.get(id);
+                const collectorState = collectorStateById[id] ?? idToCollectorState.get(id);
                 const shortIntentId = activeIntent?.intentId
                   ? `${activeIntent.intentId.slice(0, 8)}...`
                   : "—";
@@ -140,6 +204,16 @@ export default function EntityDetailPanel() {
                     {activeIntent?.kind === "move" && (
                       <span className="font-mono text-muted-foreground">
                         target: {moveTarget}
+                      </span>
+                    )}
+                    {collectorState && collectorState.carry_capacity > 0 && (
+                      <span className="font-mono text-muted-foreground">
+                        carry: {collectorState.carry_amount.toFixed(1)} / {collectorState.carry_capacity.toFixed(1)}
+                      </span>
+                    )}
+                    {collectorState && collectorState.carry_capacity <= 0 && (
+                      <span className="font-mono text-muted-foreground">
+                        rate: {collectorState.effective_rate_per_second.toFixed(1)}/s
                       </span>
                     )}
                   </li>

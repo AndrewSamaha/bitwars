@@ -6,7 +6,9 @@ use tracing::{debug, info, warn};
 use crate::engine::intent::{format_uuid, IntentMetadata};
 use crate::engine::state::GameState;
 use crate::pb::events_stream_record;
-use crate::pb::{self, Delta, EventsStreamRecord, LifecycleEvent, PlayerResourceLedger, ResourceEntry, Snapshot};
+use crate::pb::{
+    self, Delta, EventsStreamRecord, LifecycleEvent, PlayerResourceLedger, ResourceEntry, Snapshot,
+};
 
 // ── M2: Per-entity tracking types ───────────────────────────────────────────
 //
@@ -39,6 +41,22 @@ pub struct EntityActiveIntent {
 pub struct IntentPoint {
     pub x: f32,
     pub y: f32,
+}
+
+/// Runtime collector telemetry for UI surfaces (entity details/hover).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectorUiState {
+    pub activity: String,
+    #[serde(default)]
+    pub resource_type: String,
+    #[serde(default)]
+    pub carry_amount: f32,
+    #[serde(default)]
+    pub carry_capacity: f32,
+    #[serde(default)]
+    pub effective_rate_per_second: f32,
+    #[serde(default)]
+    pub updated_tick: u64,
 }
 
 /// Everything the reconnect handshake needs for one player.
@@ -100,6 +118,11 @@ impl RedisClient {
     /// M2: Hash holding per-entity active-intent JSON blobs.
     fn active_intents_key(&self) -> String {
         format!("rts:match:{}:active_intents", self.game_id)
+    }
+
+    /// M8b: Hash holding per-entity collector telemetry JSON blobs.
+    fn collector_state_key(&self) -> String {
+        format!("rts:match:{}:collector_state", self.game_id)
     }
 
     /// M4: Key holding the content hash (xxh3 hex string).
@@ -339,7 +362,10 @@ impl RedisClient {
                                             if let RedisValue::Data(field_name) = field {
                                                 if field_name == b"data" {
                                                     if let RedisValue::Data(payload) = value {
-                                                        out.push((entry_id.clone(), payload.clone()));
+                                                        out.push((
+                                                            entry_id.clone(),
+                                                            payload.clone(),
+                                                        ));
                                                     }
                                                 }
                                             }
@@ -372,6 +398,7 @@ impl RedisClient {
             self.snapshot_meta_key(),
             self.player_seq_key(),
             self.active_intents_key(),
+            self.collector_state_key(),
             self.pending_joins_key(),
             self.join_requested_key(),
         ];
@@ -502,7 +529,9 @@ impl RedisClient {
                                                 if field_name == b"data" {
                                                     if let RedisValue::Data(payload) = value {
                                                         if let Ok(record) =
-                                                            EventsStreamRecord::decode(payload.as_slice())
+                                                            EventsStreamRecord::decode(
+                                                                payload.as_slice(),
+                                                            )
                                                         {
                                                             out.push(record);
                                                         }
@@ -535,11 +564,7 @@ impl RedisClient {
     // Reads happen only on reconnect or engine restore.
 
     /// Persist the last successfully-processed `client_seq` for a player.
-    pub async fn persist_player_seq(
-        &mut self,
-        player_id: &str,
-        seq: u64,
-    ) -> anyhow::Result<()> {
+    pub async fn persist_player_seq(&mut self, player_id: &str, seq: u64) -> anyhow::Result<()> {
         let key = self.player_seq_key();
         let _: () = redis::cmd("HSET")
             .arg(&key)
@@ -595,6 +620,31 @@ impl RedisClient {
             .arg(&field)
             .query_async(&mut self.conn)
             .await?;
+        Ok(())
+    }
+
+    /// Persist collector telemetry for a batch of entities.
+    pub async fn persist_collector_states(
+        &mut self,
+        states: &[(u64, CollectorUiState)],
+        ttl_secs: u64,
+    ) -> anyhow::Result<()> {
+        if states.is_empty() {
+            return Ok(());
+        }
+        let key = self.collector_state_key();
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+        for (entity_id, state) in states {
+            let json = serde_json::to_string(state)?;
+            pipe.cmd("HSET")
+                .arg(&key)
+                .arg(entity_id.to_string())
+                .arg(json);
+        }
+        let ttl: i64 = ttl_secs.try_into().unwrap_or(i64::MAX);
+        pipe.cmd("EXPIRE").arg(&key).arg(ttl);
+        let _: () = pipe.query_async(&mut self.conn).await?;
         Ok(())
     }
 

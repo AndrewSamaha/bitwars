@@ -17,8 +17,12 @@ pub struct Telemetry {
 
 impl Telemetry {
     pub fn from_env() -> Result<Option<Self>> {
-        let token = std::env::var("AXIOM_TOKEN").ok().filter(|v| !v.trim().is_empty());
-        let dataset = std::env::var("AXIOM_DATASET").ok().filter(|v| !v.trim().is_empty());
+        let token = std::env::var("AXIOM_TOKEN")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
+        let dataset = std::env::var("AXIOM_DATASET")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
 
         let (token, dataset) = match (token, dataset) {
             (Some(token), Some(dataset)) => (token, dataset),

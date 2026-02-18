@@ -10,6 +10,14 @@ import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
+type CollectorStatePayload = {
+  activity: string;
+  resource_type: string;
+  carry_amount: number;
+  carry_capacity: number;
+  effective_rate_per_second: number;
+  updated_tick?: number;
+};
 
 type ResourceEntryPayload = { resource_type: string; amount: number };
 type PlayerLedgerPayload = { player_id: string; resources: ResourceEntryPayload[] };
@@ -24,6 +32,7 @@ type SnapshotPayload = {
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
+    collector_state?: CollectorStatePayload;
   }>;
   player_ledgers?: PlayerLedgerPayload[];
 };
@@ -38,6 +47,7 @@ type DeltaPayload = {
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
+    collector_state?: CollectorStatePayload;
   }>;
 };
 
@@ -183,6 +193,7 @@ export default function GameStateStreamBridge() {
           ...(s.owner_player_id !== undefined ? { owner_player_id: s.owner_player_id } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
+          ...(s.collector_state ? { collector_state: { ...s.collector_state } } : {}),
           // force exists but is currently unused by systems
         };
         world.add(ent);
@@ -232,6 +243,7 @@ export default function GameStateStreamBridge() {
             else { existing.vel.x = u.vel.x; existing.vel.y = u.vel.y; }
           }
           if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
+          if (u.collector_state !== undefined) existing.collector_state = { ...u.collector_state };
           applyIntentOverlayToEntity(existing, activeIntentByEntityRef.current.get(key));
           existingEntities++;
           // force currently ignored; add when systems need it
@@ -243,6 +255,7 @@ export default function GameStateStreamBridge() {
             ...(u.owner_player_id !== undefined ? { owner_player_id: u.owner_player_id } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
+            ...(u.collector_state ? { collector_state: { ...u.collector_state } } : {}),
           };
           newEntities++;
           world.add(ent);

@@ -1,7 +1,7 @@
 use anyhow::Result;
-use sim::{Engine, IntentEnvelope};
-use sim::codec::{from_snapshot_proto, to_sorted_json};
 use prost::Message;
+use sim::codec::{from_snapshot_proto, to_sorted_json};
+use sim::{Engine, IntentEnvelope};
 use std::env;
 use std::fs;
 use std::io::Read;
@@ -19,28 +19,30 @@ fn main() -> Result<()> {
     // Load snapshot
     let mut snapshot_data = Vec::new();
     fs::File::open(snapshot_file)?.read_to_end(&mut snapshot_data)?;
-    
+
     let world_state = from_snapshot_proto(&snapshot_data)?;
     let mut engine = Engine::from_snapshot(world_state);
 
-    println!("Loaded snapshot with {} entities at tick {}", 
-             engine.state.entities.len(), 
-             engine.state.tick);
+    println!(
+        "Loaded snapshot with {} entities at tick {}",
+        engine.state.entities.len(),
+        engine.state.tick
+    );
 
     // Process intents
     for intent_file in intent_files {
         let mut intent_data = Vec::new();
         fs::File::open(intent_file)?.read_to_end(&mut intent_data)?;
-        
+
         // Decode intent envelope
         let envelope = IntentEnvelope::decode(&intent_data[..])?;
-        
+
         // Apply intent
         if let Err(e) = engine.accept(&envelope) {
             eprintln!("Failed to apply intent from {}: {}", intent_file, e);
             continue;
         }
-        
+
         println!("Applied intent from {}", intent_file);
     }
 
@@ -53,7 +55,7 @@ fn main() -> Result<()> {
     // Generate final hash
     let json = to_sorted_json(&engine.state)?;
     let hash = xxhash_rust::xxh3::xxh3_64(json.as_bytes());
-    
+
     println!("Final state hash: {:x}", hash);
     println!("Final JSON: {}", json);
 

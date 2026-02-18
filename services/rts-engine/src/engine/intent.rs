@@ -142,10 +142,8 @@ impl IntentManager {
         let action = make_action_state_from_intent(intent, stop_radius);
         log_start(&metadata, &action, entity_id);
         let started_meta = metadata.clone();
-        self.current_action.insert(
-            entity_id,
-            ActiveIntent { action, metadata },
-        );
+        self.current_action
+            .insert(entity_id, ActiveIntent { action, metadata });
 
         ActivationOutcome {
             canceled,
@@ -437,7 +435,10 @@ mod tests {
         let second_meta = make_metadata(2, pb::IntentPolicy::Append);
         let outcome = manager.try_activate(second, second_meta, "");
         assert!(outcome.started.is_none());
-        assert!(outcome.rejected_busy, "APPEND should be rejected when entity is busy");
+        assert!(
+            outcome.rejected_busy,
+            "APPEND should be rejected when entity is busy"
+        );
         assert!(outcome.canceled.is_empty());
     }
 
@@ -500,7 +501,11 @@ mod tests {
         };
 
         let finished = manager.follow_targets(&mut state, 5.0, 0.016);
-        assert_eq!(finished.len(), 1, "intent should complete immediately at target");
+        assert_eq!(
+            finished.len(),
+            1,
+            "intent should complete immediately at target"
+        );
         assert_eq!(finished[0].0, entity_id);
         assert_eq!(finished[0].1.intent_id, metadata.intent_id);
     }

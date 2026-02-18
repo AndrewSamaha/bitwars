@@ -5,6 +5,7 @@ import { sseFormat } from "@/lib/db/utils/sse";
 import type { SseChannel } from "@/lib/db/utils/sse-channel";
 import { xRangeWithBuffers } from "@/lib/db/utils/redis-streams";
 import { emitEventFromBuffer } from "@/lib/db/utils/delta";
+import { readCollectorStatesByEntityIds } from "@/lib/db/utils/collector-state";
 import { logger } from "@/lib/axiom/server";
 
 const XRANGE_BATCH_COUNT = 512;
@@ -33,6 +34,18 @@ export async function bootstrapAndCatchUp(
   try {
     const snapshot = decodeSnapshotBinary(snapshotBuf);
     const payload = mapSnapshotToJson(snapshot as any);
+    const collectorStates = await readCollectorStatesByEntityIds(
+      gameId,
+      Array.isArray((payload as any)?.entities)
+        ? (payload as any).entities.map((e: any) => e.id)
+        : [],
+    );
+    if (Array.isArray((payload as any)?.entities)) {
+      for (const entity of (payload as any).entities) {
+        const state = collectorStates.get(String(entity?.id ?? ""));
+        if (state) entity.collector_state = state;
+      }
+    }
     const entCount = Array.isArray((payload as any)?.entities) ? (payload as any).entities.length : 0;
     let concerningEntities = 0;
     let greatEntities = 0;

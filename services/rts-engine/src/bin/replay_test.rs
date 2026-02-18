@@ -8,16 +8,21 @@
 use anyhow::{Context, Result};
 use sim::codec::to_sorted_json;
 use sim::pb::intent_envelope::Payload;
-use sim::{Engine, IntentEnvelope};
 use sim::pb::{Entity, MoveToLocationIntent, Vec2};
 use sim::state::WorldState;
+use sim::{Engine, IntentEnvelope};
 use std::env;
 use std::process::ExitCode;
 
 /// Fixed 16 bytes for deterministic replay (UUIDv7-sized)
 const FIXED_UUID: [u8; 16] = [0x00; 16];
 
-fn make_move_envelope(accept_tick: u64, entity_id: u64, target_x: f32, target_y: f32) -> IntentEnvelope {
+fn make_move_envelope(
+    accept_tick: u64,
+    entity_id: u64,
+    target_x: f32,
+    target_y: f32,
+) -> IntentEnvelope {
     IntentEnvelope {
         client_cmd_id: FIXED_UUID.to_vec(),
         intent_id: FIXED_UUID.to_vec(),
@@ -28,7 +33,10 @@ fn make_move_envelope(accept_tick: u64, entity_id: u64, target_x: f32, target_y:
         policy: 0, // REPLACE_ACTIVE
         payload: Some(Payload::Move(MoveToLocationIntent {
             entity_id,
-            target: Some(Vec2 { x: target_x, y: target_y }),
+            target: Some(Vec2 {
+                x: target_x,
+                y: target_y,
+            }),
             client_cmd_id: String::new(),
             player_id: String::new(),
         })),
@@ -46,34 +54,32 @@ struct ReplayScenario {
 }
 
 fn scenarios() -> Vec<ReplayScenario> {
-    vec![
-        ReplayScenario {
-            name: "two_entities_move",
-            initial_state: WorldState::new(
-                0,
-                vec![
-                    Entity {
-                        id: 1,
-                        entity_type_id: String::new(),
-                        pos: Some(Vec2 { x: 0.0, y: 0.0 }),
-                        vel: Some(Vec2 { x: 0.0, y: 0.0 }),
-                        force: Some(Vec2 { x: 0.0, y: 0.0 }),
-                    },
-                    Entity {
-                        id: 2,
-                        entity_type_id: String::new(),
-                        pos: Some(Vec2 { x: 5.0, y: 5.0 }),
-                        vel: Some(Vec2 { x: 0.0, y: 0.0 }),
-                        force: Some(Vec2 { x: 0.0, y: 0.0 }),
-                    },
-                ],
-            ),
-            intents: vec![(0, make_move_envelope(0, 1, 10.0, 5.0))],
-            total_ticks: 20,
-            expected_hash: 0x0fa2f2a981aba7b2,
-            expected_json: r#"{"entities":[{"force":{"x":0.0,"y":0.0},"id":1,"pos":{"x":10.0,"y":5.0},"vel":{"x":0.0,"y":0.0}},{"force":{"x":0.0,"y":0.0},"id":2,"pos":{"x":5.0,"y":5.0},"vel":{"x":0.0,"y":0.0}}],"tick":20}"#,
-        },
-    ]
+    vec![ReplayScenario {
+        name: "two_entities_move",
+        initial_state: WorldState::new(
+            0,
+            vec![
+                Entity {
+                    id: 1,
+                    entity_type_id: String::new(),
+                    pos: Some(Vec2 { x: 0.0, y: 0.0 }),
+                    vel: Some(Vec2 { x: 0.0, y: 0.0 }),
+                    force: Some(Vec2 { x: 0.0, y: 0.0 }),
+                },
+                Entity {
+                    id: 2,
+                    entity_type_id: String::new(),
+                    pos: Some(Vec2 { x: 5.0, y: 5.0 }),
+                    vel: Some(Vec2 { x: 0.0, y: 0.0 }),
+                    force: Some(Vec2 { x: 0.0, y: 0.0 }),
+                },
+            ],
+        ),
+        intents: vec![(0, make_move_envelope(0, 1, 10.0, 5.0))],
+        total_ticks: 20,
+        expected_hash: 0x0fa2f2a981aba7b2,
+        expected_json: r#"{"entities":[{"force":{"x":0.0,"y":0.0},"id":1,"pos":{"x":10.0,"y":5.0},"vel":{"x":0.0,"y":0.0}},{"force":{"x":0.0,"y":0.0},"id":2,"pos":{"x":5.0,"y":5.0},"vel":{"x":0.0,"y":0.0}}],"tick":20}"#,
+    }]
 }
 
 fn run_scenario(scenario: &ReplayScenario) -> Result<(u64, String)> {
@@ -175,7 +181,14 @@ fn main() -> Result<ExitCode> {
             eprintln!("Usage: replay_test <scenario_name> [--golden]");
             eprintln!("  scenario_name: e.g. two_entities_move");
             eprintln!("  --golden: print expected hash and JSON for pasting into scenario");
-            eprintln!("Available scenarios: {}", scenarios().iter().map(|s| s.name).collect::<Vec<_>>().join(", "));
+            eprintln!(
+                "Available scenarios: {}",
+                scenarios()
+                    .iter()
+                    .map(|s| s.name)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             return Ok(ExitCode::from(1));
         }
     };
@@ -195,7 +208,10 @@ fn main() -> Result<ExitCode> {
     }
 
     if scenario.expected_json.is_empty() || scenario.expected_hash == 0 {
-        eprintln!("Scenario {} has no golden data. Run with --golden to generate.", name);
+        eprintln!(
+            "Scenario {} has no golden data. Run with --golden to generate.",
+            name
+        );
         return Ok(ExitCode::from(1));
     }
 

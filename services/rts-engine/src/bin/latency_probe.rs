@@ -9,13 +9,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use tokio::sync::{oneshot, Mutex};
 use rts_engine::engine::ENGINE_PROTOCOL_MAJOR;
 use rts_engine::io::env as io_env;
 use rts_engine::io::redis::RedisClient;
 use rts_engine::pb::events_stream_record::Record;
 use rts_engine::pb::{intent_envelope, IntentEnvelope, LifecycleEvent, LifecycleState};
 use rts_engine::pb::{MoveToLocationIntent, Vec2};
+use tokio::sync::{oneshot, Mutex};
 use uuid::Uuid;
 
 const NUM_INTENTS: usize = 100;
@@ -57,7 +57,12 @@ async fn main() -> Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
     // Skip leading "--" (e.g. from pnpm run latency:probe -- testgameid 1 30)
-    let pos_args: Vec<&str> = args.iter().skip(1).map(String::as_str).filter(|s| *s != "--").collect();
+    let pos_args: Vec<&str> = args
+        .iter()
+        .skip(1)
+        .map(String::as_str)
+        .filter(|s| *s != "--")
+        .collect();
     if pos_args.is_empty() {
         eprintln!(
             "Usage: {} <game_id> [entity_id] [timeout_secs]\n  entity_id defaults to 1, timeout_secs to {}",
@@ -70,15 +75,20 @@ async fn main() -> Result<()> {
 
     let game_id = pos_args[0].to_string();
     let entity_id: u64 = pos_args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
-    let timeout_secs: u64 = pos_args.get(2).and_then(|s| s.parse().ok()).unwrap_or(DEFAULT_TIMEOUT_SECS);
+    let timeout_secs: u64 = pos_args
+        .get(2)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_TIMEOUT_SECS);
     let redis_url = get_env("GAMESTATE_REDIS_URL", "redis://127.0.0.1:6379");
 
     // Two connections: one for publishing, one for reading (reader must be blocking on XREAD before we publish)
     let mut client_pub = RedisClient::connect(&redis_url, game_id.clone()).await?;
     let client_sub = RedisClient::connect(&redis_url, game_id.clone()).await?;
 
-    let submit_times: Arc<Mutex<HashMap<Vec<u8>, Instant>>> = Arc::new(Mutex::new(HashMap::with_capacity(NUM_INTENTS)));
-    let latencies: Arc<Mutex<Vec<Duration>>> = Arc::new(Mutex::new(Vec::with_capacity(NUM_INTENTS)));
+    let submit_times: Arc<Mutex<HashMap<Vec<u8>, Instant>>> =
+        Arc::new(Mutex::new(HashMap::with_capacity(NUM_INTENTS)));
+    let latencies: Arc<Mutex<Vec<Duration>>> =
+        Arc::new(Mutex::new(Vec::with_capacity(NUM_INTENTS)));
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     let player_id = "latency-probe".to_string();
 
@@ -92,15 +102,23 @@ async fn main() -> Result<()> {
         let mut last_id = "$".to_string();
         let mut reader = client_sub;
         let _ = ready_tx.send(()); // signal we're about to block on XREAD
-        while reader_latencies.lock().await.len() < NUM_INTENTS && Instant::now() < reader_deadline {
-            let block_ms = (reader_deadline - Instant::now()).as_millis().min(BLOCK_MS as u128) as u64;
+        while reader_latencies.lock().await.len() < NUM_INTENTS && Instant::now() < reader_deadline
+        {
+            let block_ms = (reader_deadline - Instant::now())
+                .as_millis()
+                .min(BLOCK_MS as u128) as u64;
             let block_ms = block_ms.max(100);
             match reader.read_events_blocking(&last_id, block_ms).await {
                 Ok(Some((new_id, records))) => {
                     last_id = new_id;
                     let now = Instant::now();
                     for record in records {
-                        if let Some(Record::Lifecycle(LifecycleEvent { client_cmd_id, state, .. })) = record.record {
+                        if let Some(Record::Lifecycle(LifecycleEvent {
+                            client_cmd_id,
+                            state,
+                            ..
+                        })) = record.record
+                        {
                             let is_received_or_accepted = state == LifecycleState::Received as i32
                                 || state == LifecycleState::Accepted as i32;
                             if !is_received_or_accepted {
@@ -109,7 +127,10 @@ async fn main() -> Result<()> {
                             let mut st = reader_submit_times.lock().await;
                             if let Some(submit_at) = st.remove(&client_cmd_id) {
                                 drop(st);
-                                reader_latencies.lock().await.push(now.duration_since(submit_at));
+                                reader_latencies
+                                    .lock()
+                                    .await
+                                    .push(now.duration_since(submit_at));
                             }
                         }
                     }
@@ -124,11 +145,17 @@ async fn main() -> Result<()> {
 
     // Publish 100 Move intents, recording submit time per client_cmd_id (reader is already blocking on events).
     // Space out publishes by 1ms so UUIDv7 client_cmd_ids differ (engine dedupes by client_cmd_id).
-    println!("Publishing {} Move intents (entity_id={})...", NUM_INTENTS, entity_id);
+    println!(
+        "Publishing {} Move intents (entity_id={})...",
+        NUM_INTENTS, entity_id
+    );
     for seq in 1..=NUM_INTENTS {
         let client_cmd_id = Uuid::now_v7().into_bytes().to_vec();
         let submit_at = Instant::now();
-        submit_times.lock().await.insert(client_cmd_id.clone(), submit_at);
+        submit_times
+            .lock()
+            .await
+            .insert(client_cmd_id.clone(), submit_at);
 
         let move_intent = MoveToLocationIntent {
             entity_id,
@@ -161,10 +188,16 @@ async fn main() -> Result<()> {
     let num_measured = latencies_vec.len();
     let num_timed_out = NUM_INTENTS - num_measured;
     if num_timed_out > 0 {
-        eprintln!("Warning: {} intents did not receive RECEIVED/ACCEPTED within {}s", num_timed_out, timeout_secs);
+        eprintln!(
+            "Warning: {} intents did not receive RECEIVED/ACCEPTED within {}s",
+            num_timed_out, timeout_secs
+        );
     }
 
-    let mut sorted_ms: Vec<f64> = latencies_vec.iter().map(|d| d.as_secs_f64() * 1000.0).collect();
+    let mut sorted_ms: Vec<f64> = latencies_vec
+        .iter()
+        .map(|d| d.as_secs_f64() * 1000.0)
+        .collect();
     sorted_ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
     let p50_ms = percentile(&sorted_ms, 50.0);
@@ -176,7 +209,11 @@ async fn main() -> Result<()> {
     let metrics_dir = ".metrics/m0.1";
     std::fs::create_dir_all(metrics_dir)?;
     let run_ts = chrono::Utc::now();
-    let filename = format!("{}/latency_probe_{}.json", metrics_dir, run_ts.format("%Y%m%d_%H%M%S"));
+    let filename = format!(
+        "{}/latency_probe_{}.json",
+        metrics_dir,
+        run_ts.format("%Y%m%d_%H%M%S")
+    );
     let metrics = LatencyMetrics {
         run_ts_iso8601: run_ts.to_rfc3339(),
         game_id: game_id.clone(),

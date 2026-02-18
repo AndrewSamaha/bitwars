@@ -13,8 +13,7 @@ use crate::config::GameConfig;
 use crate::content::{CollectionMode, ContentPack};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
-use crate::io::redis::RedisClient;
-use crate::io::redis::IntentPoint;
+use crate::io::redis::{CollectorUiState, IntentPoint, RedisClient};
 use crate::io::telemetry::Telemetry;
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
@@ -26,6 +25,12 @@ use state::{init_world, log_sample, on_player_spawn, GameState};
 pub const ENGINE_PROTOCOL_MAJOR: u32 = 4;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
+const COLLECTOR_ACTIVITY_IDLE: &str = "idle";
+const COLLECTOR_ACTIVITY_MOVING_TO_SOURCE: &str = "moving_to_source";
+const COLLECTOR_ACTIVITY_GATHERING: &str = "gathering";
+const COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF: &str = "moving_to_dropoff";
+const COLLECTOR_ACTIVITY_DELIVERING: &str = "delivering";
+const COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING: &str = "proximity_collecting";
 
 #[derive(Clone, Debug)]
 struct CarryState {
@@ -155,6 +160,8 @@ pub struct Engine {
     carry_by_entity: HashMap<u64, CarryState>,
     /// M8: Fractional per-player resources accumulated between integer ledger commits.
     resource_fractional: HashMap<(String, String), f32>,
+    /// M8b: Per-collector runtime telemetry projected to Redis/UI.
+    collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
 }
 
 #[cfg(test)]
@@ -432,6 +439,7 @@ impl Engine {
                     joined_players,
                     carry_by_entity: HashMap::new(),
                     resource_fractional: HashMap::new(),
+                    collector_ui_state_by_entity: HashMap::new(),
                 };
                 // Publish a fresh snapshot so newly connecting clients see current state
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
@@ -493,6 +501,7 @@ impl Engine {
             joined_players: HashSet::new(),
             carry_by_entity: HashMap::new(),
             resource_fractional: HashMap::new(),
+            collector_ui_state_by_entity: HashMap::new(),
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
 
@@ -621,6 +630,29 @@ impl Engine {
                 warn!(entity_id, resource_type = %carry.resource_type, amount = carry.amount, "dropping carry due to missing collector entity");
             }
         }
+        self.collector_ui_state_by_entity.remove(&entity_id);
+    }
+
+    fn set_collector_ui_state(
+        &mut self,
+        entity_id: u64,
+        activity: &str,
+        resource_type: &str,
+        carry_amount: f32,
+        carry_capacity: f32,
+        effective_rate_per_second: f32,
+    ) {
+        self.collector_ui_state_by_entity.insert(
+            entity_id,
+            CollectorUiState {
+                activity: activity.to_string(),
+                resource_type: resource_type.to_string(),
+                carry_amount: carry_amount.max(0.0),
+                carry_capacity: carry_capacity.max(0.0),
+                effective_rate_per_second: effective_rate_per_second.max(0.0),
+                updated_tick: self.state.tick,
+            },
+        );
     }
 
     fn build_resource_node_snapshots(&self) -> Vec<ResourceNodeSnapshot> {
@@ -857,13 +889,17 @@ impl Engine {
         for id in stale_carry_ids {
             self.clear_fractional_for_entity(id);
         }
+        let stale_ui_ids: Vec<u64> = self
+            .collector_ui_state_by_entity
+            .keys()
+            .copied()
+            .filter(|id| !collector_ids.contains(id))
+            .collect();
+        for id in stale_ui_ids {
+            self.collector_ui_state_by_entity.remove(&id);
+        }
 
         for collector in collectors {
-            // M8 (collect-intent model): autonomous collection only runs while
-            // a maintained Collect intent is active for this entity.
-            if !collect_active_entities.contains(&collector.id) {
-                continue;
-            }
             let Some(def) = self
                 .content
                 .as_ref()
@@ -877,9 +913,34 @@ impl Engine {
             };
             let speed = def.speed.max(0.0);
             let carry_capacity = collector_def.carry_capacity.max(0.0);
+            let carry_snapshot = self.carry_by_entity.get(&collector.id).cloned();
+
+            // M8 (collect-intent model): autonomous collection only runs while
+            // a maintained Collect intent is active for this entity.
+            if !collect_active_entities.contains(&collector.id) {
+                if let Some(carry) = carry_snapshot.as_ref() {
+                    self.set_collector_ui_state(
+                        collector.id,
+                        COLLECTOR_ACTIVITY_IDLE,
+                        &carry.resource_type,
+                        carry.amount,
+                        carry_capacity,
+                        0.0,
+                    );
+                } else {
+                    self.set_collector_ui_state(
+                        collector.id,
+                        COLLECTOR_ACTIVITY_IDLE,
+                        "",
+                        0.0,
+                        carry_capacity,
+                        0.0,
+                    );
+                }
+                continue;
+            }
 
             // Transport mode: carry->deposit has priority only when carry is full.
-            let carry_snapshot = self.carry_by_entity.get(&collector.id).cloned();
             if let Some(ref carry) = carry_snapshot {
                 let carry_is_full =
                     carry_capacity > 0.0 && carry.amount >= (carry_capacity - f32::EPSILON);
@@ -900,6 +961,14 @@ impl Engine {
                                 carry.amount,
                             );
                             self.carry_by_entity.remove(&collector.id);
+                            self.set_collector_ui_state(
+                                collector.id,
+                                COLLECTOR_ACTIVITY_DELIVERING,
+                                &carry.resource_type,
+                                0.0,
+                                carry_capacity,
+                                0.0,
+                            );
                             if let Some(entity) = self
                                 .state
                                 .entities
@@ -926,9 +995,25 @@ impl Engine {
                                 DEPOSIT_DISTANCE,
                             );
                         }
+                        self.set_collector_ui_state(
+                            collector.id,
+                            COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF,
+                            &carry.resource_type,
+                            carry.amount,
+                            carry_capacity,
+                            0.0,
+                        );
                         continue;
                     }
                     // No valid refinery: hold position.
+                    self.set_collector_ui_state(
+                        collector.id,
+                        COLLECTOR_ACTIVITY_IDLE,
+                        &carry.resource_type,
+                        carry.amount,
+                        carry_capacity,
+                        0.0,
+                    );
                     if let Some(entity) = self
                         .state
                         .entities
@@ -973,18 +1058,38 @@ impl Engine {
                 if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
                     let gather = collector_def.transport_rate_per_second.max(0.0) * dt;
                     if gather > 0.0 {
-                        let carry =
-                            self.carry_by_entity
-                                .entry(collector.id)
-                                .or_insert(CarryState {
-                                    resource_type: node.resource_type.clone(),
-                                    amount: 0.0,
-                                });
-                        if carry.resource_type != node.resource_type {
-                            carry.resource_type = node.resource_type.clone();
-                            carry.amount = 0.0;
-                        }
-                        carry.amount = (carry.amount + gather).min(carry_capacity);
+                        let (resource_type, carry_amount) = {
+                            let carry =
+                                self.carry_by_entity
+                                    .entry(collector.id)
+                                    .or_insert(CarryState {
+                                        resource_type: node.resource_type.clone(),
+                                        amount: 0.0,
+                                    });
+                            if carry.resource_type != node.resource_type {
+                                carry.resource_type = node.resource_type.clone();
+                                carry.amount = 0.0;
+                            }
+                            carry.amount = (carry.amount + gather).min(carry_capacity);
+                            (carry.resource_type.clone(), carry.amount)
+                        };
+                        self.set_collector_ui_state(
+                            collector.id,
+                            COLLECTOR_ACTIVITY_GATHERING,
+                            &resource_type,
+                            carry_amount,
+                            carry_capacity,
+                            collector_def.transport_rate_per_second.max(0.0),
+                        );
+                    } else {
+                        self.set_collector_ui_state(
+                            collector.id,
+                            COLLECTOR_ACTIVITY_GATHERING,
+                            &node.resource_type,
+                            carry_snapshot.as_ref().map(|c| c.amount).unwrap_or(0.0),
+                            carry_capacity,
+                            0.0,
+                        );
                     }
                     if let Some(entity) = self
                         .state
@@ -1009,6 +1114,14 @@ impl Engine {
                         node.y,
                         node.min_effective_distance,
                         node.max_effective_distance,
+                    );
+                    self.set_collector_ui_state(
+                        collector.id,
+                        COLLECTOR_ACTIVITY_MOVING_TO_SOURCE,
+                        &node.resource_type,
+                        carry_snapshot.as_ref().map(|c| c.amount).unwrap_or(0.0),
+                        carry_capacity,
+                        0.0,
                     );
                 }
                 handled_transport = true;
@@ -1028,6 +1141,14 @@ impl Engine {
                 if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
                     self.credit_resource(&collector.owner_player_id, &node.resource_type, rate);
+                    self.set_collector_ui_state(
+                        collector.id,
+                        COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING,
+                        &node.resource_type,
+                        0.0,
+                        carry_capacity,
+                        collector_def.proximity_rate_per_second.max(0.0),
+                    );
                     if let Some(entity) = self
                         .state
                         .entities
@@ -1052,8 +1173,44 @@ impl Engine {
                         node.min_effective_distance,
                         node.max_effective_distance,
                     );
+                    self.set_collector_ui_state(
+                        collector.id,
+                        COLLECTOR_ACTIVITY_MOVING_TO_SOURCE,
+                        &node.resource_type,
+                        0.0,
+                        carry_capacity,
+                        0.0,
+                    );
                 }
+            } else {
+                self.set_collector_ui_state(
+                    collector.id,
+                    COLLECTOR_ACTIVITY_IDLE,
+                    carry_snapshot
+                        .as_ref()
+                        .map(|c| c.resource_type.as_str())
+                        .unwrap_or(""),
+                    carry_snapshot.as_ref().map(|c| c.amount).unwrap_or(0.0),
+                    carry_capacity,
+                    0.0,
+                );
             }
+        }
+    }
+
+    async fn publish_collector_ui_state(&mut self) {
+        let mut states: Vec<(u64, CollectorUiState)> = self
+            .collector_ui_state_by_entity
+            .iter()
+            .map(|(id, state)| (*id, state.clone()))
+            .collect();
+        states.sort_by_key(|(id, _)| *id);
+        if let Err(err) = self
+            .redis
+            .persist_collector_states(&states, self.cfg.tracking_ttl_secs)
+            .await
+        {
+            warn!(error = ?err, "failed to persist collector ui state");
         }
     }
 
@@ -1126,6 +1283,7 @@ impl Engine {
             }
         }
         self.apply_resource_collection(dt);
+        self.publish_collector_ui_state().await;
         integrate(&self.cfg, &mut self.state, dt);
         self.state.tick += 1;
 
@@ -1236,6 +1394,7 @@ impl Engine {
                 }
             }
             self.apply_resource_collection(dt);
+            self.publish_collector_ui_state().await;
             integrate(&self.cfg, &mut self.state, dt);
             self.state.tick += 1;
 
@@ -1504,9 +1663,7 @@ impl Engine {
         let (intent_kind, move_target) = match payload_intent.kind.as_ref() {
             Some(pb::intent::Kind::Move(m)) => (
                 "move",
-                m.target
-                    .as_ref()
-                    .map(|t| IntentPoint { x: t.x, y: t.y }),
+                m.target.as_ref().map(|t| IntentPoint { x: t.x, y: t.y }),
             ),
             Some(pb::intent::Kind::Attack(_)) => ("attack", None),
             Some(pb::intent::Kind::Build(_)) => ("build", None),

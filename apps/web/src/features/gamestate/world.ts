@@ -18,6 +18,16 @@ export type ActiveIntentView = {
   active_intent_started_tick?: number;
   active_intent_move_target?: { x: number; y: number };
 };
+export type CollectorStateView = {
+  collector_state?: {
+    activity: string;
+    resource_type: string;
+    carry_amount: number;
+    carry_capacity: number;
+    effective_rate_per_second: number;
+    updated_tick?: number;
+  };
+};
 
 // Entity uses proto-shaped components (pos, vel, id, entity_type_id, owner_player_id) and render extras
 export type Entity = Partial<
@@ -27,6 +37,7 @@ export type Entity = Partial<
   EntityTypeId &
   OwnerPlayerId &
   ActiveIntentView &
+  CollectorStateView &
   ContainerRef &
   Scale &
   { selectable?: true } &
