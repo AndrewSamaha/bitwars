@@ -876,11 +876,14 @@ impl Engine {
                 continue;
             };
             let speed = def.speed.max(0.0);
+            let carry_capacity = collector_def.carry_capacity.max(0.0);
 
-            // Transport mode: carry->deposit has priority when carrying.
+            // Transport mode: carry->deposit has priority only when carry is full.
             let carry_snapshot = self.carry_by_entity.get(&collector.id).cloned();
-            if let Some(carry) = carry_snapshot {
-                if carry.amount > 0.0 {
+            if let Some(ref carry) = carry_snapshot {
+                let carry_is_full =
+                    carry_capacity > 0.0 && carry.amount >= (carry_capacity - f32::EPSILON);
+                if carry.amount > 0.0 && carry_is_full {
                     if let Some(refinery) = Self::pick_best_refinery(
                         &collector,
                         &refineries,
@@ -941,12 +944,31 @@ impl Engine {
             }
 
             let mut handled_transport = false;
-            if let Some(node) = Self::pick_best_node(
-                &collector,
-                &nodes,
-                CollectionMode::Transport,
-                &collector_def.collects,
-            ) {
+            let preferred_resource_type = carry_snapshot
+                .as_ref()
+                .filter(|c| c.amount > 0.0)
+                .map(|c| c.resource_type.as_str());
+            let node = if let Some(resource_type) = preferred_resource_type {
+                nodes
+                    .iter()
+                    .filter(|n| n.mode == CollectionMode::Transport)
+                    .filter(|n| n.resource_type == resource_type)
+                    .min_by(|a, b| {
+                        let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
+                        let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
+                        da.partial_cmp(&db)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                            .then_with(|| a.id.cmp(&b.id))
+                    })
+            } else {
+                Self::pick_best_node(
+                    &collector,
+                    &nodes,
+                    CollectionMode::Transport,
+                    &collector_def.collects,
+                )
+            };
+            if let Some(node) = node {
                 let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
                 if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
                     let gather = collector_def.transport_rate_per_second.max(0.0) * dt;
@@ -962,8 +984,7 @@ impl Engine {
                             carry.resource_type = node.resource_type.clone();
                             carry.amount = 0.0;
                         }
-                        carry.amount =
-                            (carry.amount + gather).min(collector_def.carry_capacity.max(0.0));
+                        carry.amount = (carry.amount + gather).min(carry_capacity);
                     }
                     if let Some(entity) = self
                         .state

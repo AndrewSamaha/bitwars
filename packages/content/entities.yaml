@@ -59,8 +59,8 @@ entity_types:
     resource_node:
       resource_type: minerals
       collection_mode: transport
-      min_effective_distance: 0.0
-      max_effective_distance: 25.0
+      min_effective_distance: 20.0
+      max_effective_distance: 50.0
 
   collector_solar:
     speed: 20.0
