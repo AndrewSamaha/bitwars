@@ -269,70 +269,118 @@ export default function GameStage() {
           return textureCache.get(typeId) ?? textureCache.get(DEFAULT_ENTITY_TYPE)!;
         }
 
-        // Track which entities we've attached sprites to, to avoid re-attaching due to query/index lag
-        const attached = new WeakSet<any>();
+        // M8c: Authoritative render index keyed by ECS entity id.
+        const renderById = new Map<string, {
+          container: Container;
+          sprite: Sprite;
+          lastEntityTypeId: string;
+        }>();
+
+        const normalizeId = (id: number | string | undefined | null): string | null => {
+          if (id === undefined || id === null) return null;
+          return String(id);
+        };
+
+        const findLiveEntityById = (id: string) => {
+          for (const e of game.world.with("id")) {
+            if (String((e as any).id) === id) return e as any;
+          }
+          return null;
+        };
+
+        const destroyRenderRef = (id: string) => {
+          const ref = renderById.get(id);
+          if (!ref) return;
+          try {
+            ref.container.removeAllListeners();
+            ref.container.parent?.removeChild(ref.container);
+            ref.container.destroy({ children: true });
+          } catch {}
+          renderById.delete(id);
+        };
 
         // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
-          // 1) Attach containers (and inner sprite) to entities that have position but no container yet (proto only)
-          for (const e of game.world.with("pos").without("pixiContainer")) {
-            if (attached.has(e)) continue;
-            const entityContainer = new Container();
-            entityContainer.eventMode = 'static';
-            const typeId = (e as { entity_type_id?: string }).entity_type_id;
-            const texture = getTextureForEntityType(typeId);
-            const sprite = Sprite.from(texture);
-            sprite.anchor.set(0.5);
-            entityContainer.addChild(sprite);
-            worldContainer.addChild(entityContainer);
-            // Attach container as component so future frames render it
-            (e as any).pixiContainer = entityContainer;
-            entityContainer
-              .on("mouseover", () => {
-                (e as any).hover = true;
-                setHovered(e);
-              })
-              .on("mouseout", () => {
-                (e as any).hover = false;
-                setHovered(null);
-              })
-              .on('pointerdown', (ev: any) => {
-                const sel = latestSelectorsRef.current;
-                // In Move mode, entity clicks should bubble to stage and issue a move command.
-                if (sel.selectedAction === "Move") {
-                  return;
-                }
-                // M6: Only select entities owned by the current player
-                const myId = myPlayerIdRef.current;
-                const ownerId = (e as any).owner_player_id;
-                const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
-                if (isOwned) {
-                  const id = (e as any).id;
-                  if (id !== undefined && id !== null) {
-                    setSelection([String(id)]);
+          const liveById = new Map<string, any>();
+          for (const e of game.world.with("id", "pos")) {
+            const id = normalizeId((e as any).id);
+            if (!id) continue;
+            liveById.set(id, e as any);
+            if (!renderById.has(id)) {
+              const entityContainer = new Container();
+              entityContainer.eventMode = "static";
+              const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
+              const texture = getTextureForEntityType(typeId);
+              const sprite = Sprite.from(texture);
+              sprite.anchor.set(0.5);
+              entityContainer.addChild(sprite);
+              worldContainer.addChild(entityContainer);
+
+              entityContainer
+                .on("mouseover", () => {
+                  const live = findLiveEntityById(id);
+                  if (!live) return;
+                  (live as any).hover = true;
+                  (live as any).pixiContainer = entityContainer;
+                  setHovered(live);
+                })
+                .on("mouseout", () => {
+                  const live = findLiveEntityById(id);
+                  if (live) (live as any).hover = false;
+                  setHovered(null);
+                })
+                .on("pointerdown", (ev: any) => {
+                  const sel = latestSelectorsRef.current;
+                  // In Move mode, entity clicks should bubble to stage and issue a move command.
+                  if (sel.selectedAction === "Move") {
+                    return;
                   }
-                }
-                // In non-move mode, entity clicks should not fall through to stage deselect.
-                ev.stopPropagation();
+                  const live = findLiveEntityById(id);
+                  if (!live) {
+                    ev.stopPropagation();
+                    return;
+                  }
+                  // M6: Only select entities owned by the current player
+                  const myId = myPlayerIdRef.current;
+                  const ownerId = (live as any).owner_player_id;
+                  const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
+                  if (isOwned) {
+                    setSelection([id]);
+                  }
+                  // In non-move mode, entity clicks should not fall through to stage deselect.
+                  ev.stopPropagation();
+                });
+              renderById.set(id, {
+                container: entityContainer,
+                sprite,
+                lastEntityTypeId: typeId,
               });
-            attached.add(e);
-            // default scale if none present
-            if ((e as any).scale === undefined) (e as any).scale = 1;
+            }
           }
 
-          // 2) Project ECS positions/rotation to Pixi (proto only)
-          for (const e of game.world.with("pixiContainer", "pos")) {
-            const container = (e as any).pixiContainer as Container | undefined;
+          // Reconcile removed entities (prune stale render objects).
+          for (const id of Array.from(renderById.keys())) {
+            if (!liveById.has(id)) {
+              destroyRenderRef(id);
+            }
+          }
+
+          // Project ECS positions/rotation/state to Pixi.
+          for (const [id, e] of liveById.entries()) {
+            const ref = renderById.get(id);
+            if (!ref) continue;
+            const container = ref.container;
             if (!container || (container as any).destroyed) {
-              // Remove container from scene graph and destroy it to prevent leaks
-              try {
-                if (container) container.parent?.removeChild(container);
-                container?.destroy({ children: true });
-              } catch {}
-              // Ensure the ECS stops tracking dead sprites immediately
-              game.world.removeComponent?.(e, "pixiContainer") ?? game.world.remove(e);
-              attached.delete(e);
+              destroyRenderRef(id);
               continue;
+            }
+            (e as any).pixiContainer = container;
+            if ((e as any).scale === undefined) (e as any).scale = 1;
+
+            const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
+            if (typeId !== ref.lastEntityTypeId) {
+              ref.sprite.texture = getTextureForEntityType(typeId);
+              ref.lastEntityTypeId = typeId;
             }
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
@@ -350,8 +398,7 @@ export default function GameStage() {
             }
 
             // 3) Project ECS hover state + M6 ownership tint to Pixi (proto only)
-            // First child is primary sprite
-            const primary = container.children.find((c) => c instanceof Sprite) as Sprite | undefined;
+            const primary = ref.sprite;
             const myId = myPlayerIdRef.current;
             const ownerId = (e as any).owner_player_id;
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
@@ -564,6 +611,9 @@ export default function GameStage() {
         });
 
         return () => {
+          for (const id of Array.from(renderById.keys())) {
+            destroyRenderRef(id);
+          }
           app.destroy(true, { children: true, texture: false });
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
