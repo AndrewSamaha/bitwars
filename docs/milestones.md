@@ -318,7 +318,7 @@ See **docs/milestones/m5/m5-camera-worldspace-mapux.md** for as-built details.
 
 ---
 
-## M8: Resource Collection v1 (Transport + Proximity Modes)
+## M8: **Done** Resource Collection v1 (Transport + Proximity Modes)
 
 See detailed plan: [docs/milestones/m8-resource-collection.md](./milestones/m8-resource-collection.md)
 
