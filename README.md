@@ -1,4 +1,6 @@
-Yet another RTS game. Using Next.js, Redis, and TypeScript.
+A Multi-Player RTS game built with Next.js, Redis, TypeScript, and Rust.
+
+![Screenshot of game stage](/docs/images/hero.png)
 
 ## Getting Started
 
