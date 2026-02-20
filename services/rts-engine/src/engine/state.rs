@@ -139,7 +139,10 @@ fn sample_player_unit_spawn_position(
     } else {
         min_distance
     };
-    (anchor.x + angle.cos() * distance, anchor.y + angle.sin() * distance)
+    (
+        anchor.x + angle.cos() * distance,
+        anchor.y + angle.sin() * distance,
+    )
 }
 
 #[inline]

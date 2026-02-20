@@ -37,6 +37,9 @@ pub struct EntityDelta {
     /// M6: set when ownership changes
     #[prost(string, optional, tag = "5")]
     pub owner_player_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// set on creation and when type changes
+    #[prost(string, optional, tag = "6")]
+    pub entity_type_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// M7: Per-player resource totals. Resource types are data-driven (string IDs).
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -143,6 +146,20 @@ pub struct BuildIntent {
     #[prost(string, tag = "5")]
     pub player_id: ::prost::alloc::string::String,
 }
+/// Collect intent payload (authoritative server-side).
+/// Starts/maintains autonomous resource collection behavior for this entity.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectIntent {
+    /// collector entity
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[deprecated]
+    #[prost(string, tag = "2")]
+    pub client_cmd_id: ::prost::alloc::string::String,
+    #[deprecated]
+    #[prost(string, tag = "3")]
+    pub player_id: ::prost::alloc::string::String,
+}
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntentEnvelope {
@@ -166,7 +183,7 @@ pub struct IntentEnvelope {
     /// defaults to REPLACE_ACTIVE when omitted
     #[prost(enumeration = "IntentPolicy", tag = "7")]
     pub policy: i32,
-    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12")]
+    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13")]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
 /// Nested message and enum types in `IntentEnvelope`.
@@ -179,13 +196,15 @@ pub mod intent_envelope {
         Attack(super::AttackIntent),
         #[prost(message, tag = "12")]
         Build(super::BuildIntent),
+        #[prost(message, tag = "13")]
+        Collect(super::CollectIntent),
     }
 }
 /// Extensible Intent envelope.
 /// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Intent {
-    #[prost(oneof = "intent::Kind", tags = "1, 2, 3")]
+    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4")]
     pub kind: ::core::option::Option<intent::Kind>,
 }
 /// Nested message and enum types in `Intent`.
@@ -198,6 +217,8 @@ pub mod intent {
         Attack(super::AttackIntent),
         #[prost(message, tag = "3")]
         Build(super::BuildIntent),
+        #[prost(message, tag = "4")]
+        Collect(super::CollectIntent),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -277,13 +298,18 @@ pub struct BuildState {
     #[prost(float, tag = "3")]
     pub progress: f32,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct CollectState {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+}
 /// Unified per-entity execution container (one active at a time).
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ActionState {
     /// Echo original intent for correlation/observability (optional but useful)
     #[prost(message, optional, tag = "1")]
     pub intent: ::core::option::Option<Intent>,
-    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4")]
+    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5")]
     pub exec: ::core::option::Option<action_state::Exec>,
 }
 /// Nested message and enum types in `ActionState`.
@@ -296,6 +322,8 @@ pub mod action_state {
         Attack(super::AttackState),
         #[prost(message, tag = "4")]
         Build(super::BuildState),
+        #[prost(message, tag = "5")]
+        Collect(super::CollectState),
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

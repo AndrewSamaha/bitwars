@@ -32,6 +32,8 @@ const DEFAULT_GAME_ID = "demo-001";
  *       client_cmd_id:  string,          // dashed UUID
  *       player_id:      string,
  *       started_tick:   number,
+ *       intent_kind:    string,          // move|attack|build|collect
+ *       move_target?:   { x:number, y:number },
  *     },
  *     ...
  *   ]
@@ -73,18 +75,25 @@ export async function GET() {
       client_cmd_id: string;
       player_id: string;
       started_tick: number;
+      intent_kind: string;
+      move_target?: { x: number; y: number };
     }> = [];
 
     for (const [, json] of Object.entries(allFields)) {
       try {
         const entry = JSON.parse(json);
         if (entry?.player_id === playerId) {
+          const mt = entry?.move_target;
           activeIntents.push({
             entity_id: Number(entry.entity_id),
             intent_id: String(entry.intent_id ?? ""),
             client_cmd_id: String(entry.client_cmd_id ?? ""),
             player_id: String(entry.player_id ?? ""),
             started_tick: Number(entry.started_tick ?? 0),
+            intent_kind: String(entry.intent_kind ?? ""),
+            ...(mt && Number.isFinite(Number(mt?.x)) && Number.isFinite(Number(mt?.y))
+              ? { move_target: { x: Number(mt.x), y: Number(mt.y) } }
+              : {}),
           });
         }
       } catch {

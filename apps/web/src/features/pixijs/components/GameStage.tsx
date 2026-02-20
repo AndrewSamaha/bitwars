@@ -54,6 +54,7 @@ export default function GameStage() {
   // M6: Current player id for ownership gating and visuals (ref so initWorld closure sees latest)
   const myPlayerIdRef = useRef<string | null>(null);
   myPlayerIdRef.current = player?.id ?? null;
+  const recenterRequestedRef = useRef<boolean>(true);
   // M5.1: Pan keys currently held (KeyW, KeyA, ...); ticker reads this and applies pan
   const panKeysRef = useRef<Set<string>>(new Set());
 
@@ -66,19 +67,30 @@ export default function GameStage() {
       }
     }, 100);
 
-    // M1: Wire the queue manager's send callback to POST /api/v1/intent
+    // M1/M8: Wire the queue manager's send callback to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
+      const payload =
+        params.kind === "Move"
+          ? {
+              type: "Move",
+              entity_id: params.entityId,
+              target: params.target,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
+            }
+          : {
+              type: "Collect",
+              entity_id: params.entityId,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
+            };
+
       await fetch('/api/v1/intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'Move',
-          entity_id: params.entityId,
-          target: params.target,
-          client_cmd_id: params.clientCmdId,
-          client_seq: params.clientSeq,
-          policy: params.policy,
-        }),
+        body: JSON.stringify(payload),
       });
     });
 
@@ -106,6 +118,37 @@ export default function GameStage() {
         app.stage.eventMode = "static";
         app.stage.hitArea = app.screen;
         setCamera(worldContainer);
+
+        const requestRecenter = () => {
+          recenterRequestedRef.current = true;
+        };
+        window.addEventListener("bitwars:stream-open", requestRecenter as EventListener);
+        window.addEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
+
+        const centerCameraOnOwnedEntities = (): boolean => {
+          const myId = myPlayerIdRef.current;
+          if (!myId) return false;
+          let sumX = 0;
+          let sumY = 0;
+          let count = 0;
+          for (const e of game.world.with("pos", "id")) {
+            const ownerId = (e as any).owner_player_id as string | undefined;
+            if (ownerId !== myId) continue;
+            const pos = (e as any).pos as { x: number; y: number } | undefined;
+            if (!pos) continue;
+            sumX += pos.x;
+            sumY += pos.y;
+            count++;
+          }
+          if (count === 0) return false;
+          const centerX = sumX / count;
+          const centerY = sumY / count;
+          worldContainer.position.set(
+            app.screen.width / 2 - centerX * worldContainer.scale.x,
+            app.screen.height / 2 - centerY * worldContainer.scale.y,
+          );
+          return true;
+        };
 
         // M5.2: Voronoi border overlay in screen space (sample grid → edge test → draw dots)
         const voronoiBorderGraphics = new Graphics();
@@ -138,7 +181,7 @@ export default function GameStage() {
           }
         }
 
-        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, bottom-right
+        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, top-right
         // 200 px → 20_000 world units ⇒ 1 minimap pixel = 100 world units
         const MINIMAP_HALF_EXTENT = 10_000;
         const MINIMAP_SIZE_PX = 200;
@@ -171,7 +214,7 @@ export default function GameStage() {
           });
           minimapContainer.position.set(
             app.screen.width - MINIMAP_SIZE_PX - MINIMAP_MARGIN,
-            app.screen.height - MINIMAP_SIZE_PX - MINIMAP_MARGIN,
+            MINIMAP_MARGIN,
           );
           minimapGraphics.clear();
           // Background
@@ -207,11 +250,20 @@ export default function GameStage() {
         (waypointContainer as any).label = 'waypoints';
         worldContainer.addChild(waypointContainer);
 
-        // Keyboard: M to set Move, Escape to clear; WASD/arrows to pan (M5.1)
+        // Keyboard: M to set Move, C to issue Collect, Escape to clear; WASD/arrows to pan (M5.1/M8)
         const onKeyDown = (ev: KeyboardEvent) => {
           const sel = latestSelectorsRef.current;
           if (ev.key === 'm' || ev.key === 'M') {
             if (sel.hasSelection) setSelectedAction('Move');
+          } else if (ev.key === 'c' || ev.key === 'C') {
+            if (sel.hasSelection) {
+              for (const id of sel.selectedEntities) {
+                const entityIdNum = Number(id);
+                if (Number.isFinite(entityIdNum)) {
+                  intentQueue.handleCollectCommand(entityIdNum, "REPLACE_ACTIVE");
+                }
+              }
+            }
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
           } else if (PAN_KEYS.has(ev.code)) {
@@ -249,70 +301,118 @@ export default function GameStage() {
           return textureCache.get(typeId) ?? textureCache.get(DEFAULT_ENTITY_TYPE)!;
         }
 
-        // Track which entities we've attached sprites to, to avoid re-attaching due to query/index lag
-        const attached = new WeakSet<any>();
+        // M8c: Authoritative render index keyed by ECS entity id.
+        const renderById = new Map<string, {
+          container: Container;
+          sprite: Sprite;
+          lastEntityTypeId: string;
+        }>();
+
+        const normalizeId = (id: number | string | undefined | null): string | null => {
+          if (id === undefined || id === null) return null;
+          return String(id);
+        };
+
+        const findLiveEntityById = (id: string) => {
+          for (const e of game.world.with("id")) {
+            if (String((e as any).id) === id) return e as any;
+          }
+          return null;
+        };
+
+        const destroyRenderRef = (id: string) => {
+          const ref = renderById.get(id);
+          if (!ref) return;
+          try {
+            ref.container.removeAllListeners();
+            ref.container.parent?.removeChild(ref.container);
+            ref.container.destroy({ children: true });
+          } catch {}
+          renderById.delete(id);
+        };
 
         // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
-          // 1) Attach containers (and inner sprite) to entities that have position but no container yet (proto only)
-          for (const e of game.world.with("pos").without("pixiContainer")) {
-            if (attached.has(e)) continue;
-            const entityContainer = new Container();
-            entityContainer.eventMode = 'static';
-            const typeId = (e as { entity_type_id?: string }).entity_type_id;
-            const texture = getTextureForEntityType(typeId);
-            const sprite = Sprite.from(texture);
-            sprite.anchor.set(0.5);
-            entityContainer.addChild(sprite);
-            worldContainer.addChild(entityContainer);
-            // Attach container as component so future frames render it
-            (e as any).pixiContainer = entityContainer;
-            entityContainer
-              .on("mouseover", () => {
-                (e as any).hover = true;
-                setHovered(e);
-              })
-              .on("mouseout", () => {
-                (e as any).hover = false;
-                setHovered(null);
-              })
-              .on('pointerdown', (ev: any) => {
-                const sel = latestSelectorsRef.current;
-                // In Move mode, entity clicks should bubble to stage and issue a move command.
-                if (sel.selectedAction === "Move") {
-                  return;
-                }
-                // M6: Only select entities owned by the current player
-                const myId = myPlayerIdRef.current;
-                const ownerId = (e as any).owner_player_id;
-                const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
-                if (isOwned) {
-                  const id = (e as any).id;
-                  if (id !== undefined && id !== null) {
-                    setSelection([String(id)]);
+          const liveById = new Map<string, any>();
+          for (const e of game.world.with("id", "pos")) {
+            const id = normalizeId((e as any).id);
+            if (!id) continue;
+            liveById.set(id, e as any);
+            if (!renderById.has(id)) {
+              const entityContainer = new Container();
+              entityContainer.eventMode = "static";
+              const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
+              const texture = getTextureForEntityType(typeId);
+              const sprite = Sprite.from(texture);
+              sprite.anchor.set(0.5);
+              entityContainer.addChild(sprite);
+              worldContainer.addChild(entityContainer);
+
+              entityContainer
+                .on("mouseover", () => {
+                  const live = findLiveEntityById(id);
+                  if (!live) return;
+                  (live as any).hover = true;
+                  (live as any).pixiContainer = entityContainer;
+                  setHovered(live);
+                })
+                .on("mouseout", () => {
+                  const live = findLiveEntityById(id);
+                  if (live) (live as any).hover = false;
+                  setHovered(null);
+                })
+                .on("pointerdown", (ev: any) => {
+                  const sel = latestSelectorsRef.current;
+                  // In Move mode, entity clicks should bubble to stage and issue a move command.
+                  if (sel.selectedAction === "Move") {
+                    return;
                   }
-                }
-                // In non-move mode, entity clicks should not fall through to stage deselect.
-                ev.stopPropagation();
+                  const live = findLiveEntityById(id);
+                  if (!live) {
+                    ev.stopPropagation();
+                    return;
+                  }
+                  // M6: Only select entities owned by the current player
+                  const myId = myPlayerIdRef.current;
+                  const ownerId = (live as any).owner_player_id;
+                  const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
+                  if (isOwned) {
+                    setSelection([id]);
+                  }
+                  // In non-move mode, entity clicks should not fall through to stage deselect.
+                  ev.stopPropagation();
+                });
+              renderById.set(id, {
+                container: entityContainer,
+                sprite,
+                lastEntityTypeId: typeId,
               });
-            attached.add(e);
-            // default scale if none present
-            if ((e as any).scale === undefined) (e as any).scale = 1;
+            }
           }
 
-          // 2) Project ECS positions/rotation to Pixi (proto only)
-          for (const e of game.world.with("pixiContainer", "pos")) {
-            const container = (e as any).pixiContainer as Container | undefined;
+          // Reconcile removed entities (prune stale render objects).
+          for (const id of Array.from(renderById.keys())) {
+            if (!liveById.has(id)) {
+              destroyRenderRef(id);
+            }
+          }
+
+          // Project ECS positions/rotation/state to Pixi.
+          for (const [id, e] of liveById.entries()) {
+            const ref = renderById.get(id);
+            if (!ref) continue;
+            const container = ref.container;
             if (!container || (container as any).destroyed) {
-              // Remove container from scene graph and destroy it to prevent leaks
-              try {
-                if (container) container.parent?.removeChild(container);
-                container?.destroy({ children: true });
-              } catch {}
-              // Ensure the ECS stops tracking dead sprites immediately
-              game.world.removeComponent?.(e, "pixiContainer") ?? game.world.remove(e);
-              attached.delete(e);
+              destroyRenderRef(id);
               continue;
+            }
+            (e as any).pixiContainer = container;
+            if ((e as any).scale === undefined) (e as any).scale = 1;
+
+            const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
+            if (typeId !== ref.lastEntityTypeId) {
+              ref.sprite.texture = getTextureForEntityType(typeId);
+              ref.lastEntityTypeId = typeId;
             }
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
@@ -330,8 +430,7 @@ export default function GameStage() {
             }
 
             // 3) Project ECS hover state + M6 ownership tint to Pixi (proto only)
-            // First child is primary sprite
-            const primary = container.children.find((c) => c instanceof Sprite) as Sprite | undefined;
+            const primary = ref.sprite;
             const myId = myPlayerIdRef.current;
             const ownerId = (e as any).owner_player_id;
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
@@ -503,6 +602,10 @@ export default function GameStage() {
         app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
             if (!game.ready) return;
+            if (recenterRequestedRef.current) {
+              const centered = centerCameraOnOwnedEntities();
+              if (centered) recenterRequestedRef.current = false;
+            }
             // M5.1: Apply camera pan from WASD/arrows (delta-time so speed is frame-rate independent)
             const keys = panKeysRef.current;
             if (keys.size > 0) {
@@ -544,6 +647,11 @@ export default function GameStage() {
         });
 
         return () => {
+          for (const id of Array.from(renderById.keys())) {
+            destroyRenderRef(id);
+          }
+          window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
+          window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           app.destroy(true, { children: true, texture: false });
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);

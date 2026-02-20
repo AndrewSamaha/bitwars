@@ -65,6 +65,14 @@ message BuildIntent {
   string player_id     = 5 [deprecated = true];
 }
 
+// Collect intent payload (authoritative server-side).
+// Starts/maintains autonomous resource collection behavior for this entity.
+message CollectIntent {
+  uint64 entity_id     = 1; // collector entity
+  string client_cmd_id = 2 [deprecated = true];
+  string player_id     = 3 [deprecated = true];
+}
+
 // Transport envelope that wraps all intent payloads and carries authoritative metadata.
 message IntentEnvelope {
   bytes  client_cmd_id    = 1;  // UUIDv7 (16 bytes), supplied by client
@@ -79,9 +87,9 @@ message IntentEnvelope {
     MoveToLocationIntent move   = 10;
     AttackIntent         attack = 11;
     BuildIntent          build  = 12;
+    CollectIntent        collect = 13;
   }
-
-  reserved 8, 9, 13, 14, 15;
+  reserved 8, 9, 14, 15;
 }
 
 // Extensible Intent envelope.
@@ -91,6 +99,7 @@ message Intent {
     MoveToLocationIntent move = 1;
     AttackIntent         attack = 2;
     BuildIntent          build  = 3;
+    CollectIntent        collect = 4;
   }
 }
 
@@ -146,6 +155,10 @@ message BuildState {
   float  progress     = 3; // 0..1 (casts/channels/build progress)
 }
 
+message CollectState {
+  uint64 entity_id = 1;
+}
+
 // Unified per-entity execution container (one active at a time).
 message ActionState {
   // Echo original intent for correlation/observability (optional but useful)
@@ -155,5 +168,6 @@ message ActionState {
     MoveState   move   = 2;
     AttackState attack = 3;
     BuildState  build  = 4;
+    CollectState collect = 5;
   }
 }

@@ -21,11 +21,15 @@ pub fn compute_delta(
             vel: None,
             force: None,
             owner_player_id: None,
+            entity_type_id: None,
         };
 
         if let Some(pe) = prev_by_id.get(&ce.id) {
             if pe.owner_player_id != ce.owner_player_id {
                 ed.owner_player_id = Some(ce.owner_player_id.clone());
+            }
+            if pe.entity_type_id != ce.entity_type_id {
+                ed.entity_type_id = Some(ce.entity_type_id.clone());
             }
             if let (Some(cp), Some(pp)) = (&ce.pos, &pe.pos) {
                 if (cp.x - pp.x).abs() > eps_pos || (cp.y - pp.y).abs() > eps_pos {
@@ -43,6 +47,9 @@ pub fn compute_delta(
                 ed.vel = ce.vel.clone();
             }
         } else {
+            if !ce.entity_type_id.is_empty() {
+                ed.entity_type_id = Some(ce.entity_type_id.clone());
+            }
             if ce.pos.is_some() {
                 ed.pos = ce.pos.clone();
             }
@@ -54,7 +61,12 @@ pub fn compute_delta(
             }
         }
 
-        if ed.pos.is_some() || ed.vel.is_some() || ed.force.is_some() || ed.owner_player_id.is_some() {
+        if ed.pos.is_some()
+            || ed.vel.is_some()
+            || ed.force.is_some()
+            || ed.owner_player_id.is_some()
+            || ed.entity_type_id.is_some()
+        {
             updates.push(ed);
         }
     }

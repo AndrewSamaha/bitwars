@@ -48,13 +48,22 @@ type PersistedState = {
   entities: Record<string, PerEntityState>;
 };
 
-export type SendIntentParams = {
-  entityId: number;
-  target: { x: number; y: number };
-  clientCmdId: string;
-  clientSeq: number;
-  policy: IntentPolicyName;
-};
+export type SendIntentParams =
+  | {
+      kind: "Move";
+      entityId: number;
+      target: { x: number; y: number };
+      clientCmdId: string;
+      clientSeq: number;
+      policy: IntentPolicyName;
+    }
+  | {
+      kind: "Collect";
+      entityId: number;
+      clientCmdId: string;
+      clientSeq: number;
+      policy: IntentPolicyName;
+    };
 
 type SendCallback = (params: SendIntentParams) => Promise<void>;
 type StateChangeListener = () => void;
@@ -73,6 +82,8 @@ export type ReconnectHandshake = {
     client_cmd_id: string;
     player_id: string;
     started_tick: number;
+    intent_kind?: string;
+    move_target?: { x: number; y: number };
   }>;
 };
 
@@ -93,6 +104,8 @@ class IntentQueueManager {
   private storageKey: string;
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
+  private cmdToEntity = new Map<string, number>();
+  private cmdToKind = new Map<string, "move" | "collect">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
@@ -156,6 +169,15 @@ class IntentQueueManager {
         this.notify();
       }
     }
+  }
+
+  /**
+   * Send a maintained Collect intent immediately.
+   * Collect does not participate in the local waypoint queue.
+   */
+  handleCollectCommand(entityId: number, policy: IntentPolicyName = "REPLACE_ACTIVE") {
+    const clientCmdId = uuidv7();
+    this.sendCollectNow(entityId, clientCmdId, policy);
   }
 
   /**
@@ -345,6 +367,15 @@ class IntentQueueManager {
     return this.clientSeq;
   }
 
+  getEntityIdForClientCmd(clientCmdId: string): number | null {
+    const v = this.cmdToEntity.get(clientCmdId);
+    return typeof v === "number" ? v : null;
+  }
+
+  getKindForClientCmd(clientCmdId: string): "move" | "collect" | null {
+    return this.cmdToKind.get(clientCmdId) ?? null;
+  }
+
   /** Returns all entity IDs that have active or queued intents. */
   getActiveEntityIds(): number[] {
     const ids: number[] = [];
@@ -390,6 +421,8 @@ class IntentQueueManager {
   ) {
     const state = this.getOrCreate(entityId);
     this.clientSeq++;
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.cmdToKind.set(clientCmdId, "move");
     state.active = { clientCmdId, entityId, target };
     this.persist();
     this.notify();
@@ -397,6 +430,7 @@ class IntentQueueManager {
     if (this.sendCallback) {
       try {
         await this.sendCallback({
+          kind: "Move",
           entityId,
           target,
           clientCmdId,
@@ -406,6 +440,30 @@ class IntentQueueManager {
       } catch (err) {
         console.error("[IntentQueue] send failed", err);
       }
+    }
+  }
+
+  private async sendCollectNow(
+    entityId: number,
+    clientCmdId: string,
+    policy: IntentPolicyName,
+  ) {
+    if (!this.sendCallback) return;
+    this.clientSeq++;
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.cmdToKind.set(clientCmdId, "collect");
+    this.persist();
+    this.notify();
+    try {
+      await this.sendCallback({
+        kind: "Collect",
+        entityId,
+        clientCmdId,
+        clientSeq: this.clientSeq,
+        policy,
+      });
+    } catch (err) {
+      console.error("[IntentQueue] send collect failed", err);
     }
   }
 

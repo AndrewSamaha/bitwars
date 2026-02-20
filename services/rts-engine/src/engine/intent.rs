@@ -88,6 +88,7 @@ impl IntentManager {
             pb::intent::Kind::Move(m) => Some(m.entity_id),
             pb::intent::Kind::Attack(a) => Some(a.entity_id),
             pb::intent::Kind::Build(b) => Some(b.entity_id),
+            pb::intent::Kind::Collect(c) => Some(c.entity_id),
         }
     }
 
@@ -141,10 +142,8 @@ impl IntentManager {
         let action = make_action_state_from_intent(intent, stop_radius);
         log_start(&metadata, &action, entity_id);
         let started_meta = metadata.clone();
-        self.current_action.insert(
-            entity_id,
-            ActiveIntent { action, metadata },
-        );
+        self.current_action
+            .insert(entity_id, ActiveIntent { action, metadata });
 
         ActivationOutcome {
             canceled,
@@ -277,6 +276,12 @@ fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -
                 };
                 exec = Some(pb::action_state::Exec::Build(build_state));
             }
+            pb::intent::Kind::Collect(c) => {
+                let collect_state = pb::CollectState {
+                    entity_id: c.entity_id,
+                };
+                exec = Some(pb::action_state::Exec::Collect(collect_state));
+            }
         }
     } else {
         warn!("intent had no kind; ignoring");
@@ -306,6 +311,7 @@ fn log_start(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u64
         Some(pb::action_state::Exec::Move(_)) => "Move",
         Some(pb::action_state::Exec::Attack(_)) => "Attack",
         Some(pb::action_state::Exec::Build(_)) => "Build",
+        Some(pb::action_state::Exec::Collect(_)) => "Collect",
         None => "Unknown",
     };
     trace_start(metadata, kind, entity_id);
@@ -316,6 +322,7 @@ fn log_finish(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u6
         Some(pb::action_state::Exec::Move(_)) => "Move",
         Some(pb::action_state::Exec::Attack(_)) => "Attack",
         Some(pb::action_state::Exec::Build(_)) => "Build",
+        Some(pb::action_state::Exec::Collect(_)) => "Collect",
         None => "Unknown",
     };
     info!(
@@ -361,6 +368,16 @@ mod tests {
                     x: target.0,
                     y: target.1,
                 }),
+                client_cmd_id: String::new(),
+                player_id: String::new(),
+            })),
+        }
+    }
+
+    fn make_collect_intent(entity_id: u64) -> pb::Intent {
+        pb::Intent {
+            kind: Some(pb::intent::Kind::Collect(pb::CollectIntent {
+                entity_id,
                 client_cmd_id: String::new(),
                 player_id: String::new(),
             })),
@@ -418,7 +435,10 @@ mod tests {
         let second_meta = make_metadata(2, pb::IntentPolicy::Append);
         let outcome = manager.try_activate(second, second_meta, "");
         assert!(outcome.started.is_none());
-        assert!(outcome.rejected_busy, "APPEND should be rejected when entity is busy");
+        assert!(
+            outcome.rejected_busy,
+            "APPEND should be rejected when entity is busy"
+        );
         assert!(outcome.canceled.is_empty());
     }
 
@@ -481,8 +501,47 @@ mod tests {
         };
 
         let finished = manager.follow_targets(&mut state, 5.0, 0.016);
-        assert_eq!(finished.len(), 1, "intent should complete immediately at target");
+        assert_eq!(
+            finished.len(),
+            1,
+            "intent should complete immediately at target"
+        );
         assert_eq!(finished[0].0, entity_id);
         assert_eq!(finished[0].1.intent_id, metadata.intent_id);
+    }
+
+    #[test]
+    fn collect_intent_stays_active_until_replaced() {
+        let mut manager = IntentManager::new(HashMap::new(), 0.75, 90.0);
+        let entity_id = 17_u64;
+        let metadata = make_metadata(9, pb::IntentPolicy::ReplaceActive);
+        let collect_intent = make_collect_intent(entity_id);
+
+        let outcome = manager.try_activate(collect_intent, metadata.clone(), "");
+        assert!(outcome.started.is_some());
+        assert!(!outcome.rejected_busy);
+
+        let mut state = GameState {
+            tick: 0,
+            entities: vec![pb::Entity {
+                id: entity_id,
+                entity_type_id: "worker".into(),
+                pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                owner_player_id: "p1".into(),
+            }],
+            ledger: crate::engine::state::ResourceLedger::new(),
+        };
+
+        let finished = manager.follow_targets(&mut state, 5.0, 0.016);
+        assert!(
+            finished.is_empty(),
+            "collect should remain active (maintained intent)"
+        );
+        assert!(
+            manager.active_intents().contains_key(&entity_id),
+            "collect intent should stay active until replaced/canceled"
+        );
     }
 }
