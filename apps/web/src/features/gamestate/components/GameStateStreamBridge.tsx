@@ -136,7 +136,6 @@ export default function GameStateStreamBridge() {
 
     const syncCollectorState = async () => {
       const ids = Array.from(byIdRef.current.values())
-        .filter((ent) => (ent.entity_type_id ?? "") === "collector_solar")
         .map((ent) => String(ent.id ?? ""))
         .filter((id, index, arr) => id.length > 0 && arr.indexOf(id) === index);
 

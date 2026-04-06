@@ -15,6 +15,7 @@ type ParticleFlowEffect = {
   glowColor: number;
   coreColor: number;
   sizeMultiplier: number;
+  showTargetHalo?: boolean;
 };
 
 type RenderEffectDescriptor = ParticleFlowEffect;
@@ -24,10 +25,19 @@ const SOLAR_COLLECTION_COLOR = 0xf4_d3_5e;
 const SOLAR_COLLECTION_GLOW_COLOR = 0xff_f2_b2;
 const SOLAR_COLLECTION_CORE_COLOR = 0xff_fb_db;
 const SOLAR_COLLECTION_SIZE_MULTIPLIER = 3;
+const MINERAL_COLLECTOR_TYPE = "worker";
+const MINERAL_COLLECTION_COLOR = 0x6f_c8_ff;
+const MINERAL_COLLECTION_GLOW_COLOR = 0xb9_e7_ff;
+const MINERAL_COLLECTION_CORE_COLOR = 0xe7_f7_ff;
+const MINERAL_COLLECTION_SIZE_MULTIPLIER = 6.4;
 const FALLBACK_ENERGY_SOURCE_TYPES = new Set(["theta", "star_yellow"]);
+const FALLBACK_MINERAL_SOURCE_TYPES = new Set(["minerals"]);
 const RENDER_EFFECT_LABEL_PREFIX = "renderEffect:";
 
-function isEnergySourceEntityType(entityTypeId: string | undefined): boolean {
+function isResourceSourceEntityType(
+  entityTypeId: string | undefined,
+  resourceType: string,
+): boolean {
   const id = entityTypeId?.trim() ?? "";
   if (!id) return false;
 
@@ -35,25 +45,28 @@ function isEnergySourceEntityType(entityTypeId: string | undefined): boolean {
   const def = (content?.entity_types?.[id] ?? null) as
     | { resource_node?: { resource_type?: string } }
     | null;
-  if (def?.resource_node?.resource_type === "energy") return true;
+  if (def?.resource_node?.resource_type === resourceType) return true;
 
-  return FALLBACK_ENERGY_SOURCE_TYPES.has(id);
+  if (resourceType === "energy") return FALLBACK_ENERGY_SOURCE_TYPES.has(id);
+  if (resourceType === "minerals") return FALLBACK_MINERAL_SOURCE_TYPES.has(id);
+  return false;
 }
 
-function findNearestEnergySource(
-  collectorX: number,
-  collectorY: number,
+function findNearestResourceSource(
+  resourceType: string,
+  targetX: number,
+  targetY: number,
 ): Vec2 | null {
   let nearest: Vec2 | null = null;
   let nearestDistSq = Number.POSITIVE_INFINITY;
 
   for (const e of game.world.with("pos", "id")) {
     const typeId = (e as Entity).entity_type_id;
-    if (!isEnergySourceEntityType(typeId)) continue;
+    if (!isResourceSourceEntityType(typeId, resourceType)) continue;
     const pos = (e as Entity).pos;
     if (!pos) continue;
-    const dx = pos.x - collectorX;
-    const dy = pos.y - collectorY;
+    const dx = pos.x - targetX;
+    const dy = pos.y - targetY;
     const distSq = dx * dx + dy * dy;
     if (distSq < nearestDistSq) {
       nearestDistSq = distSq;
@@ -76,7 +89,7 @@ function resolveSolarCollectorEffect(entity: Entity): RenderEffectDescriptor[] {
     return [];
   }
 
-  const source = findNearestEnergySource(collectorPos.x, collectorPos.y);
+  const source = findNearestResourceSource("energy", collectorPos.x, collectorPos.y);
   if (!source) return [];
 
   return [{
@@ -88,12 +101,44 @@ function resolveSolarCollectorEffect(entity: Entity): RenderEffectDescriptor[] {
     glowColor: SOLAR_COLLECTION_GLOW_COLOR,
     coreColor: SOLAR_COLLECTION_CORE_COLOR,
     sizeMultiplier: SOLAR_COLLECTION_SIZE_MULTIPLIER,
+    showTargetHalo: true,
+  }];
+}
+
+function resolveMineralCollectorEffect(entity: Entity): RenderEffectDescriptor[] {
+  const entityTypeId = entity.entity_type_id?.trim() ?? "";
+  const collectorActivity = entity.collector_state?.activity ?? "";
+  const collectorPos = entity.pos;
+  const resourceType = entity.collector_state?.resource_type ?? "";
+  if (
+    entityTypeId !== MINERAL_COLLECTOR_TYPE ||
+    collectorActivity !== "gathering" ||
+    resourceType !== "minerals" ||
+    !collectorPos
+  ) {
+    return [];
+  }
+
+  const source = findNearestResourceSource("minerals", collectorPos.x, collectorPos.y);
+  if (!source) return [];
+
+  return [{
+    key: "mineral-collection-flow",
+    kind: "particle_flow",
+    sourceWorldPos: source,
+    targetWorldPos: collectorPos,
+    color: MINERAL_COLLECTION_COLOR,
+    glowColor: MINERAL_COLLECTION_GLOW_COLOR,
+    coreColor: MINERAL_COLLECTION_CORE_COLOR,
+    sizeMultiplier: MINERAL_COLLECTION_SIZE_MULTIPLIER,
+    showTargetHalo: false,
   }];
 }
 
 function resolveRenderEffects(entity: Entity): RenderEffectDescriptor[] {
   return [
     ...resolveSolarCollectorEffect(entity),
+    ...resolveMineralCollectorEffect(entity),
   ];
 }
 
@@ -125,25 +170,26 @@ function drawParticleFlowEffect(
   const sourceInset = Math.min(16 * size, distance * 0.12);
   const streamStartX = dx - dirX * sourceInset;
   const streamStartY = dy - dirY * sourceInset;
-  const haloRadius = (24 + pulse * 6) * size;
-  const innerHaloRadius = (12 + pulse * 3) * size;
-
   graphics.clear();
 
-  graphics.circle(0, 0, haloRadius).stroke({
-    width: 2 * size,
-    color: effect.color,
-    alpha: 0.3 + pulse * 0.18,
-  });
-  graphics.circle(0, 0, innerHaloRadius).stroke({
-    width: 2 * size,
-    color: effect.glowColor,
-    alpha: 0.55 + pulse * 0.2,
-  });
-  graphics.circle(0, 0, (8 + pulse * 2) * size).fill({
-    color: effect.coreColor,
-    alpha: 0.24 + pulse * 0.12,
-  });
+  if (effect.showTargetHalo !== false) {
+    const haloRadius = (24 + pulse * 6) * size;
+    const innerHaloRadius = (12 + pulse * 3) * size;
+    graphics.circle(0, 0, haloRadius).stroke({
+      width: 2 * size,
+      color: effect.color,
+      alpha: 0.3 + pulse * 0.18,
+    });
+    graphics.circle(0, 0, innerHaloRadius).stroke({
+      width: 2 * size,
+      color: effect.glowColor,
+      alpha: 0.55 + pulse * 0.2,
+    });
+    graphics.circle(0, 0, (8 + pulse * 2) * size).fill({
+      color: effect.coreColor,
+      alpha: 0.24 + pulse * 0.12,
+    });
+  }
 
   graphics.moveTo(streamStartX, streamStartY);
   graphics.lineTo(0, 0);
@@ -169,11 +215,13 @@ function drawParticleFlowEffect(
     });
   }
 
-  graphics.circle(0, 0, (15 + pulse * 4) * size).stroke({
-    width: 1.5 * size,
-    color: effect.glowColor,
-    alpha: 0.4 + pulse * 0.18,
-  });
+  if (effect.showTargetHalo !== false) {
+    graphics.circle(0, 0, (15 + pulse * 4) * size).stroke({
+      width: 1.5 * size,
+      color: effect.glowColor,
+      alpha: 0.4 + pulse * 0.18,
+    });
+  }
 }
 
 function drawEffect(
