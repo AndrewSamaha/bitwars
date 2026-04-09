@@ -29,6 +29,7 @@ type SnapshotPayload = {
     id: number | string;
     entity_type_id?: string;
     owner_player_id?: string;
+    health?: number;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -44,6 +45,7 @@ type DeltaPayload = {
     id: number | string;
     entity_type_id?: string;
     owner_player_id?: string;
+    health?: number;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -241,6 +243,7 @@ export default function GameStateStreamBridge() {
           id: s.id,
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
           ...(s.owner_player_id !== undefined ? { owner_player_id: s.owner_player_id } : {}),
+          ...(s.health !== undefined ? { health: s.health } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
           ...(s.collector_state ? { collector_state: { ...s.collector_state } } : {}),
@@ -287,6 +290,7 @@ export default function GameStateStreamBridge() {
         const existing = byId.get(key);
         if (existing) {
           if (u.entity_type_id !== undefined) existing.entity_type_id = u.entity_type_id;
+          if (u.health !== undefined) existing.health = u.health;
           if (u.pos) {
             if (!existing.pos) existing.pos = { x: u.pos.x, y: u.pos.y };
             else { existing.pos.x = u.pos.x; existing.pos.y = u.pos.y; }
@@ -306,6 +310,7 @@ export default function GameStateStreamBridge() {
             id: u.id,
             ...(u.entity_type_id ? { entity_type_id: u.entity_type_id } : {}),
             ...(u.owner_player_id !== undefined ? { owner_player_id: u.owner_player_id } : {}),
+            ...(u.health !== undefined ? { health: u.health } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
             ...(u.collector_state ? { collector_state: { ...u.collector_state } } : {}),

@@ -33,6 +33,7 @@ fn make_entity(id: u64, x: f32, y: f32) -> Entity {
         pos: Some(Vec2 { x, y }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
+        health: 100.0,
     }
 }
 
@@ -324,6 +325,7 @@ fn per_entity_type_speed() {
         pos: Some(Vec2 { x: 0.0, y: 0.0 }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
+        health: 100.0,
     };
     let slow_entity = Entity {
         id: 2,
@@ -331,6 +333,7 @@ fn per_entity_type_speed() {
         pos: Some(Vec2 { x: 0.0, y: 0.0 }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
+        health: 100.0,
     };
 
     let state = WorldState::new(0, vec![fast_entity, slow_entity]);
@@ -388,9 +391,9 @@ fn per_entity_type_speed() {
 // To regenerate: set the constant to 0 and run — the assertion message
 // will show the actual hash.
 
-const GOLDEN_ARRIVAL: u64 = 11036478118369653364;
-const GOLDEN_NO_OSCILLATION: u64 = 2182732989025190288;
-const GOLDEN_REPLACE_MID_MOVE: u64 = 12380075696246219907;
-const GOLDEN_STATIONARY: u64 = 6510937402586056124;
-const GOLDEN_TWO_SAME_TARGET: u64 = 7185151553615365936;
-const GOLDEN_PER_TYPE_SPEED: u64 = 645377106937677881;
+const GOLDEN_ARRIVAL: u64 = 5924118258432714776;
+const GOLDEN_NO_OSCILLATION: u64 = 17867524296427840472;
+const GOLDEN_REPLACE_MID_MOVE: u64 = 2898199360403064009;
+const GOLDEN_STATIONARY: u64 = 16753721005208475270;
+const GOLDEN_TWO_SAME_TARGET: u64 = 1139734944603382756;
+const GOLDEN_PER_TYPE_SPEED: u64 = 2714516160544601627;

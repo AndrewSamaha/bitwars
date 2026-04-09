@@ -65,6 +65,7 @@ fn scenarios() -> Vec<ReplayScenario> {
                     pos: Some(Vec2 { x: 0.0, y: 0.0 }),
                     vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                     force: Some(Vec2 { x: 0.0, y: 0.0 }),
+                    health: 100.0,
                 },
                 Entity {
                     id: 2,
@@ -72,6 +73,7 @@ fn scenarios() -> Vec<ReplayScenario> {
                     pos: Some(Vec2 { x: 5.0, y: 5.0 }),
                     vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                     force: Some(Vec2 { x: 0.0, y: 0.0 }),
+                    health: 100.0,
                 },
             ],
         ),

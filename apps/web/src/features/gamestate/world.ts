@@ -11,6 +11,7 @@ export type ProtoVelocity = { vel: { x: number; y: number } };
 export type EntityId = { id: number | string };
 export type EntityTypeId = { entity_type_id?: string };
 export type OwnerPlayerId = { owner_player_id?: string };
+export type Health = { health?: number };
 export type UIState = { hover: boolean };
 export type ActiveIntentView = {
   active_intent_kind?: "move" | "attack" | "build" | "collect" | string;
@@ -36,6 +37,7 @@ export type Entity = Partial<
   EntityId &
   EntityTypeId &
   OwnerPlayerId &
+  Health &
   ActiveIntentView &
   CollectorStateView &
   ContainerRef &

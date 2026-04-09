@@ -21,6 +21,9 @@ pub struct Entity {
     /// M6: empty = unowned/legacy, "neutral" = neutral, else player id
     #[prost(string, tag = "6")]
     pub owner_player_id: ::prost::alloc::string::String,
+    /// current health; max health is defined by content
+    #[prost(float, tag = "7")]
+    pub health: f32,
 }
 /// Sparse delta: only include fields that changed meaningfully.
 /// proto3 'optional' yields Option<T> in Rust (prost) and presence in TS.
@@ -40,6 +43,9 @@ pub struct EntityDelta {
     /// set on creation and when type changes
     #[prost(string, optional, tag = "6")]
     pub entity_type_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// set when current health changes
+    #[prost(float, optional, tag = "7")]
+    pub health: ::core::option::Option<f32>,
 }
 /// M7: Per-player resource totals. Resource types are data-driven (string IDs).
 #[derive(Clone, PartialEq, ::prost::Message)]

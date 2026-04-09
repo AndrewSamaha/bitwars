@@ -18,6 +18,8 @@ pub struct Entity {
     pub vel: ::core::option::Option<Vec2>,
     #[prost(message, optional, tag = "5")]
     pub force: ::core::option::Option<Vec2>,
+    #[prost(float, tag = "7")]
+    pub health: f32,
 }
 /// Sparse delta: only include fields that changed meaningfully.
 /// proto3 'optional' yields Option<T> in Rust (prost) and presence in TS.
@@ -31,6 +33,8 @@ pub struct EntityDelta {
     pub vel: ::core::option::Option<Vec2>,
     #[prost(message, optional, tag = "4")]
     pub force: ::core::option::Option<Vec2>,
+    #[prost(float, optional, tag = "7")]
+    pub health: ::core::option::Option<f32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceEntry {

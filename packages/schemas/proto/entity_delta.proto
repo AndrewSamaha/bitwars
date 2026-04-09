@@ -13,4 +13,5 @@ message EntityDelta {
   optional Vec2 force        = 4;
   optional string owner_player_id = 5;  // M6: set when ownership changes
   optional string entity_type_id = 6;   // set on creation and when type changes
+  optional float health      = 7;       // set when current health changes
 }

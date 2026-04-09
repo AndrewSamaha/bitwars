@@ -12,7 +12,7 @@ export const mapDeltaToJson = (d: Delta) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
   updates: (d.updates ?? []).map((u) => {
-    const uAny = u as { ownerPlayerId?: string; entityTypeId?: string };
+    const uAny = u as { ownerPlayerId?: string; entityTypeId?: string; health?: number };
     return {
       id: biToNumOrStr(u.id),
       ...(uAny.entityTypeId ? { entity_type_id: uAny.entityTypeId } : {}),
@@ -20,6 +20,7 @@ export const mapDeltaToJson = (d: Delta) => ({
       ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
       ...(u.force ? { force: { x: u.force.x, y: u.force.y } } : {}),
       ...(uAny.ownerPlayerId !== undefined ? { owner_player_id: uAny.ownerPlayerId } : {}),
+      ...(uAny.health !== undefined ? { health: uAny.health } : {}),
     };
   }),
 });
@@ -36,7 +37,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
     type: "snapshot" as const,
     tick: biToNumOrStr(s.tick),
     entities: (s.entities ?? []).map((e) => {
-      const eAny = e as { entityTypeId?: string; ownerPlayerId?: string };
+      const eAny = e as { entityTypeId?: string; ownerPlayerId?: string; health?: number };
       return {
         id: biToNumOrStr(e.id),
         ...(eAny.entityTypeId ? { entity_type_id: eAny.entityTypeId } : {}),
@@ -44,6 +45,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
         ...(e.vel ? { vel: { x: e.vel.x, y: e.vel.y } } : {}),
         ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
         ...(eAny.ownerPlayerId !== undefined ? { owner_player_id: eAny.ownerPlayerId } : {}),
+        ...(eAny.health !== undefined ? { health: eAny.health } : {}),
       };
     }),
     player_ledgers,

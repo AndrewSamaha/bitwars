@@ -25,6 +25,7 @@ mod tests {
             vel: None,
             force: None,
             owner_player_id: String::new(),
+            health: 100.0,
         };
     }
 }

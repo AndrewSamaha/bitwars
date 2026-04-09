@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use tracing::debug;
 
 use crate::pb::{Entity, Vec2};
+use crate::content::ContentPack;
 use crate::spawn_config::{Loadout, NeutralNearSpawn, SpawnConfig, NEUTRAL_OWNER};
 
 /// M7: Per-player resource totals. Outer key = player_id, inner key = resource_type_id.
@@ -42,6 +43,7 @@ pub fn on_player_spawn(
     min_entity_spawn_distance: f32,
     max_entity_spawn_distance: f32,
     neutrals_near_spawn: &[NeutralNearSpawn],
+    content: &ContentPack,
     rng: &mut impl rand::Rng,
 ) -> u64 {
     let mut id = next_id;
@@ -69,6 +71,10 @@ pub fn on_player_spawn(
                 vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: player_id.to_string(),
+                health: content
+                    .get(type_id)
+                    .map(|def| def.health.max(0.0))
+                    .unwrap_or(0.0),
             });
             placed_player_positions.push(Vec2 { x, y });
             id += 1;
@@ -96,6 +102,10 @@ pub fn on_player_spawn(
                 vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: NEUTRAL_OWNER.to_string(),
+                health: content
+                    .get(&neutral.entity_type_id)
+                    .map(|def| def.health.max(0.0))
+                    .unwrap_or(0.0),
             });
             id += 1;
         }

@@ -9,6 +9,7 @@ fn main() {
         vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
         force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
         owner_player_id: String::new(),
+        health: 100.0,
     };
     let s = pb::Snapshot {
         tick: 0,
