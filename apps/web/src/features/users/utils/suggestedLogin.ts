@@ -6,7 +6,11 @@ export const getRandomNamePart = (): string => {
     return names[randomIndex];
 }
 
+export const getRandomNameSuffix = (): number => {
+    return Math.floor(Math.random() * 99) + 1;
+}
+
 export const createRandomName = (): string => {
-    const name = getRandomNamePart() + getRandomNamePart();
+    const name = `${getRandomNamePart()}${getRandomNamePart()}${getRandomNameSuffix()}`;
     return name;
 }
