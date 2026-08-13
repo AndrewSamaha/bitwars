@@ -8,10 +8,11 @@ import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
-import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
+import { createHoverIndicator, drawHealthArc } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
 import { reconcileEntityRenderEffects } from "@/features/pixijs/effects/renderEffects";
+import { contentManager } from "@/features/content/contentManager";
 import {
   CELL_SIZE,
   SEED,
@@ -438,6 +439,10 @@ export default function GameStage() {
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
             const isNeutral = ownerId === "neutral";
             const baseTint = isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
+            const health = Number((e as Entity).health);
+            const maxHealth = contentManager.getEntityType(typeId)?.health;
+            const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
+            const shouldShowHealthArc = hasHealth && ((e as any).hover || (isOwned && health < maxHealth));
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if ((e as any).hover) {
               if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
@@ -453,6 +458,20 @@ export default function GameStage() {
               // remove hover indicator if present
               const existing = container.children.find((c) => c.label === 'hoverIndicator');
               if (existing) existing.parent?.removeChild(existing);
+            }
+
+            let healthArc = container.children.find((c) => c.label === "healthArc") as Graphics | undefined;
+            if (shouldShowHealthArc && hasHealth) {
+              if (!healthArc) {
+                healthArc = new Graphics();
+                healthArc.label = "healthArc";
+                healthArc.eventMode = "none";
+                container.addChild(healthArc);
+              }
+              drawHealthArc(healthArc, health, maxHealth);
+            } else if (healthArc) {
+              healthArc.parent?.removeChild(healthArc);
+              healthArc.destroy();
             }
           }
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import * as PIXI from "pixi.js";
 import { useHUD } from "./HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
+import { contentManager } from "@/features/content/contentManager";
 
 export function TooltipOverlay() {
   const { selectors: { hoveredEntity, app } } = useHUD();
@@ -122,6 +123,10 @@ export function TooltipOverlay() {
   const effectiveRate = Number(collectorState?.effective_rate_per_second ?? 0);
   const ownerPlayerId = String((hoveredEntity as any).owner_player_id ?? "");
   const ownerPlayerName = playerNamesById[ownerPlayerId];
+  const entityTypeId = String((hoveredEntity as any).entity_type_id ?? "");
+  const health = Number((hoveredEntity as any).health);
+  const maxHealth = contentManager.getEntityType(entityTypeId)?.health;
+  const healthFraction = typeof maxHealth === "number" && maxHealth > 0 ? health / maxHealth : null;
 
   return (
     <div
@@ -138,8 +143,16 @@ export function TooltipOverlay() {
       }}
     >
       {ownerPlayerName && <div><b>owner:</b> {ownerPlayerName}</div>}
-      <div><b>{(hoveredEntity as any).entity_type_id ?? "—"}</b></div>
+      <div><b>{entityTypeId || "—"}</b></div>
       <div><b>id:</b> {(hoveredEntity as any).id}</div>
+      {Number.isFinite(health) && (
+        <div>
+          <b>health:</b> {health.toFixed(1)}
+          {typeof maxHealth === "number" && maxHealth > 0
+            ? ` / ${maxHealth.toFixed(1)} (${Math.round(Math.min(1, Math.max(0, healthFraction ?? 0)) * 100)}%)`
+            : ""}
+        </div>
+      )}
       <div><b>pos:</b> {Math.round(hoveredEntity.pos?.x ?? 0)}, {Math.round(hoveredEntity.pos?.y ?? 0)}</div>
       <div><b>vel:</b> {Math.round(hoveredEntity.vel?.x ?? 0)}, {Math.round(hoveredEntity.vel?.y ?? 0)}</div>
       {collectorState && <div><b>collector:</b> {activity}{resourceType ? ` (${resourceType})` : ""}</div>}

@@ -290,7 +290,15 @@ export default function GameStateStreamBridge() {
         const existing = byId.get(key);
         if (existing) {
           if (u.entity_type_id !== undefined) existing.entity_type_id = u.entity_type_id;
-          if (u.health !== undefined) existing.health = u.health;
+          if (u.health !== undefined) {
+            // A health decrease is authoritative evidence of damage. Keep only a
+            // short-lived client timestamp so rendering can animate it without
+            // adding presentation state to the simulation protocol.
+            if (existing.health !== undefined && u.health < existing.health) {
+              existing.damage_flash_started_at = performance.now();
+            }
+            existing.health = u.health;
+          }
           if (u.pos) {
             if (!existing.pos) existing.pos = { x: u.pos.x, y: u.pos.y };
             else { existing.pos.x = u.pos.x; existing.pos.y = u.pos.y; }

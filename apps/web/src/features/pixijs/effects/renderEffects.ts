@@ -18,7 +18,13 @@ type ParticleFlowEffect = {
   showTargetHalo?: boolean;
 };
 
-type RenderEffectDescriptor = ParticleFlowEffect;
+type DamageBurstEffect = {
+  key: string;
+  kind: "damage_burst";
+  startedAtMs: number;
+};
+
+type RenderEffectDescriptor = ParticleFlowEffect | DamageBurstEffect;
 
 const SOLAR_COLLECTOR_TYPE = "collector_solar";
 const SOLAR_COLLECTION_COLOR = 0xf4_d3_5e;
@@ -30,6 +36,9 @@ const MINERAL_COLLECTION_COLOR = 0x6f_c8_ff;
 const MINERAL_COLLECTION_GLOW_COLOR = 0xb9_e7_ff;
 const MINERAL_COLLECTION_CORE_COLOR = 0xe7_f7_ff;
 const MINERAL_COLLECTION_SIZE_MULTIPLIER = 6.4;
+const DAMAGE_BURST_DURATION_MS = 650;
+const DAMAGE_BURST_COLOR = 0xff_63_36;
+const DAMAGE_BURST_GLOW_COLOR = 0xff_c4_51;
 const FALLBACK_ENERGY_SOURCE_TYPES = new Set(["theta", "star_yellow"]);
 const FALLBACK_MINERAL_SOURCE_TYPES = new Set(["minerals"]);
 const RENDER_EFFECT_LABEL_PREFIX = "renderEffect:";
@@ -135,10 +144,33 @@ function resolveMineralCollectorEffect(entity: Entity): RenderEffectDescriptor[]
   }];
 }
 
-function resolveRenderEffects(entity: Entity): RenderEffectDescriptor[] {
+/**
+ * Damage is detected from an authoritative health decrease in the stream.
+ * The burst deliberately stays generic: future weapons can reuse it, while
+ * stellar heat reads as a hot orange corona around the exposed ship.
+ */
+function resolveDamageBurstEffect(entity: Entity, nowMs: number): RenderEffectDescriptor[] {
+  const startedAtMs = entity.damage_flash_started_at;
+  if (
+    startedAtMs === undefined ||
+    nowMs - startedAtMs < 0 ||
+    nowMs - startedAtMs >= DAMAGE_BURST_DURATION_MS
+  ) {
+    return [];
+  }
+
+  return [{
+    key: "damage-burst",
+    kind: "damage_burst",
+    startedAtMs,
+  }];
+}
+
+function resolveRenderEffects(entity: Entity, nowMs: number): RenderEffectDescriptor[] {
   return [
     ...resolveSolarCollectorEffect(entity),
     ...resolveMineralCollectorEffect(entity),
+    ...resolveDamageBurstEffect(entity, nowMs),
   ];
 }
 
@@ -224,6 +256,38 @@ function drawParticleFlowEffect(
   }
 }
 
+function drawDamageBurstEffect(graphics: Graphics, effect: DamageBurstEffect, nowMs: number) {
+  const progress = Math.min(1, Math.max(0, (nowMs - effect.startedAtMs) / DAMAGE_BURST_DURATION_MS));
+  const fade = 1 - progress;
+  const radius = 22 + progress * 34;
+  const innerRadius = 11 + progress * 13;
+  const sparkRadius = 27 + progress * 28;
+  graphics.clear();
+
+  graphics.circle(0, 0, innerRadius).fill({
+    color: DAMAGE_BURST_COLOR,
+    alpha: fade * 0.26,
+  });
+  graphics.circle(0, 0, radius).stroke({
+    width: 3 - progress * 1.5,
+    color: DAMAGE_BURST_GLOW_COLOR,
+    alpha: fade * 0.85,
+  });
+
+  // Irregular outward sparks keep a sustained radiation tick from looking
+  // like a weapon impact, while remaining readable at the game's zoom level.
+  for (let i = 0; i < 8; i++) {
+    const angle = i * (Math.PI * 2 / 8) + effect.startedAtMs * 0.003;
+    const wobble = Math.sin(nowMs * 0.014 + i * 2.1) * 5;
+    const x = Math.cos(angle) * (sparkRadius + wobble);
+    const y = Math.sin(angle) * (sparkRadius + wobble);
+    graphics.circle(x, y, 2.5 * fade + 1).fill({
+      color: i % 2 === 0 ? DAMAGE_BURST_COLOR : DAMAGE_BURST_GLOW_COLOR,
+      alpha: fade * 0.9,
+    });
+  }
+}
+
 function drawEffect(
   graphics: Graphics,
   container: Container,
@@ -234,6 +298,9 @@ function drawEffect(
     case "particle_flow":
       drawParticleFlowEffect(graphics, container, effect, nowMs);
       break;
+    case "damage_burst":
+      drawDamageBurstEffect(graphics, effect, nowMs);
+      break;
   }
 }
 
@@ -242,7 +309,7 @@ export function reconcileEntityRenderEffects(
   entity: Entity,
   nowMs: number,
 ) {
-  const effects = resolveRenderEffects(entity);
+  const effects = resolveRenderEffects(entity, nowMs);
   const activeKeys = new Set(effects.map((effect) => effect.key));
 
   for (const child of container.children) {

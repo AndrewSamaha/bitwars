@@ -12,6 +12,11 @@ export type EntityId = { id: number | string };
 export type EntityTypeId = { entity_type_id?: string };
 export type OwnerPlayerId = { owner_player_id?: string };
 export type Health = { health?: number };
+/**
+ * Client-only timestamp set when an authoritative health update lowers health.
+ * It drives presentation only; combat and hazard rules remain server-owned.
+ */
+export type DamagePresentation = { damage_flash_started_at?: number };
 export type UIState = { hover: boolean };
 export type ActiveIntentView = {
   active_intent_kind?: "move" | "attack" | "build" | "collect" | string;
@@ -38,6 +43,7 @@ export type Entity = Partial<
   EntityTypeId &
   OwnerPlayerId &
   Health &
+  DamagePresentation &
   ActiveIntentView &
   CollectorStateView &
   ContainerRef &
