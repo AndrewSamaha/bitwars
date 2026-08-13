@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,9 +14,9 @@ const SHOW_STREAM_COUNTER = false;
 
 export default function TerminalPanel() {
   const { player, setPlayer } = usePlayer();
-  const router = useRouter();
-  const { selectors, actions, refs } = useHUD();
+  const { state, selectors, actions, refs } = useHUD();
   const { isTerminalOpen, currentCommand, commandHistory } = selectors;
+  const { sessionTransition } = state;
   const { terminalRef, inputRef } = refs;
   const myPlayerId = player?.id ?? null;
   const [commandRunning, setCommandRunning] = useState(false);
@@ -44,22 +43,31 @@ export default function TerminalPanel() {
 
       actions.setTerminalInput("");
       setCommandRunning(true);
+      let wroteProgress = false;
       try {
-        const result = await executeTerminalCommand(cmd, { myPlayerId });
-        actions.pushCommandHistory({ command: cmd, output: result.output });
-        if (result.navigateTo) {
+        const result = await executeTerminalCommand(cmd, {
+          myPlayerId,
+          sessionTransition,
+          writeOutput: (output) => {
+            wroteProgress = true;
+            actions.pushCommandHistory({ command: cmd, output });
+          },
+          onSessionEnding: () => actions.setSessionTransition("logging-out"),
+        });
+        actions.pushCommandHistory({ command: wroteProgress ? "" : cmd, output: result.output });
+        if (result.sessionEnded) {
           setPlayer(null);
-          router.replace(result.navigateTo);
-          router.refresh();
+          actions.setSessionTransition("logged-out");
         }
       } catch (error) {
+        actions.setSessionTransition("active");
         const message = error instanceof Error ? error.message : String(error);
-        actions.pushCommandHistory({ command: cmd, output: message });
+        actions.pushCommandHistory({ command: wroteProgress ? "" : cmd, output: message });
       } finally {
         setCommandRunning(false);
       }
     },
-    [currentCommand, commandRunning, actions, myPlayerId, router, setPlayer]
+    [currentCommand, commandRunning, actions, myPlayerId, sessionTransition, setPlayer]
   );
 
   const handleTerminalClick = useCallback(() => {
@@ -88,7 +96,7 @@ export default function TerminalPanel() {
             <div className="flex items-center gap-2">
               <Terminal className="w-4 h-4 text-primary" />
               <span className="text-sm font-medium">BitWars Terminal</span>
-              <EntitiesStreamCounter />
+              {player && <EntitiesStreamCounter />}
               {SHOW_STREAM_COUNTER && <EcsEntityCount />}
             </div>
           </div>

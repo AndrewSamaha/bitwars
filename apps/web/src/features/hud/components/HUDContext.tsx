@@ -29,6 +29,8 @@ export type CommandHistory = {
   output: string;
 };
 
+export type SessionTransition = "active" | "logging-out" | "logged-out";
+
 export type HUDPanels = {
   minimapOpen: boolean;
   inventoryOpen: boolean;
@@ -50,6 +52,7 @@ export type HUDState = {
   isTerminalOpen: boolean;
   currentCommand: string;
   commandHistory: CommandHistory[];
+  sessionTransition: SessionTransition;
   // PixiJS Stuff
   app: Application | null;
   camera: Container | null;
@@ -76,6 +79,7 @@ const defaultState: HUDState = {
   commandHistory: [
     { command: "", output: "BitWars Terminal v1.0.0\nType 'help' for available commands.\n" },
   ],
+  sessionTransition: "active",
   app: null,
   camera: null,
 };
@@ -102,6 +106,7 @@ type Action =
   | { type: "TERMINAL_TOGGLE" }
   | { type: "TERMINAL_SET_INPUT"; value: string }
   | { type: "TERMINAL_PUSH_HISTORY"; entry: CommandHistory }
+  | { type: "SESSION_TRANSITION_SET"; value: SessionTransition }
   | { type: "HYDRATE"; state: HUDState };                         // for persistence restore
 
 //
@@ -171,6 +176,9 @@ function reducer(state: HUDState, action: Action): HUDState {
     case "TERMINAL_PUSH_HISTORY":
       return { ...state, commandHistory: [...state.commandHistory, action.entry] };
 
+    case "SESSION_TRANSITION_SET":
+      return { ...state, sessionTransition: action.value };
+
     case "HYDRATE":
       // Rebuild Set from plain array if coming from JSON
       return {
@@ -225,6 +233,7 @@ type HUDContextValue = {
     toggleTerminal: () => void;
     setTerminalInput: (value: string) => void;
     pushCommandHistory: (entry: CommandHistory) => void;
+    setSessionTransition: (value: SessionTransition) => void;
     setApp: (app: Application) => void;
     setCamera: (camera: Container) => void;
   };
@@ -322,6 +331,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       toggleTerminal: () => dispatch({ type: "TERMINAL_TOGGLE" }),
       setTerminalInput: (value: string) => dispatch({ type: "TERMINAL_SET_INPUT", value }),
       pushCommandHistory: (entry: CommandHistory) => dispatch({ type: "TERMINAL_PUSH_HISTORY", entry }),
+      setSessionTransition: (value: SessionTransition) => dispatch({ type: "SESSION_TRANSITION_SET", value }),
     }),
     []
   );

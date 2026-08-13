@@ -3,7 +3,7 @@
 import GameStage from "@/features/pixijs/components/GameStage";
 import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge";
 import GameStreamGate from "@/features/gamestate/components/GameStreamGate";
-import { HUDProvider } from "@/features/hud/components/HUDContext";
+import { HUDProvider, useHUD } from "@/features/hud/components/HUDContext";
 import { PlayerProvider } from "@/features/users/components/identity/PlayerContext";
 import TerminalPanel from "@/features/hud/components/TerminalPanel";
 import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel";
@@ -19,17 +19,31 @@ export default function ClientGamePage({ initialPlayer }: ClientGamePageProps) {
   return (
     <PlayerProvider initialPlayer={initialPlayer}>
       <HUDProvider>
+        <GameClientShell />
+      </HUDProvider>
+    </PlayerProvider>
+  );
+}
+
+function GameClientShell() {
+  const { state: { sessionTransition } } = useHUD();
+  const fading = sessionTransition !== "active";
+
+  return (
+    <div className="min-h-screen bg-black relative overflow-hidden">
+      <div
+        className={`min-h-screen transition-opacity duration-500 ${fading ? "pointer-events-none opacity-0" : "opacity-100"}`}
+        aria-hidden={fading}
+      >
         <GameStreamGate>
-          <div className="min-h-screen bg-black relative overflow-hidden">
             <GameStateStreamBridge />
             <ResourceHUD />
-            <TerminalPanel />
             <EntityDetailPanel />
             <IntentQueuePanel />
             <GameStage />
-          </div>
         </GameStreamGate>
-      </HUDProvider>
-    </PlayerProvider>
+      </div>
+      <TerminalPanel />
+    </div>
   );
 }

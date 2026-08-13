@@ -1,18 +1,23 @@
 import { game } from "@/features/gamestate/world";
+import type { SessionTransition } from "@/features/hud/components/HUDContext";
 
 export type TerminalCommandContext = {
   myPlayerId: string | null;
+  sessionTransition: SessionTransition;
+  onSessionEnding?: () => void;
+  writeOutput?: (output: string) => void;
 };
 
 export type TerminalCommandResult = {
   output: string;
-  navigateTo?: string;
+  sessionEnded?: boolean;
 };
 
 type TerminalCommand = {
   name: string;
   aliases?: string[];
   description: string;
+  requiresAuth?: boolean;
   run: (
     args: string[],
     context: TerminalCommandContext,
@@ -51,16 +56,26 @@ const commands: TerminalCommand[] = [
   {
     name: "ls",
     description: "List your units",
+    requiresAuth: true,
     run: (_args, context) => ({ output: listOwnedEntities(context.myPlayerId) }),
   },
   {
     name: "logout",
     aliases: ["exit"],
     description: "End the current session",
-    run: async () => {
+    requiresAuth: true,
+    run: async (_args, context) => {
+      const startResponse = await fetch("/api/players/start-logout", { method: "POST" });
+      if (!startResponse.ok) throw new Error(`Logout failed (${startResponse.status})`);
+
+      context.writeOutput?.("Logging out…");
+      context.onSessionEnding?.();
+
+      await new Promise((resolve) => window.setTimeout(resolve, 500));
+
       const response = await fetch("/api/players/logout", { method: "POST" });
       if (!response.ok) throw new Error(`Logout failed (${response.status})`);
-      return { output: "Logged out.", navigateTo: "/" };
+      return { output: "Logged out.", sessionEnded: true };
     },
   },
 ];
@@ -92,5 +107,11 @@ export async function executeTerminalCommand(
   const [name = "", ...args] = input.trim().split(/\s+/);
   const command = commandsByName.get(name.toLowerCase());
   if (!command) return { output: `${name}: command not found` };
+  if (command.requiresAuth && !context.myPlayerId) {
+    return { output: `${command.name}: authentication required` };
+  }
+  if (command.requiresAuth && context.sessionTransition !== "active") {
+    return { output: `${command.name}: logout in progress` };
+  }
   return command.run(args, context);
 }

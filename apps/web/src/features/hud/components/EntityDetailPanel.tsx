@@ -22,7 +22,8 @@ export default function EntityDetailPanel() {
     const tick = () => forceRerender((n) => (n + 1) % 1000000);
     app.ticker.add(tick);
     return () => {
-      app.ticker.remove(tick);
+      const ticker = (app as { ticker?: typeof app.ticker | null }).ticker;
+      ticker?.remove(tick);
     };
   }, [app]);
 

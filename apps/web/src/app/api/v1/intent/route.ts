@@ -6,6 +6,7 @@ import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
 import { requireAuthOr401 } from "@/features/users/utils/auth";
 import { ENGINE_PROTOCOL_MAJOR } from "@/lib/constants";
+import { getPlayerSessionState } from "@/features/users/server/session-state";
 
 // Map string policy names to proto enum values
 const POLICY_MAP: Record<string, IntentPolicy> = {
@@ -96,6 +97,9 @@ export async function POST(req: NextRequest) {
     const playerId = auth?.playerId as string | undefined;
     if (!playerId) {
       return NextResponse.json({ error: "missing player context" }, { status: 401 });
+    }
+    if (await getPlayerSessionState(playerId) === "logging-out") {
+      return NextResponse.json({ error: "logout in progress" }, { status: 409 });
     }
 
     const gameId = process.env.GAME_ID || "demo-001";

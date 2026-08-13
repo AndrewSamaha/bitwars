@@ -649,13 +649,18 @@ export default function GameStage() {
             render();
         });
 
+        let destroyed = false;
         return () => {
+          if (destroyed) return;
+          destroyed = true;
           for (const id of Array.from(renderById.keys())) {
             destroyRenderRef(id);
           }
           window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
-          app.destroy(true, { children: true, texture: false });
+          if ((app as unknown as { renderer: unknown | null }).renderer) {
+            app.destroy({ removeView: true }, { children: true, texture: false });
+          }
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
         };
