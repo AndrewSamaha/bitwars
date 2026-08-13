@@ -3,11 +3,50 @@
 import { useEffect, useState } from "react";
 import * as PIXI from "pixi.js";
 import { useHUD } from "./HUDContext";
+import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 
 export function TooltipOverlay() {
   const { selectors: { hoveredEntity, app } } = useHUD();
+  const { player } = usePlayer();
   const [pos, setPos] = useState<{x:number;y:number}|null>(null);
   const [liveCollectorState, setLiveCollectorState] = useState<Record<string, any> | null>(null);
+  const [playerNamesById, setPlayerNamesById] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPlayerNames = async () => {
+      const names: Record<string, string> = {};
+      if (player?.id && player.name) names[player.id] = player.name;
+
+      try {
+        const res = await fetch("/api/players/getActive", {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const activePlayers = (await res.json()) as Array<{ id?: unknown; name?: unknown }>;
+          if (Array.isArray(activePlayers)) {
+            for (const activePlayer of activePlayers) {
+              if (typeof activePlayer.id === "string" && typeof activePlayer.name === "string") {
+                names[activePlayer.id] = activePlayer.name;
+              }
+            }
+          }
+        }
+      } catch {
+        // The current player name is still available if the active-player lookup fails.
+      }
+
+      if (mounted) setPlayerNamesById(names);
+    };
+
+    void loadPlayerNames();
+    return () => {
+      mounted = false;
+    };
+  }, [player?.id, player?.name]);
 
   useEffect(() => {
     if (!app) return;
@@ -26,11 +65,8 @@ export function TooltipOverlay() {
     }
     const localPoint = new PIXI.Point(0, -40);
     const globalPoint = container.toGlobal(localPoint);
-    const resolution = (app.renderer as any)?.resolution ?? 1;
-    const cssX = globalPoint.x / resolution;
-    const cssY = globalPoint.y / resolution;
 
-    setPos({ x: cssX, y: cssY });
+    setPos({ x: globalPoint.x, y: globalPoint.y });
 
   }, [hoveredEntity, app]);
 
@@ -84,6 +120,8 @@ export function TooltipOverlay() {
   const carryAmount = Number(collectorState?.carry_amount ?? 0);
   const carryCapacity = Number(collectorState?.carry_capacity ?? 0);
   const effectiveRate = Number(collectorState?.effective_rate_per_second ?? 0);
+  const ownerPlayerId = String((hoveredEntity as any).owner_player_id ?? "");
+  const ownerPlayerName = playerNamesById[ownerPlayerId];
 
   return (
     <div
@@ -99,6 +137,7 @@ export function TooltipOverlay() {
         fontSize: 12
       }}
     >
+      {ownerPlayerName && <div><b>owner:</b> {ownerPlayerName}</div>}
       <div><b>{(hoveredEntity as any).entity_type_id ?? "—"}</b></div>
       <div><b>id:</b> {(hoveredEntity as any).id}</div>
       <div><b>pos:</b> {Math.round(hoveredEntity.pos?.x ?? 0)}, {Math.round(hoveredEntity.pos?.y ?? 0)}</div>
