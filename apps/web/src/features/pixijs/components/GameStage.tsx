@@ -2,7 +2,7 @@
 import { Application, Assets, Container, Sprite, Graphics, type Texture } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
-import { game } from "@/features/gamestate/world";
+import { game, type Entity } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
@@ -11,6 +11,7 @@ import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
+import { reconcileEntityRenderEffects } from "@/features/pixijs/effects/renderEffects";
 import {
   CELL_SIZE,
   SEED,
@@ -105,7 +106,8 @@ export default function GameStage() {
             background: BACKGROUND_APP_COLOR,
             resizeTo: window,
             antialias: true,
-            resolution: devicePixelRatio
+            resolution: window.devicePixelRatio || 1,
+            autoDensity: true,
         });
         setApp(app);
         ref.current!.appendChild(app.canvas);
@@ -436,6 +438,7 @@ export default function GameStage() {
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
             const isNeutral = ownerId === "neutral";
             const baseTint = isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
+            reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if ((e as any).hover) {
               if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
               // ensure a hover indicator exists as a child after sprite (only for owned so we don't highlight enemy)
@@ -646,13 +649,20 @@ export default function GameStage() {
             render();
         });
 
+        let destroyed = false;
         return () => {
+          if (destroyed) return;
+          destroyed = true;
           for (const id of Array.from(renderById.keys())) {
             destroyRenderRef(id);
           }
           window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
-          app.destroy(true, { children: true, texture: false });
+          if ((app as unknown as { renderer: unknown | null }).renderer) {
+            app.destroy({ removeView: true }, { children: true, texture: false });
+          }
+          setApp(null);
+          setCamera(null);
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
         };

@@ -12,6 +12,20 @@ type AuthPayload = {
   iat?: number;
 };
 
+/** Return the authenticated session payload, or null when no valid session exists. */
+export async function getOptionalAuth(): Promise<AuthPayload | null> {
+  const token = (await cookies()).get('player_token')?.value;
+  if (!token) return null;
+
+  try {
+    const payload = await verifyToken(token);
+    if (!payload || typeof payload.playerId !== 'string') return null;
+    return payload as AuthPayload;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Server-only auth guard for pages and actions.
  *

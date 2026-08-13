@@ -4,6 +4,7 @@ import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import LoadingAnimation from "@/components/LoadingAnimation";
+import { useSession } from "@/features/users/components/identity/SessionContext";
 
 /**
  * Solution D: Only mount children (including GameStateStreamBridge) after /me has
@@ -12,13 +13,14 @@ import LoadingAnimation from "@/components/LoadingAnimation";
  */
 export default function GameStreamGate({ children }: { children: React.ReactNode }) {
   const { player, loading } = usePlayer();
+  const { status } = useSession();
   const router = useRouter();
 
   useEffect(() => {
-    if (loading || player != null) return;
+    if (loading || player != null || status !== "active") return;
     console.log('[GameStreamGate] redirect: !loading && !player');
     router.replace("/");
-  }, [loading, player, router]);
+  }, [loading, player, router, status]);
 
   if (loading) {
     return (

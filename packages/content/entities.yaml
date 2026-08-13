@@ -32,7 +32,7 @@ entity_types:
       resource_type: energy
       collection_mode: proximity
       min_effective_distance: 350.0
-      max_effective_distance: 800.0
+      max_effective_distance: 1600.0
 
   planet_blue:
     speed: 0.0
@@ -45,11 +45,17 @@ entity_types:
     stop_radius: 1
     mass: 500.0
     health: 100.0
+    radiation_sources:
+      - radiation_type: stellar_heat
+        min_effective_distance: 0.0
+        full_damage_distance: 80.0
+        max_effective_distance: 180.0
+        damage_per_second: 24.0
     resource_node:
       resource_type: energy
       collection_mode: proximity
       min_effective_distance: 10.0
-      max_effective_distance: 100.0
+      max_effective_distance: 200.0
 
   minerals:
     speed: 0.0
@@ -67,6 +73,10 @@ entity_types:
     stop_radius: 1
     mass: 500.0
     health: 100.0
+    radiation_shielding:
+      stellar_heat:
+        distance_offset: 90.0
+        damage_multiplier: 0.35
     collector:
       collects: [energy]
       proximity_rate_per_second: 12.0

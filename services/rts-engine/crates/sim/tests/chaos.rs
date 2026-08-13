@@ -47,6 +47,7 @@ fn make_entity(id: u64, x: f32, y: f32) -> Entity {
         pos: Some(Vec2 { x, y }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
+        health: 100.0,
     }
 }
 
@@ -354,10 +355,10 @@ fn chaos_combined_drop_middle() {
 // To regenerate: change the constant to 0 and run the test — the assertion
 // message will print the actual hash.
 
-const GOLDEN_TWO_ENTITY: u64 = 1504965851243601467;
-const GOLDEN_DROP_ENTITY2: u64 = 15728293238854734021;
-const GOLDEN_SAME_ENTITY_LAST_B: u64 = 16074229635097407750;
-const GOLDEN_SAME_ENTITY_LAST_A: u64 = 585317416330256995;
-const GOLDEN_DUPE_BARRAGE: u64 = 5602212584383532031;
-const GOLDEN_THREE_ENTITY_ALL: u64 = 9798817850985035973;
-const GOLDEN_THREE_ENTITY_DROP_B: u64 = 16578209666156329052;
+const GOLDEN_TWO_ENTITY: u64 = 3961431685001920458;
+const GOLDEN_DROP_ENTITY2: u64 = 10651857634847441008;
+const GOLDEN_SAME_ENTITY_LAST_B: u64 = 13243400186891959375;
+const GOLDEN_SAME_ENTITY_LAST_A: u64 = 2608792845395068792;
+const GOLDEN_DUPE_BARRAGE: u64 = 619075441752158497;
+const GOLDEN_THREE_ENTITY_ALL: u64 = 15179166447905816160;
+const GOLDEN_THREE_ENTITY_DROP_B: u64 = 13843662351223890106;

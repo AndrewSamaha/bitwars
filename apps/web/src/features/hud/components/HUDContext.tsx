@@ -95,8 +95,8 @@ type Action =
   | { type: "PANEL_TOGGLE"; key: keyof HUDPanels }
   | { type: "HOVER_SET"; entity: Entity | null }
   | { type: "TOOLTIP_SET"; text: string | null }
-  | { type: "APP_SET"; app: Application }
-  | { type: "CAMERA_SET"; camera: Container }
+  | { type: "APP_SET"; app: Application | null }
+  | { type: "CAMERA_SET"; camera: Container | null }
   // Terminal actions
   | { type: "TERMINAL_SET_OPEN"; open: boolean }
   | { type: "TERMINAL_TOGGLE" }
@@ -225,8 +225,8 @@ type HUDContextValue = {
     toggleTerminal: () => void;
     setTerminalInput: (value: string) => void;
     pushCommandHistory: (entry: CommandHistory) => void;
-    setApp: (app: Application) => void;
-    setCamera: (camera: Container) => void;
+    setApp: (app: Application | null) => void;
+    setCamera: (camera: Container | null) => void;
   };
   selectors: {
     hasSelection: boolean;
@@ -314,8 +314,8 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
 
       setHovered: (entity: Entity | null) => dispatch({ type: "HOVER_SET", entity }),
       setTooltip: (text: string | null) => dispatch({ type: "TOOLTIP_SET", text }),
-      setApp: (app: Application) => dispatch({ type: "APP_SET", app }),
-      setCamera: (camera: Container) => dispatch({ type: "CAMERA_SET", camera }),
+      setApp: (app: Application | null) => dispatch({ type: "APP_SET", app }),
+      setCamera: (camera: Container | null) => dispatch({ type: "CAMERA_SET", camera }),
 
       // Terminal
       setTerminalOpen: (open: boolean) => dispatch({ type: "TERMINAL_SET_OPEN", open }),

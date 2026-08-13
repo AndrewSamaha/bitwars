@@ -496,6 +496,7 @@ mod tests {
                 vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: String::new(),
+                health: 100.0,
             }],
             ledger: crate::engine::state::ResourceLedger::new(),
         };
@@ -530,6 +531,7 @@ mod tests {
                 vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: "p1".into(),
+                health: 100.0,
             }],
             ledger: crate::engine::state::ResourceLedger::new(),
         };

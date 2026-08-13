@@ -53,8 +53,9 @@ export function PlayerProvider({
   pollMs = 0,
 }: PlayerProviderProps) {
   const parsed = useMemo(() => PlayerSchema.safeParse(initialPlayer), [initialPlayer]);
+  const hasInitialValue = initialPlayer !== undefined;
   const [player, setPlayer] = useState<Player | null>(parsed.success ? parsed.data : null);
-  const [loading, setLoading] = useState<boolean>(!parsed.success); // if no valid initial value, we’ll fetch
+  const [loading, setLoading] = useState<boolean>(!hasInitialValue);
   const [error, setError] = useState<string | null>(null);
 
   const endpointRef = useRef(meEndpoint);
@@ -107,11 +108,11 @@ export function PlayerProvider({
 
   // Initial fetch if we didn’t get a valid initial player from the server.
   useEffect(() => {
-    if (parsed.success) return;
+    if (hasInitialValue) return;
     const ctrl = new AbortController();
     refresh({ signal: ctrl.signal });
     return () => ctrl.abort();
-  }, [parsed.success, refresh]);
+  }, [hasInitialValue, refresh]);
 
   // Optional polling to keep the player fresh (e.g., to reflect lastSeen updates).
   useEffect(() => {

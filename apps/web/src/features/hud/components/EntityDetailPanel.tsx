@@ -22,7 +22,8 @@ export default function EntityDetailPanel() {
     const tick = () => forceRerender((n) => (n + 1) % 1000000);
     app.ticker.add(tick);
     return () => {
-      app.ticker.remove(tick);
+      const ticker = (app as { ticker?: typeof app.ticker | null }).ticker;
+      ticker?.remove(tick);
     };
   }, [app]);
 
@@ -167,7 +168,7 @@ export default function EntityDetailPanel() {
       className={`fixed bottom-4 z-50 ${selectedEntities.length > 0 ? "h-20" : "h-2"}`}
       style={{ left: `${leftOffsetRem}rem`, right: "1rem" }}
     >
-      <div className="w-full h-full bg-opacity-95 border border-border rounded-lg shadow-2xl flex flex-col">
+      <div className="flex h-full w-full flex-col rounded-lg border border-white/15 bg-black/88 shadow-2xl backdrop-blur-sm">
         {selectedEntities.length > 0 ? (
           <div className="p-3">
             <ul className="text-xs space-y-1">

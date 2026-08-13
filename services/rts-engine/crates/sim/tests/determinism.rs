@@ -12,6 +12,7 @@ fn test_deterministic_replay() {
         pos: Some(Vec2 { x: 0.0, y: 0.0 }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
+        health: 100.0,
     };
     
     let world_state = sim::state::WorldState::new(0, vec![entity]);
@@ -65,6 +66,7 @@ fn test_idempotent_operations() {
         pos: Some(Vec2 { x: 0.0, y: 0.0 }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
+        health: 100.0,
     };
     
     let world_state = sim::state::WorldState::new(0, vec![entity]);
@@ -112,6 +114,7 @@ fn test_stable_json_serialization() {
             pos: Some(Vec2 { x: 1.0, y: 2.0 }),
             vel: Some(Vec2 { x: 0.1, y: 0.2 }),
             force: Some(Vec2 { x: 0.0, y: 0.0 }),
+            health: 100.0,
         },
         sim::pb::Entity {
             id: 1,
@@ -119,6 +122,7 @@ fn test_stable_json_serialization() {
             pos: Some(Vec2 { x: 0.0, y: 0.0 }),
             vel: Some(Vec2 { x: 0.0, y: 0.0 }),
             force: Some(Vec2 { x: 0.0, y: 0.0 }),
+            health: 100.0,
         },
     ];
     

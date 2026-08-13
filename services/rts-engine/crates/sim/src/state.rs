@@ -25,6 +25,8 @@ pub struct SerializableEntity {
     pub id: u64,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub entity_type_id: String,
+    #[serde(default)]
+    pub health: f32,
     pub pos: Option<SerializableVec2>,
     pub vel: Option<SerializableVec2>,
     pub force: Option<SerializableVec2>,
@@ -42,6 +44,7 @@ impl From<&Entity> for SerializableEntity {
         Self {
             id: entity.id,
             entity_type_id: entity.entity_type_id.clone(),
+            health: entity.health,
             pos: entity.pos.map(|v| SerializableVec2 { x: v.x, y: v.y }),
             vel: entity.vel.map(|v| SerializableVec2 { x: v.x, y: v.y }),
             force: entity.force.map(|v| SerializableVec2 { x: v.x, y: v.y }),
@@ -54,6 +57,7 @@ impl From<&SerializableEntity> for Entity {
         Self {
             id: entity.id,
             entity_type_id: entity.entity_type_id.clone(),
+            health: entity.health,
             pos: entity.pos.map(|v| Vec2 { x: v.x, y: v.y }),
             vel: entity.vel.map(|v| Vec2 { x: v.x, y: v.y }),
             force: entity.force.map(|v| Vec2 { x: v.x, y: v.y }),

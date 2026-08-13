@@ -17,7 +17,10 @@ export function CoordsOverlay() {
     if (!app) return;
     const tick = () => forceUpdate((n) => (n + 1) % 1_000_000);
     app.ticker.add(tick);
-    return () => app.ticker.remove(tick);
+    return () => {
+      const ticker = (app as { ticker?: typeof app.ticker | null }).ticker;
+      ticker?.remove(tick);
+    };
   }, [app]);
 
   if (!app || !camera) return null;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { contentManager } from "@/features/content/contentManager";
 
@@ -11,10 +11,18 @@ const HUD_FULL = `${HUD_BASE} flex flex-wrap items-center gap-3 text-white/95`;
 
 const formatKey = (key: string) => key.charAt(0).toUpperCase() + key.slice(1);
 
+const subscribeToContent = (notify: () => void) => contentManager.subscribe(notify);
+const getContentSnapshot = () => contentManager.getContent();
+const getServerContentSnapshot = () => null;
+
 export function ResourceHUD() {
   const { state } = useHUD();
   const resources = state.resources;
-  const content = contentManager.getContent();
+  const content = useSyncExternalStore(
+    subscribeToContent,
+    getContentSnapshot,
+    getServerContentSnapshot,
+  );
   const resourceTypes = content?.resource_types ?? {};
 
   const sortedKeys = useMemo(() => {

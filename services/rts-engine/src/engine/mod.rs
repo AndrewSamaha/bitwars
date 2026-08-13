@@ -10,7 +10,9 @@ use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
 
 use crate::config::GameConfig;
-use crate::content::{CollectionMode, ContentPack};
+use crate::content::{
+    CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef,
+};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::{CollectorUiState, IntentPoint, RedisClient};
@@ -68,6 +70,18 @@ struct CollectorSnapshot {
     y: f32,
 }
 
+#[derive(Clone)]
+struct RadiationSourceSnapshot {
+    entity_id: u64,
+    x: f32,
+    y: f32,
+    radiation_type: String,
+    min_effective_distance: f32,
+    max_effective_distance: f32,
+    full_damage_distance: f32,
+    damage_per_second: f32,
+}
+
 fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {
     if bytes.len() != 16 {
         bail!("{field} must be 16 bytes (UUIDv7)");
@@ -110,6 +124,172 @@ mod uuid_tests {
         let err = ensure_uuid_v7(uuid_nil.as_bytes(), "test-field")
             .expect_err("wrong version should fail");
         assert!(err.to_string().contains("UUIDv7"));
+    }
+}
+
+#[cfg(test)]
+mod radiation_tests {
+    use super::*;
+    use crate::content::{RadiationShieldingDef, RadiationSourceDef};
+
+    fn make_content() -> ContentPack {
+        let mut entity_types = HashMap::new();
+        entity_types.insert(
+            "star_yellow".to_string(),
+            EntityTypeDef {
+                speed: 0.0,
+                stop_radius: 1.0,
+                mass: 500.0,
+                health: 100.0,
+                collector: None,
+                resource_node: None,
+                refinery: None,
+                radiation_sources: vec![RadiationSourceDef {
+                    radiation_type: "stellar_heat".to_string(),
+                    min_effective_distance: 0.0,
+                    max_effective_distance: 180.0,
+                    full_damage_distance: 80.0,
+                    damage_per_second: 24.0,
+                }],
+                radiation_shielding: HashMap::new(),
+            },
+        );
+
+        let mut collector_shielding = HashMap::new();
+        collector_shielding.insert(
+            "stellar_heat".to_string(),
+            RadiationShieldingDef {
+                distance_offset: 90.0,
+                damage_multiplier: 0.35,
+            },
+        );
+        entity_types.insert(
+            "collector_solar".to_string(),
+            EntityTypeDef {
+                speed: 20.0,
+                stop_radius: 1.0,
+                mass: 500.0,
+                health: 100.0,
+                collector: None,
+                resource_node: None,
+                refinery: None,
+                radiation_sources: Vec::new(),
+                radiation_shielding: collector_shielding,
+            },
+        );
+        entity_types.insert(
+            "worker".to_string(),
+            EntityTypeDef {
+                speed: 90.0,
+                stop_radius: 0.75,
+                mass: 1.0,
+                health: 100.0,
+                collector: None,
+                resource_node: None,
+                refinery: None,
+                radiation_sources: Vec::new(),
+                radiation_shielding: HashMap::new(),
+            },
+        );
+
+        ContentPack {
+            entity_types,
+            resource_types: HashMap::new(),
+            content_hash: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn shielding_creates_safe_collection_band_but_not_safe_core() {
+        let content = make_content();
+        let star = pb::Entity {
+            id: 1,
+            entity_type_id: "star_yellow".to_string(),
+            pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+            vel: None,
+            force: None,
+            owner_player_id: NEUTRAL_OWNER.to_string(),
+            health: 100.0,
+        };
+        let collector_safe = pb::Entity {
+            id: 2,
+            entity_type_id: "collector_solar".to_string(),
+            pos: Some(pb::Vec2 { x: 120.0, y: 0.0 }),
+            vel: None,
+            force: None,
+            owner_player_id: "p1".to_string(),
+            health: 100.0,
+        };
+        let collector_too_close = pb::Entity {
+            id: 3,
+            entity_type_id: "collector_solar".to_string(),
+            pos: Some(pb::Vec2 { x: 20.0, y: 0.0 }),
+            vel: None,
+            force: None,
+            owner_player_id: "p1".to_string(),
+            health: 100.0,
+        };
+        let worker_same_distance = pb::Entity {
+            id: 4,
+            entity_type_id: "worker".to_string(),
+            pos: Some(pb::Vec2 { x: 120.0, y: 0.0 }),
+            vel: None,
+            force: None,
+            owner_player_id: "p1".to_string(),
+            health: 100.0,
+        };
+        let state = GameState {
+            tick: 0,
+            entities: vec![star, collector_safe, collector_too_close, worker_same_distance],
+            ledger: HashMap::new(),
+        };
+
+        let damage = Engine::compute_radiation_damage(&state, &content);
+        assert_eq!(damage.get(&2).copied().unwrap_or(0.0), 0.0);
+        assert!(damage.get(&3).copied().unwrap_or(0.0) > 0.0);
+        assert!(damage.get(&4).copied().unwrap_or(0.0) > 0.0);
+    }
+
+    #[test]
+    fn overlapping_sources_stack_damage() {
+        let content = make_content();
+        let state = GameState {
+            tick: 0,
+            entities: vec![
+                pb::Entity {
+                    id: 1,
+                    entity_type_id: "star_yellow".to_string(),
+                    pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                    vel: None,
+                    force: None,
+                    owner_player_id: NEUTRAL_OWNER.to_string(),
+                    health: 100.0,
+                },
+                pb::Entity {
+                    id: 2,
+                    entity_type_id: "star_yellow".to_string(),
+                    pos: Some(pb::Vec2 { x: 60.0, y: 0.0 }),
+                    vel: None,
+                    force: None,
+                    owner_player_id: NEUTRAL_OWNER.to_string(),
+                    health: 100.0,
+                },
+                pb::Entity {
+                    id: 3,
+                    entity_type_id: "worker".to_string(),
+                    pos: Some(pb::Vec2 { x: 40.0, y: 0.0 }),
+                    vel: None,
+                    force: None,
+                    owner_player_id: "p1".to_string(),
+                    health: 100.0,
+                },
+            ],
+            ledger: HashMap::new(),
+        };
+
+        let damage = Engine::compute_radiation_damage(&state, &content);
+        let worker_damage = damage.get(&3).copied().unwrap_or(0.0);
+        assert!(worker_damage > 24.0, "expected stacked damage, got {worker_damage}");
     }
 }
 
@@ -441,6 +621,7 @@ impl Engine {
                     resource_fractional: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
                 };
+                engine.hydrate_entity_health_if_missing();
                 // Publish a fresh snapshot so newly connecting clients see current state
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
                 engine
@@ -559,6 +740,7 @@ impl Engine {
             sc.min_entity_spawn_distance,
             sc.max_entity_spawn_distance,
             &sc.neutrals_near_spawn,
+            _content,
             &mut rng,
         );
 
@@ -653,6 +835,24 @@ impl Engine {
                 updated_tick: self.state.tick,
             },
         );
+    }
+
+    fn hydrate_entity_health_if_missing(&mut self) {
+        let Some(content) = self.content.as_ref() else {
+            return;
+        };
+        if self.state.entities.is_empty() {
+            return;
+        }
+        if !self.state.entities.iter().all(|entity| entity.health <= 0.0) {
+            return;
+        }
+        for entity in &mut self.state.entities {
+            if let Some(def) = content.get(&entity.entity_type_id) {
+                entity.health = def.health.max(0.0);
+            }
+        }
+        self.prev_state = self.state.clone();
     }
 
     fn build_resource_node_snapshots(&self) -> Vec<ResourceNodeSnapshot> {
@@ -753,6 +953,123 @@ impl Engine {
         let dx = ax - bx;
         let dy = ay - by;
         dx * dx + dy * dy
+    }
+
+    fn resolve_radiation_shielding<'a>(
+        entity_type: &'a EntityTypeDef,
+        radiation_type: &str,
+    ) -> Option<&'a RadiationShieldingDef> {
+        entity_type.radiation_shielding.get(radiation_type)
+    }
+
+    fn radiation_damage_per_second(
+        source: &RadiationSourceSnapshot,
+        target_type: &EntityTypeDef,
+        actual_distance: f32,
+    ) -> f32 {
+        if source.damage_per_second <= 0.0 {
+            return 0.0;
+        }
+        let shielding = Self::resolve_radiation_shielding(target_type, &source.radiation_type);
+        let distance_offset = shielding.map(|s| s.distance_offset.max(0.0)).unwrap_or(0.0);
+        let damage_multiplier = shielding
+            .map(|s| s.damage_multiplier.max(0.0))
+            .unwrap_or(1.0);
+        if damage_multiplier <= 0.0 {
+            return 0.0;
+        }
+        let effective_distance = actual_distance + distance_offset;
+        if effective_distance < source.min_effective_distance
+            || effective_distance > source.max_effective_distance
+        {
+            return 0.0;
+        }
+        let base_damage = if effective_distance <= source.full_damage_distance
+            || (source.max_effective_distance - source.full_damage_distance).abs() <= f32::EPSILON
+        {
+            source.damage_per_second
+        } else {
+            let falloff = (source.max_effective_distance - effective_distance)
+                / (source.max_effective_distance - source.full_damage_distance);
+            source.damage_per_second * falloff.clamp(0.0, 1.0)
+        };
+        base_damage * damage_multiplier
+    }
+
+    fn compute_radiation_damage(state: &GameState, content: &ContentPack) -> HashMap<u64, f32> {
+        let mut damage_by_entity = HashMap::new();
+        let mut sources = Vec::new();
+        for entity in &state.entities {
+            let Some(pos) = entity.pos.as_ref() else {
+                continue;
+            };
+            let Some(entity_type) = content.get(&entity.entity_type_id) else {
+                continue;
+            };
+            for source in &entity_type.radiation_sources {
+                let min_effective_distance = source.min_effective_distance.max(0.0);
+                let max_effective_distance =
+                    source.max_effective_distance.max(min_effective_distance);
+                sources.push(RadiationSourceSnapshot {
+                    entity_id: entity.id,
+                    x: pos.x,
+                    y: pos.y,
+                    radiation_type: source.radiation_type.clone(),
+                    min_effective_distance,
+                    max_effective_distance,
+                    full_damage_distance: source
+                        .full_damage_distance
+                        .clamp(min_effective_distance, max_effective_distance),
+                    damage_per_second: source.damage_per_second.max(0.0),
+                });
+            }
+        }
+        sources.sort_by(|a, b| {
+            a.entity_id
+                .cmp(&b.entity_id)
+                .then_with(|| a.radiation_type.cmp(&b.radiation_type))
+        });
+
+        for entity in &state.entities {
+            if entity.health <= 0.0 {
+                continue;
+            }
+            let Some(pos) = entity.pos.as_ref() else {
+                continue;
+            };
+            let Some(entity_type) = content.get(&entity.entity_type_id) else {
+                continue;
+            };
+            let total = sources
+                .iter()
+                .filter(|source| source.entity_id != entity.id)
+                .map(|source| {
+                    let actual_distance = Self::distance_sq(pos.x, pos.y, source.x, source.y).sqrt();
+                    Self::radiation_damage_per_second(source, entity_type, actual_distance)
+                })
+                .sum::<f32>();
+            if total > 0.0 {
+                damage_by_entity.insert(entity.id, total);
+            }
+        }
+
+        damage_by_entity
+    }
+
+    fn apply_radiation_damage(&mut self, dt: f32) {
+        let Some(content) = self.content.as_ref() else {
+            return;
+        };
+        if dt <= 0.0 {
+            return;
+        }
+        let damage_by_entity = Self::compute_radiation_damage(&self.state, content);
+        for entity in &mut self.state.entities {
+            let Some(damage_per_second) = damage_by_entity.get(&entity.id).copied() else {
+                continue;
+            };
+            entity.health = (entity.health - damage_per_second * dt).max(0.0);
+        }
     }
 
     fn pick_best_node<'a>(
@@ -1285,6 +1602,7 @@ impl Engine {
         self.apply_resource_collection(dt);
         self.publish_collector_ui_state().await;
         integrate(&self.cfg, &mut self.state, dt);
+        self.apply_radiation_damage(dt);
         self.state.tick += 1;
 
         let delta = compute_delta(
@@ -1396,6 +1714,7 @@ impl Engine {
             self.apply_resource_collection(dt);
             self.publish_collector_ui_state().await;
             integrate(&self.cfg, &mut self.state, dt);
+            self.apply_radiation_damage(dt);
             self.state.tick += 1;
 
             // Delta

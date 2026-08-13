@@ -27,6 +27,7 @@ fn main() -> anyhow::Result<()> {
         vel: Some(Vec2 { x: 1.5, y: -0.5 }),
         force: None,
         owner_player_id: String::new(),
+        health: 100.0,
     };
     let e2 = Entity {
         id: 2,
@@ -35,6 +36,7 @@ fn main() -> anyhow::Result<()> {
         vel: None,
         force: Some(Vec2 { x: 0.0, y: 0.2 }),
         owner_player_id: String::new(),
+        health: 100.0,
     };
     let snapshot = Snapshot {
         tick: 42,
@@ -53,6 +55,8 @@ fn main() -> anyhow::Result<()> {
         vel: None,
         force: None,
         owner_player_id: None,
+        entity_type_id: None,
+        health: Some(100.0),
     };
     let d2 = EntityDelta {
         id: 2,
@@ -60,6 +64,8 @@ fn main() -> anyhow::Result<()> {
         vel: Some(Vec2 { x: 0.05, y: 0.0 }),
         force: None,
         owner_player_id: None,
+        entity_type_id: None,
+        health: Some(100.0),
     };
     let delta = Delta {
         tick: 43,

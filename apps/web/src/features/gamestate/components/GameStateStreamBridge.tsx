@@ -29,6 +29,7 @@ type SnapshotPayload = {
     id: number | string;
     entity_type_id?: string;
     owner_player_id?: string;
+    health?: number;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -44,6 +45,7 @@ type DeltaPayload = {
     id: number | string;
     entity_type_id?: string;
     owner_player_id?: string;
+    health?: number;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -72,6 +74,7 @@ export default function GameStateStreamBridge() {
   const hud = useHUD();
   const { player } = usePlayer();
   const RESOURCE_LEDGER_POLL_MS = 2000;
+  const COLLECTOR_STATE_POLL_MS = 500;
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
   const streamIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
@@ -126,6 +129,55 @@ export default function GameStateStreamBridge() {
       if (timer !== undefined) window.clearInterval(timer);
     };
   }, [hud.actions, RESOURCE_LEDGER_POLL_MS]);
+
+  // Collector activity is persisted separately in Redis/UI state and is currently
+  // only injected during bootstrap snapshots. Poll it so in-world FX can react live.
+  useEffect(() => {
+    let mounted = true;
+    let timer: number | undefined;
+
+    const syncCollectorState = async () => {
+      const ids = Array.from(byIdRef.current.values())
+        .map((ent) => String(ent.id ?? ""))
+        .filter((id, index, arr) => id.length > 0 && arr.indexOf(id) === index);
+
+      if (ids.length === 0) return;
+
+      try {
+        const res = await fetch(`/api/v2/collector-state?ids=${encodeURIComponent(ids.join(","))}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          collector_state_by_entity?: Record<string, CollectorStatePayload>;
+        };
+        if (!mounted) return;
+
+        const nextStates = data.collector_state_by_entity ?? {};
+        for (const id of ids) {
+          const ent = byIdRef.current.get(id);
+          if (!ent) continue;
+          const nextState = nextStates[id];
+          if (nextState) ent.collector_state = { ...nextState };
+          else delete ent.collector_state;
+        }
+      } catch {
+        // Keep rendering resilient on transient polling failures.
+      }
+    };
+
+    timer = window.setInterval(() => {
+      void syncCollectorState();
+    }, COLLECTOR_STATE_POLL_MS);
+    void syncCollectorState();
+
+    return () => {
+      mounted = false;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [COLLECTOR_STATE_POLL_MS]);
 
   useEffect(() => {
     const byId = byIdRef.current;
@@ -191,6 +243,7 @@ export default function GameStateStreamBridge() {
           id: s.id,
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
           ...(s.owner_player_id !== undefined ? { owner_player_id: s.owner_player_id } : {}),
+          ...(s.health !== undefined ? { health: s.health } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
           ...(s.collector_state ? { collector_state: { ...s.collector_state } } : {}),
@@ -237,6 +290,7 @@ export default function GameStateStreamBridge() {
         const existing = byId.get(key);
         if (existing) {
           if (u.entity_type_id !== undefined) existing.entity_type_id = u.entity_type_id;
+          if (u.health !== undefined) existing.health = u.health;
           if (u.pos) {
             if (!existing.pos) existing.pos = { x: u.pos.x, y: u.pos.y };
             else { existing.pos.x = u.pos.x; existing.pos.y = u.pos.y; }
@@ -256,6 +310,7 @@ export default function GameStateStreamBridge() {
             id: u.id,
             ...(u.entity_type_id ? { entity_type_id: u.entity_type_id } : {}),
             ...(u.owner_player_id !== undefined ? { owner_player_id: u.owner_player_id } : {}),
+            ...(u.health !== undefined ? { health: u.health } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
             ...(u.collector_state ? { collector_state: { ...u.collector_state } } : {}),

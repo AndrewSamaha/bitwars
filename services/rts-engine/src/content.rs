@@ -37,6 +37,12 @@ pub struct EntityTypeDef {
     /// M8: Optional refinery/processor profile for transport deposits.
     #[serde(default)]
     pub refinery: Option<RefineryDef>,
+    /// Environmental hazard emitters attached to this entity type.
+    #[serde(default)]
+    pub radiation_sources: Vec<RadiationSourceDef>,
+    /// Per-radiation-type shielding modifiers for this entity type.
+    #[serde(default)]
+    pub radiation_shielding: HashMap<String, RadiationShieldingDef>,
 }
 
 /// M7: Per-resource-type definition for display (name, order) in HUD.
@@ -95,6 +101,31 @@ pub struct RefineryDef {
     pub accepts: Vec<String>,
 }
 
+/// Environmental radiation emitted by an entity type.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RadiationSourceDef {
+    pub radiation_type: String,
+    #[serde(default)]
+    pub min_effective_distance: f32,
+    #[serde(default = "default_max_effective_distance")]
+    pub max_effective_distance: f32,
+    #[serde(default)]
+    pub full_damage_distance: f32,
+    #[serde(default)]
+    pub damage_per_second: f32,
+}
+
+/// Per-radiation-type shielding profile for an entity type.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RadiationShieldingDef {
+    /// Acts like extra standoff distance for hazard evaluation.
+    #[serde(default)]
+    pub distance_offset: f32,
+    /// Multiplies incoming damage after distance adjustment.
+    #[serde(default = "default_damage_multiplier")]
+    pub damage_multiplier: f32,
+}
+
 fn default_transport_rate_per_second() -> f32 {
     8.0
 }
@@ -109,6 +140,10 @@ fn default_carry_capacity() -> f32 {
 
 fn default_max_effective_distance() -> f32 {
     120.0
+}
+
+fn default_damage_multiplier() -> f32 {
+    1.0
 }
 
 /// Raw deserialization target matching the YAML structure.
@@ -190,6 +225,8 @@ mod tests {
                 collector: None,
                 resource_node: None,
                 refinery: None,
+                radiation_sources: Vec::new(),
+                radiation_shielding: HashMap::new(),
             },
         );
         types.insert(
@@ -202,6 +239,8 @@ mod tests {
                 collector: None,
                 resource_node: None,
                 refinery: None,
+                radiation_sources: Vec::new(),
+                radiation_shielding: HashMap::new(),
             },
         );
 
@@ -225,6 +264,8 @@ mod tests {
                 collector: None,
                 resource_node: None,
                 refinery: None,
+                radiation_sources: Vec::new(),
+                radiation_shielding: HashMap::new(),
             },
         );
         types_a.insert(
@@ -237,6 +278,8 @@ mod tests {
                 collector: None,
                 resource_node: None,
                 refinery: None,
+                radiation_sources: Vec::new(),
+                radiation_shielding: HashMap::new(),
             },
         );
 
@@ -251,6 +294,8 @@ mod tests {
                 collector: None,
                 resource_node: None,
                 refinery: None,
+                radiation_sources: Vec::new(),
+                radiation_shielding: HashMap::new(),
             },
         );
         types_b.insert(
@@ -263,6 +308,8 @@ mod tests {
                 collector: None,
                 resource_node: None,
                 refinery: None,
+                radiation_sources: Vec::new(),
+                radiation_shielding: HashMap::new(),
             },
         );
 

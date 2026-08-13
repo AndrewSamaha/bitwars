@@ -25,6 +25,20 @@ export type EntityTypeDef = {
   stop_radius: number;
   mass: number;
   health: number;
+  radiation_sources?: Array<{
+    radiation_type: string;
+    min_effective_distance?: number;
+    max_effective_distance?: number;
+    full_damage_distance?: number;
+    damage_per_second?: number;
+  }>;
+  radiation_shielding?: Record<
+    string,
+    {
+      distance_offset?: number;
+      damage_multiplier?: number;
+    }
+  >;
 };
 
 /** M7: Resource type definition for HUD display (name, order). */

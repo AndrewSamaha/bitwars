@@ -9,6 +9,7 @@ import TerminalPanel from "@/features/hud/components/TerminalPanel";
 import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel";
 import IntentQueuePanel from "@/features/intent-queue/IntentQueuePanel";
 import { ResourceHUD } from "@/features/hud/components/ResourceHUD";
+import { SessionProvider, useSession } from "@/features/users/components/identity/SessionContext";
 
 /** Server passes serialized player (dates as ISO strings); PlayerProvider parses with PlayerSchema. */
 type ClientGamePageProps = {
@@ -18,18 +19,34 @@ type ClientGamePageProps = {
 export default function ClientGamePage({ initialPlayer }: ClientGamePageProps) {
   return (
     <PlayerProvider initialPlayer={initialPlayer}>
-      <HUDProvider>
+      <SessionProvider>
+        <HUDProvider>
+          <GameClientShell />
+        </HUDProvider>
+      </SessionProvider>
+    </PlayerProvider>
+  );
+}
+
+function GameClientShell() {
+  const { status } = useSession();
+  const fading = status !== "active";
+
+  return (
+    <div className="min-h-screen bg-black relative overflow-hidden">
+      <div
+        className={`min-h-screen transition-opacity duration-500 ${fading ? "pointer-events-none opacity-0" : "opacity-100"}`}
+        aria-hidden={fading}
+      >
         <GameStreamGate>
-          <div className="min-h-screen bg-black relative overflow-hidden">
             <GameStateStreamBridge />
             <ResourceHUD />
-            <TerminalPanel />
             <EntityDetailPanel />
             <IntentQueuePanel />
             <GameStage />
-          </div>
         </GameStreamGate>
-      </HUDProvider>
-    </PlayerProvider>
+      </div>
+      <TerminalPanel />
+    </div>
   );
 }
