@@ -1,44 +1,26 @@
 "use client"
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import EntitiesStreamCounter from "@/features/gamestate/components/EntitiesStreamCounter";
-import { game } from "@/features/gamestate/world";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
+import { executeTerminalCommand } from "@/features/hud/terminal/commands";
 
 const SHOW_STREAM_COUNTER = false;
 
-function runLs(myPlayerId: string | null): string {
-  if (myPlayerId == null) {
-    return "Not logged in. List shows only your entities after you log in.";
-  }
-  const entities: Array<{ id: number | string; entity_type_id: string }> = [];
-  for (const e of game.world.with("id")) {
-    const owner = (e as { owner_player_id?: string }).owner_player_id;
-    if (owner !== myPlayerId) continue;
-    const id = (e as { id: number | string }).id;
-    const entity_type_id = (e as { entity_type_id?: string }).entity_type_id ?? "(no type)";
-    entities.push({ id, entity_type_id });
-  }
-  entities.sort((a, b) => Number(a.id) - Number(b.id));
-  if (entities.length === 0) {
-    return "No entities owned by you.";
-  }
-  const header = "id      entity_type";
-  const lines = entities.map((e) => `${e.id}       ${e.entity_type_id}`);
-  return [header, ...lines].join("\n");
-}
-
 export default function TerminalPanel() {
-  const { player } = usePlayer();
+  const { player, setPlayer } = usePlayer();
+  const router = useRouter();
   const { selectors, actions, refs } = useHUD();
   const { isTerminalOpen, currentCommand, commandHistory } = selectors;
   const { terminalRef, inputRef } = refs;
   const myPlayerId = player?.id ?? null;
+  const [commandRunning, setCommandRunning] = useState(false);
 
   // Scroll to bottom when history changes
   useEffect(() => {
@@ -55,22 +37,29 @@ export default function TerminalPanel() {
   }, [isTerminalOpen, inputRef]);
 
   const handleCommand = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       const cmd = currentCommand.trim();
-      if (!cmd) return;
+      if (!cmd || commandRunning) return;
 
-      const lower = cmd.toLowerCase();
-      let output: string;
-      if (lower === "ls") {
-        output = runLs(myPlayerId);
-      } else {
-        output = `${cmd}: command not found`;
-      }
-      actions.pushCommandHistory({ command: cmd, output });
       actions.setTerminalInput("");
+      setCommandRunning(true);
+      try {
+        const result = await executeTerminalCommand(cmd, { myPlayerId });
+        actions.pushCommandHistory({ command: cmd, output: result.output });
+        if (result.navigateTo) {
+          setPlayer(null);
+          router.replace(result.navigateTo);
+          router.refresh();
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        actions.pushCommandHistory({ command: cmd, output: message });
+      } finally {
+        setCommandRunning(false);
+      }
     },
-    [currentCommand, actions, myPlayerId]
+    [currentCommand, commandRunning, actions, myPlayerId, router, setPlayer]
   );
 
   const handleTerminalClick = useCallback(() => {
@@ -134,6 +123,7 @@ export default function TerminalPanel() {
                 className="flex-1 ml-2 -mt-2 bg-transparent border-none p-0 text-white font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
                 placeholder=""
                 autoComplete="off"
+                disabled={commandRunning}
               />
             </form>
           </div>
