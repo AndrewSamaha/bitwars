@@ -24,20 +24,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     setStatus("logging-in");
     try {
-      const suggestionsResponse = await fetch("/api/players/getSuggestedLoginDetails", {
-        cache: "no-store",
-      });
-      if (!suggestionsResponse.ok) {
-        throw new Error(`Unable to load login details (${suggestionsResponse.status})`);
-      }
-      const suggestions = (await suggestionsResponse.json()) as { availableColors?: string[] };
-      const color = suggestions.availableColors?.[0];
-      if (!color) throw new Error("No player colors are currently available.");
-
       const response = await fetch("/api/players/login", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ name: trimmedName, color }),
+        body: JSON.stringify({ name: trimmedName, color: "" }),
       });
       if (!response.ok) throw new Error(`Login failed (${response.status})`);
 
