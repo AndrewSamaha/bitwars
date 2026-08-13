@@ -4,7 +4,7 @@
   "packageManager": "pnpm@10.15.1",
   "scripts": {
     "clean": "bash ./scripts/clean.sh",
-    "dev": "turbo run dev --parallel",
+    "dev": "dotenv -e .env -- turbo run dev --parallel --env-mode=loose",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
