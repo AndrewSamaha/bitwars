@@ -3,8 +3,17 @@ import { Sword, Shield, Zap, Users } from "lucide-react"
 import { getSuggestedLoginDetails } from "@/features/users/server-functions/getSuggestedLogin"
 import { Suspense } from "react"
 import LoginForm from "@/features/users/components/login/LoginForm"
+import { getOptionalAuth } from "@/features/users/utils/auth"
+import { getPlayerById } from "@/features/users/queries/read/getPlayerById"
+import { redirect } from "next/navigation"
 
-export default function BitWarsLanding() {
+export default async function BitWarsLanding() {
+  const auth = await getOptionalAuth();
+  if (auth) {
+    const player = await getPlayerById(auth.playerId);
+    if (player) redirect("/play");
+  }
+
   const suggestedLoginDetailsPromise = getSuggestedLoginDetails();
 
   return (
