@@ -1,11 +1,10 @@
 import { game } from "@/features/gamestate/world";
-import type { SessionTransition } from "@/features/hud/components/HUDContext";
+import type { SessionStatus } from "@/features/users/components/identity/SessionContext";
 
 export type TerminalCommandContext = {
   myPlayerId: string | null;
-  sessionTransition: SessionTransition;
-  onSessionEnding?: () => void;
-  writeOutput?: (output: string) => void;
+  sessionStatus: SessionStatus;
+  logout: () => Promise<string>;
 };
 
 export type TerminalCommandResult = {
@@ -64,19 +63,7 @@ const commands: TerminalCommand[] = [
     aliases: ["exit"],
     description: "End the current session",
     requiresAuth: true,
-    run: async (_args, context) => {
-      const startResponse = await fetch("/api/players/start-logout", { method: "POST" });
-      if (!startResponse.ok) throw new Error(`Logout failed (${startResponse.status})`);
-
-      context.writeOutput?.("Logging out…");
-      context.onSessionEnding?.();
-
-      await new Promise((resolve) => window.setTimeout(resolve, 500));
-
-      const response = await fetch("/api/players/logout", { method: "POST" });
-      if (!response.ok) throw new Error(`Logout failed (${response.status})`);
-      return { output: "Logged out.", sessionEnded: true };
-    },
+    run: async (_args, context) => ({ output: await context.logout(), sessionEnded: true }),
   },
 ];
 
@@ -110,7 +97,7 @@ export async function executeTerminalCommand(
   if (command.requiresAuth && !context.myPlayerId) {
     return { output: `${command.name}: authentication required` };
   }
-  if (command.requiresAuth && context.sessionTransition !== "active") {
+  if (command.requiresAuth && context.sessionStatus !== "active") {
     return { output: `${command.name}: logout in progress` };
   }
   return command.run(args, context);

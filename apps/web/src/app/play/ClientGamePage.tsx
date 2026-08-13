@@ -3,12 +3,13 @@
 import GameStage from "@/features/pixijs/components/GameStage";
 import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge";
 import GameStreamGate from "@/features/gamestate/components/GameStreamGate";
-import { HUDProvider, useHUD } from "@/features/hud/components/HUDContext";
+import { HUDProvider } from "@/features/hud/components/HUDContext";
 import { PlayerProvider } from "@/features/users/components/identity/PlayerContext";
 import TerminalPanel from "@/features/hud/components/TerminalPanel";
 import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel";
 import IntentQueuePanel from "@/features/intent-queue/IntentQueuePanel";
 import { ResourceHUD } from "@/features/hud/components/ResourceHUD";
+import { SessionProvider, useSession } from "@/features/users/components/identity/SessionContext";
 
 /** Server passes serialized player (dates as ISO strings); PlayerProvider parses with PlayerSchema. */
 type ClientGamePageProps = {
@@ -18,16 +19,18 @@ type ClientGamePageProps = {
 export default function ClientGamePage({ initialPlayer }: ClientGamePageProps) {
   return (
     <PlayerProvider initialPlayer={initialPlayer}>
-      <HUDProvider>
-        <GameClientShell />
-      </HUDProvider>
+      <SessionProvider>
+        <HUDProvider>
+          <GameClientShell />
+        </HUDProvider>
+      </SessionProvider>
     </PlayerProvider>
   );
 }
 
 function GameClientShell() {
-  const { state: { sessionTransition } } = useHUD();
-  const fading = sessionTransition !== "active";
+  const { status } = useSession();
+  const fading = status !== "active";
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">

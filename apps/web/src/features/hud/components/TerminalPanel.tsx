@@ -9,14 +9,15 @@ import { useHUD } from "@/features/hud/components/HUDContext";
 import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { executeTerminalCommand } from "@/features/hud/terminal/commands";
+import { useSession } from "@/features/users/components/identity/SessionContext";
 
 const SHOW_STREAM_COUNTER = false;
 
 export default function TerminalPanel() {
-  const { player, setPlayer } = usePlayer();
-  const { state, selectors, actions, refs } = useHUD();
+  const { player } = usePlayer();
+  const { status, login, logout } = useSession();
+  const { selectors, actions, refs } = useHUD();
   const { isTerminalOpen, currentCommand, commandHistory } = selectors;
-  const { sessionTransition } = state;
   const { terminalRef, inputRef } = refs;
   const myPlayerId = player?.id ?? null;
   const [commandRunning, setCommandRunning] = useState(false);
@@ -43,31 +44,30 @@ export default function TerminalPanel() {
 
       actions.setTerminalInput("");
       setCommandRunning(true);
-      let wroteProgress = false;
       try {
+        if (status === "logged-out") {
+          actions.pushCommandHistory({ command: `BitWars login: ${cmd}`, output: "Authenticating…" });
+          const output = await login(cmd);
+          actions.pushCommandHistory({ command: "", output });
+          return;
+        }
+
         const result = await executeTerminalCommand(cmd, {
           myPlayerId,
-          sessionTransition,
-          writeOutput: (output) => {
-            wroteProgress = true;
-            actions.pushCommandHistory({ command: cmd, output });
-          },
-          onSessionEnding: () => actions.setSessionTransition("logging-out"),
+          sessionStatus: status,
+          logout: () => logout(() => {
+            actions.pushCommandHistory({ command: cmd, output: "Logging out…" });
+          }),
         });
-        actions.pushCommandHistory({ command: wroteProgress ? "" : cmd, output: result.output });
-        if (result.sessionEnded) {
-          setPlayer(null);
-          actions.setSessionTransition("logged-out");
-        }
+        actions.pushCommandHistory({ command: result.sessionEnded ? "" : cmd, output: result.output });
       } catch (error) {
-        actions.setSessionTransition("active");
         const message = error instanceof Error ? error.message : String(error);
-        actions.pushCommandHistory({ command: wroteProgress ? "" : cmd, output: message });
+        actions.pushCommandHistory({ command: "", output: message });
       } finally {
         setCommandRunning(false);
       }
     },
-    [currentCommand, commandRunning, actions, myPlayerId, sessionTransition, setPlayer]
+    [currentCommand, commandRunning, actions, myPlayerId, status, login, logout]
   );
 
   const handleTerminalClick = useCallback(() => {
@@ -111,7 +111,7 @@ export default function TerminalPanel() {
               <div key={index} className="mb-2">
                 {entry.command && (
                   <div className="flex">
-                    <span className="text-blue-400">user@bitwars:~$ </span>
+                    <span className="text-blue-400">{entry.command.startsWith("BitWars login:") ? "" : `${player?.name ?? "user"}@bitwars:~$ `}</span>
                     <span className="ml-2 text-white">{entry.command}</span>
                   </div>
                 )}
@@ -123,7 +123,7 @@ export default function TerminalPanel() {
 
             {/* Current Input Line */}
             <form onSubmit={handleCommand} className="flex">
-              <span className="text-blue-400">user@bitwars:~$ </span>
+              <span className="text-blue-400">{status === "logged-out" ? "BitWars login: " : `${player?.name ?? "user"}@bitwars:~$ `}</span>
               <Input
                 ref={inputRef}
                 value={currentCommand}
@@ -131,7 +131,7 @@ export default function TerminalPanel() {
                 className="flex-1 ml-2 -mt-2 bg-transparent border-none p-0 text-white font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
                 placeholder=""
                 autoComplete="off"
-                disabled={commandRunning}
+                disabled={commandRunning || status === "logging-out" || status === "logging-in"}
               />
             </form>
           </div>

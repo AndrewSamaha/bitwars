@@ -661,6 +661,8 @@ export default function GameStage() {
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });
           }
+          setApp(null);
+          setCamera(null);
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
         };
