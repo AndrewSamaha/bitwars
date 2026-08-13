@@ -106,7 +106,8 @@ export default function GameStage() {
             background: BACKGROUND_APP_COLOR,
             resizeTo: window,
             antialias: true,
-            resolution: devicePixelRatio
+            resolution: window.devicePixelRatio || 1,
+            autoDensity: true,
         });
         setApp(app);
         ref.current!.appendChild(app.canvas);
