@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { getEntityDetailLeftOffset } from "@/features/hud/layout/constants";
 import { game } from "@/features/gamestate/world";
+import { contentManager } from "@/features/content/contentManager";
 import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 
@@ -69,6 +70,7 @@ export default function EntityDetailPanel() {
   // Build a quick lookup of current positions and entity_type_id by entity id (stringified)
   const idToPos = new Map<string, { x: number; y: number }>();
   const idToType = new Map<string, string>();
+  const idToHealth = new Map<string, number>();
   const idToActiveIntent = new Map<
     string,
     {
@@ -93,6 +95,7 @@ export default function EntityDetailPanel() {
       const id = String((e as any).id);
       const pos = (e as any).pos as { x: number; y: number } | undefined;
       const entityTypeId = (e as any).entity_type_id as string | undefined;
+      const health = Number((e as any).health);
       const activeIntentKind = (e as any).active_intent_kind as string | undefined;
       const activeIntentId = (e as any).active_intent_id as string | undefined;
       const activeIntentStartedTick = (e as any).active_intent_started_tick as number | undefined;
@@ -111,6 +114,7 @@ export default function EntityDetailPanel() {
       }
       if (id != null) {
         idToType.set(id, entityTypeId ?? "—");
+        if (Number.isFinite(health)) idToHealth.set(id, health);
         if (activeIntentKind) {
           idToActiveIntent.set(id, {
             kind: activeIntentKind,
@@ -175,6 +179,8 @@ export default function EntityDetailPanel() {
               {selectedEntities.map((id) => {
                 const pos = idToPos.get(id);
                 const entityTypeId = idToType.get(id) ?? "—";
+                const health = idToHealth.get(id);
+                const maxHealth = contentManager.getEntityType(entityTypeId)?.health;
                 const activeIntent = idToActiveIntent.get(id);
                 const collectorState = collectorStateById[id] ?? idToCollectorState.get(id);
                 const shortIntentId = activeIntent?.intentId
@@ -193,6 +199,11 @@ export default function EntityDetailPanel() {
                     <span className="font-mono text-muted-foreground">
                       {pos ? `x: ${pos.x.toFixed(1)}, y: ${pos.y.toFixed(1)}` : "pos: —"}
                     </span>
+                    {health !== undefined && typeof maxHealth === "number" && maxHealth > 0 && (
+                      <span className="font-mono text-muted-foreground">
+                        health: {health.toFixed(1)} / {maxHealth.toFixed(1)}
+                      </span>
+                    )}
                     <span className="font-mono text-muted-foreground">
                       intent: {activeIntent?.kind ?? "idle"}
                     </span>

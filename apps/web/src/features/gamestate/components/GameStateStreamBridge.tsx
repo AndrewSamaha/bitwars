@@ -100,9 +100,13 @@ export default function GameStateStreamBridge() {
   useEffect(() => {
     let mounted = true;
     let timer: number | undefined;
+    let requestInFlight = false;
 
     const syncResourcesFromMe = async () => {
-      if (!currentPlayerIdRef.current) return;
+      // Never start a second /me request while Redis is slow or unavailable.
+      // setInterval otherwise produces an unbounded queue of identical calls.
+      if (!currentPlayerIdRef.current || requestInFlight) return;
+      requestInFlight = true;
       try {
         const res = await fetch("/api/players/me", {
           method: "GET",
@@ -116,6 +120,8 @@ export default function GameStateStreamBridge() {
         hud.actions.setResources(ledger);
       } catch {
         // keep stream/render path resilient on transient /me failures
+      } finally {
+        requestInFlight = false;
       }
     };
 

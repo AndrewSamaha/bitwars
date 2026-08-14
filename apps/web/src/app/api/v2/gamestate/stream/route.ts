@@ -14,6 +14,7 @@ const DEFAULT_GAME_ID = "demo-001";
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const XREAD_BLOCK_MS = 15_000; // as per spec
 const XRANGE_BATCH_COUNT = 512;
+const SNAPSHOT_RETRY_MS = 250;
 
 export const GET = withAxiom(async (req: Request) => {
   const url = new URL(req.url);
@@ -34,17 +35,10 @@ export const GET = withAxiom(async (req: Request) => {
   const { auth, res } = await requireAuthOr401();
   if (res) return res; // 401 when not authenticated; ensures only authenticated clients get stream and join enqueue.
 
-  // M6: On first stream connect for an authenticated player, enqueue them for spawn (once per match).
+  // M6: Keep the player id available for join enqueue after bootstrap. A join
+  // must not be enqueued before we have established a durable stream cursor,
+  // otherwise its spawn delta can land in the snapshot-to-tail handoff gap.
   const playerId = auth?.playerId as string | undefined;
-  if (playerId) {
-    const joinRequestedKey = `rts:match:${GAME_ID}:join_requested`;
-    const pendingJoinsKey = `rts:match:${GAME_ID}:pending_joins`;
-    const added = await redis.sadd(joinRequestedKey, playerId);
-    if (added === 1) {
-      await redis.rpush(pendingJoinsKey, playerId);
-      logger.info("v2/stream:join_enqueued", { GAME_ID, playerId });
-    }
-  }
 
   const end = async () => {
     await channel.close();
@@ -74,27 +68,42 @@ export const GET = withAxiom(async (req: Request) => {
       let lastId = startFromId; 
 
       if (!lastId) {
-        // Full bootstrap: snapshot + gap catch-up using helper
+        // Full bootstrap: snapshot + gap catch-up using the snapshot boundary
+        // as the live cursor. On a fresh engine, wait for its first snapshot
+        // rather than replaying the complete match history from 0-0.
         logger.info("v2/stream:bootstrap:start", { GAME_ID, sid });
-        const bootLast = await bootstrapAndCatchUp(GAME_ID, channel, () => channel.isClosed(), (msg, e) => {
-          logErr(msg, e);
-          logger.error("v2/stream:bootstrap:error", { GAME_ID, sid, msg, error: e?.message || String(e) });
-        });
-        if (!bootLast) {
-          log("no snapshot or boundary id; skipping bootstrap and starting live tail");
-          logger.warn("v2/stream:bootstrap:missing-boundary", { GAME_ID, sid });
-        } else {
-          lastId = bootLast;
-          logger.info("v2/stream:bootstrap:complete", { GAME_ID, sid, lastId });
+        while (!channel.isClosed() && !lastId) {
+          const bootLast = await bootstrapAndCatchUp(GAME_ID, channel, () => channel.isClosed(), (msg, e) => {
+            logErr(msg, e);
+            logger.error("v2/stream:bootstrap:error", { GAME_ID, sid, msg, error: e?.message || String(e) });
+          });
+          if (bootLast) {
+            lastId = bootLast;
+            logger.info("v2/stream:bootstrap:complete", { GAME_ID, sid, lastId });
+            break;
+          }
+          log("snapshot unavailable; waiting before bootstrap retry");
+          await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_RETRY_MS));
         }
       } else {
         log("resuming from", lastId);
         logger.info("v2/stream:resume", { GAME_ID, sid, lastId });
       }
 
-      // Live tail via XREAD BLOCK 15000 STREAMS rts:match:<GAME_ID>:events <lastId>
-      // For XREAD, when lastId is undefined, start from '$' to only get new ones.
-      if (!lastId) lastId = "$";
+      if (!lastId || channel.isClosed()) return;
+
+      // The snapshot/catch-up cursor is durable. Enqueue the new player's join
+      // only after it is established, so the spawn is guaranteed to be a delta
+      // after this cursor (and is readable even if XREAD starts a moment later).
+      if (playerId) {
+        const joinRequestedKey = `rts:match:${GAME_ID}:join_requested`;
+        const pendingJoinsKey = `rts:match:${GAME_ID}:pending_joins`;
+        const added = await redis.sadd(joinRequestedKey, playerId);
+        if (added === 1) {
+          await redis.rpush(pendingJoinsKey, playerId);
+          logger.info("v2/stream:join_enqueued", { GAME_ID, playerId, afterCursor: lastId });
+        }
+      }
 
       logger.info("v2/stream:live:start", { GAME_ID, sid, from: lastId, stream: streamEvents });
 

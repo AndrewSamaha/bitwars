@@ -18,13 +18,14 @@ type ParticleFlowEffect = {
   showTargetHalo?: boolean;
 };
 
-type DamageBurstEffect = {
+type RadiationShedEffect = {
   key: string;
-  kind: "damage_burst";
+  kind: "radiation_shed";
   startedAtMs: number;
+  sourceWorldPos: Vec2;
 };
 
-type RenderEffectDescriptor = ParticleFlowEffect | DamageBurstEffect;
+type RenderEffectDescriptor = ParticleFlowEffect | RadiationShedEffect;
 
 const SOLAR_COLLECTOR_TYPE = "collector_solar";
 const SOLAR_COLLECTION_COLOR = 0xf4_d3_5e;
@@ -36,7 +37,7 @@ const MINERAL_COLLECTION_COLOR = 0x6f_c8_ff;
 const MINERAL_COLLECTION_GLOW_COLOR = 0xb9_e7_ff;
 const MINERAL_COLLECTION_CORE_COLOR = 0xe7_f7_ff;
 const MINERAL_COLLECTION_SIZE_MULTIPLIER = 6.4;
-const DAMAGE_BURST_DURATION_MS = 650;
+const RADIATION_SHED_DURATION_MS = 1_150;
 const DAMAGE_BURST_COLOR = 0xff_63_36;
 const DAMAGE_BURST_GLOW_COLOR = 0xff_c4_51;
 const FALLBACK_ENERGY_SOURCE_TYPES = new Set(["theta", "star_yellow"]);
@@ -78,6 +79,33 @@ function findNearestResourceSource(
     const dy = pos.y - targetY;
     const distSq = dx * dx + dy * dy;
     if (distSq < nearestDistSq) {
+      nearestDistSq = distSq;
+      nearest = { x: pos.x, y: pos.y };
+    }
+  }
+
+  return nearest;
+}
+
+/** Find the closest configured radiation emitter whose outer range contains the ship. */
+function findNearestRadiationSource(targetX: number, targetY: number): Vec2 | null {
+  let nearest: Vec2 | null = null;
+  let nearestDistSq = Number.POSITIVE_INFINITY;
+
+  for (const e of game.world.with("pos", "id")) {
+    const typeId = (e as Entity).entity_type_id?.trim() ?? "";
+    const sources = contentManager.getEntityType(typeId)?.radiation_sources ?? [];
+    const pos = (e as Entity).pos;
+    if (!pos || sources.length === 0) continue;
+
+    const dx = pos.x - targetX;
+    const dy = pos.y - targetY;
+    const distSq = dx * dx + dy * dy;
+    const reachesTarget = sources.some((source) => {
+      const maxDistance = source.max_effective_distance ?? 0;
+      return maxDistance > 0 && distSq <= maxDistance * maxDistance;
+    });
+    if (reachesTarget && distSq < nearestDistSq) {
       nearestDistSq = distSq;
       nearest = { x: pos.x, y: pos.y };
     }
@@ -145,24 +173,29 @@ function resolveMineralCollectorEffect(entity: Entity): RenderEffectDescriptor[]
 }
 
 /**
- * Damage is detected from an authoritative health decrease in the stream.
- * The burst deliberately stays generic: future weapons can reuse it, while
- * stellar heat reads as a hot orange corona around the exposed ship.
+ * A health decrease paired with a nearby configured radiation emitter produces
+ * a directional presentation effect. This is visual-only; the server remains
+ * responsible for both damage and radiation-range evaluation.
  */
-function resolveDamageBurstEffect(entity: Entity, nowMs: number): RenderEffectDescriptor[] {
+function resolveRadiationShedEffect(entity: Entity, nowMs: number): RenderEffectDescriptor[] {
   const startedAtMs = entity.damage_flash_started_at;
+  const pos = entity.pos;
   if (
     startedAtMs === undefined ||
+    !pos ||
     nowMs - startedAtMs < 0 ||
-    nowMs - startedAtMs >= DAMAGE_BURST_DURATION_MS
+    nowMs - startedAtMs >= RADIATION_SHED_DURATION_MS
   ) {
     return [];
   }
+  const source = findNearestRadiationSource(pos.x, pos.y);
+  if (!source) return [];
 
   return [{
-    key: "damage-burst",
-    kind: "damage_burst",
+    key: "radiation-shed",
+    kind: "radiation_shed",
     startedAtMs,
+    sourceWorldPos: source,
   }];
 }
 
@@ -170,7 +203,7 @@ function resolveRenderEffects(entity: Entity, nowMs: number): RenderEffectDescri
   return [
     ...resolveSolarCollectorEffect(entity),
     ...resolveMineralCollectorEffect(entity),
-    ...resolveDamageBurstEffect(entity, nowMs),
+    ...resolveRadiationShedEffect(entity, nowMs),
   ];
 }
 
@@ -256,34 +289,47 @@ function drawParticleFlowEffect(
   }
 }
 
-function drawDamageBurstEffect(graphics: Graphics, effect: DamageBurstEffect, nowMs: number) {
-  const progress = Math.min(1, Math.max(0, (nowMs - effect.startedAtMs) / DAMAGE_BURST_DURATION_MS));
-  const fade = 1 - progress;
-  const radius = 22 + progress * 34;
-  const innerRadius = 11 + progress * 13;
-  const sparkRadius = 27 + progress * 28;
+function drawRadiationShedEffect(
+  graphics: Graphics,
+  container: Container,
+  effect: RadiationShedEffect,
+  nowMs: number,
+) {
+  const sourceLocal = container.toLocal(
+    new Point(effect.sourceWorldPos.x, effect.sourceWorldPos.y),
+    container.parent ?? undefined,
+  );
+  const distance = Math.hypot(sourceLocal.x, sourceLocal.y);
+  if (distance <= 0) return;
+  const towardStarX = sourceLocal.x / distance;
+  const towardStarY = sourceLocal.y / distance;
+  const awayFromStarX = -towardStarX;
+  const awayFromStarY = -towardStarY;
+  const perpX = -towardStarY;
+  const perpY = towardStarX;
+  const elapsed = nowMs - effect.startedAtMs;
   graphics.clear();
 
-  graphics.circle(0, 0, innerRadius).fill({
-    color: DAMAGE_BURST_COLOR,
-    alpha: fade * 0.26,
-  });
-  graphics.circle(0, 0, radius).stroke({
-    width: 3 - progress * 1.5,
-    color: DAMAGE_BURST_GLOW_COLOR,
-    alpha: fade * 0.85,
-  });
+  // Each particle starts on the star-facing edge, then drifts away through a
+  // broad plume. Staggering their births makes consecutive heat ticks feel
+  // like continuous material shedding rather than a single explosion.
+  const particleCount = 18;
+  for (let i = 0; i < particleCount; i++) {
+    const birthDelay = (i / particleCount) * RADIATION_SHED_DURATION_MS * 0.42;
+    const particleAge = (elapsed - birthDelay) / (RADIATION_SHED_DURATION_MS * 0.58);
+    if (particleAge < 0 || particleAge >= 1) continue;
 
-  // Irregular outward sparks keep a sustained radiation tick from looking
-  // like a weapon impact, while remaining readable at the game's zoom level.
-  for (let i = 0; i < 8; i++) {
-    const angle = i * (Math.PI * 2 / 8) + effect.startedAtMs * 0.003;
-    const wobble = Math.sin(nowMs * 0.014 + i * 2.1) * 5;
-    const x = Math.cos(angle) * (sparkRadius + wobble);
-    const y = Math.sin(angle) * (sparkRadius + wobble);
-    graphics.circle(x, y, 2.5 * fade + 1).fill({
+    const spread = ((i % 7) - 3) * 23 + Math.sin(i * 2.7 + effect.startedAtMs * 0.004) * 13;
+    const edgeDistance = 116 + Math.abs(spread) * 0.08;
+    const drift = 35 + particleAge * 330;
+    const turbulence = Math.sin(particleAge * 9 + i * 1.9) * 22 * particleAge;
+    const x = towardStarX * edgeDistance + awayFromStarX * drift + perpX * (spread + turbulence);
+    const y = towardStarY * edgeDistance + awayFromStarY * drift + perpY * (spread + turbulence);
+    const fade = (1 - particleAge) ** 1.5;
+    const radius = (i % 3 === 0 ? 7 : 4.5) * (0.65 + fade * 0.35);
+    graphics.circle(x, y, radius).fill({
       color: i % 2 === 0 ? DAMAGE_BURST_COLOR : DAMAGE_BURST_GLOW_COLOR,
-      alpha: fade * 0.9,
+      alpha: fade * 0.82,
     });
   }
 }
@@ -298,8 +344,8 @@ function drawEffect(
     case "particle_flow":
       drawParticleFlowEffect(graphics, container, effect, nowMs);
       break;
-    case "damage_burst":
-      drawDamageBurstEffect(graphics, effect, nowMs);
+    case "radiation_shed":
+      drawRadiationShedEffect(graphics, container, effect, nowMs);
       break;
   }
 }

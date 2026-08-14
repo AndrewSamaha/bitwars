@@ -40,8 +40,8 @@ Status: Accepted
 - `apps/web/src/features/pixijs/effects/renderEffects.ts`
   - resolves the current solar collector effect from entity state,
   - resolves the current mineral gathering effect from entity state,
-  - resolves a short damage burst from an authoritative health decrease,
-  - draws collection effects as `particle_flow` and damage as `damage_burst`,
+  - resolves directional radiation shedding from an authoritative health decrease and a nearby radiation emitter,
+  - draws collection effects as `particle_flow` and radiation damage as `radiation_shed`,
   - reconciles effect graphics by stable key.
 - `apps/web/src/features/pixijs/components/GameStage.tsx`
   - remains responsible for base sprite rendering and entity container lifecycle,
