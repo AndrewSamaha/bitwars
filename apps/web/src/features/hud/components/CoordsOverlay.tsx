@@ -33,7 +33,7 @@ export function CoordsOverlay() {
 
   return (
     <div
-      className="pointer-events-none absolute bottom-4 left-4 rounded bg-black/70 px-2 py-1 font-mono text-xs text-white/90"
+      className="rounded bg-black/70 px-2 py-1 font-mono text-xs text-white/90"
       aria-live="polite"
       aria-label={`Grid coordinates at center ${cx}, ${cy}`}
     >
