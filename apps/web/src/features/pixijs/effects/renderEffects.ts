@@ -6,6 +6,23 @@ import { game, type Entity } from "@/features/gamestate/world";
 
 type Vec2 = { x: number; y: number };
 
+/**
+ * The small read-only world surface effects need. GameStage supplies the live
+ * ECS world; Storybook supplies deterministic fixtures without server mocks.
+ */
+export type RenderEffectsWorld = {
+  entities: () => Iterable<Entity>;
+  getEntityType: (entityTypeId: string) => {
+    resource_node?: { resource_type?: string };
+    radiation_sources?: Array<{ max_effective_distance?: number }>;
+  } | undefined;
+};
+
+const liveRenderEffectsWorld: RenderEffectsWorld = {
+  entities: () => game.world.with("pos", "id"),
+  getEntityType: (entityTypeId) => contentManager.getEntityType(entityTypeId),
+};
+
 type ParticleFlowEffect = {
   key: string;
   kind: "particle_flow";
@@ -45,16 +62,14 @@ const FALLBACK_MINERAL_SOURCE_TYPES = new Set(["minerals"]);
 const RENDER_EFFECT_LABEL_PREFIX = "renderEffect:";
 
 function isResourceSourceEntityType(
+  world: RenderEffectsWorld,
   entityTypeId: string | undefined,
   resourceType: string,
 ): boolean {
   const id = entityTypeId?.trim() ?? "";
   if (!id) return false;
 
-  const content = contentManager.getContent();
-  const def = (content?.entity_types?.[id] ?? null) as
-    | { resource_node?: { resource_type?: string } }
-    | null;
+  const def = world.getEntityType(id);
   if (def?.resource_node?.resource_type === resourceType) return true;
 
   if (resourceType === "energy") return FALLBACK_ENERGY_SOURCE_TYPES.has(id);
@@ -63,6 +78,7 @@ function isResourceSourceEntityType(
 }
 
 function findNearestResourceSource(
+  world: RenderEffectsWorld,
   resourceType: string,
   targetX: number,
   targetY: number,
@@ -70,9 +86,9 @@ function findNearestResourceSource(
   let nearest: Vec2 | null = null;
   let nearestDistSq = Number.POSITIVE_INFINITY;
 
-  for (const e of game.world.with("pos", "id")) {
+  for (const e of world.entities()) {
     const typeId = (e as Entity).entity_type_id;
-    if (!isResourceSourceEntityType(typeId, resourceType)) continue;
+    if (!isResourceSourceEntityType(world, typeId, resourceType)) continue;
     const pos = (e as Entity).pos;
     if (!pos) continue;
     const dx = pos.x - targetX;
@@ -88,13 +104,17 @@ function findNearestResourceSource(
 }
 
 /** Find the closest configured radiation emitter whose outer range contains the ship. */
-function findNearestRadiationSource(targetX: number, targetY: number): Vec2 | null {
+function findNearestRadiationSource(
+  world: RenderEffectsWorld,
+  targetX: number,
+  targetY: number,
+): Vec2 | null {
   let nearest: Vec2 | null = null;
   let nearestDistSq = Number.POSITIVE_INFINITY;
 
-  for (const e of game.world.with("pos", "id")) {
+  for (const e of world.entities()) {
     const typeId = (e as Entity).entity_type_id?.trim() ?? "";
-    const sources = contentManager.getEntityType(typeId)?.radiation_sources ?? [];
+    const sources = world.getEntityType(typeId)?.radiation_sources ?? [];
     const pos = (e as Entity).pos;
     if (!pos || sources.length === 0) continue;
 
@@ -114,7 +134,10 @@ function findNearestRadiationSource(targetX: number, targetY: number): Vec2 | nu
   return nearest;
 }
 
-function resolveSolarCollectorEffect(entity: Entity): RenderEffectDescriptor[] {
+function resolveSolarCollectorEffect(
+  entity: Entity,
+  world: RenderEffectsWorld,
+): RenderEffectDescriptor[] {
   const entityTypeId = entity.entity_type_id?.trim() ?? "";
   const collectorActivity = entity.collector_state?.activity ?? "";
   const collectorPos = entity.pos;
@@ -126,7 +149,7 @@ function resolveSolarCollectorEffect(entity: Entity): RenderEffectDescriptor[] {
     return [];
   }
 
-  const source = findNearestResourceSource("energy", collectorPos.x, collectorPos.y);
+  const source = findNearestResourceSource(world, "energy", collectorPos.x, collectorPos.y);
   if (!source) return [];
 
   return [{
@@ -142,7 +165,10 @@ function resolveSolarCollectorEffect(entity: Entity): RenderEffectDescriptor[] {
   }];
 }
 
-function resolveMineralCollectorEffect(entity: Entity): RenderEffectDescriptor[] {
+function resolveMineralCollectorEffect(
+  entity: Entity,
+  world: RenderEffectsWorld,
+): RenderEffectDescriptor[] {
   const entityTypeId = entity.entity_type_id?.trim() ?? "";
   const collectorActivity = entity.collector_state?.activity ?? "";
   const collectorPos = entity.pos;
@@ -156,7 +182,7 @@ function resolveMineralCollectorEffect(entity: Entity): RenderEffectDescriptor[]
     return [];
   }
 
-  const source = findNearestResourceSource("minerals", collectorPos.x, collectorPos.y);
+  const source = findNearestResourceSource(world, "minerals", collectorPos.x, collectorPos.y);
   if (!source) return [];
 
   return [{
@@ -177,7 +203,11 @@ function resolveMineralCollectorEffect(entity: Entity): RenderEffectDescriptor[]
  * a directional presentation effect. This is visual-only; the server remains
  * responsible for both damage and radiation-range evaluation.
  */
-function resolveRadiationShedEffect(entity: Entity, nowMs: number): RenderEffectDescriptor[] {
+function resolveRadiationShedEffect(
+  entity: Entity,
+  nowMs: number,
+  world: RenderEffectsWorld,
+): RenderEffectDescriptor[] {
   const startedAtMs = entity.damage_flash_started_at;
   const pos = entity.pos;
   if (
@@ -188,7 +218,7 @@ function resolveRadiationShedEffect(entity: Entity, nowMs: number): RenderEffect
   ) {
     return [];
   }
-  const source = findNearestRadiationSource(pos.x, pos.y);
+  const source = findNearestRadiationSource(world, pos.x, pos.y);
   if (!source) return [];
 
   return [{
@@ -199,11 +229,15 @@ function resolveRadiationShedEffect(entity: Entity, nowMs: number): RenderEffect
   }];
 }
 
-function resolveRenderEffects(entity: Entity, nowMs: number): RenderEffectDescriptor[] {
+function resolveRenderEffects(
+  entity: Entity,
+  nowMs: number,
+  world: RenderEffectsWorld,
+): RenderEffectDescriptor[] {
   return [
-    ...resolveSolarCollectorEffect(entity),
-    ...resolveMineralCollectorEffect(entity),
-    ...resolveRadiationShedEffect(entity, nowMs),
+    ...resolveSolarCollectorEffect(entity, world),
+    ...resolveMineralCollectorEffect(entity, world),
+    ...resolveRadiationShedEffect(entity, nowMs, world),
   ];
 }
 
@@ -354,8 +388,9 @@ export function reconcileEntityRenderEffects(
   container: Container,
   entity: Entity,
   nowMs: number,
+  world: RenderEffectsWorld = liveRenderEffectsWorld,
 ) {
-  const effects = resolveRenderEffects(entity, nowMs);
+  const effects = resolveRenderEffects(entity, nowMs, world);
   const activeKeys = new Set(effects.map((effect) => effect.key));
 
   for (const child of container.children) {

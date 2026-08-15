@@ -1,12 +1,18 @@
-import { Assets, Container, Graphics, Sprite } from "pixi.js";
+import { Graphics } from "pixi.js";
 import { useEffect, useRef } from "react";
 import type { Meta, StoryObj } from "@storybook/react";
 import {
-  drawRadiationShedEffect,
+  reconcileEntityRenderEffects,
   RADIATION_SHED_DURATION_MS,
-  type RadiationShedEffect,
+  type RenderEffectsWorld,
 } from "./renderEffects";
 import { createPixiStoryApplication } from "../../../../.storybook/pixi";
+import {
+  createGameEntityVisual,
+  createGameWorldContainer,
+  loadGameEntityTextures,
+} from "@/features/pixijs/renderer/entityVisuals";
+import type { Entity } from "@/features/gamestate/world";
 
 type ShipType = "collector_solar" | "worker";
 
@@ -18,18 +24,6 @@ type RadiationShedLabProps = {
 
 const LAB_WIDTH = 760;
 const LAB_HEIGHT = 560;
-const GAME_WORLD_SCALE = 0.5;
-const DEFAULT_ENTITY_SCALE = 0.5;
-
-function radiationDamagePerSecond(distance: number, shipType: ShipType): number {
-  const effectiveDistance = distance + (shipType === "collector_solar" ? 90 : 0);
-  if (effectiveDistance > 180) return 0;
-  const rawDamage = effectiveDistance <= 80
-    ? 24
-    : 24 * (180 - effectiveDistance) / 100;
-  return rawDamage * (shipType === "collector_solar" ? 0.35 : 1);
-}
-
 function createRangeGuides() {
   const guides = new Graphics();
   guides.circle(0, 0, 80).stroke({
@@ -66,54 +60,51 @@ function RadiationShedLab({ angleDegrees, distance, shipType }: RadiationShedLab
       }
       host.appendChild(app.canvas);
 
-      const [starTexture, shipTexture] = await Promise.all([
-        Assets.load("/assets/star_yellow/idle.png"),
-        Assets.load(`/assets/${shipType}/idle.png`),
-      ]);
+      const textureCache = await loadGameEntityTextures(["star_yellow", shipType]);
       if (disposed) return;
 
-      // This hierarchy matches GameStage exactly: world positions are scaled
-      // by the camera container, while sprites/effects are scaled by their
-      // entity container. Together, default unit art renders at 0.25x.
-      const worldContainer = new Container();
+      const worldContainer = createGameWorldContainer();
       worldContainer.position.set(LAB_WIDTH / 2, LAB_HEIGHT / 2);
-      worldContainer.scale.set(GAME_WORLD_SCALE);
       app.stage.addChild(worldContainer);
       worldContainer.addChild(createRangeGuides());
 
-      const starEntity = new Container();
-      starEntity.scale.set(DEFAULT_ENTITY_SCALE);
-      const star = new Sprite(starTexture);
-      star.anchor.set(0.5);
-      starEntity.addChild(star);
-      worldContainer.addChild(starEntity);
+      const starVisual = createGameEntityVisual(textureCache, "star_yellow");
+      worldContainer.addChild(starVisual.container);
 
       const angleRadians = angleDegrees * Math.PI / 180;
-      const ship = new Container();
-      ship.position.set(
+      const shipVisual = createGameEntityVisual(textureCache, shipType);
+      shipVisual.container.position.set(
         Math.cos(angleRadians) * distance,
         Math.sin(angleRadians) * distance,
       );
-      ship.scale.set(DEFAULT_ENTITY_SCALE);
-      ship.rotation = angleRadians + Math.PI / 2;
-      const shipSprite = new Sprite(shipTexture);
-      shipSprite.anchor.set(0.5);
-      ship.addChild(shipSprite);
-      worldContainer.addChild(ship);
+      shipVisual.container.rotation = angleRadians + Math.PI / 2;
+      worldContainer.addChild(shipVisual.container);
 
-      const particles = new Graphics();
-      particles.eventMode = "none";
-      ship.addChild(particles);
+      const starEntity: Entity = {
+        id: "storybook-star",
+        entity_type_id: "star_yellow",
+        pos: { x: 0, y: 0 },
+      };
+      const shipEntity: Entity = {
+        id: "storybook-ship",
+        entity_type_id: shipType,
+        pos: { x: shipVisual.container.x, y: shipVisual.container.y },
+        health: 90,
+      };
+      const renderWorld: RenderEffectsWorld = {
+        entities: () => [starEntity, shipEntity],
+        getEntityType: (entityTypeId) => {
+          if (entityTypeId === "star_yellow") {
+            return { radiation_sources: [{ max_effective_distance: 180 }] };
+          }
+          return undefined;
+        },
+      };
 
       const tick = () => {
         const nowMs = performance.now();
-        const effect: RadiationShedEffect = {
-          key: "radiation-shed-lab",
-          kind: "radiation_shed",
-          startedAtMs: nowMs - (nowMs % RADIATION_SHED_DURATION_MS),
-          sourceWorldPos: { x: 0, y: 0 },
-        };
-        drawRadiationShedEffect(particles, ship, effect, nowMs);
+        shipEntity.damage_flash_started_at = nowMs - (nowMs % RADIATION_SHED_DURATION_MS);
+        reconcileEntityRenderEffects(shipVisual.container, shipEntity, nowMs, renderWorld);
       };
       app.ticker.add(tick);
     };
@@ -125,12 +116,11 @@ function RadiationShedLab({ angleDegrees, distance, shipType }: RadiationShedLab
     };
   }, [angleDegrees, distance, shipType]);
 
-  const damage = radiationDamagePerSecond(distance, shipType);
   return (
     <div style={{ color: "#dbeafe", fontFamily: "monospace" }}>
       <div ref={hostRef} style={{ border: "1px solid #263244", lineHeight: 0 }} />
       <p style={{ lineHeight: 1.5 }}>
-        {shipType === "collector_solar" ? "Solar collector" : "Worker"} · {distance.toFixed(0)} units · {angleDegrees.toFixed(0)}° · expected stellar heat: {damage.toFixed(2)} DPS
+        {shipType === "collector_solar" ? "Solar collector" : "Worker"} · {distance.toFixed(0)} units · {angleDegrees.toFixed(0)}°
       </p>
     </div>
   );

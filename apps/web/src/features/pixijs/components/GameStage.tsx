@@ -1,7 +1,6 @@
 "use client";
-import { Application, Assets, Container, Sprite, Graphics, type Texture } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
-import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
 import { game, type Entity } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
@@ -13,6 +12,13 @@ import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hu
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
 import { reconcileEntityRenderEffects } from "@/features/pixijs/effects/renderEffects";
 import { contentManager } from "@/features/content/contentManager";
+import {
+  createGameEntityVisual,
+  createGameWorldContainer,
+  getGameEntityTexture,
+  loadGameEntityTextures,
+  type EntityVisual,
+} from "@/features/pixijs/renderer/entityVisuals";
 import {
   CELL_SIZE,
   SEED,
@@ -114,9 +120,8 @@ export default function GameStage() {
         ref.current!.appendChild(app.canvas);
 
         // Pixi scene graph root for world (M5.1: this is the camera — we pan by updating its position)
-        const worldContainer = new Container();
+        const worldContainer = createGameWorldContainer();
         worldContainer.position.set(800, 500);
-        worldContainer.scale.set(.5);
         app.stage.addChild(worldContainer);
         app.stage.eventMode = "static";
         app.stage.hitArea = app.screen;
@@ -284,32 +289,10 @@ export default function GameStage() {
         window.addEventListener('keydown', onKeyDown);
         window.addEventListener('keyup', onKeyUp);
 
-        // M4: Texture cache by entity_type_id. Path: /assets/${entity_type_id}/idle.png
-        // Preload all entity types from content pack (build-time list from entities.yaml)
-        const DEFAULT_ENTITY_TYPE = 'corvette';
-        const typesToPreload = [
-          ...new Set([DEFAULT_ENTITY_TYPE, ...PRELOAD_ENTITY_TYPES]),
-        ];
-        const textureCache = new Map<string, Texture>();
-        await Promise.all(
-          typesToPreload.map(async (id) => {
-            console.log({ preloadTextureId: id })
-            const tex = await Assets.load(`/assets/${id}/idle.png`);
-            textureCache.set(id, tex);
-          })
-        );
-
-        function getTextureForEntityType(entityTypeId: string | undefined): Texture {
-          const typeId = entityTypeId?.trim() || DEFAULT_ENTITY_TYPE;
-          return textureCache.get(typeId) ?? textureCache.get(DEFAULT_ENTITY_TYPE)!;
-        }
+        const textureCache = await loadGameEntityTextures();
 
         // M8c: Authoritative render index keyed by ECS entity id.
-        const renderById = new Map<string, {
-          container: Container;
-          sprite: Sprite;
-          lastEntityTypeId: string;
-        }>();
+        const renderById = new Map<string, EntityVisual>();
 
         const normalizeId = (id: number | string | undefined | null): string | null => {
           if (id === undefined || id === null) return null;
@@ -342,13 +325,10 @@ export default function GameStage() {
             if (!id) continue;
             liveById.set(id, e as any);
             if (!renderById.has(id)) {
-              const entityContainer = new Container();
-              entityContainer.eventMode = "static";
               const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
-              const texture = getTextureForEntityType(typeId);
-              const sprite = Sprite.from(texture);
-              sprite.anchor.set(0.5);
-              entityContainer.addChild(sprite);
+              const visual = createGameEntityVisual(textureCache, typeId);
+              const entityContainer = visual.container;
+              entityContainer.eventMode = "static";
               worldContainer.addChild(entityContainer);
 
               entityContainer
@@ -385,11 +365,7 @@ export default function GameStage() {
                   // In non-move mode, entity clicks should not fall through to stage deselect.
                   ev.stopPropagation();
                 });
-              renderById.set(id, {
-                container: entityContainer,
-                sprite,
-                lastEntityTypeId: typeId,
-              });
+              renderById.set(id, visual);
             }
           }
 
@@ -414,7 +390,7 @@ export default function GameStage() {
 
             const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
             if (typeId !== ref.lastEntityTypeId) {
-              ref.sprite.texture = getTextureForEntityType(typeId);
+              ref.sprite.texture = getGameEntityTexture(textureCache, typeId);
               ref.lastEntityTypeId = typeId;
             }
             // Position: proto pos (already advanced by world.tick)
