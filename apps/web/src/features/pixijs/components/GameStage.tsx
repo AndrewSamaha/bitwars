@@ -172,16 +172,23 @@ export default function GameStage() {
         let lastVoronoiUpdate = -1000;
         let lastCamX = worldContainer.position.x;
         let lastCamY = worldContainer.position.y;
+        let lastCamScale = worldContainer.scale.x;
         const VORONOI_UPDATE_INTERVAL_MS = 100;
         const VORONOI_CAMERA_MOVE_THRESHOLD = 25;
+        const VORONOI_ZOOM_REDRAW_THRESHOLD = 0.05;
+        const VORONOI_OVERSCAN_PX = VORONOI_CAMERA_MOVE_THRESHOLD + SAMPLE_SPACING;
         const BORDER_DOT_SIZE = 2;
 
         function updateVoronoiBorders() {
+          // This redraw samples in the current screen coordinate system. Reset
+          // the inexpensive frame-by-frame camera transform before replacing it.
+          voronoiBorderGraphics.position.set(0, 0);
+          voronoiBorderGraphics.scale.set(1);
           voronoiBorderGraphics.clear();
           const w = app.screen.width;
           const h = app.screen.height;
-          for (let sy = 0; sy <= h; sy += SAMPLE_SPACING) {
-            for (let sx = 0; sx <= w; sx += SAMPLE_SPACING) {
+          for (let sy = -VORONOI_OVERSCAN_PX; sy <= h + VORONOI_OVERSCAN_PX; sy += SAMPLE_SPACING) {
+            for (let sx = -VORONOI_OVERSCAN_PX; sx <= w + VORONOI_OVERSCAN_PX; sx += SAMPLE_SPACING) {
               const pWorld = worldContainer.toLocal({ x: sx, y: sy });
               const { d1Sq, d2Sq } = getVoronoiDistancesAt(pWorld.x, pWorld.y, CELL_SIZE, SEED);
               const edge = d2Sq - d1Sq;
@@ -192,6 +199,21 @@ export default function GameStage() {
               }
             }
           }
+          lastCamX = worldContainer.position.x;
+          lastCamY = worldContainer.position.y;
+          lastCamScale = worldContainer.scale.x;
+        }
+
+        function syncVoronoiCameraTransform() {
+          // Move and scale the cached graphics with the camera every frame.
+          // This is much cheaper than re-sampling the Voronoi grid, while the
+          // periodic redraw below keeps the cached result accurate.
+          const scaleRatio = worldContainer.scale.x / lastCamScale;
+          voronoiBorderGraphics.scale.set(scaleRatio);
+          voronoiBorderGraphics.position.set(
+            worldContainer.position.x - lastCamX * scaleRatio,
+            worldContainer.position.y - lastCamY * scaleRatio,
+          );
         }
 
         // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, top-right
@@ -657,19 +679,21 @@ export default function GameStage() {
                 worldContainer.position.y += (dy * norm * PAN_SPEED * dt);
               }
             }
-            // M5.2: Update Voronoi border overlay when throttled (interval or camera moved)
+            // M5.2: Transform the cached border every frame, then redraw only
+            // when its sampling basis is old enough or has drifted materially.
             const now = performance.now();
             const camX = worldContainer.position.x;
             const camY = worldContainer.position.y;
+            const camScale = worldContainer.scale.x;
+            syncVoronoiCameraTransform();
             if (
               now - lastVoronoiUpdate > VORONOI_UPDATE_INTERVAL_MS ||
               Math.abs(camX - lastCamX) > VORONOI_CAMERA_MOVE_THRESHOLD ||
-              Math.abs(camY - lastCamY) > VORONOI_CAMERA_MOVE_THRESHOLD
+              Math.abs(camY - lastCamY) > VORONOI_CAMERA_MOVE_THRESHOLD ||
+              Math.abs(camScale / lastCamScale - 1) > VORONOI_ZOOM_REDRAW_THRESHOLD
             ) {
               updateVoronoiBorders();
               lastVoronoiUpdate = now;
-              lastCamX = camX;
-              lastCamY = camY;
             }
 
             // M5.3: Minimap (viewport rect + unit dots)
