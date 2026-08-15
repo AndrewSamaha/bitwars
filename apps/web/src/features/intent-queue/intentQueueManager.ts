@@ -30,10 +30,14 @@ export type QueuedMoveIntent = {
   createdAt: number;
 };
 
+export type ActiveIntentKind = "move" | "collect" | "unknown";
+
 export type ActiveIntentInfo = {
   clientCmdId: string;
   entityId: number;
-  target: { x: number; y: number };
+  /** Collect intents keep an entity busy but do not have a location to render. */
+  kind: ActiveIntentKind;
+  target?: { x: number; y: number };
   intentId?: string;      // server-assigned, set on ACCEPTED
   serverTick?: string;    // set on ACCEPTED
 };
@@ -227,6 +231,35 @@ class IntentQueueManager {
       serverActiveByEntity.set(ai.entity_id, ai);
     }
 
+    const activeFromServer = (
+      entityId: number,
+      serverActive: (typeof handshake.active_intents)[0],
+    ): ActiveIntentInfo => {
+      const kind: ActiveIntentKind =
+        serverActive.intent_kind?.toLowerCase() === "collect"
+          ? "collect"
+          : serverActive.intent_kind?.toLowerCase() === "move"
+            ? "move"
+            : "unknown";
+      const moveTarget = serverActive.move_target;
+      const target =
+        kind === "move" &&
+        moveTarget &&
+        Number.isFinite(moveTarget.x) &&
+        Number.isFinite(moveTarget.y)
+          ? { x: moveTarget.x, y: moveTarget.y }
+          : undefined;
+
+      return {
+        clientCmdId: serverActive.client_cmd_id,
+        entityId,
+        kind,
+        ...(target ? { target } : {}),
+        intentId: serverActive.intent_id,
+        serverTick: String(serverActive.started_tick),
+      };
+    };
+
     // 2. Reconcile each entity's active slot
     const entitiesToDrain: number[] = [];
 
@@ -238,21 +271,14 @@ class IntentQueueManager {
 
       if (entityState.active) {
         if (serverActive && serverActive.client_cmd_id === entityState.active.clientCmdId) {
-          // Server is still executing our active intent — keep it, update intentId if needed
-          if (serverActive.intent_id && !entityState.active.intentId) {
-            entityState.active.intentId = serverActive.intent_id;
-          }
+          // Rehydrate kind and target even when command IDs match. This migrates
+          // legacy localStorage entries that predate target-less collect intents.
+          entityState.active = activeFromServer(entityId, serverActive);
         } else if (serverActive) {
           // Server has a different active intent for this entity (shouldn't happen
           // normally, but could if another client controls the same entity).
           // Replace our local active with the server's view.
-          entityState.active = {
-            clientCmdId: serverActive.client_cmd_id,
-            entityId,
-            target: { x: 0, y: 0 }, // target unknown from handshake; will be overwritten on FINISHED
-            intentId: serverActive.intent_id,
-            serverTick: String(serverActive.started_tick),
-          };
+          entityState.active = activeFromServer(entityId, serverActive);
         } else {
           // Server has no active intent — ours was lost. Clear and drain.
           entityState.active = null;
@@ -262,13 +288,7 @@ class IntentQueueManager {
         // We have no local active
         if (serverActive) {
           // Server has one we didn't know about — mark busy so we don't send
-          entityState.active = {
-            clientCmdId: serverActive.client_cmd_id,
-            entityId,
-            target: { x: 0, y: 0 },
-            intentId: serverActive.intent_id,
-            serverTick: String(serverActive.started_tick),
-          };
+          entityState.active = activeFromServer(entityId, serverActive);
         } else {
           // Both agree: idle. Drain queue if anything is queued.
           if (entityState.queue.length > 0) {
@@ -281,13 +301,7 @@ class IntentQueueManager {
     // Handle server-active entities we didn't have locally at all
     for (const [entityId, serverActive] of serverActiveByEntity) {
       const entityState = this.getOrCreate(entityId);
-      entityState.active = {
-        clientCmdId: serverActive.client_cmd_id,
-        entityId,
-        target: { x: 0, y: 0 },
-        intentId: serverActive.intent_id,
-        serverTick: String(serverActive.started_tick),
-      };
+      entityState.active = activeFromServer(entityId, serverActive);
     }
 
     this.persist();
@@ -392,7 +406,7 @@ class IntentQueueManager {
     const state = this.entities.get(String(entityId));
     if (!state) return [];
     const out: Array<{ x: number; y: number; active: boolean }> = [];
-    if (state.active) {
+    if (state.active?.kind === "move" && state.active.target) {
       out.push({ ...state.active.target, active: true });
     }
     for (const q of state.queue) {
@@ -423,7 +437,7 @@ class IntentQueueManager {
     this.clientSeq++;
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "move");
-    state.active = { clientCmdId, entityId, target };
+    state.active = { clientCmdId, entityId, kind: "move", target };
     this.persist();
     this.notify();
 
@@ -448,12 +462,19 @@ class IntentQueueManager {
     clientCmdId: string,
     policy: IntentPolicyName,
   ) {
-    if (!this.sendCallback) return;
+    const state = this.getOrCreate(entityId);
+    // Collection replaces the entity's move plan. It remains active locally so
+    // append commands wait for the server to finish or replace collection.
+    if (policy === "REPLACE_ACTIVE" || policy === "CLEAR_THEN_APPEND") {
+      state.queue = [];
+    }
     this.clientSeq++;
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "collect");
+    state.active = { clientCmdId, entityId, kind: "collect" };
     this.persist();
     this.notify();
+    if (!this.sendCallback) return;
     try {
       await this.sendCallback({
         kind: "Collect",
@@ -499,7 +520,17 @@ class IntentQueueManager {
       if (!raw) return;
       const data = JSON.parse(raw) as PersistedState;
       this.clientSeq = data.clientSeq || 0;
-      this.entities = new Map(Object.entries(data.entities || {}));
+      this.entities = new Map(
+        Object.entries(data.entities || {}).map(([entityId, state]) => {
+          const active = state.active;
+          // Old persisted active intents did not record their kind. Leave them
+          // target-less until reconnect reconciliation classifies them.
+          if (active && active.kind !== "move" && active.kind !== "collect") {
+            return [entityId, { ...state, active: { ...active, kind: "unknown", target: undefined } }];
+          }
+          return [entityId, state];
+        }),
+      );
     } catch { /* ignore corrupted data */ }
   }
 }

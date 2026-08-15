@@ -8,7 +8,7 @@ import { useHUD } from "@/features/hud/components/HUDContext";
  * M1 Intent Queue Panel
  *
  * Displays per-entity queue state:
- *   - Server active intent (target, intentId, serverTick)
+ *   - Server active intent (kind, optional target, intentId, serverTick)
  *   - Local queued intents (numbered, with targets)
  *
  * Only shows for selected entities that have active or queued intents.
@@ -52,7 +52,11 @@ export default function IntentQueuePanel() {
                 <span className="text-green-400 shrink-0">&gt;</span>
                 <div>
                   <span>
-                    ({state.active.target.x.toFixed(0)}, {state.active.target.y.toFixed(0)})
+                    {state.active.kind === "collect"
+                      ? "collecting"
+                      : state.active.target
+                        ? `(${state.active.target.x.toFixed(0)}, ${state.active.target.y.toFixed(0)})`
+                        : "awaiting reconciliation"}
                   </span>
                   {state.active.intentId && (
                     <span className="text-muted-foreground ml-1">
