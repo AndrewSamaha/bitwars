@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from "react";
 import { useLogger } from "@/lib/axiom/client";
-import { game, type Entity } from "../world";
+import { game, RADIATION_DAMAGE_VISUAL_LINGER_MS, type Entity } from "../world";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
@@ -65,6 +65,24 @@ const LIFECYCLE_STATE_IN_PROGRESS = 3;
 const LIFECYCLE_STATE_FINISHED = 5;
 const LIFECYCLE_STATE_CANCELED = 6;
 const LIFECYCLE_STATE_REJECTED = 7;
+
+/**
+ * The stream does not identify a damage source. Classify a health decrease as
+ * radiation only when the target is within a configured source's outer range.
+ */
+function isWithinRadiationRange(target: Entity): boolean {
+  const targetPos = target.pos;
+  if (!targetPos) return false;
+  for (const source of game.world.with("pos", "id")) {
+    if (String(source.id) === String(target.id)) continue;
+    const sources = contentManager.getEntityType(source.entity_type_id?.trim() ?? "")?.radiation_sources ?? [];
+    const dx = source.pos.x - targetPos.x;
+    const dy = source.pos.y - targetPos.y;
+    const distanceSq = dx * dx + dy * dy;
+    if (sources.some(({ max_effective_distance = 0 }) => max_effective_distance > 0 && distanceSq <= max_effective_distance ** 2)) return true;
+  }
+  return false;
+}
 
 // Bridges the SSE stream to the miniplex world by handling snapshot and delta events.
 // - On snapshot: clears previously-streamed entities and repopulates them
@@ -296,15 +314,6 @@ export default function GameStateStreamBridge() {
         const existing = byId.get(key);
         if (existing) {
           if (u.entity_type_id !== undefined) existing.entity_type_id = u.entity_type_id;
-          if (u.health !== undefined) {
-            // A health decrease is authoritative evidence of damage. Keep only a
-            // short-lived client timestamp so rendering can animate it without
-            // adding presentation state to the simulation protocol.
-            if (existing.health !== undefined && u.health < existing.health) {
-              existing.damage_flash_started_at = performance.now();
-            }
-            existing.health = u.health;
-          }
           if (u.pos) {
             if (!existing.pos) existing.pos = { x: u.pos.x, y: u.pos.y };
             else { existing.pos.x = u.pos.x; existing.pos.y = u.pos.y; }
@@ -315,6 +324,18 @@ export default function GameStateStreamBridge() {
           }
           if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
           if (u.collector_state !== undefined) existing.collector_state = { ...u.collector_state };
+          if (u.health !== undefined) {
+            // Health decreases arrive every engine tick. Refresh liveness, but
+            // only start a new particle timeline after the prior plume expires.
+            if (existing.health !== undefined && u.health < existing.health && isWithinRadiationRange(existing)) {
+              const nowMs = performance.now();
+              if (existing.radiation_damage_last_at === undefined || nowMs - existing.radiation_damage_last_at >= RADIATION_DAMAGE_VISUAL_LINGER_MS) {
+                existing.radiation_shed_started_at = nowMs;
+              }
+              existing.radiation_damage_last_at = nowMs;
+            }
+            existing.health = u.health;
+          }
           applyIntentOverlayToEntity(existing, activeIntentByEntityRef.current.get(key));
           existingEntities++;
           // force currently ignored; add when systems need it

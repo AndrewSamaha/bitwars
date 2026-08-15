@@ -12,11 +12,12 @@ export type EntityId = { id: number | string };
 export type EntityTypeId = { entity_type_id?: string };
 export type OwnerPlayerId = { owner_player_id?: string };
 export type Health = { health?: number };
-/**
- * Client-only timestamp set when an authoritative health update lowers health.
- * It drives presentation only; combat and hazard rules remain server-owned.
- */
-export type DamagePresentation = { damage_flash_started_at?: number };
+/** Client-only radiation presentation state. */
+export type RadiationDamagePresentation = {
+  radiation_damage_last_at?: number;
+  radiation_shed_started_at?: number;
+};
+export const RADIATION_DAMAGE_VISUAL_LINGER_MS = 2_000;
 export type UIState = { hover: boolean };
 export type ActiveIntentView = {
   active_intent_kind?: "move" | "attack" | "build" | "collect" | string;
@@ -43,7 +44,7 @@ export type Entity = Partial<
   EntityTypeId &
   OwnerPlayerId &
   Health &
-  DamagePresentation &
+  RadiationDamagePresentation &
   ActiveIntentView &
   CollectorStateView &
   ContainerRef &
