@@ -44,6 +44,7 @@ const PAN_KEYS = new Set([
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
 ]);
 const DEBUG_MOVE_INPUT = process.env.NEXT_PUBLIC_DEBUG_MOVE_INPUT === "1";
+const DEBUG_SHOW_FPS = process.env.NEXT_PUBLIC_DEBUG_SHOW_FPS === "1";
 
 function isFocusInEditable(): boolean {
   const el = document.activeElement;
@@ -54,6 +55,7 @@ export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState<boolean>(game.ready);
   const [moveDebug, setMoveDebug] = useState<string>("idle");
+  const [fps, setFps] = useState<number>(0);
   const { player } = usePlayer();
   const { actions: { setHovered, setApp, setCamera, setSelection, setSelectedAction }, selectors } = useHUD();
   // Keep latest selectors in a ref so event handlers see current selection/action
@@ -167,6 +169,7 @@ export default function GameStage() {
         let lastVoronoiUpdate = -1000;
         let lastCamX = worldContainer.position.x;
         let lastCamY = worldContainer.position.y;
+        let lastFpsUpdate = 0;
         const VORONOI_UPDATE_INTERVAL_MS = 100;
         const VORONOI_CAMERA_MOVE_THRESHOLD = 25;
         const BORDER_DOT_SIZE = 2;
@@ -645,6 +648,16 @@ export default function GameStage() {
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             render();
+
+            // Keep the debug display inexpensive: Pixi calculates the rolling FPS,
+            // while React only updates four times per second.
+            if (DEBUG_SHOW_FPS && now - lastFpsUpdate >= 250) {
+              lastFpsUpdate = now;
+              const nextFps = Math.round(ticker.FPS);
+              setFps((currentFps) =>
+                currentFps === nextFps ? currentFps : nextFps,
+              );
+            }
         });
 
         let destroyed = false;
@@ -687,6 +700,11 @@ export default function GameStage() {
       {ready && DEBUG_MOVE_INPUT && (
         <div className="pointer-events-none absolute right-4 top-4 z-50 rounded bg-black/75 px-2 py-1 font-mono text-[11px] text-green-300">
           move-input: {moveDebug}
+        </div>
+      )}
+      {ready && DEBUG_SHOW_FPS && (
+        <div className="pointer-events-none absolute left-4 top-4 z-50 rounded bg-black/75 px-2 py-1 font-mono text-[11px] text-green-300">
+          {fps} FPS
         </div>
       )}
       {ready && <TooltipOverlay />}
