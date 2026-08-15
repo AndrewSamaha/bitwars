@@ -176,7 +176,14 @@ export default function EntityDetailPanel() {
         {selectedEntities.length > 0 ? (
           <div className="p-3">
             <ul className="text-xs space-y-1">
-              {selectedEntities.map((id) => {
+              {selectedEntities.length > 1
+                ? selectedEntities.map((id) => (
+                    <li key={id} className="flex items-center gap-3">
+                      <span className="font-mono">{idToType.get(id) ?? "—"}</span>
+                      <span className="font-mono text-muted-foreground">id: {id}</span>
+                    </li>
+                  ))
+                : selectedEntities.map((id) => {
                 const pos = idToPos.get(id);
                 const entityTypeId = idToType.get(id) ?? "—";
                 const health = idToHealth.get(id);
@@ -230,7 +237,7 @@ export default function EntityDetailPanel() {
                     )}
                   </li>
                 );
-              })}
+                })}
             </ul>
             {/* Actions row */}
             <div className="mt-2 flex items-center gap-2">

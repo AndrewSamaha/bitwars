@@ -60,7 +60,10 @@ export default function GameStage() {
   const [ready, setReady] = useState<boolean>(game.ready);
   const [moveDebug, setMoveDebug] = useState<string>("idle");
   const { player } = usePlayer();
-  const { actions: { setHovered, setApp, setCamera, setSelection, setSelectedAction }, selectors } = useHUD();
+  const {
+    actions: { setHovered, setApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction },
+    selectors,
+  } = useHUD();
   // Keep latest selectors in a ref so event handlers see current selection/action
   const latestSelectorsRef = useRef(selectors);
   useEffect(() => { latestSelectorsRef.current = selectors; }, [selectors]);
@@ -291,6 +294,11 @@ export default function GameStage() {
         minimapContainer.addChild(minimapGraphics);
         app.stage.addChild(minimapContainer);
 
+        const selectionBoxGraphics = new Graphics();
+        selectionBoxGraphics.label = "selectionBox";
+        selectionBoxGraphics.eventMode = "none";
+        app.stage.addChild(selectionBoxGraphics);
+
         function worldToMinimapPx(
           wx: number,
           wy: number,
@@ -478,7 +486,13 @@ export default function GameStage() {
                   const ownerId = (live as any).owner_player_id;
                   const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
                   if (isOwned) {
-                    setSelection([id]);
+                    const originalEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
+                    if (originalEvent?.shiftKey) {
+                      if (sel.isSelected(id)) removeSelection([id]);
+                      else addSelection([id]);
+                    } else {
+                      setSelection([id]);
+                    }
                   }
                   // In non-move mode, entity clicks should not fall through to stage deselect.
                   ev.stopPropagation();
@@ -629,8 +643,21 @@ export default function GameStage() {
           }
         };
 
-        // Stage click — M1: delegates to IntentQueueManager with modifier keys.
-        // This avoids world-geometry hit-area limits and works regardless of world position.
+        type SelectionDrag = { startX: number; startY: number; shift: boolean };
+        let selectionDrag: SelectionDrag | null = null;
+        const SELECTION_DRAG_THRESHOLD_PX = 4;
+
+        const drawSelectionBox = (startX: number, startY: number, endX: number, endY: number) => {
+          const x = Math.min(startX, endX);
+          const y = Math.min(startY, endY);
+          const width = Math.abs(endX - startX);
+          const height = Math.abs(endY - startY);
+          selectionBoxGraphics.clear();
+          selectionBoxGraphics.rect(x, y, width, height).fill({ color: 0x44_aa_ff, alpha: 0.12 });
+          selectionBoxGraphics.rect(x, y, width, height).stroke({ width: 1, color: 0x88_cc_ff, alpha: 0.9 });
+        };
+
+        // Stage click — delegates Move commands or starts a ground-selection drag.
         app.stage.on('pointerdown', (ev: any) => {
           try {
             const global = ev.global;
@@ -650,13 +677,11 @@ export default function GameStage() {
             }
 
             const sel = latestSelectorsRef.current;
-            // If not in Move mode, treat stage click as deselect
+            const origEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
+            // Outside Move mode, defer selection changes until pointerup so a
+            // click can become a box drag without first clearing the selection.
             if (sel.selectedAction !== 'Move') {
-              if (sel.hasSelection) setSelection([]);
-              if (DEBUG_MOVE_INPUT) {
-                console.debug("[MoveInput] ignored: not in Move mode");
-              }
-              updateMoveDebug("ignored:not_move_mode");
+              selectionDrag = { startX: global.x, startY: global.y, shift: !!origEvent?.shiftKey };
               return;
             }
             if (!sel.hasSelection) {
@@ -666,40 +691,26 @@ export default function GameStage() {
               updateMoveDebug("ignored:no_selection");
               return;
             }
-            const first = sel.firstSelectedId;
-            if (!first) {
-              if (DEBUG_MOVE_INPUT) {
-                console.debug("[MoveInput] ignored: missing firstSelectedId");
-              }
-              updateMoveDebug("ignored:no_first_selected");
-              return;
-            }
             // Compute world position from global
             const local = worldContainer.toLocal(global);
 
-            const entityIdNum = Number(first);
-            if (!Number.isFinite(entityIdNum)) {
-              if (DEBUG_MOVE_INPUT) {
-                console.debug("[MoveInput] ignored: invalid selected entity id", { first });
-              }
-              updateMoveDebug("ignored:invalid_entity_id", { first });
-              return;
-            }
-
             // Read modifier keys from the original DOM event
-            const origEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
             const shift = !!origEvent?.shiftKey;
             const ctrl = !!origEvent?.ctrlKey || !!origEvent?.metaKey;
 
-            // M1: Delegate to queue manager (handles policy, queueing, and sending)
-            intentQueue.handleMoveCommand(
-              entityIdNum,
-              { x: Number(local.x), y: Number(local.y) },
-              { shift, ctrl },
-            );
+            // Issue the same order to every currently selected unit.
+            for (const id of sel.selectedEntities) {
+              const entityIdNum = Number(id);
+              if (!Number.isFinite(entityIdNum)) continue;
+              intentQueue.handleMoveCommand(
+                entityIdNum,
+                { x: Number(local.x), y: Number(local.y) },
+                { shift, ctrl },
+              );
+            }
             if (DEBUG_MOVE_INPUT) {
               console.debug("[MoveInput] dispatched", {
-                entityId: entityIdNum,
+                entityIds: sel.selectedEntities,
                 x: Number(local.x),
                 y: Number(local.y),
                 shift,
@@ -707,7 +718,7 @@ export default function GameStage() {
               });
             }
             updateMoveDebug("dispatched", {
-              entityId: entityIdNum,
+              entityIds: sel.selectedEntities,
               x: Number(local.x),
               y: Number(local.y),
               shift,
@@ -723,6 +734,43 @@ export default function GameStage() {
             // best-effort; do not throw in render loop
             console.error('move intent failed', e);
           }
+        });
+
+        app.stage.on("pointermove", (ev: any) => {
+          if (!selectionDrag) return;
+          drawSelectionBox(selectionDrag.startX, selectionDrag.startY, ev.global.x, ev.global.y);
+        });
+
+        app.stage.on("pointerup", (ev: any) => {
+          const drag = selectionDrag;
+          if (!drag) return;
+          selectionDrag = null;
+          selectionBoxGraphics.clear();
+
+          const endX = ev.global.x;
+          const endY = ev.global.y;
+          const width = Math.abs(endX - drag.startX);
+          const height = Math.abs(endY - drag.startY);
+          if (width < SELECTION_DRAG_THRESHOLD_PX && height < SELECTION_DRAG_THRESHOLD_PX) {
+            if (!drag.shift) setSelection([]);
+            return;
+          }
+
+          const minX = Math.min(drag.startX, endX);
+          const maxX = Math.max(drag.startX, endX);
+          const minY = Math.min(drag.startY, endY);
+          const maxY = Math.max(drag.startY, endY);
+          const selectedIds: string[] = [];
+          for (const [id, visual] of renderById) {
+            const live = findLiveEntityById(id);
+            if (!live || (live as any).owner_player_id !== myPlayerIdRef.current) continue;
+            const bounds = visual.container.getBounds();
+            if (bounds.maxX >= minX && bounds.minX <= maxX && bounds.maxY >= minY && bounds.minY <= maxY) {
+              selectedIds.push(id);
+            }
+          }
+          if (drag.shift) addSelection(selectedIds);
+          else setSelection(selectedIds);
         });
 
         app.ticker.add((ticker) => {
