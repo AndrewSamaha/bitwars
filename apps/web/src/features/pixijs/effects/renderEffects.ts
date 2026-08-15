@@ -18,7 +18,7 @@ type ParticleFlowEffect = {
   showTargetHalo?: boolean;
 };
 
-type RadiationShedEffect = {
+export type RadiationShedEffect = {
   key: string;
   kind: "radiation_shed";
   startedAtMs: number;
@@ -37,7 +37,7 @@ const MINERAL_COLLECTION_COLOR = 0x6f_c8_ff;
 const MINERAL_COLLECTION_GLOW_COLOR = 0xb9_e7_ff;
 const MINERAL_COLLECTION_CORE_COLOR = 0xe7_f7_ff;
 const MINERAL_COLLECTION_SIZE_MULTIPLIER = 6.4;
-const RADIATION_SHED_DURATION_MS = 1_150;
+export const RADIATION_SHED_DURATION_MS = 1_150;
 const DAMAGE_BURST_COLOR = 0xff_63_36;
 const DAMAGE_BURST_GLOW_COLOR = 0xff_c4_51;
 const FALLBACK_ENERGY_SOURCE_TYPES = new Set(["theta", "star_yellow"]);
@@ -289,7 +289,7 @@ function drawParticleFlowEffect(
   }
 }
 
-function drawRadiationShedEffect(
+export function drawRadiationShedEffect(
   graphics: Graphics,
   container: Container,
   effect: RadiationShedEffect,
