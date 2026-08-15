@@ -31,6 +31,10 @@ import {
 
 /** World units per second when panning with WASD / arrows */
 const PAN_SPEED = 400;
+/** Camera scale bounds for mouse-wheel and trackpad zoom. */
+const MIN_ZOOM = 0.10;
+const MAX_ZOOM = 2;
+const ZOOM_SENSITIVITY = 0.0015;
 
 /** M6: Tint for entities not owned by the current player */
 const NON_OWNED_TINT = 0x66_66_66;
@@ -291,6 +295,34 @@ export default function GameStage() {
         };
         window.addEventListener('keydown', onKeyDown);
         window.addEventListener('keyup', onKeyUp);
+
+        // Wheel events cover both mouse wheels and two-finger trackpad scrolling.
+        // Keep the world point under the cursor fixed as the camera scale changes.
+        const onWheel = (event: WheelEvent) => {
+          event.preventDefault();
+
+          const bounds = app.canvas.getBoundingClientRect();
+          if (bounds.width === 0 || bounds.height === 0) return;
+          const pointer = {
+            x: (event.clientX - bounds.left) * (app.screen.width / bounds.width),
+            y: (event.clientY - bounds.top) * (app.screen.height / bounds.height),
+          };
+          const worldPoint = worldContainer.toLocal(pointer);
+          const delta = event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1);
+          const currentZoom = worldContainer.scale.x;
+          const nextZoom = Math.min(
+            MAX_ZOOM,
+            Math.max(MIN_ZOOM, currentZoom * Math.exp(-delta * ZOOM_SENSITIVITY)),
+          );
+          if (nextZoom === currentZoom) return;
+
+          worldContainer.scale.set(nextZoom);
+          worldContainer.position.set(
+            pointer.x - worldPoint.x * nextZoom,
+            pointer.y - worldPoint.y * nextZoom,
+          );
+        };
+        app.canvas.addEventListener("wheel", onWheel, { passive: false });
 
         const textureCache = await loadGameEntityTextures();
 
@@ -676,6 +708,7 @@ export default function GameStage() {
           setCamera(null);
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
+          app.canvas.removeEventListener("wheel", onWheel);
         };
     }
     let cleanup: (() => void) | undefined;
