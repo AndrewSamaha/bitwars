@@ -126,11 +126,72 @@ export default function GameStage() {
 
         // Pixi scene graph root for world (M5.1: this is the camera — we pan by updating its position)
         const worldContainer = createGameWorldContainer();
+        worldContainer.sortableChildren = true;
         worldContainer.position.set(800, 500);
         app.stage.addChild(worldContainer);
         app.stage.eventMode = "static";
         app.stage.hitArea = app.screen;
         setCamera(worldContainer);
+
+        // World-space radiation ranges stay beneath entities while following
+        // the same camera transform as the rest of the game world.
+        const radiationRangeGraphics = new Graphics();
+        radiationRangeGraphics.label = "radiationRanges";
+        radiationRangeGraphics.eventMode = "none";
+        radiationRangeGraphics.zIndex = -1_000_000;
+        worldContainer.addChild(radiationRangeGraphics);
+
+        const parseHexColor = (value: string | undefined): number | undefined => {
+          const hex = value?.trim().replace(/^#/, "");
+          if (!hex || !/^[0-9a-f]{3}([0-9a-f]{3})?$/i.test(hex)) return undefined;
+          const expanded = hex.length === 3 ? [...hex].map((digit) => `${digit}${digit}`).join("") : hex;
+          return Number.parseInt(expanded, 16);
+        };
+
+        const renderRadiationRanges = () => {
+          radiationRangeGraphics.clear();
+          for (const entity of game.world.with("pos", "entity_type_id")) {
+            const sources = contentManager.getEntityType(entity.entity_type_id ?? "")?.radiation_sources;
+            if (!sources?.length) continue;
+
+            for (const source of sources) {
+              const ranges = [
+                {
+                  radius: source.max_effective_distance,
+                  borderColor: source.max_effective_distance_border_color,
+                  fillColor: source.max_effective_distance_fill_color,
+                },
+                {
+                  radius: source.full_damage_distance,
+                  borderColor: source.full_damage_distance_border_color,
+                  fillColor: source.full_damage_distance_fill_color,
+                },
+                {
+                  radius: source.min_effective_distance,
+                  borderColor: source.min_effective_distance_border_color,
+                  fillColor: source.min_effective_distance_fill_color,
+                },
+              ]
+                .filter((range) => Number.isFinite(range.radius) && (range.borderColor || range.fillColor))
+                .sort((a, b) => (b.radius ?? 0) - (a.radius ?? 0));
+
+              for (const range of ranges) {
+                const radius = range.radius ?? 0;
+                const fillColor = parseHexColor(range.fillColor);
+                const borderColor = parseHexColor(range.borderColor);
+                if (radius <= 0 || (fillColor === undefined && borderColor === undefined)) continue;
+
+                radiationRangeGraphics.circle(entity.pos.x, entity.pos.y, radius);
+                if (fillColor !== undefined) {
+                  radiationRangeGraphics.fill({ color: fillColor, alpha: 0.12 });
+                }
+                if (borderColor !== undefined) {
+                  radiationRangeGraphics.stroke({ width: 2, color: borderColor, alpha: 0.7 });
+                }
+              }
+            }
+          }
+        };
 
         const requestRecenter = () => {
           recenterRequestedRef.current = true;
@@ -374,6 +435,7 @@ export default function GameStage() {
 
         // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
+          renderRadiationRanges();
           const liveById = new Map<string, any>();
           for (const e of game.world.with("id", "pos")) {
             const id = normalizeId((e as any).id);
@@ -390,6 +452,7 @@ export default function GameStage() {
                 .on("mouseover", () => {
                   const live = findLiveEntityById(id);
                   if (!live) return;
+                  if (contentManager.getEntityType(live.entity_type_id ?? "")?.suppress_hover) return;
                   (live as any).hover = true;
                   (live as any).pixiContainer = entityContainer;
                   setHovered(live);
@@ -444,6 +507,11 @@ export default function GameStage() {
             if ((e as any).scale === undefined) (e as any).scale = 1;
 
             const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
+            const suppressHover = contentManager.getEntityType(typeId)?.suppress_hover === true;
+            if (suppressHover && (e as any).hover) {
+              (e as any).hover = false;
+              setHovered(null);
+            }
             if (typeId !== ref.lastEntityTypeId) {
               ref.sprite.texture = getGameEntityTexture(textureCache, typeId);
               ref.lastEntityTypeId = typeId;
@@ -451,7 +519,9 @@ export default function GameStage() {
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
             const scale = (e as any).scale ?? 1;
-            container.scale.set(scale / 2);
+            const visualScale = contentManager.getEntityType(typeId)?.visual_scale ?? 1;
+            container.scale.set((scale * visualScale) / 2);
+            container.zIndex = contentManager.getEntityType(typeId)?.z_index ?? 0;
 
             // Rotation: if we have proto velocity, rotate to face direction of travel
             const vel = e.vel as { x: number; y: number } | undefined;
@@ -475,7 +545,7 @@ export default function GameStage() {
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
             const shouldShowHealthArc = hasHealth && ((e as any).hover || (isOwned && health < maxHealth));
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
-            if ((e as any).hover) {
+            if ((e as any).hover && !suppressHover) {
               if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
               // ensure a hover indicator exists as a child after sprite (only for owned so we don't highlight enemy)
               let hoverIndicator = container.children.find((c) => c.label === 'hoverIndicator') as Graphics | undefined;

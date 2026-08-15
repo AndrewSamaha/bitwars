@@ -28,6 +28,18 @@ pub struct EntityTypeDef {
     pub stop_radius: f32,
     pub mass: f32,
     pub health: f32,
+    /// Client-only multiplier for the entity's rendered size.
+    #[serde(
+        default = "default_visual_scale",
+        skip_serializing_if = "is_default_visual_scale"
+    )]
+    pub visual_scale: f32,
+    /// Draw order within the world layer. Higher values render in front.
+    #[serde(default, skip_serializing_if = "is_default_z_index")]
+    pub z_index: i32,
+    /// Whether the client should suppress hover UI for this entity type.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub suppress_hover: bool,
     /// M8: Optional collection profile for collector-capable entities.
     #[serde(default)]
     pub collector: Option<CollectorDef>,
@@ -51,6 +63,22 @@ pub struct ResourceTypeDef {
     pub display_name: String,
     #[serde(default)]
     pub order: i32,
+}
+
+fn default_visual_scale() -> f32 {
+    1.0
+}
+
+fn is_default_visual_scale(scale: &f32) -> bool {
+    *scale == default_visual_scale()
+}
+
+fn is_default_z_index(z_index: &i32) -> bool {
+    *z_index == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// M8: Collection mode for a resource source.
@@ -105,6 +133,24 @@ pub struct RefineryDef {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RadiationSourceDef {
     pub radiation_type: String,
+    /// Hex color for the min-effective-distance range outline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_effective_distance_border_color: Option<String>,
+    /// Hex color for the min-effective-distance range fill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_effective_distance_fill_color: Option<String>,
+    /// Hex color for the full-damage-distance range outline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_damage_distance_border_color: Option<String>,
+    /// Hex color for the full-damage-distance range fill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_damage_distance_fill_color: Option<String>,
+    /// Hex color for the max-effective-distance range outline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_effective_distance_border_color: Option<String>,
+    /// Hex color for the max-effective-distance range fill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_effective_distance_fill_color: Option<String>,
     #[serde(default)]
     pub min_effective_distance: f32,
     #[serde(default = "default_max_effective_distance")]
@@ -227,6 +273,9 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
+                visual_scale: 1.0,
+                z_index: 0,
+                suppress_hover: false,
             },
         );
         types.insert(
@@ -241,6 +290,9 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
+                visual_scale: 1.0,
+                z_index: 0,
+                suppress_hover: false,
             },
         );
 
@@ -266,6 +318,9 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
+                visual_scale: 1.0,
+                z_index: 0,
+                suppress_hover: false,
             },
         );
         types_a.insert(
@@ -280,6 +335,9 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
+                visual_scale: 1.0,
+                z_index: 0,
+                suppress_hover: false,
             },
         );
 
@@ -296,6 +354,9 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
+                visual_scale: 1.0,
+                z_index: 0,
+                suppress_hover: false,
             },
         );
         types_b.insert(
@@ -310,6 +371,9 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
+                visual_scale: 1.0,
+                z_index: 0,
+                suppress_hover: false,
             },
         );
 

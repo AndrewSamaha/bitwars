@@ -25,6 +25,8 @@ resource_types:
 entity_types:
   theta:
     speed: 0.0
+    z_index: -10
+    suppress_hover: true
     stop_radius: 0.75
     mass: 500.0
     health: 100.0
@@ -36,26 +38,37 @@ entity_types:
 
   planet_blue:
     speed: 0.0
+    z_index: -1
+    suppress_hover: true
     stop_radius: 1
     mass: 500.0
     health: 100.0
   
   star_yellow:
     speed: 0.0
+    z_index: -10
+    suppress_hover: true
     stop_radius: 1
     mass: 500.0
     health: 100.0
+    visual_scale: 10.0
     radiation_sources:
       - radiation_type: stellar_heat
+        min_effective_distance_border_color:
+        min_effective_distance_fill_color: "#ef4444"
+        full_damage_distance_border_color:
+        full_damage_distance_fill_color: "#f97316"
+        max_effective_distance_border_color:
+        max_effective_distance_fill_color: "#facc15"
         min_effective_distance: 0.0
-        full_damage_distance: 80.0
-        max_effective_distance: 180.0
-        damage_per_second: 24.0
+        full_damage_distance: 400.0
+        max_effective_distance: 900.0
+        damage_per_second: 2.0
     resource_node:
       resource_type: energy
       collection_mode: proximity
       min_effective_distance: 10.0
-      max_effective_distance: 200.0
+      max_effective_distance: 800.0
 
   minerals:
     speed: 0.0

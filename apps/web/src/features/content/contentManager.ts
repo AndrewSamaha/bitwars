@@ -25,8 +25,20 @@ export type EntityTypeDef = {
   stop_radius: number;
   mass: number;
   health: number;
+  /** Client-only multiplier for this entity type's rendered size. */
+  visual_scale?: number;
+  /** Draw order within the game world; higher values render in front. */
+  z_index?: number;
+  /** Whether hover indicators and entity detail UI should be suppressed. */
+  suppress_hover?: boolean;
   radiation_sources?: Array<{
     radiation_type: string;
+    min_effective_distance_border_color?: string;
+    min_effective_distance_fill_color?: string;
+    full_damage_distance_border_color?: string;
+    full_damage_distance_fill_color?: string;
+    max_effective_distance_border_color?: string;
+    max_effective_distance_fill_color?: string;
     min_effective_distance?: number;
     max_effective_distance?: number;
     full_damage_distance?: number;

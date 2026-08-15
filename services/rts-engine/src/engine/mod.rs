@@ -146,12 +146,21 @@ mod radiation_tests {
                 refinery: None,
                 radiation_sources: vec![RadiationSourceDef {
                     radiation_type: "stellar_heat".to_string(),
+                    min_effective_distance_border_color: None,
+                    min_effective_distance_fill_color: None,
+                    full_damage_distance_border_color: None,
+                    full_damage_distance_fill_color: None,
+                    max_effective_distance_border_color: None,
+                    max_effective_distance_fill_color: None,
                     min_effective_distance: 0.0,
                     max_effective_distance: 180.0,
                     full_damage_distance: 80.0,
                     damage_per_second: 24.0,
                 }],
                 radiation_shielding: HashMap::new(),
+                visual_scale: 1.0,
+                z_index: 0,
+                suppress_hover: false,
             },
         );
 
@@ -175,6 +184,9 @@ mod radiation_tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: collector_shielding,
+                visual_scale: 1.0,
+                z_index: 0,
+                suppress_hover: false,
             },
         );
         entity_types.insert(
@@ -189,6 +201,9 @@ mod radiation_tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
+                visual_scale: 1.0,
+                z_index: 0,
+                suppress_hover: false,
             },
         );
 

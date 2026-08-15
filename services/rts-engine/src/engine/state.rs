@@ -6,6 +6,9 @@ use crate::pb::{Entity, Vec2};
 use crate::content::ContentPack;
 use crate::spawn_config::{Loadout, NeutralNearSpawn, SpawnConfig, NEUTRAL_OWNER};
 
+const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
+const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
+
 /// M7: Per-player resource totals. Outer key = player_id, inner key = resource_type_id.
 pub type ResourceLedger = HashMap<String, HashMap<String, i64>>;
 
@@ -84,21 +87,31 @@ pub fn on_player_spawn(
     // Server-owned neutrals near this spawn point
     for neutral in neutrals_near_spawn {
         for _ in 0..neutral.count {
-            let angle = rng.gen_range(0.0..std::f32::consts::TAU);
             let min_distance = neutral.min_distance_from_spawn.max(0.0);
             let max_distance = neutral.max_distance_from_spawn.max(min_distance);
-            let distance = if max_distance > min_distance {
-                rng.gen_range(min_distance..=max_distance)
+            let (x, y) = if radiation_spawn_clearance(&neutral.entity_type_id, content) > 0.0 {
+                let Some(position) = sample_radiation_source_spawn_position(
+                    spawn_x,
+                    spawn_y,
+                    min_distance,
+                    max_distance,
+                    &neutral.entity_type_id,
+                    entities,
+                    content,
+                    rng,
+                ) else {
+                    // The configured annulus cannot satisfy the radiation
+                    // exclusion zone; do not violate the spawn rule.
+                    continue;
+                };
+                position
             } else {
-                min_distance
+                sample_position_in_annulus(spawn_x, spawn_y, min_distance, max_distance, rng)
             };
             entities.push(Entity {
                 id,
                 entity_type_id: neutral.entity_type_id.clone(),
-                pos: Some(Vec2 {
-                    x: spawn_x + angle.cos() * distance,
-                    y: spawn_y + angle.sin() * distance,
-                }),
+                pos: Some(Vec2 { x, y }),
                 vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: NEUTRAL_OWNER.to_string(),
@@ -112,6 +125,70 @@ pub fn on_player_spawn(
     }
 
     id
+}
+
+/// Largest player-exclusion radius of this type's radiation sources.
+fn radiation_spawn_clearance(entity_type_id: &str, content: &ContentPack) -> f32 {
+    content
+        .get(entity_type_id)
+        .map(|definition| {
+            definition
+                .radiation_sources
+                .iter()
+                .map(|source| source.max_effective_distance.max(0.0) * RADIATION_SPAWN_SAFETY_MULTIPLIER)
+                .fold(0.0, f32::max)
+        })
+        .unwrap_or(0.0)
+}
+
+/// Samples a radiation source position that stays outside the source's safety
+/// radius from every player-owned entity. Player loadout spacing is unchanged.
+fn sample_radiation_source_spawn_position(
+    spawn_x: f32,
+    spawn_y: f32,
+    min_distance: f32,
+    max_distance: f32,
+    entity_type_id: &str,
+    entities: &[Entity],
+    content: &ContentPack,
+    rng: &mut impl rand::Rng,
+) -> Option<(f32, f32)> {
+    let clearance = radiation_spawn_clearance(entity_type_id, content);
+    let clearance_sq = clearance * clearance;
+
+    for _ in 0..MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS {
+        let (x, y) = sample_position_in_annulus(spawn_x, spawn_y, min_distance, max_distance, rng);
+        let is_clear = entities.iter().all(|entity| {
+            if entity.owner_player_id == NEUTRAL_OWNER {
+                return true;
+            }
+            entity
+                .pos
+                .as_ref()
+                .is_none_or(|position| squared_distance(x, y, position.x, position.y) >= clearance_sq)
+        });
+        if is_clear {
+            return Some((x, y));
+        }
+    }
+
+    None
+}
+
+fn sample_position_in_annulus(
+    origin_x: f32,
+    origin_y: f32,
+    min_distance: f32,
+    max_distance: f32,
+    rng: &mut impl rand::Rng,
+) -> (f32, f32) {
+    let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+    let distance = if max_distance > min_distance {
+        rng.gen_range(min_distance..=max_distance)
+    } else {
+        min_distance
+    };
+    (origin_x + angle.cos() * distance, origin_y + angle.sin() * distance)
 }
 
 fn sample_player_unit_spawn_position(
