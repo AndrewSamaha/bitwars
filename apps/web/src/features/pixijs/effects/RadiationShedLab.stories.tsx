@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from "pixi.js";
+import { Assets, Container, Graphics, Sprite } from "pixi.js";
 import { useEffect, useRef } from "react";
 import type { Meta, StoryObj } from "@storybook/react";
 import {
@@ -6,6 +6,7 @@ import {
   RADIATION_SHED_DURATION_MS,
   type RadiationShedEffect,
 } from "./renderEffects";
+import { createPixiStoryApplication } from "../../../../.storybook/pixi";
 
 type ShipType = "collector_solar" | "worker";
 
@@ -15,10 +16,10 @@ type RadiationShedLabProps = {
   shipType: ShipType;
 };
 
-const STAR_X = 380;
-const STAR_Y = 280;
 const LAB_WIDTH = 760;
 const LAB_HEIGHT = 560;
+const GAME_WORLD_SCALE = 0.5;
+const DEFAULT_ENTITY_SCALE = 0.5;
 
 function radiationDamagePerSecond(distance: number, shipType: ShipType): number {
   const effectiveDistance = distance + (shipType === "collector_solar" ? 90 : 0);
@@ -29,24 +30,19 @@ function radiationDamagePerSecond(distance: number, shipType: ShipType): number 
   return rawDamage * (shipType === "collector_solar" ? 0.35 : 1);
 }
 
-function createStar() {
-  const star = new Graphics();
-  star.circle(0, 0, 64).fill({ color: 0xff_a51f, alpha: 0.13 });
-  star.circle(0, 0, 43).fill({ color: 0xff_c43d, alpha: 0.25 });
-  star.circle(0, 0, 26).fill({ color: 0xff_d86a, alpha: 0.9 });
-  star.circle(-7, -8, 12).fill({ color: 0xff_f4_b5, alpha: 0.9 });
-  return star;
-}
-
-function createShip(shipType: ShipType) {
-  const ship = new Container();
-  const hullColor = shipType === "collector_solar" ? 0xff_c84d : 0x85_caff;
-  const hull = new Graphics();
-  hull.roundRect(-46, -27, 92, 54, 14).fill({ color: 0x19_24_36 });
-  hull.roundRect(-40, -21, 80, 42, 10).stroke({ width: 5, color: hullColor, alpha: 0.95 });
-  hull.circle(0, 0, 12).fill({ color: 0xe7_f7_ff, alpha: 0.9 });
-  ship.addChild(hull);
-  return ship;
+function createRangeGuides() {
+  const guides = new Graphics();
+  guides.circle(0, 0, 80).stroke({
+    width: 1,
+    color: 0xff_8b_3d,
+    alpha: 0.34,
+  });
+  guides.circle(0, 0, 180).stroke({
+    width: 1,
+    color: 0xff_c8_51,
+    alpha: 0.28,
+  });
+  return guides;
 }
 
 function RadiationShedLab({ angleDegrees, distance, shipType }: RadiationShedLabProps) {
@@ -55,37 +51,55 @@ function RadiationShedLab({ angleDegrees, distance, shipType }: RadiationShedLab
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const app = new Application();
+    let app: Awaited<ReturnType<typeof createPixiStoryApplication>> | undefined;
     let disposed = false;
 
     const start = async () => {
-      await app.init({
+      app = await createPixiStoryApplication({
         width: LAB_WIDTH,
         height: LAB_HEIGHT,
-        antialias: true,
         background: 0x05_08_10,
       });
       if (disposed) {
-        app.destroy();
+        app.destroy({ removeView: true }, { children: true });
         return;
       }
       host.appendChild(app.canvas);
 
-      const star = createStar();
-      star.position.set(STAR_X, STAR_Y);
-      app.stage.addChild(star);
+      const [starTexture, shipTexture] = await Promise.all([
+        Assets.load("/assets/star_yellow/idle.png"),
+        Assets.load(`/assets/${shipType}/idle.png`),
+      ]);
+      if (disposed) return;
+
+      // This hierarchy matches GameStage exactly: world positions are scaled
+      // by the camera container, while sprites/effects are scaled by their
+      // entity container. Together, default unit art renders at 0.25x.
+      const worldContainer = new Container();
+      worldContainer.position.set(LAB_WIDTH / 2, LAB_HEIGHT / 2);
+      worldContainer.scale.set(GAME_WORLD_SCALE);
+      app.stage.addChild(worldContainer);
+      worldContainer.addChild(createRangeGuides());
+
+      const starEntity = new Container();
+      starEntity.scale.set(DEFAULT_ENTITY_SCALE);
+      const star = new Sprite(starTexture);
+      star.anchor.set(0.5);
+      starEntity.addChild(star);
+      worldContainer.addChild(starEntity);
 
       const angleRadians = angleDegrees * Math.PI / 180;
-      // The lab scales game-world range into an inspectable viewport while the
-      // readout below retains the real simulation distance in world units.
-      const renderDistance = 85 + Math.min(180, Math.max(0, distance)) * 1.55;
-      const ship = createShip(shipType);
+      const ship = new Container();
       ship.position.set(
-        STAR_X + Math.cos(angleRadians) * renderDistance,
-        STAR_Y + Math.sin(angleRadians) * renderDistance,
+        Math.cos(angleRadians) * distance,
+        Math.sin(angleRadians) * distance,
       );
+      ship.scale.set(DEFAULT_ENTITY_SCALE);
       ship.rotation = angleRadians + Math.PI / 2;
-      app.stage.addChild(ship);
+      const shipSprite = new Sprite(shipTexture);
+      shipSprite.anchor.set(0.5);
+      ship.addChild(shipSprite);
+      worldContainer.addChild(ship);
 
       const particles = new Graphics();
       particles.eventMode = "none";
@@ -97,7 +111,7 @@ function RadiationShedLab({ angleDegrees, distance, shipType }: RadiationShedLab
           key: "radiation-shed-lab",
           kind: "radiation_shed",
           startedAtMs: nowMs - (nowMs % RADIATION_SHED_DURATION_MS),
-          sourceWorldPos: { x: STAR_X, y: STAR_Y },
+          sourceWorldPos: { x: 0, y: 0 },
         };
         drawRadiationShedEffect(particles, ship, effect, nowMs);
       };
@@ -107,7 +121,7 @@ function RadiationShedLab({ angleDegrees, distance, shipType }: RadiationShedLab
     void start();
     return () => {
       disposed = true;
-      app.destroy({ removeView: true }, { children: true });
+      app?.destroy({ removeView: true }, { children: true });
     };
   }, [angleDegrees, distance, shipType]);
 
