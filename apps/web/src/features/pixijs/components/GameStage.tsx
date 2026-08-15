@@ -445,6 +445,9 @@ export default function GameStage() {
                 container.addChild(healthArc);
               }
               drawHealthArc(healthArc, health, maxHealth);
+              // The entity container rotates to face its velocity. Counter-rotate
+              // this overlay so the arc stays centered above the unit on screen.
+              healthArc.rotation = -container.rotation;
             } else if (healthArc) {
               healthArc.parent?.removeChild(healthArc);
               healthArc.destroy();

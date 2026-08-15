@@ -30,8 +30,10 @@ export function drawHealthArc(graphics: Graphics, health: number, maxHealth: num
     alpha: 0.8,
   });
   if (fraction > 0) {
+    const filledSweep = (HEALTH_ARC_END - HEALTH_ARC_START) * fraction;
+    const filledStart = (HEALTH_ARC_START + HEALTH_ARC_END) / 2 - filledSweep / 2;
     graphics
-      .arc(0, 0, HEALTH_ARC_RADIUS, HEALTH_ARC_START, HEALTH_ARC_START + (HEALTH_ARC_END - HEALTH_ARC_START) * fraction)
+      .arc(0, 0, HEALTH_ARC_RADIUS, filledStart, filledStart + filledSweep)
       .stroke({
         width: 7,
         color: healthColor(fraction),
