@@ -40,7 +40,8 @@ Status: Accepted
 - `apps/web/src/features/pixijs/effects/renderEffects.ts`
   - resolves the current solar collector effect from entity state,
   - resolves the current mineral gathering effect from entity state,
-  - draws the effect as a `particle_flow`,
+  - resolves directional radiation shedding from an authoritative health decrease and a nearby radiation emitter,
+  - draws collection effects as `particle_flow` and radiation damage as `radiation_shed`,
   - reconciles effect graphics by stable key.
 - `apps/web/src/features/pixijs/components/GameStage.tsx`
   - remains responsible for base sprite rendering and entity container lifecycle,
@@ -48,6 +49,7 @@ Status: Accepted
 - `apps/web/src/features/gamestate/components/GameStateStreamBridge.tsx`
   - hydrates live `collector_state` into the client ECS world via polling for all live entities,
   - makes collection-driven effects available to the renderer even when that state is not present in streamed deltas.
+  - records a presentation-only timestamp when a streamed health value decreases.
 
 ### Authority rule
 

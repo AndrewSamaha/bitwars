@@ -1,4 +1,4 @@
-import { redis } from "@/lib/db/connection";
+import { redis, streamRedis } from "@/lib/db/connection";
 
 export type StreamEntry = { id: string; data?: Buffer };
 
@@ -61,7 +61,7 @@ export async function xReadWithBuffers(
   blockMs: number,
   count: number
 ): Promise<StreamEntry[]> {
-  const res = (await (redis as any).xreadBuffer(
+  const res = (await (streamRedis as any).xreadBuffer(
     "BLOCK",
     blockMs,
     "COUNT",

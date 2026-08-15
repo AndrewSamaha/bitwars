@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { redis } from "@/lib/db/connection";
+import { redis, streamRedis } from "@/lib/db/connection";
 import init from "@/lib/db/init/init";
 
 function displayRedisTarget(rawUrl: string): string {
@@ -60,4 +60,5 @@ main()
   })
   .finally(() => {
     redis.disconnect();
+    streamRedis.disconnect();
   });

@@ -15,10 +15,13 @@ pnpm dev
 
 # In another terminal (optional data init for the web app):
 pnpm -C apps/web run db:init
-pnpm -C apps/web run createmock:players
 ```
 
 Open [http://localhost:8001/redis-stack/browser](http://localhost:8001/redis-stack/browser) with your browser to connect to Redis Stack.
+
+## Other Scripts
+- `pnpm game:reset` -- clear game state and player db
+- `pnpm -C apps/web storybook` -- start storybook
 
 ## Working Endpoints
 

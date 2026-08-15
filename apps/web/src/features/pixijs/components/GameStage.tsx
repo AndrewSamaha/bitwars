@@ -1,17 +1,24 @@
 "use client";
-import { Application, Assets, Container, Sprite, Graphics, type Texture } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
-import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
 import { game, type Entity } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
-import { createHoverIndicator } from "@/features/hud/graphics/hoverIndicator";
+import { createHoverIndicator, drawHealthArc } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
 import { reconcileEntityRenderEffects } from "@/features/pixijs/effects/renderEffects";
+import { contentManager } from "@/features/content/contentManager";
+import {
+  createGameEntityVisual,
+  createGameWorldContainer,
+  getGameEntityTexture,
+  loadGameEntityTextures,
+  type EntityVisual,
+} from "@/features/pixijs/renderer/entityVisuals";
 import {
   CELL_SIZE,
   SEED,
@@ -113,9 +120,8 @@ export default function GameStage() {
         ref.current!.appendChild(app.canvas);
 
         // Pixi scene graph root for world (M5.1: this is the camera — we pan by updating its position)
-        const worldContainer = new Container();
+        const worldContainer = createGameWorldContainer();
         worldContainer.position.set(800, 500);
-        worldContainer.scale.set(.5);
         app.stage.addChild(worldContainer);
         app.stage.eventMode = "static";
         app.stage.hitArea = app.screen;
@@ -283,32 +289,10 @@ export default function GameStage() {
         window.addEventListener('keydown', onKeyDown);
         window.addEventListener('keyup', onKeyUp);
 
-        // M4: Texture cache by entity_type_id. Path: /assets/${entity_type_id}/idle.png
-        // Preload all entity types from content pack (build-time list from entities.yaml)
-        const DEFAULT_ENTITY_TYPE = 'corvette';
-        const typesToPreload = [
-          ...new Set([DEFAULT_ENTITY_TYPE, ...PRELOAD_ENTITY_TYPES]),
-        ];
-        const textureCache = new Map<string, Texture>();
-        await Promise.all(
-          typesToPreload.map(async (id) => {
-            console.log({ preloadTextureId: id })
-            const tex = await Assets.load(`/assets/${id}/idle.png`);
-            textureCache.set(id, tex);
-          })
-        );
-
-        function getTextureForEntityType(entityTypeId: string | undefined): Texture {
-          const typeId = entityTypeId?.trim() || DEFAULT_ENTITY_TYPE;
-          return textureCache.get(typeId) ?? textureCache.get(DEFAULT_ENTITY_TYPE)!;
-        }
+        const textureCache = await loadGameEntityTextures();
 
         // M8c: Authoritative render index keyed by ECS entity id.
-        const renderById = new Map<string, {
-          container: Container;
-          sprite: Sprite;
-          lastEntityTypeId: string;
-        }>();
+        const renderById = new Map<string, EntityVisual>();
 
         const normalizeId = (id: number | string | undefined | null): string | null => {
           if (id === undefined || id === null) return null;
@@ -341,13 +325,10 @@ export default function GameStage() {
             if (!id) continue;
             liveById.set(id, e as any);
             if (!renderById.has(id)) {
-              const entityContainer = new Container();
-              entityContainer.eventMode = "static";
               const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
-              const texture = getTextureForEntityType(typeId);
-              const sprite = Sprite.from(texture);
-              sprite.anchor.set(0.5);
-              entityContainer.addChild(sprite);
+              const visual = createGameEntityVisual(textureCache, typeId);
+              const entityContainer = visual.container;
+              entityContainer.eventMode = "static";
               worldContainer.addChild(entityContainer);
 
               entityContainer
@@ -384,11 +365,7 @@ export default function GameStage() {
                   // In non-move mode, entity clicks should not fall through to stage deselect.
                   ev.stopPropagation();
                 });
-              renderById.set(id, {
-                container: entityContainer,
-                sprite,
-                lastEntityTypeId: typeId,
-              });
+              renderById.set(id, visual);
             }
           }
 
@@ -413,7 +390,7 @@ export default function GameStage() {
 
             const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
             if (typeId !== ref.lastEntityTypeId) {
-              ref.sprite.texture = getTextureForEntityType(typeId);
+              ref.sprite.texture = getGameEntityTexture(textureCache, typeId);
               ref.lastEntityTypeId = typeId;
             }
             // Position: proto pos (already advanced by world.tick)
@@ -438,6 +415,10 @@ export default function GameStage() {
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
             const isNeutral = ownerId === "neutral";
             const baseTint = isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
+            const health = Number((e as Entity).health);
+            const maxHealth = contentManager.getEntityType(typeId)?.health;
+            const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
+            const shouldShowHealthArc = hasHealth && ((e as any).hover || (isOwned && health < maxHealth));
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if ((e as any).hover) {
               if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
@@ -453,6 +434,23 @@ export default function GameStage() {
               // remove hover indicator if present
               const existing = container.children.find((c) => c.label === 'hoverIndicator');
               if (existing) existing.parent?.removeChild(existing);
+            }
+
+            let healthArc = container.children.find((c) => c.label === "healthArc") as Graphics | undefined;
+            if (shouldShowHealthArc && hasHealth) {
+              if (!healthArc) {
+                healthArc = new Graphics();
+                healthArc.label = "healthArc";
+                healthArc.eventMode = "none";
+                container.addChild(healthArc);
+              }
+              drawHealthArc(healthArc, health, maxHealth);
+              // The entity container rotates to face its velocity. Counter-rotate
+              // this overlay so the arc stays centered above the unit on screen.
+              healthArc.rotation = -container.rotation;
+            } else if (healthArc) {
+              healthArc.parent?.removeChild(healthArc);
+              healthArc.destroy();
             }
           }
 

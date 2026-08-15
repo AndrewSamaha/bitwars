@@ -31,6 +31,11 @@ export async function bootstrapAndCatchUp(
     return undefined;
   }
 
+  // The snapshot boundary is also the correct cursor when there are no gap
+  // events. Returning undefined would make the caller use `$`, creating a
+  // race where a just-spawned player's first delta is skipped.
+  lastId = boundaryId || "0-0";
+
   try {
     const snapshot = decodeSnapshotBinary(snapshotBuf);
     const payload = mapSnapshotToJson(snapshot as any);
