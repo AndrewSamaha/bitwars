@@ -118,12 +118,19 @@ entity_types:
         spend_rates:
           minerals: 1.2
           energy: 1.2
+      - entity_type_id: habitat
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2
 
   habitat:
     speed: 70.0
     stop_radius: 0.5
     mass: 4.0
     health: 200.0
+    build_cost:
+      minerals: 1000.0
+      energy: 1000.0
     builds:
       - entity_type_id: worker
         spend_rates:
