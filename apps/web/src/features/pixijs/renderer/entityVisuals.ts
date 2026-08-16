@@ -1,5 +1,6 @@
-import { Assets, Container, Sprite, type Texture } from "pixi.js";
+import { Assets, Container, Sprite, type Filter, type Texture } from "pixi.js";
 import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
+import { createStarYellowFilter, setStarYellowFilterTime } from "./starYellowEffect";
 
 export const GAME_WORLD_SCALE = 0.5;
 export const DEFAULT_ENTITY_SCALE = 0.5;
@@ -11,6 +12,7 @@ export type EntityVisual = {
   container: Container;
   sprite: Sprite;
   lastEntityTypeId: string;
+  starYellowFilter?: Filter;
 };
 
 /** The camera/world transform used by the live game and isolated Pixi labs. */
@@ -53,5 +55,26 @@ export function createGameEntityVisual(
   const sprite = Sprite.from(getGameEntityTexture(textureCache, typeId));
   sprite.anchor.set(0.5);
   container.addChild(sprite);
-  return { container, sprite, lastEntityTypeId: typeId };
+  const visual = { container, sprite, lastEntityTypeId: typeId };
+  updateGameEntityVisual(visual, typeId, 0);
+  return visual;
+}
+
+/** Keep an entity's texture-specific visual treatment in sync with game time. */
+export function updateGameEntityVisual(
+  visual: EntityVisual,
+  entityTypeId: string | undefined,
+  elapsedMs: number,
+) {
+  const typeId = entityTypeId?.trim() || "";
+  if (typeId === "star_yellow") {
+    const filter = visual.starYellowFilter ?? createStarYellowFilter();
+    visual.starYellowFilter = filter;
+    visual.sprite.filters = [filter];
+    setStarYellowFilterTime(filter, elapsedMs);
+  } else if (visual.starYellowFilter) {
+    visual.sprite.filters = [];
+    visual.starYellowFilter.destroy();
+    visual.starYellowFilter = undefined;
+  }
 }
