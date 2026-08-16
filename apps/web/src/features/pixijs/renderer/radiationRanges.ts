@@ -1,7 +1,7 @@
 import { type Graphics } from "pixi.js";
 import type { EntityTypeDef } from "@/features/content/contentManager";
 
-type RadiationSource = NonNullable<EntityTypeDef["radiation_sources"]>[number];
+export type RadiationSource = NonNullable<EntityTypeDef["radiation_sources"]>[number];
 
 function parseHexColor(value: string | undefined): number | undefined {
   const hex = value?.trim().replace(/^#/, "");

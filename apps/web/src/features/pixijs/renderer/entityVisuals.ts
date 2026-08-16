@@ -1,6 +1,6 @@
-import { Assets, Container, Sprite, type Filter, type Texture } from "pixi.js";
+import { Assets, Container, Sprite, type Texture } from "pixi.js";
 import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
-import { createStarYellowFilter, setStarYellowFilterTime } from "./shaders/starYellow";
+import { createStarVisual } from "./entities/starVisual";
 
 export const GAME_WORLD_SCALE = 0.5;
 export const DEFAULT_ENTITY_SCALE = 0.5;
@@ -12,7 +12,7 @@ export type EntityVisual = {
   container: Container;
   sprite: Sprite;
   lastEntityTypeId: string;
-  starYellowFilter?: Filter;
+  update?: (elapsedMs: number) => void;
 };
 
 /** The camera/world transform used by the live game and isolated Pixi labs. */
@@ -50,31 +50,22 @@ export function createGameEntityVisual(
   entityTypeId: string | undefined,
 ): EntityVisual {
   const typeId = entityTypeId?.trim() || "";
+  const texture = getGameEntityTexture(textureCache, typeId);
+  if (typeId === "star_yellow") {
+    const starVisual = createStarVisual({ texture });
+    starVisual.container.scale.set(DEFAULT_ENTITY_SCALE);
+    return { ...starVisual, lastEntityTypeId: typeId };
+  }
+
   const container = new Container();
   container.scale.set(DEFAULT_ENTITY_SCALE);
-  const sprite = Sprite.from(getGameEntityTexture(textureCache, typeId));
+  const sprite = Sprite.from(texture);
   sprite.anchor.set(0.5);
   container.addChild(sprite);
-  const visual = { container, sprite, lastEntityTypeId: typeId };
-  updateGameEntityVisual(visual, typeId, 0);
-  return visual;
+  return { container, sprite, lastEntityTypeId: typeId };
 }
 
-/** Keep an entity's texture-specific visual treatment in sync with game time. */
-export function updateGameEntityVisual(
-  visual: EntityVisual,
-  entityTypeId: string | undefined,
-  elapsedMs: number,
-) {
-  const typeId = entityTypeId?.trim() || "";
-  if (typeId === "star_yellow") {
-    const filter = visual.starYellowFilter ?? createStarYellowFilter();
-    visual.starYellowFilter = filter;
-    visual.sprite.filters = [filter];
-    setStarYellowFilterTime(filter, elapsedMs);
-  } else if (visual.starYellowFilter) {
-    visual.sprite.filters = [];
-    visual.starYellowFilter.destroy();
-    visual.starYellowFilter = undefined;
-  }
+/** Advance an entity visual's optional time-based presentation. */
+export function updateGameEntityVisual(visual: EntityVisual, elapsedMs: number) {
+  visual.update?.(elapsedMs);
 }

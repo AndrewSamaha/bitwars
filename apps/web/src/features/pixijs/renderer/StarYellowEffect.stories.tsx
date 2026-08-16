@@ -36,7 +36,7 @@ function StarYellowEffect() {
       visual.container.position.set(STORY_SIZE / 2, STORY_SIZE / 2);
       visual.container.scale.set(1.5);
       app.stage.addChild(visual.container);
-      app.ticker.add(() => updateGameEntityVisual(visual, "star_yellow", performance.now()));
+      app.ticker.add(() => updateGameEntityVisual(visual, performance.now()));
     };
 
     void start();

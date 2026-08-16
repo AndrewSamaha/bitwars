@@ -29,6 +29,7 @@
 coverage/
 /apps/web/.next/
 /out/
+/apps/web/storybook-static/
 
 # production
 /build
