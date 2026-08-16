@@ -95,9 +95,16 @@ export default function GameStage() {
               client_seq: params.clientSeq,
               policy: params.policy,
             }
-          : {
+          : params.kind === "Collect" ? {
               type: "Collect",
               entity_id: params.entityId,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
+            } : {
+              type: "Build",
+              entity_id: params.entityId,
+              blueprint_id: params.blueprintId,
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,

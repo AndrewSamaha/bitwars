@@ -10,9 +10,7 @@ use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
 
 use crate::config::GameConfig;
-use crate::content::{
-    CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef,
-};
+use crate::content::{CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::{CollectorUiState, IntentPoint, RedisClient};
@@ -33,6 +31,7 @@ const COLLECTOR_ACTIVITY_GATHERING: &str = "gathering";
 const COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF: &str = "moving_to_dropoff";
 const COLLECTOR_ACTIVITY_DELIVERING: &str = "delivering";
 const COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING: &str = "proximity_collecting";
+const BUILD_SPAWN_RADIUS: f32 = 100.0;
 
 #[derive(Clone, Debug)]
 struct CarryState {
@@ -161,6 +160,8 @@ mod radiation_tests {
                 visual_scale: 1.0,
                 z_index: 0,
                 suppress_hover: false,
+                build_cost: HashMap::new(),
+                builds: Vec::new(),
             },
         );
 
@@ -187,6 +188,8 @@ mod radiation_tests {
                 visual_scale: 1.0,
                 z_index: 0,
                 suppress_hover: false,
+                build_cost: HashMap::new(),
+                builds: Vec::new(),
             },
         );
         entity_types.insert(
@@ -204,6 +207,8 @@ mod radiation_tests {
                 visual_scale: 1.0,
                 z_index: 0,
                 suppress_hover: false,
+                build_cost: HashMap::new(),
+                builds: Vec::new(),
             },
         );
 
@@ -255,7 +260,12 @@ mod radiation_tests {
         };
         let state = GameState {
             tick: 0,
-            entities: vec![star, collector_safe, collector_too_close, worker_same_distance],
+            entities: vec![
+                star,
+                collector_safe,
+                collector_too_close,
+                worker_same_distance,
+            ],
             ledger: HashMap::new(),
         };
 
@@ -304,7 +314,10 @@ mod radiation_tests {
 
         let damage = Engine::compute_radiation_damage(&state, &content);
         let worker_damage = damage.get(&3).copied().unwrap_or(0.0);
-        assert!(worker_damage > 24.0, "expected stacked damage, got {worker_damage}");
+        assert!(
+            worker_damage > 24.0,
+            "expected stacked damage, got {worker_damage}"
+        );
     }
 }
 
@@ -355,6 +368,8 @@ pub struct Engine {
     carry_by_entity: HashMap<u64, CarryState>,
     /// M8: Fractional per-player resources accumulated between integer ledger commits.
     resource_fractional: HashMap<(String, String), f32>,
+    /// Fractional resource debits accumulated while construction channels run.
+    build_spend_fractional: HashMap<(String, String), f32>,
     /// M8b: Per-collector runtime telemetry projected to Redis/UI.
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
 }
@@ -634,6 +649,7 @@ impl Engine {
                     joined_players,
                     carry_by_entity: HashMap::new(),
                     resource_fractional: HashMap::new(),
+                    build_spend_fractional: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
                 };
                 engine.hydrate_entity_health_if_missing();
@@ -697,6 +713,7 @@ impl Engine {
             joined_players: HashSet::new(),
             carry_by_entity: HashMap::new(),
             resource_fractional: HashMap::new(),
+            build_spend_fractional: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
@@ -820,6 +837,189 @@ impl Engine {
         }
     }
 
+    /// Debit whole ledger units while retaining fractional construction spend.
+    /// Construction is only accepted when its full cost is currently affordable,
+    /// so this cannot take a ledger negative during normal play.
+    fn spend_resource(&mut self, player_id: &str, resource_type: &str, amount: f32) -> bool {
+        if amount <= 0.0 {
+            return true;
+        }
+        let key = (player_id.to_string(), resource_type.to_string());
+        let total = self
+            .build_spend_fractional
+            .get(&key)
+            .copied()
+            .unwrap_or(0.0)
+            + amount;
+        let whole = total.floor() as i64;
+        let remainder = total - whole as f32;
+        if whole > 0 {
+            let available = self
+                .state
+                .ledger
+                .get(player_id)
+                .and_then(|ledger| ledger.get(resource_type))
+                .copied()
+                .unwrap_or(0);
+            if available < whole {
+                return false;
+            }
+            let ledger = self.state.ledger.entry(player_id.to_string()).or_default();
+            *ledger.entry(resource_type.to_string()).or_insert(0) -= whole;
+        }
+        if remainder > 0.0 {
+            self.build_spend_fractional.insert(key, remainder);
+        } else {
+            self.build_spend_fractional.remove(&key);
+        }
+        true
+    }
+
+    /// Advance active construction channels, charge their content-defined
+    /// resource rates, and spawn completed units near their builder.
+    async fn advance_builds(&mut self, dt: f32) {
+        let Some(content) = self.content.clone() else {
+            return;
+        };
+        let mut updates = Vec::new();
+        for (entity_id, active) in self.intents.active_intents() {
+            let Some(pb::action_state::Exec::Build(build)) = active.action.exec.as_ref() else {
+                continue;
+            };
+            let Some(builder) = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == *entity_id)
+            else {
+                continue;
+            };
+            let Some(builder_def) = content.get(&builder.entity_type_id) else {
+                continue;
+            };
+            let Some(option) = builder_def
+                .builds
+                .iter()
+                .find(|option| option.entity_type_id == build.blueprint_id)
+            else {
+                continue;
+            };
+            let Some(product_def) = content.get(&build.blueprint_id) else {
+                continue;
+            };
+            let mut duration = 0.0f32;
+            for (resource, cost) in &product_def.build_cost {
+                if *cost <= 0.0 {
+                    continue;
+                }
+                let rate = option.spend_rates.get(resource).copied().unwrap_or(1.0);
+                if rate <= 0.0 {
+                    continue;
+                }
+                duration = duration.max(*cost / rate);
+            }
+            if duration > 0.0 {
+                updates.push((
+                    *entity_id,
+                    active.metadata.player_id.clone(),
+                    build.blueprint_id.clone(),
+                    build.progress,
+                    duration,
+                    option.spend_rates.clone(),
+                    product_def.build_cost.clone(),
+                ));
+            }
+        }
+
+        let mut completed = Vec::new();
+        for (entity_id, player_id, blueprint_id, old_progress, duration, rates, costs) in updates {
+            let new_progress = (old_progress + dt / duration).min(1.0);
+            let old_elapsed = old_progress * duration;
+            let new_elapsed = new_progress * duration;
+            let mut can_spend = true;
+            for (resource, cost) in &costs {
+                if *cost <= 0.0 {
+                    continue;
+                }
+                let rate = rates.get(resource).copied().unwrap_or(1.0);
+                let amount =
+                    ((new_elapsed * rate).min(*cost) - (old_elapsed * rate).min(*cost)).max(0.0);
+                can_spend &= self.spend_resource(&player_id, resource, amount);
+            }
+            if !can_spend {
+                continue;
+            }
+            if let Some(active) = self.intents.active_intents_mut().get_mut(&entity_id) {
+                if let Some(pb::action_state::Exec::Build(build)) = active.action.exec.as_mut() {
+                    build.progress = new_progress;
+                }
+            }
+            if let Err(error) = self
+                .redis
+                .update_build_progress(entity_id, &blueprint_id, new_progress)
+                .await
+            {
+                warn!(
+                    ?error,
+                    entity_id, "failed to update build progress tracking"
+                );
+            }
+            if new_progress >= 1.0 {
+                completed.push((entity_id, player_id, blueprint_id));
+            }
+        }
+
+        for (builder_id, player_id, blueprint_id) in completed {
+            let Some(builder) = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == builder_id)
+                .cloned()
+            else {
+                continue;
+            };
+            let Some(pos) = builder.pos else { continue };
+            let next_id = self
+                .state
+                .entities
+                .iter()
+                .map(|entity| entity.id)
+                .max()
+                .unwrap_or(0)
+                + 1;
+            let angle = (next_id as f32 * 2.399_963_1) % std::f32::consts::TAU;
+            let spawn_distance = BUILD_SPAWN_RADIUS * 0.75;
+            let health = content
+                .get(&blueprint_id)
+                .map(|definition| definition.health.max(0.0))
+                .unwrap_or(0.0);
+            self.state.entities.push(pb::Entity {
+                id: next_id,
+                entity_type_id: blueprint_id,
+                pos: Some(pb::Vec2 {
+                    x: pos.x + angle.cos() * spawn_distance,
+                    y: pos.y + angle.sin() * spawn_distance,
+                }),
+                vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                owner_player_id: player_id,
+                health,
+            });
+            if let Some(metadata) = self.intents.finish(builder_id) {
+                let _ = self.redis.clear_active_intent(builder_id).await;
+                let _ = self
+                    .emit_lifecycle_event(
+                        &metadata,
+                        pb::LifecycleState::Finished,
+                        pb::LifecycleReason::None,
+                        self.state.tick,
+                    )
+                    .await;
+            }
+        }
+    }
+
     fn clear_fractional_for_entity(&mut self, entity_id: u64) {
         if let Some(carry) = self.carry_by_entity.remove(&entity_id) {
             if carry.amount > 0.0 {
@@ -859,7 +1059,12 @@ impl Engine {
         if self.state.entities.is_empty() {
             return;
         }
-        if !self.state.entities.iter().all(|entity| entity.health <= 0.0) {
+        if !self
+            .state
+            .entities
+            .iter()
+            .all(|entity| entity.health <= 0.0)
+        {
             return;
         }
         for entity in &mut self.state.entities {
@@ -1059,7 +1264,8 @@ impl Engine {
                 .iter()
                 .filter(|source| source.entity_id != entity.id)
                 .map(|source| {
-                    let actual_distance = Self::distance_sq(pos.x, pos.y, source.x, source.y).sqrt();
+                    let actual_distance =
+                        Self::distance_sq(pos.x, pos.y, source.x, source.y).sqrt();
                     Self::radiation_damage_per_second(source, entity_type, actual_distance)
                 })
                 .sum::<f32>();
@@ -1615,6 +1821,7 @@ impl Engine {
             }
         }
         self.apply_resource_collection(dt);
+        self.advance_builds(dt).await;
         self.publish_collector_ui_state().await;
         integrate(&self.cfg, &mut self.state, dt);
         self.apply_radiation_damage(dt);
@@ -1727,6 +1934,7 @@ impl Engine {
                 }
             }
             self.apply_resource_collection(dt);
+            self.advance_builds(dt).await;
             self.publish_collector_ui_state().await;
             integrate(&self.cfg, &mut self.state, dt);
             self.apply_radiation_damage(dt);
@@ -1990,6 +2198,51 @@ impl Engine {
                 return Err(anyhow!("entity not owned"));
             }
             Some(_) => {}
+        }
+
+        // Production is entirely content-driven and always revalidated by the
+        // server; the client-side disabled button is only a convenience.
+        if let Some(pb::intent::Kind::Build(build)) = payload_intent.kind.as_ref() {
+            let builder_type = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == entity_id)
+                .map(|entity| entity.entity_type_id.as_str())
+                .unwrap_or_default();
+            let Some(content) = self.content.as_ref() else {
+                return Err(anyhow!("build unavailable without content pack"));
+            };
+            let Some(builder) = content.get(builder_type) else {
+                return Err(anyhow!("unknown builder type"));
+            };
+            let Some(option) = builder
+                .builds
+                .iter()
+                .find(|option| option.entity_type_id == build.blueprint_id)
+            else {
+                return Err(anyhow!("builder cannot produce requested entity"));
+            };
+            let Some(product) = content.get(&build.blueprint_id) else {
+                return Err(anyhow!("unknown build product"));
+            };
+            if product.build_cost.is_empty() {
+                return Err(anyhow!("build product has no build_cost"));
+            }
+            let ledger = self.state.ledger.get(&player_id);
+            for (resource, cost) in &product.build_cost {
+                let rate = option.spend_rates.get(resource).copied().unwrap_or(1.0);
+                if *cost <= 0.0 || !rate.is_finite() || rate <= 0.0 {
+                    return Err(anyhow!("invalid build cost or spend rate for {resource}"));
+                }
+                let available = ledger
+                    .and_then(|resources| resources.get(resource))
+                    .copied()
+                    .unwrap_or(0);
+                if available < cost.ceil() as i64 {
+                    return Err(anyhow!("insufficient {resource} for build"));
+                }
+            }
         }
 
         // M4: Look up entity_type_id for per-type stat resolution.

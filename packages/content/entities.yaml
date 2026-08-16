@@ -86,6 +86,9 @@ entity_types:
     stop_radius: 1
     mass: 500.0
     health: 100.0
+    build_cost:
+      minerals: 100.0
+      energy: 50.0
     radiation_shielding:
       stellar_heat:
         distance_offset: 90.0
@@ -102,17 +105,37 @@ entity_types:
     stop_radius: 0.75
     mass: 1.0
     health: 100.0
+    build_cost:
+      minerals: 50.0
+      energy: 50.0
     collector:
       collects: [minerals]
       transport_rate_per_second: 10.0
       carry_capacity: 120.0
       deposit_entity_types: [processor]
+    builds:
+      - entity_type_id: collector_solar
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2
+      - entity_type_id: habitat
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2
 
   habitat:
     speed: 70.0
     stop_radius: 0.5
     mass: 4.0
     health: 200.0
+    build_cost:
+      minerals: 1000.0
+      energy: 1000.0
+    builds:
+      - entity_type_id: worker
+        spend_rates:
+          minerals: 0.8
+          energy: 0.8
 
   processor:
     speed: 60.0

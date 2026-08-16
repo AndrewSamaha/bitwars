@@ -246,6 +246,19 @@ impl IntentManager {
     pub fn active_intents(&self) -> &HashMap<u64, ActiveIntent> {
         &self.current_action
     }
+
+    /// Mutable active actions for authoritative systems that advance channels
+    /// such as construction.
+    pub fn active_intents_mut(&mut self) -> &mut HashMap<u64, ActiveIntent> {
+        &mut self.current_action
+    }
+
+    /// Finish a non-movement action after its authoritative system completes it.
+    pub fn finish(&mut self, entity_id: u64) -> Option<IntentMetadata> {
+        let active = self.current_action.remove(&entity_id)?;
+        log_finish(&active.metadata, &active.action, entity_id);
+        Some(active.metadata)
+    }
 }
 
 fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -> pb::ActionState {

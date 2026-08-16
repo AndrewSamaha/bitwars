@@ -55,6 +55,21 @@ pub struct EntityTypeDef {
     /// Per-radiation-type shielding modifiers for this entity type.
     #[serde(default)]
     pub radiation_shielding: HashMap<String, RadiationShieldingDef>,
+    /// Resources required to create one instance of this entity type.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub build_cost: HashMap<String, f32>,
+    /// Units this entity type can produce.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub builds: Vec<BuildOptionDef>,
+}
+
+/// One content-defined production option available to a builder.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BuildOptionDef {
+    pub entity_type_id: String,
+    /// Resource conversion rates. A missing required resource defaults to 1/s.
+    #[serde(default)]
+    pub spend_rates: HashMap<String, f32>,
 }
 
 /// M7: Per-resource-type definition for display (name, order) in HUD.
@@ -276,6 +291,8 @@ mod tests {
                 visual_scale: 1.0,
                 z_index: 0,
                 suppress_hover: false,
+                build_cost: HashMap::new(),
+                builds: Vec::new(),
             },
         );
         types.insert(
@@ -293,6 +310,8 @@ mod tests {
                 visual_scale: 1.0,
                 z_index: 0,
                 suppress_hover: false,
+                build_cost: HashMap::new(),
+                builds: Vec::new(),
             },
         );
 
@@ -321,6 +340,8 @@ mod tests {
                 visual_scale: 1.0,
                 z_index: 0,
                 suppress_hover: false,
+                build_cost: HashMap::new(),
+                builds: Vec::new(),
             },
         );
         types_a.insert(
@@ -338,6 +359,8 @@ mod tests {
                 visual_scale: 1.0,
                 z_index: 0,
                 suppress_hover: false,
+                build_cost: HashMap::new(),
+                builds: Vec::new(),
             },
         );
 
@@ -357,6 +380,8 @@ mod tests {
                 visual_scale: 1.0,
                 z_index: 0,
                 suppress_hover: false,
+                build_cost: HashMap::new(),
+                builds: Vec::new(),
             },
         );
         types_b.insert(
@@ -374,6 +399,8 @@ mod tests {
                 visual_scale: 1.0,
                 z_index: 0,
                 suppress_hover: false,
+                build_cost: HashMap::new(),
+                builds: Vec::new(),
             },
         );
 

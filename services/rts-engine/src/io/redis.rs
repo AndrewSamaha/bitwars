@@ -35,6 +35,11 @@ pub struct EntityActiveIntent {
     /// Optional move target summary for reconnect/UI.
     #[serde(default)]
     pub move_target: Option<IntentPoint>,
+    /// Build-only UI summary, updated by the authoritative construction tick.
+    #[serde(default)]
+    pub blueprint_id: Option<String>,
+    #[serde(default)]
+    pub progress: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -593,6 +598,8 @@ impl RedisClient {
             started_tick: metadata.server_tick,
             intent_kind: intent_kind.to_string(),
             move_target,
+            blueprint_id: None,
+            progress: None,
         };
         let json = serde_json::to_string(&entry)?;
         let key = self.active_intents_key();
@@ -608,6 +615,26 @@ impl RedisClient {
         // net stays well ahead of the most recent activity.
         let ttl: i64 = ttl_secs.try_into().unwrap_or(i64::MAX);
         let _: () = self.conn.expire(&key, ttl).await?;
+        Ok(())
+    }
+
+    /// Update the reconnect/UI summary for an in-progress build.
+    pub async fn update_build_progress(
+        &mut self,
+        entity_id: u64,
+        blueprint_id: &str,
+        progress: f32,
+    ) -> anyhow::Result<()> {
+        let key = self.active_intents_key();
+        let field = entity_id.to_string();
+        let Some(json) = self.conn.hget::<_, _, Option<String>>(&key, &field).await? else {
+            return Ok(());
+        };
+        let mut entry: EntityActiveIntent = serde_json::from_str(&json)?;
+        entry.blueprint_id = Some(blueprint_id.to_string());
+        entry.progress = Some(progress.clamp(0.0, 1.0));
+        let json = serde_json::to_string(&entry)?;
+        let _: () = self.conn.hset(&key, &field, json).await?;
         Ok(())
     }
 
