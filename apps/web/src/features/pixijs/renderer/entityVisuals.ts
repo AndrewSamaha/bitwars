@@ -1,5 +1,6 @@
 import { Assets, Container, Sprite, type Texture } from "pixi.js";
 import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
+import { createStarVisual } from "./entities/starVisual";
 
 export const GAME_WORLD_SCALE = 0.5;
 export const DEFAULT_ENTITY_SCALE = 0.5;
@@ -11,6 +12,7 @@ export type EntityVisual = {
   container: Container;
   sprite: Sprite;
   lastEntityTypeId: string;
+  update?: (elapsedMs: number) => void;
 };
 
 /** The camera/world transform used by the live game and isolated Pixi labs. */
@@ -48,10 +50,22 @@ export function createGameEntityVisual(
   entityTypeId: string | undefined,
 ): EntityVisual {
   const typeId = entityTypeId?.trim() || "";
+  const texture = getGameEntityTexture(textureCache, typeId);
+  if (typeId === "star_yellow") {
+    const starVisual = createStarVisual({ texture });
+    starVisual.container.scale.set(DEFAULT_ENTITY_SCALE);
+    return { ...starVisual, lastEntityTypeId: typeId };
+  }
+
   const container = new Container();
   container.scale.set(DEFAULT_ENTITY_SCALE);
-  const sprite = Sprite.from(getGameEntityTexture(textureCache, typeId));
+  const sprite = Sprite.from(texture);
   sprite.anchor.set(0.5);
   container.addChild(sprite);
   return { container, sprite, lastEntityTypeId: typeId };
+}
+
+/** Advance an entity visual's optional time-based presentation. */
+export function updateGameEntityVisual(visual: EntityVisual, elapsedMs: number) {
+  visual.update?.(elapsedMs);
 }

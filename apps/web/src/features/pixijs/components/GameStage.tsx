@@ -18,8 +18,10 @@ import {
   createGameWorldContainer,
   getGameEntityTexture,
   loadGameEntityTextures,
+  updateGameEntityVisual,
   type EntityVisual,
 } from "@/features/pixijs/renderer/entityVisuals";
+import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
 import {
   CELL_SIZE,
   SEED,
@@ -151,55 +153,11 @@ export default function GameStage() {
         radiationRangeGraphics.zIndex = -1_000_000;
         worldContainer.addChild(radiationRangeGraphics);
 
-        const parseHexColor = (value: string | undefined): number | undefined => {
-          const hex = value?.trim().replace(/^#/, "");
-          if (!hex || !/^[0-9a-f]{3}([0-9a-f]{3})?$/i.test(hex)) return undefined;
-          const expanded = hex.length === 3 ? [...hex].map((digit) => `${digit}${digit}`).join("") : hex;
-          return Number.parseInt(expanded, 16);
-        };
-
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
           for (const entity of game.world.with("pos", "entity_type_id")) {
             const sources = contentManager.getEntityType(entity.entity_type_id ?? "")?.radiation_sources;
-            if (!sources?.length) continue;
-
-            for (const source of sources) {
-              const ranges = [
-                {
-                  radius: source.max_effective_distance,
-                  borderColor: source.max_effective_distance_border_color,
-                  fillColor: source.max_effective_distance_fill_color,
-                },
-                {
-                  radius: source.full_damage_distance,
-                  borderColor: source.full_damage_distance_border_color,
-                  fillColor: source.full_damage_distance_fill_color,
-                },
-                {
-                  radius: source.min_effective_distance,
-                  borderColor: source.min_effective_distance_border_color,
-                  fillColor: source.min_effective_distance_fill_color,
-                },
-              ]
-                .filter((range) => Number.isFinite(range.radius) && (range.borderColor || range.fillColor))
-                .sort((a, b) => (b.radius ?? 0) - (a.radius ?? 0));
-
-              for (const range of ranges) {
-                const radius = range.radius ?? 0;
-                const fillColor = parseHexColor(range.fillColor);
-                const borderColor = parseHexColor(range.borderColor);
-                if (radius <= 0 || (fillColor === undefined && borderColor === undefined)) continue;
-
-                radiationRangeGraphics.circle(entity.pos.x, entity.pos.y, radius);
-                if (fillColor !== undefined) {
-                  radiationRangeGraphics.fill({ color: fillColor, alpha: 0.12 });
-                }
-                if (borderColor !== undefined) {
-                  radiationRangeGraphics.stroke({ width: 2, color: borderColor, alpha: 0.7 });
-                }
-              }
-            }
+            drawRadiationRanges(radiationRangeGraphics, sources, entity.pos.x, entity.pos.y);
           }
         };
 
@@ -450,6 +408,7 @@ export default function GameStage() {
 
         // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
+          const nowMs = performance.now();
           renderRadiationRanges();
           const liveById = new Map<string, any>();
           for (const e of game.world.with("id", "pos")) {
@@ -537,6 +496,7 @@ export default function GameStage() {
               ref.sprite.texture = getGameEntityTexture(textureCache, typeId);
               ref.lastEntityTypeId = typeId;
             }
+            updateGameEntityVisual(ref, nowMs);
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
             const scale = (e as any).scale ?? 1;

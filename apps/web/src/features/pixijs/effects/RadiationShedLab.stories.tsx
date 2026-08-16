@@ -103,6 +103,7 @@ function RadiationShedLab({ angleDegrees, distance, shipType }: RadiationShedLab
 
       const tick = () => {
         const nowMs = performance.now();
+        starVisual.update?.(nowMs);
         shipEntity.radiation_shed_started_at = nowMs - (nowMs % RADIATION_SHED_DURATION_MS);
         shipEntity.radiation_damage_last_at = nowMs;
         reconcileEntityRenderEffects(shipVisual.container, shipEntity, nowMs, renderWorld);
