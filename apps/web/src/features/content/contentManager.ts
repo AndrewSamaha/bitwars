@@ -31,6 +31,13 @@ export type EntityTypeDef = {
   z_index?: number;
   /** Whether hover indicators and entity detail UI should be suppressed. */
   suppress_hover?: boolean;
+  /** Resources required to produce one instance of this entity type. */
+  build_cost?: Record<string, number>;
+  /** Content-defined production options offered by this entity type. */
+  builds?: Array<{
+    entity_type_id: string;
+    spend_rates?: Record<string, number>;
+  }>;
   radiation_sources?: Array<{
     radiation_type: string;
     min_effective_distance_border_color?: string;

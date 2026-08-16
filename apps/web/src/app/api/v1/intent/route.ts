@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
-import { IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema } from "@bitwars/shared/gen/intent_pb";
+import { BuildIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema } from "@bitwars/shared/gen/intent_pb";
 import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
@@ -80,7 +80,7 @@ function encodeCollectEnvelope(params: {
 // POST /api/v1/intent
 // Body (JSON):
     // {
-    //   "type": "Move" | "Collect",
+    //   "type": "Move" | "Collect" | "Build",
     //   "entity_id": 1,
     //   "target": { "x": 50.0, "y": 75.0 }, // Move only
     //   "client_cmd_id": "uuidv7-...",
@@ -106,8 +106,8 @@ export async function POST(req: NextRequest) {
     const stream = `rts:match:${gameId}:intents`;
 
     const t = (body?.type ?? "").toString();
-    if (t !== "Move" && t !== "Collect") {
-      return NextResponse.json({ error: "unsupported type; expected Move or Collect" }, { status: 400 });
+    if (t !== "Move" && t !== "Collect" && t !== "Build") {
+      return NextResponse.json({ error: "unsupported type; expected Move, Collect, or Build" }, { status: 400 });
     }
 
     const entityIdVal = body?.entity_id;
@@ -120,6 +120,9 @@ export async function POST(req: NextRequest) {
     }
     if (t === "Move" && (target?.x === undefined || target?.y === undefined)) {
       return NextResponse.json({ error: "missing required fields for Move: target.x, target.y" }, { status: 400 });
+    }
+    if (t === "Build" && !String(body?.blueprint_id ?? "").trim()) {
+      return NextResponse.json({ error: "missing required field for Build: blueprint_id" }, { status: 400 });
     }
 
     if (!validateUuid(clientCmdId) || uuidVersion(clientCmdId) !== 7) {
@@ -160,7 +163,7 @@ export async function POST(req: NextRequest) {
         payload: { case: "move", value: move },
       });
       bytes = toBinary(IntentEnvelopeSchema, envelope);
-    } else {
+    } else if (t === "Collect") {
       bytes = encodeCollectEnvelope({
         clientCmdId: clientCmdBytes,
         playerId,
@@ -169,6 +172,25 @@ export async function POST(req: NextRequest) {
         policy,
         entityId,
       });
+    } else {
+      const build = create(BuildIntentSchema, {
+        entityId,
+        blueprintId: String(body.blueprint_id),
+        // Habitat production has no player-selected location. Keep the existing
+        // wire field populated for compatibility with BuildIntent.
+        location: create(Vec2Schema, { x: 0, y: 0 }),
+      });
+      const envelope = create(IntentEnvelopeSchema, {
+        clientCmdId: clientCmdBytes,
+        intentId: new Uint8Array(),
+        playerId,
+        clientSeq: BigInt(clientSeqVal),
+        serverTick: 0n,
+        protocolVersion: ENGINE_PROTOCOL_MAJOR,
+        policy,
+        payload: { case: "build", value: build },
+      });
+      bytes = toBinary(IntentEnvelopeSchema, envelope);
     }
 
     const id = await (redis as any).xaddBuffer(stream, "MAXLEN", "~", 10000, "*", "data", Buffer.from(bytes));

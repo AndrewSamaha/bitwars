@@ -30,7 +30,7 @@ export type QueuedMoveIntent = {
   createdAt: number;
 };
 
-export type ActiveIntentKind = "move" | "collect" | "unknown";
+export type ActiveIntentKind = "move" | "collect" | "build" | "unknown";
 
 export type ActiveIntentInfo = {
   clientCmdId: string;
@@ -67,6 +67,14 @@ export type SendIntentParams =
       clientCmdId: string;
       clientSeq: number;
       policy: IntentPolicyName;
+    }
+  | {
+      kind: "Build";
+      entityId: number;
+      blueprintId: string;
+      clientCmdId: string;
+      clientSeq: number;
+      policy: IntentPolicyName;
     };
 
 type SendCallback = (params: SendIntentParams) => Promise<void>;
@@ -88,6 +96,8 @@ export type ReconnectHandshake = {
     started_tick: number;
     intent_kind?: string;
     move_target?: { x: number; y: number };
+    blueprint_id?: string;
+    progress?: number;
   }>;
 };
 
@@ -109,7 +119,7 @@ class IntentQueueManager {
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
-  private cmdToKind = new Map<string, "move" | "collect">();
+  private cmdToKind = new Map<string, "move" | "collect" | "build">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
@@ -184,6 +194,27 @@ class IntentQueueManager {
     this.sendCollectNow(entityId, clientCmdId, policy);
   }
 
+  /** Start a content-defined production action immediately. */
+  handleBuildCommand(entityId: number, blueprintId: string) {
+    const clientCmdId = uuidv7();
+    this.clientSeq += 1;
+    const state = this.getOrCreate(entityId);
+    state.queue = [];
+    state.active = { clientCmdId, entityId, kind: "build" };
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.cmdToKind.set(clientCmdId, "build");
+    this.persist();
+    this.notify();
+    void this.sendCallback?.({
+      kind: "Build",
+      entityId,
+      blueprintId,
+      clientCmdId,
+      clientSeq: this.clientSeq,
+      policy: "REPLACE_ACTIVE",
+    });
+  }
+
   /**
    * M2: Reconcile local queue state with the server after a reconnect.
    *
@@ -240,6 +271,8 @@ class IntentQueueManager {
           ? "collect"
           : serverActive.intent_kind?.toLowerCase() === "move"
             ? "move"
+            : serverActive.intent_kind?.toLowerCase() === "build"
+              ? "build"
             : "unknown";
       const moveTarget = serverActive.move_target;
       const target =
@@ -386,7 +419,7 @@ class IntentQueueManager {
     return typeof v === "number" ? v : null;
   }
 
-  getKindForClientCmd(clientCmdId: string): "move" | "collect" | null {
+  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | null {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 

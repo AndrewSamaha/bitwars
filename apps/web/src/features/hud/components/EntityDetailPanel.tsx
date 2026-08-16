@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { getEntityDetailLeftOffset } from "@/features/hud/layout/constants";
 import { game } from "@/features/gamestate/world";
@@ -15,7 +15,9 @@ export default function EntityDetailPanel() {
   // Access Pixi application to subscribe to ticker
   const { app } = selectors as any;
   const [, forceRerender] = useState(0);
+  const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [collectorStateById, setCollectorStateById] = useState<Record<string, any>>({});
+  const [buildStateById, setBuildStateById] = useState<Record<string, { blueprint_id?: string; progress?: number }>>({});
 
   // Re-render every Pixi frame so entity positions are fresh
   useEffect(() => {
@@ -31,6 +33,7 @@ export default function EntityDetailPanel() {
   useEffect(() => {
     if (!selectedEntities?.length) {
       setCollectorStateById({});
+      setBuildStateById({});
       return;
     }
     let mounted = true;
@@ -47,6 +50,14 @@ export default function EntityDetailPanel() {
         const data = (await res.json()) as { collector_state_by_entity?: Record<string, any> };
         if (!mounted) return;
         setCollectorStateById(data.collector_state_by_entity ?? {});
+        const buildResponse = await fetch("/api/v2/reconnect", { cache: "no-store" });
+        if (!buildResponse.ok || !mounted) return;
+        const buildData = await buildResponse.json() as { active_intents?: Array<{ entity_id: number; intent_kind?: string; blueprint_id?: string; progress?: number }> };
+        const builds: Record<string, { blueprint_id?: string; progress?: number }> = {};
+        for (const intent of buildData.active_intents ?? []) {
+          if (intent.intent_kind === "build") builds[String(intent.entity_id)] = intent;
+        }
+        setBuildStateById(builds);
       } catch {
         // keep pane resilient on transient fetch failures
       }
@@ -59,6 +70,10 @@ export default function EntityDetailPanel() {
       mounted = false;
       if (timer !== undefined) window.clearInterval(timer);
     };
+  }, [selectedIdsKey]);
+
+  useEffect(() => {
+    setBuildMenuOpen(false);
   }, [selectedIdsKey]);
 
   // Position the detail panel so it never overlaps the TerminalPanel
@@ -136,24 +151,29 @@ export default function EntityDetailPanel() {
     }
   } catch {}
 
-  if (!selectedEntities?.length) return null;
-
   // Dynamic actions for a given entity.
   const getActionsForEntity = (entityId: string): ActionDef[] => {
+    const entityTypeId = idToType.get(entityId) ?? "";
+    const canBuild = selectedEntities.length === 1 && (contentManager.getEntityType(entityTypeId)?.builds?.length ?? 0) > 0;
     return [
       { key: "m", name: "move", enabled: true, value: "Move" },
       { key: "c", name: "collect", enabled: true, value: "Collect" },
+      { key: "b", name: "build", enabled: canBuild, value: "Build" },
     ];
   };
   // Intersect actions across all selected entities (simple approach: show those enabled for first)
-  const firstId = selectedEntities[0]!;
+  const firstId = selectedEntities[0] ?? "";
   const availableActions = getActionsForEntity(firstId);
   const isCollectActiveForSelection = selectedEntities.length > 0 && selectedEntities.every((id) => {
     const ai = idToActiveIntent.get(id);
     return (ai?.kind ?? "").toLowerCase() === "collect";
   });
 
-  const onClickAction = (val: "Move" | "Collect") => {
+  const onClickAction = (val: "Move" | "Collect" | "Build") => {
+    if (val === "Build") {
+      setBuildMenuOpen((open) => !open);
+      return;
+    }
     if (val === "Collect") {
       for (const id of selectedEntities) {
         const entityIdNum = Number(id);
@@ -167,9 +187,57 @@ export default function EntityDetailPanel() {
     actions.setSelectedAction(selectedAction === "Move" ? null : "Move");
   };
 
+  const selectedType = idToType.get(firstId) ?? "";
+  const buildOptions = useMemo(
+    () => selectedEntities.length === 1
+      ? contentManager.getEntityType(selectedType)?.builds ?? []
+      : [],
+    [selectedEntities.length, selectedType],
+  );
+  const buildKeys = "qwertasdfgzxcvb";
+  const canAfford = (entityTypeId: string) => {
+    const costs = contentManager.getEntityType(entityTypeId)?.build_cost ?? {};
+    return Object.entries(costs).every(([resource, cost]) => selectors.getResource(resource) >= cost);
+  };
+  const startBuild = (entityTypeId: string) => {
+    if (!canAfford(entityTypeId)) return;
+    const entityId = Number(firstId);
+    if (Number.isFinite(entityId)) intentQueue.handleBuildCommand(entityId, entityTypeId);
+    setBuildMenuOpen(false);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      if (event.key === "Escape" && buildMenuOpen) {
+        event.preventDefault();
+        setBuildMenuOpen(false);
+        return;
+      }
+      if (!buildMenuOpen && (event.key === "b" || event.key === "B") && buildOptions.length > 0) {
+        event.preventDefault();
+        setBuildMenuOpen(true);
+        return;
+      }
+      if (buildMenuOpen) {
+        const index = buildKeys.indexOf(event.key.toLowerCase());
+        const option = index >= 0 ? buildOptions[index] : undefined;
+        if (option) {
+          event.preventDefault();
+          startBuild(option.entity_type_id);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [buildMenuOpen, buildOptions, firstId, selectedIdsKey]);
+
+  if (!selectedEntities?.length) return null;
+
   return (
     <div
-      className={`fixed bottom-4 z-50 ${selectedEntities.length > 0 ? "h-20" : "h-2"}`}
+      className="fixed bottom-4 z-50"
       style={{ left: `${leftOffsetRem}rem`, right: "1rem" }}
     >
       <div className="flex h-full w-full flex-col rounded-lg border border-white/15 bg-black/88 shadow-2xl backdrop-blur-sm">
@@ -190,6 +258,7 @@ export default function EntityDetailPanel() {
                 const maxHealth = contentManager.getEntityType(entityTypeId)?.health;
                 const activeIntent = idToActiveIntent.get(id);
                 const collectorState = collectorStateById[id] ?? idToCollectorState.get(id);
+                const buildState = buildStateById[id];
                 const shortIntentId = activeIntent?.intentId
                   ? `${activeIntent.intentId.slice(0, 8)}...`
                   : "—";
@@ -225,6 +294,11 @@ export default function EntityDetailPanel() {
                         target: {moveTarget}
                       </span>
                     )}
+                    {activeIntent?.kind === "build" && (
+                      <span className="font-mono text-muted-foreground">
+                        building {buildState?.blueprint_id ?? ""} {typeof buildState?.progress === "number" ? `${(buildState.progress * 100).toFixed(0)}%` : ""}
+                      </span>
+                    )}
                     {collectorState && collectorState.carry_capacity > 0 && (
                       <span className="font-mono text-muted-foreground">
                         carry: {collectorState.carry_amount.toFixed(1)} / {collectorState.carry_capacity.toFixed(1)}
@@ -245,11 +319,39 @@ export default function EntityDetailPanel() {
                 <AvailableAction
                   key={a.value}
                   action={a}
-                  active={a.value === "Move" ? selectedAction === "Move" : isCollectActiveForSelection}
+                  active={
+                    a.value === "Move"
+                      ? selectedAction === "Move"
+                      : a.value === "Collect"
+                        ? isCollectActiveForSelection
+                        : buildMenuOpen
+                  }
                   onClick={(action) => action.enabled !== false && onClickAction(action.value)}
                 />
               ))}
             </div>
+            {buildMenuOpen && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
+                <span className="text-muted-foreground">Build:</span>
+                {buildOptions.map((option, index) => {
+                  const costs = contentManager.getEntityType(option.entity_type_id)?.build_cost ?? {};
+                  const enabled = canAfford(option.entity_type_id);
+                  const costText = Object.entries(costs).map(([resource, amount]) => `${amount} ${resource}`).join(", ");
+                  return (
+                    <button
+                      key={option.entity_type_id}
+                      type="button"
+                      disabled={!enabled}
+                      onClick={() => startBuild(option.entity_type_id)}
+                      className={enabled ? "rounded border border-border bg-muted px-2 py-1 hover:bg-accent" : "cursor-not-allowed rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground"}
+                    >
+                      [{buildKeys[index]?.toUpperCase()}] {option.entity_type_id} — {costText}
+                    </button>
+                  );
+                })}
+                <span className="text-muted-foreground">[Esc] cancel</span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="p-3 text-xs">No entities selected</div>
