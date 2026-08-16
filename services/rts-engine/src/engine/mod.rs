@@ -69,6 +69,81 @@ struct CollectorSnapshot {
     y: f32,
 }
 
+fn debit_maintenance_without_debt(
+    ledger: &mut HashMap<String, HashMap<String, i64>>,
+    fractional: &mut HashMap<(String, String), f32>,
+    player_id: &str,
+    resource_type: &str,
+    amount: f32,
+) {
+    if !amount.is_finite() || amount <= 0.0 {
+        return;
+    }
+    let key = (player_id.to_string(), resource_type.to_string());
+    let total = fractional.get(&key).copied().unwrap_or(0.0) + amount;
+    let whole = total.floor() as i64;
+    let remainder = total - whole as f32;
+    if whole <= 0 {
+        fractional.insert(key, remainder);
+        return;
+    }
+
+    let available = ledger
+        .get(player_id)
+        .and_then(|resources| resources.get(resource_type))
+        .copied()
+        .unwrap_or(0);
+    let paid = available.min(whole);
+    if paid > 0 {
+        let resources = ledger.entry(player_id.to_string()).or_default();
+        *resources.entry(resource_type.to_string()).or_insert(0) -= paid;
+    }
+
+    if paid == whole && remainder > 0.0 {
+        fractional.insert(key, remainder);
+    } else {
+        // Any unpaid upkeep is deliberately discarded: maintenance creates no debt.
+        fractional.remove(&key);
+    }
+}
+
+#[cfg(test)]
+mod maintenance_tests {
+    use super::*;
+
+    #[test]
+    fn maintenance_charges_whole_units_and_discards_unaffordable_upkeep() {
+        let mut ledger = HashMap::from([(
+            "player-1".to_string(),
+            HashMap::from([("energy".to_string(), 2_i64)]),
+        )]);
+        let mut fractional = HashMap::new();
+
+        debit_maintenance_without_debt(
+            &mut ledger,
+            &mut fractional,
+            "player-1",
+            "energy",
+            2.25,
+        );
+        assert_eq!(ledger["player-1"]["energy"], 0);
+        assert_eq!(
+            fractional[&("player-1".to_string(), "energy".to_string())],
+            0.25
+        );
+
+        debit_maintenance_without_debt(
+            &mut ledger,
+            &mut fractional,
+            "player-1",
+            "energy",
+            0.75,
+        );
+        assert_eq!(ledger["player-1"]["energy"], 0);
+        assert!(fractional.is_empty());
+    }
+}
+
 #[derive(Clone)]
 struct RadiationSourceSnapshot {
     entity_id: u64,
@@ -161,6 +236,7 @@ mod radiation_tests {
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
+                maintenance_cost_per_minute: HashMap::new(),
                 builds: Vec::new(),
             },
         );
@@ -189,6 +265,7 @@ mod radiation_tests {
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
+                maintenance_cost_per_minute: HashMap::new(),
                 builds: Vec::new(),
             },
         );
@@ -208,6 +285,7 @@ mod radiation_tests {
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
+                maintenance_cost_per_minute: HashMap::new(),
                 builds: Vec::new(),
             },
         );
@@ -370,6 +448,8 @@ pub struct Engine {
     resource_fractional: HashMap<(String, String), f32>,
     /// Fractional resource debits accumulated while construction channels run.
     build_spend_fractional: HashMap<(String, String), f32>,
+    /// Fractional upkeep accumulated between whole-unit ledger debits.
+    maintenance_spend_fractional: HashMap<(String, String), f32>,
     /// M8b: Per-collector runtime telemetry projected to Redis/UI.
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
 }
@@ -650,6 +730,7 @@ impl Engine {
                     carry_by_entity: HashMap::new(),
                     resource_fractional: HashMap::new(),
                     build_spend_fractional: HashMap::new(),
+                    maintenance_spend_fractional: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
                 };
                 engine.hydrate_entity_health_if_missing();
@@ -714,6 +795,7 @@ impl Engine {
             carry_by_entity: HashMap::new(),
             resource_fractional: HashMap::new(),
             build_spend_fractional: HashMap::new(),
+            maintenance_spend_fractional: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
@@ -873,6 +955,51 @@ impl Engine {
             self.build_spend_fractional.remove(&key);
         }
         true
+    }
+
+    /// Charge continuous upkeep without taking a ledger below zero or accruing debt.
+    fn spend_maintenance_resource(&mut self, player_id: &str, resource_type: &str, amount: f32) {
+        debit_maintenance_without_debt(
+            &mut self.state.ledger,
+            &mut self.maintenance_spend_fractional,
+            player_id,
+            resource_type,
+            amount,
+        );
+    }
+
+    fn apply_maintenance_costs(&mut self, dt: f32) {
+        let Some(content) = self.content.as_ref() else {
+            return;
+        };
+        if !dt.is_finite() || dt <= 0.0 {
+            return;
+        }
+
+        let mut totals: HashMap<(String, String), f32> = HashMap::new();
+        for entity in &self.state.entities {
+            if entity.owner_player_id.is_empty()
+                || entity.owner_player_id == NEUTRAL_OWNER
+                || entity.health <= 0.0
+            {
+                continue;
+            }
+            let Some(def) = content.get(&entity.entity_type_id) else {
+                continue;
+            };
+            for (resource_type, per_minute) in &def.maintenance_cost_per_minute {
+                if !per_minute.is_finite() || *per_minute <= 0.0 {
+                    continue;
+                }
+                *totals
+                    .entry((entity.owner_player_id.clone(), resource_type.clone()))
+                    .or_insert(0.0) += per_minute * dt / 60.0;
+            }
+        }
+
+        for ((player_id, resource_type), amount) in totals {
+            self.spend_maintenance_resource(&player_id, &resource_type, amount);
+        }
     }
 
     /// Advance active construction channels, charge their content-defined
@@ -1935,6 +2062,7 @@ impl Engine {
             }
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
+            self.apply_maintenance_costs(dt);
             self.publish_collector_ui_state().await;
             integrate(&self.cfg, &mut self.state, dt);
             self.apply_radiation_damage(dt);

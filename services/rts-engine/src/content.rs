@@ -58,6 +58,9 @@ pub struct EntityTypeDef {
     /// Resources required to create one instance of this entity type.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub build_cost: HashMap<String, f32>,
+    /// Per-resource upkeep charged to the entity owner, in units per minute.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub maintenance_cost_per_minute: HashMap<String, f32>,
     /// Units this entity type can produce.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub builds: Vec<BuildOptionDef>,
@@ -292,6 +295,7 @@ mod tests {
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
+                maintenance_cost_per_minute: HashMap::new(),
                 builds: Vec::new(),
             },
         );
@@ -311,6 +315,7 @@ mod tests {
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
+                maintenance_cost_per_minute: HashMap::new(),
                 builds: Vec::new(),
             },
         );
@@ -341,6 +346,7 @@ mod tests {
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
+                maintenance_cost_per_minute: HashMap::new(),
                 builds: Vec::new(),
             },
         );
@@ -360,6 +366,7 @@ mod tests {
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
+                maintenance_cost_per_minute: HashMap::new(),
                 builds: Vec::new(),
             },
         );
@@ -381,6 +388,7 @@ mod tests {
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
+                maintenance_cost_per_minute: HashMap::new(),
                 builds: Vec::new(),
             },
         );
@@ -400,6 +408,7 @@ mod tests {
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
+                maintenance_cost_per_minute: HashMap::new(),
                 builds: Vec::new(),
             },
         );

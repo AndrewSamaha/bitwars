@@ -9,6 +9,7 @@
 # - entity_type_id is the YAML key (e.g. "worker"). Never recycle IDs.
 # - All numeric values are floats. Add new fields with serde defaults so
 #   existing definitions don't break.
+# - maintenance_cost_per_minute values are charged continuously to the owner.
 
 # M7: Resource types (id = key). Display order and name for HUD; theme-agnostic.
 resource_types:
@@ -113,6 +114,9 @@ entity_types:
     build_cost:
       minerals: 50.0
       energy: 50.0
+    maintenance_cost_per_minute:
+      energy: 1.0
+      food: 2.0
     collector:
       collects: [minerals, food]
       transport_rate_per_second: 10.0
@@ -138,6 +142,9 @@ entity_types:
     build_cost:
       minerals: 1000.0
       energy: 1000.0
+    maintenance_cost_per_minute:
+      energy: 5.0
+      food: 10.0
     builds:
       - entity_type_id: worker
         spend_rates:
@@ -149,6 +156,9 @@ entity_types:
     stop_radius: 0.5
     mass: 7.0
     health: 150.0
+    maintenance_cost_per_minute:
+      energy: 1.0
+      food: 2.0
     refinery:
       accepts: [minerals]
 
