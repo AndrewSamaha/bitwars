@@ -1,6 +1,6 @@
 import { Assets, Container, Sprite, type Filter, type Texture } from "pixi.js";
 import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
-import { createStarYellowFilter, setStarYellowFilterTime } from "./starYellowEffect";
+import { createStarYellowFilter, setStarYellowFilterTime } from "./shaders/starYellow";
 
 export const GAME_WORLD_SCALE = 0.5;
 export const DEFAULT_ENTITY_SCALE = 0.5;
