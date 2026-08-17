@@ -6,4 +6,6 @@ import "entity_delta.proto";
 message Delta {
   uint64 tick = 1;
   repeated EntityDelta updates = 2;
+  // Entity IDs removed from the authoritative world since the previous delta.
+  repeated uint64 removed_entity_ids = 3;
 }

@@ -70,6 +70,7 @@ fn main() -> anyhow::Result<()> {
     let delta = Delta {
         tick: 43,
         updates: vec![d1, d2],
+        removed_entity_ids: Vec::new(),
     };
 
     let mut delta_buf = Vec::new();

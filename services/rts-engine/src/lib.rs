@@ -1,4 +1,5 @@
 pub mod config;
+pub mod combat;
 pub mod content;
 pub mod delta;
 pub mod engine;

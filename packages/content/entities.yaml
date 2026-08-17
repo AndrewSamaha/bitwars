@@ -173,3 +173,14 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 60.0
+
+  raider:
+    speed: 20.0
+    stop_radius: 0.5
+    mass: 0.8
+    health: 80.0
+    combat:
+      attack_range: 180.0
+      damage: 8.0
+      cooldown_ticks: 45
+      acquisition_range: 1500.0

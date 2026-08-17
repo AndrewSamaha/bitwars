@@ -11,6 +11,7 @@ export const biToNumOrStr = (v: bigint): number | string => {
 export const mapDeltaToJson = (d: Delta) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
+  removed_entity_ids: (d.removedEntityIds ?? []).map(biToNumOrStr),
   updates: (d.updates ?? []).map((u) => {
     const uAny = u as { ownerPlayerId?: string; entityTypeId?: string; health?: number };
     return {

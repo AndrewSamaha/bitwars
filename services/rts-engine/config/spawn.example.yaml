@@ -23,6 +23,10 @@ loadouts:
 
 # Optional: neutrals near each spawn (owner = "neutral")
 neutrals_near_spawn:
+  - type: raider
+    count: 2
+    min_distance_from_spawn: 650
+    max_distance_from_spawn: 850
   - type: theta
     count: 1
     min_distance_from_spawn: 1200

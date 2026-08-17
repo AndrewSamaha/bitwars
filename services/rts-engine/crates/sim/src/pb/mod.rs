@@ -76,6 +76,8 @@ pub struct Delta {
     pub tick: u64,
     #[prost(message, repeated, tag = "2")]
     pub updates: ::prost::alloc::vec::Vec<EntityDelta>,
+    #[prost(uint64, repeated, tag = "3")]
+    pub removed_entity_ids: ::prost::alloc::vec::Vec<u64>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
