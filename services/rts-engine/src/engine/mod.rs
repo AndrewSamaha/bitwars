@@ -1431,22 +1431,40 @@ impl Engine {
     /// Advance autonomous neutral combat and remove entities killed by it.
     /// Returns killed IDs so the tick loop can cancel any active player intent
     /// and update reconnect tracking before publishing the resulting delta.
-    fn apply_npc_combat(&mut self, dt: f32) -> Vec<u64> {
+    fn apply_npc_combat(&mut self, dt: f32) -> crate::combat::CombatTick {
         let Some(content) = self.content.as_ref() else {
-            return Vec::new();
+            return crate::combat::CombatTick {
+                dead_entity_ids: Vec::new(),
+                laser_shots: Vec::new(),
+            };
         };
-        let dead = self
+        let outcome = self
             .combat
             .tick(&mut self.state.entities, content, self.state.tick, dt);
-        if dead.is_empty() {
-            return dead;
+        if outcome.dead_entity_ids.is_empty() {
+            return outcome;
         }
-        let dead_ids: HashSet<u64> = dead.iter().copied().collect();
+        let dead_ids: HashSet<u64> = outcome.dead_entity_ids.iter().copied().collect();
         self.state.entities.retain(|entity| !dead_ids.contains(&entity.id));
-        for entity_id in &dead {
+        for entity_id in &outcome.dead_entity_ids {
             self.clear_fractional_for_entity(*entity_id);
         }
-        dead
+        outcome
+    }
+
+    async fn emit_laser_shots(&mut self, shots: &[crate::combat::LaserShot]) {
+        for shot in shots {
+            let event = pb::LaserShotEvent {
+                attacker_id: shot.attacker_id,
+                target_id: shot.target_id,
+                origin: Some(shot.origin.clone()),
+                target: Some(shot.target.clone()),
+                server_tick: self.state.tick,
+            };
+            if let Err(error) = self.redis.publish_laser_shot(&event).await {
+                warn!(?error, attacker_id = shot.attacker_id, target_id = shot.target_id, "failed to publish laser shot");
+            }
+        }
     }
 
     async fn cancel_destroyed_intents(&mut self, entity_ids: &[u64]) {
@@ -1998,8 +2016,9 @@ impl Engine {
                 warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
             }
         }
-        let destroyed = self.apply_npc_combat(dt);
-        self.cancel_destroyed_intents(&destroyed).await;
+        let combat = self.apply_npc_combat(dt);
+        self.emit_laser_shots(&combat.laser_shots).await;
+        self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_resource_collection(dt);
         self.advance_builds(dt).await;
         self.publish_collector_ui_state().await;
@@ -2113,8 +2132,9 @@ impl Engine {
                     warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
                 }
             }
-            let destroyed = self.apply_npc_combat(dt);
-            self.cancel_destroyed_intents(&destroyed).await;
+            let combat = self.apply_npc_combat(dt);
+            self.emit_laser_shots(&combat.laser_shots).await;
+            self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
             self.apply_maintenance_costs(dt);

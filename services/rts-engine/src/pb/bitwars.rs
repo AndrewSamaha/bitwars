@@ -248,9 +248,24 @@ pub struct LifecycleEvent {
     #[prost(uint32, tag = "7")]
     pub protocol_version: u32,
 }
+/// A server-authoritative firing decision. Damage is already resolved at this
+/// tick; clients use this only to render a directionally correct tracer.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct LaserShotEvent {
+    #[prost(uint64, tag = "1")]
+    pub attacker_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub target_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub origin: ::core::option::Option<Vec2>,
+    #[prost(message, optional, tag = "4")]
+    pub target: ::core::option::Option<Vec2>,
+    #[prost(uint64, tag = "5")]
+    pub server_tick: u64,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EventsStreamRecord {
-    #[prost(oneof = "events_stream_record::Record", tags = "1, 2")]
+    #[prost(oneof = "events_stream_record::Record", tags = "1, 2, 3")]
     pub record: ::core::option::Option<events_stream_record::Record>,
 }
 /// Nested message and enum types in `EventsStreamRecord`.
@@ -259,9 +274,11 @@ pub mod events_stream_record {
     pub enum Record {
         #[prost(message, tag = "1")]
         Lifecycle(super::LifecycleEvent),
-        /// Metrics payloads may be added in a future milestone.
         #[prost(message, tag = "2")]
         Delta(super::Delta),
+        /// Metrics payloads may be added in a future milestone.
+        #[prost(message, tag = "3")]
+        LaserShot(super::LaserShotEvent),
     }
 }
 /// Per-entity queue of intents (for M1 and beyond).

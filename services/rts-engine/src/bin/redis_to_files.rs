@@ -178,6 +178,9 @@ async fn read_events_stream_range(
                                         Some(Record::Lifecycle(_)) => {
                                             // Skip lifecycle events for now
                                         }
+                                        Some(Record::LaserShot(_)) => {
+                                            // Visual combat event; this tool exports state deltas only.
+                                        }
                                         None => {}
                                     }
                                 }

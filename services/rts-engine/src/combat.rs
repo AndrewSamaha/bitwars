@@ -14,6 +14,18 @@ pub struct CombatSystem {
     next_attack_tick: HashMap<u64, u64>,
 }
 
+pub struct CombatTick {
+    pub dead_entity_ids: Vec<u64>,
+    pub laser_shots: Vec<LaserShot>,
+}
+
+pub struct LaserShot {
+    pub attacker_id: u64,
+    pub target_id: u64,
+    pub origin: Vec2,
+    pub target: Vec2,
+}
+
 impl CombatSystem {
     /// Drives neutral entities with combat profiles and returns entity IDs that
     /// died this tick. Target ties are intentionally resolved by entity ID.
@@ -23,9 +35,12 @@ impl CombatSystem {
         content: &ContentPack,
         tick: u64,
         dt: f32,
-    ) -> Vec<u64> {
+    ) -> CombatTick {
         if dt <= 0.0 {
-            return Vec::new();
+            return CombatTick {
+                dead_entity_ids: Vec::new(),
+                laser_shots: Vec::new(),
+            };
         }
 
         let targets: Vec<Target> = entities
@@ -44,6 +59,7 @@ impl CombatSystem {
             .collect();
 
         let mut damage_by_target: HashMap<u64, f32> = HashMap::new();
+        let mut laser_shots = Vec::new();
         for attacker in entities.iter_mut() {
             if attacker.owner_player_id != NEUTRAL_OWNER || attacker.health <= 0.0 {
                 continue;
@@ -81,6 +97,7 @@ impl CombatSystem {
             let distance_sq = dx * dx + dy * dy;
             let range = profile.attack_range.max(0.0);
             if distance_sq <= range * range {
+                let origin = Vec2 { x: pos.x, y: pos.y };
                 zero_velocity(attacker);
                 let next_tick = self
                     .next_attack_tick
@@ -89,6 +106,12 @@ impl CombatSystem {
                     .unwrap_or(0);
                 if tick >= next_tick && profile.damage.is_finite() && profile.damage > 0.0 {
                     *damage_by_target.entry(target.id).or_insert(0.0) += profile.damage;
+                    laser_shots.push(LaserShot {
+                        attacker_id: attacker.id,
+                        target_id: target.id,
+                        origin,
+                        target: Vec2 { x: target.x, y: target.y },
+                    });
                     self.next_attack_tick.insert(
                         attacker.id,
                         tick.saturating_add(profile.cooldown_ticks.max(1)),
@@ -127,7 +150,10 @@ impl CombatSystem {
             }
         }
         self.next_attack_tick.retain(|id, _| !dead.contains(id));
-        dead
+        CombatTick {
+            dead_entity_ids: dead,
+            laser_shots,
+        }
     }
 }
 
@@ -208,22 +234,35 @@ mod tests {
         ];
         let mut combat = CombatSystem::default();
 
-        assert!(combat.tick(&mut entities, &pack, 0, 1.0).is_empty());
+        assert!(combat
+            .tick(&mut entities, &pack, 0, 1.0)
+            .dead_entity_ids
+            .is_empty());
         assert_eq!(entities[0].pos.as_ref().unwrap().x, 10.0);
         assert_eq!(
             entities[1].health, 12.0,
             "movement tick does not deal damage"
         );
 
-        assert!(combat.tick(&mut entities, &pack, 1, 1.0).is_empty());
+        let fired = combat.tick(&mut entities, &pack, 1, 1.0);
+        assert!(fired.dead_entity_ids.is_empty());
+        assert_eq!(fired.laser_shots.len(), 1);
+        assert_eq!(fired.laser_shots[0].attacker_id, 1);
+        assert_eq!(fired.laser_shots[0].target_id, 2);
         assert_eq!(entities[1].health, 6.0);
-        assert!(combat.tick(&mut entities, &pack, 2, 1.0).is_empty());
+        assert!(combat
+            .tick(&mut entities, &pack, 2, 1.0)
+            .dead_entity_ids
+            .is_empty());
         assert_eq!(
             entities[1].health, 6.0,
             "cooldown blocks an early second shot"
         );
 
-        assert_eq!(combat.tick(&mut entities, &pack, 3, 1.0), vec![2]);
+        assert_eq!(
+            combat.tick(&mut entities, &pack, 3, 1.0).dead_entity_ids,
+            vec![2]
+        );
         assert_eq!(entities[1].health, 0.0);
     }
 

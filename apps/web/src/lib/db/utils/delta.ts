@@ -57,6 +57,19 @@ export async function emitEventFromBuffer(
       await channel.write(sseFormat({ event: "delta", id, data: deltaJson }));
       break;
     }
+    case "laserShot": {
+      const shot = record.record.value;
+      const payload = {
+        type: "laser_shot",
+        attacker_id: shot.attackerId.toString(),
+        target_id: shot.targetId.toString(),
+        origin: shot.origin ? { x: shot.origin.x, y: shot.origin.y } : undefined,
+        target: shot.target ? { x: shot.target.x, y: shot.target.y } : undefined,
+        server_tick: shot.serverTick.toString(),
+      };
+      await channel.write(sseFormat({ event: "laser-shot", id, data: payload }));
+      break;
+    }
     default:
       logErr(`unsupported events record case ${record.record.case}`);
   }

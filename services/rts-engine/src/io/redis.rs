@@ -7,7 +7,8 @@ use crate::engine::intent::{format_uuid, IntentMetadata};
 use crate::engine::state::GameState;
 use crate::pb::events_stream_record;
 use crate::pb::{
-    self, Delta, EventsStreamRecord, LifecycleEvent, PlayerResourceLedger, ResourceEntry, Snapshot,
+    self, Delta, EventsStreamRecord, LaserShotEvent, LifecycleEvent, PlayerResourceLedger,
+    ResourceEntry, Snapshot,
 };
 
 // ── M2: Per-entity tracking types ───────────────────────────────────────────
@@ -165,6 +166,13 @@ impl RedisClient {
     ) -> anyhow::Result<String> {
         let record = EventsStreamRecord {
             record: Some(events_stream_record::Record::Lifecycle(event.clone())),
+        };
+        self.publish_event_record(&record).await
+    }
+
+    pub async fn publish_laser_shot(&mut self, event: &LaserShotEvent) -> anyhow::Result<String> {
+        let record = EventsStreamRecord {
+            record: Some(events_stream_record::Record::LaserShot(event.clone())),
         };
         self.publish_event_record(&record).await
     }
