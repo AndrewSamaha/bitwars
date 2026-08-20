@@ -44,6 +44,7 @@ entity_types:
     stop_radius: 1
     mass: 500.0
     health: 100.0
+    visual_scale: 4.0
     resource_node:
       resource_type: food
       collection_mode: transport
@@ -57,7 +58,7 @@ entity_types:
     stop_radius: 1
     mass: 500.0
     health: 100.0
-    visual_scale: 10.0
+    visual_scale: 15.0
     radiation_sources:
       - radiation_type: stellar_heat
         min_effective_distance_border_color:
@@ -67,8 +68,8 @@ entity_types:
         max_effective_distance_border_color:
         max_effective_distance_fill_color: "#facc15"
         min_effective_distance: 0.0
-        full_damage_distance: 400.0
-        max_effective_distance: 900.0
+        full_damage_distance: 600.0
+        max_effective_distance: 1200.0
         damage_per_second: 2.0
     resource_node:
       resource_type: energy
@@ -175,12 +176,12 @@ entity_types:
     health: 60.0
 
   raider:
-    speed: 20.0
+    speed: 10.0
     stop_radius: 0.5
     mass: 0.8
     health: 80.0
     combat:
       attack_range: 180.0
-      damage: 8.0
-      cooldown_ticks: 45
-      acquisition_range: 1500.0
+      damage: 4.0
+      cooldown_ticks: 100
+      acquisition_range: 500.0
