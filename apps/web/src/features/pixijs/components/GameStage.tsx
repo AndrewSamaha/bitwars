@@ -153,6 +153,56 @@ export default function GameStage() {
         radiationRangeGraphics.zIndex = -1_000_000;
         worldContainer.addChild(radiationRangeGraphics);
 
+        // Laser shots are transient presentation of an authoritative server
+        // event. They live in world space, so camera pan/zoom affects them in
+        // exactly the same way as ships.
+        const laserContainer = new Container();
+        laserContainer.label = "laserEffects";
+        laserContainer.eventMode = "none";
+        laserContainer.zIndex = 1_000_000;
+        worldContainer.addChild(laserContainer);
+        const lasers: Array<{
+          graphics: Graphics;
+          origin: { x: number; y: number };
+          target: { x: number; y: number };
+          startedAt: number;
+        }> = [];
+        const LASER_TRAVEL_MS = 130;
+        const LASER_TRAIL_FRACTION = 0.28;
+        const onLaserShot = (event: Event) => {
+          const detail = (event as CustomEvent<{ origin?: { x: number; y: number }; target?: { x: number; y: number } }>).detail;
+          if (!detail?.origin || !detail.target) return;
+          const graphics = new Graphics();
+          graphics.eventMode = "none";
+          laserContainer.addChild(graphics);
+          lasers.push({
+            graphics,
+            origin: detail.origin,
+            target: detail.target,
+            startedAt: performance.now(),
+          });
+        };
+        window.addEventListener("bitwars:laser-shot", onLaserShot);
+        const renderLasers = (nowMs: number) => {
+          for (let index = lasers.length - 1; index >= 0; index -= 1) {
+            const laser = lasers[index];
+            const progress = (nowMs - laser.startedAt) / LASER_TRAVEL_MS;
+            if (progress >= 1) {
+              laser.graphics.destroy();
+              lasers.splice(index, 1);
+              continue;
+            }
+            const tail = Math.max(0, progress - LASER_TRAIL_FRACTION);
+            const dx = laser.target.x - laser.origin.x;
+            const dy = laser.target.y - laser.origin.y;
+            laser.graphics
+              .clear()
+              .moveTo(laser.origin.x + dx * tail, laser.origin.y + dy * tail)
+              .lineTo(laser.origin.x + dx * progress, laser.origin.y + dy * progress)
+              .stroke({ color: 0xff_3b_81, width: 10, alpha: 1 - progress * 0.35 });
+          }
+        };
+
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
           for (const entity of game.world.with("pos", "entity_type_id")) {
@@ -786,6 +836,7 @@ export default function GameStage() {
 
             // Advance ECS systems (including movement)
             game.tick(performance.now());
+            renderLasers(performance.now());
             render();
 
         });
@@ -799,6 +850,7 @@ export default function GameStage() {
           }
           window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
+          window.removeEventListener("bitwars:laser-shot", onLaserShot);
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });
           }

@@ -113,10 +113,21 @@ message LifecycleEvent {
   uint32 protocol_version = 7;
 }
 
+// A server-authoritative firing decision. Damage is already resolved at this
+// tick; clients use this only to render a directionally correct tracer.
+message LaserShotEvent {
+  uint64 attacker_id = 1;
+  uint64 target_id = 2;
+  Vec2 origin = 3;
+  Vec2 target = 4;
+  uint64 server_tick = 5;
+}
+
 message EventsStreamRecord {
   oneof record {
     LifecycleEvent lifecycle = 1;
     Delta          delta     = 2;
+    LaserShotEvent laser_shot = 3;
     // Metrics payloads may be added in a future milestone.
   }
 }

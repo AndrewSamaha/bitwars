@@ -10,6 +10,7 @@ use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
 
 use crate::config::GameConfig;
+use crate::combat::CombatSystem;
 use crate::content::{CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
@@ -215,6 +216,7 @@ mod radiation_tests {
                 stop_radius: 1.0,
                 mass: 500.0,
                 health: 100.0,
+                combat: None,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -256,6 +258,7 @@ mod radiation_tests {
                 stop_radius: 1.0,
                 mass: 500.0,
                 health: 100.0,
+                combat: None,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -276,6 +279,7 @@ mod radiation_tests {
                 stop_radius: 0.75,
                 mass: 1.0,
                 health: 100.0,
+                combat: None,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -452,6 +456,8 @@ pub struct Engine {
     maintenance_spend_fractional: HashMap<(String, String), f32>,
     /// M8b: Per-collector runtime telemetry projected to Redis/UI.
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
+    /// Runtime-only cooldown tracking for autonomous neutral combatants.
+    combat: CombatSystem,
 }
 
 #[cfg(test)]
@@ -732,6 +738,7 @@ impl Engine {
                     build_spend_fractional: HashMap::new(),
                     maintenance_spend_fractional: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
+                    combat: CombatSystem::default(),
                 };
                 engine.hydrate_entity_health_if_missing();
                 // Publish a fresh snapshot so newly connecting clients see current state
@@ -797,6 +804,7 @@ impl Engine {
             build_spend_fractional: HashMap::new(),
             maintenance_spend_fractional: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
+            combat: CombatSystem::default(),
         };
         engine.redis.publish_snapshot(&engine.state, "0-0").await?;
 
@@ -1420,6 +1428,67 @@ impl Engine {
         }
     }
 
+    /// Advance autonomous neutral combat and remove entities killed by it.
+    /// Returns killed IDs so the tick loop can cancel any active player intent
+    /// and update reconnect tracking before publishing the resulting delta.
+    fn apply_npc_combat(&mut self, dt: f32) -> crate::combat::CombatTick {
+        let Some(content) = self.content.as_ref() else {
+            return crate::combat::CombatTick {
+                dead_entity_ids: Vec::new(),
+                laser_shots: Vec::new(),
+            };
+        };
+        let outcome = self
+            .combat
+            .tick(&mut self.state.entities, content, self.state.tick, dt);
+        if outcome.dead_entity_ids.is_empty() {
+            return outcome;
+        }
+        let dead_ids: HashSet<u64> = outcome.dead_entity_ids.iter().copied().collect();
+        self.state.entities.retain(|entity| !dead_ids.contains(&entity.id));
+        for entity_id in &outcome.dead_entity_ids {
+            self.clear_fractional_for_entity(*entity_id);
+        }
+        outcome
+    }
+
+    async fn emit_laser_shots(&mut self, shots: &[crate::combat::LaserShot]) {
+        for shot in shots {
+            let event = pb::LaserShotEvent {
+                attacker_id: shot.attacker_id,
+                target_id: shot.target_id,
+                origin: Some(shot.origin.clone()),
+                target: Some(shot.target.clone()),
+                server_tick: self.state.tick,
+            };
+            if let Err(error) = self.redis.publish_laser_shot(&event).await {
+                warn!(?error, attacker_id = shot.attacker_id, target_id = shot.target_id, "failed to publish laser shot");
+            }
+        }
+    }
+
+    async fn cancel_destroyed_intents(&mut self, entity_ids: &[u64]) {
+        for entity_id in entity_ids {
+            let Some(metadata) = self.intents.finish(*entity_id) else {
+                continue;
+            };
+            if let Err(error) = self.redis.clear_active_intent(*entity_id).await {
+                warn!(?error, entity_id, "failed to clear destroyed entity intent tracking");
+            }
+            if let Err(error) = self
+                .emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Canceled,
+                    pb::LifecycleReason::Interrupted,
+                    self.state.tick,
+                )
+                .await
+            {
+                warn!(?error, entity_id, "failed to emit destroyed entity cancellation");
+            }
+        }
+    }
+
     fn pick_best_node<'a>(
         collector: &CollectorSnapshot,
         nodes: &'a [ResourceNodeSnapshot],
@@ -1947,6 +2016,9 @@ impl Engine {
                 warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
             }
         }
+        let combat = self.apply_npc_combat(dt);
+        self.emit_laser_shots(&combat.laser_shots).await;
+        self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_resource_collection(dt);
         self.advance_builds(dt).await;
         self.publish_collector_ui_state().await;
@@ -2060,6 +2132,9 @@ impl Engine {
                     warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
                 }
             }
+            let combat = self.apply_npc_combat(dt);
+            self.emit_laser_shots(&combat.laser_shots).await;
+            self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
             self.apply_maintenance_costs(dt);

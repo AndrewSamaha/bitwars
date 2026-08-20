@@ -50,14 +50,14 @@ export default function EntityDetailPanel() {
         const data = (await res.json()) as { collector_state_by_entity?: Record<string, any> };
         if (!mounted) return;
         setCollectorStateById(data.collector_state_by_entity ?? {});
-        const buildResponse = await fetch("/api/v2/reconnect", { cache: "no-store" });
+        const buildResponse = await fetch(`/api/v2/build-state?ids=${encodeURIComponent(ids)}`, {
+          cache: "no-store",
+        });
         if (!buildResponse.ok || !mounted) return;
-        const buildData = await buildResponse.json() as { active_intents?: Array<{ entity_id: number; intent_kind?: string; blueprint_id?: string; progress?: number }> };
-        const builds: Record<string, { blueprint_id?: string; progress?: number }> = {};
-        for (const intent of buildData.active_intents ?? []) {
-          if (intent.intent_kind === "build") builds[String(intent.entity_id)] = intent;
-        }
-        setBuildStateById(builds);
+        const buildData = await buildResponse.json() as {
+          build_state_by_entity?: Record<string, { blueprint_id?: string; progress?: number }>;
+        };
+        setBuildStateById(buildData.build_state_by_entity ?? {});
       } catch {
         // keep pane resilient on transient fetch failures
       }

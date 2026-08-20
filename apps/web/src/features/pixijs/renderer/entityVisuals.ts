@@ -27,10 +27,17 @@ export async function loadGameEntityTextures(
   entityTypeIds: readonly string[] = PRELOAD_ENTITY_TYPES,
 ): Promise<EntityTextureCache> {
   const ids = [...new Set([DEFAULT_ENTITY_TYPE, ...entityTypeIds])];
-  const entries = await Promise.all(ids.map(async (id) => [
-    id,
-    await Assets.load(`/assets/${id}/idle.png`),
-  ] as const));
+  const fallback = await Assets.load(`/assets/${DEFAULT_ENTITY_TYPE}/idle.png`);
+  const entries = await Promise.all(ids.map(async (id) => {
+    if (id === DEFAULT_ENTITY_TYPE) return [id, fallback] as const;
+    try {
+      return [id, await Assets.load(`/assets/${id}/idle.png`)] as const;
+    } catch {
+      // Content can introduce a server-only entity before bespoke art ships.
+      // Keep the match playable by rendering the standard ship texture.
+      return [id, fallback] as const;
+    }
+  }));
   return new Map(entries);
 }
 

@@ -28,6 +28,10 @@ pub struct EntityTypeDef {
     pub stop_radius: f32,
     pub mass: f32,
     pub health: f32,
+    /// Optional autonomous-combat profile.  When present on a neutral entity,
+    /// the server acquires nearby player-owned targets and drives the unit.
+    #[serde(default)]
+    pub combat: Option<CombatDef>,
     /// Client-only multiplier for the entity's rendered size.
     #[serde(
         default = "default_visual_scale",
@@ -64,6 +68,22 @@ pub struct EntityTypeDef {
     /// Units this entity type can produce.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub builds: Vec<BuildOptionDef>,
+}
+
+/// Data needed for the first server-authoritative NPC combat behavior.
+///
+/// Timings are ticks, rather than seconds, so a combat replay is a pure
+/// function of the content version and tick stream.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CombatDef {
+    /// Maximum distance at which the weapon can fire.
+    pub attack_range: f32,
+    /// Damage dealt once per successful shot.
+    pub damage: f32,
+    /// Minimum whole ticks between shots. Zero is treated as one tick.
+    pub cooldown_ticks: u64,
+    /// Maximum distance at which this neutral will acquire a player-owned target.
+    pub acquisition_range: f32,
 }
 
 /// One content-defined production option available to a builder.
@@ -286,6 +306,7 @@ mod tests {
                 stop_radius: 0.75,
                 mass: 1.0,
                 health: 100.0,
+                combat: None,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -306,6 +327,7 @@ mod tests {
                 stop_radius: 0.5,
                 mass: 0.6,
                 health: 60.0,
+                combat: None,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -337,6 +359,7 @@ mod tests {
                 stop_radius: 0.75,
                 mass: 1.0,
                 health: 100.0,
+                combat: None,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -357,6 +380,7 @@ mod tests {
                 stop_radius: 0.5,
                 mass: 0.6,
                 health: 60.0,
+                combat: None,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -379,6 +403,7 @@ mod tests {
                 stop_radius: 0.5,
                 mass: 0.6,
                 health: 60.0,
+                combat: None,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -399,6 +424,7 @@ mod tests {
                 stop_radius: 0.75,
                 mass: 1.0,
                 health: 100.0,
+                combat: None,
                 collector: None,
                 resource_node: None,
                 refinery: None,

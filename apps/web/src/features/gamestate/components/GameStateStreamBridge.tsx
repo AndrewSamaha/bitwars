@@ -41,6 +41,7 @@ type SnapshotPayload = {
 type DeltaPayload = {
   type: "delta";
   tick: number | string;
+  removed_entity_ids?: Array<number | string>;
   updates: Array<{
     id: number | string;
     entity_type_id?: string;
@@ -309,6 +310,18 @@ export default function GameStateStreamBridge() {
     const applyDelta = (payload: DeltaPayload) => {
       let existingEntities = 0;
       let newEntities = 0;
+      for (const id of payload.removed_entity_ids ?? []) {
+        const key = normalizeId(id);
+        const existing = byId.get(key);
+        if (!existing) continue;
+        try {
+          // @ts-ignore - sprite is optional
+          existing.sprite?.destroy?.();
+        } catch {}
+        world.remove(existing);
+        byId.delete(key);
+        activeIntentByEntityRef.current.delete(key);
+      }
       for (const u of payload.updates) {
         const key = normalizeId(u.id);
         const existing = byId.get(key);
@@ -381,6 +394,21 @@ export default function GameStateStreamBridge() {
       } catch (err) {
         console.error("[GameStateStreamBridge] delta parse error", err);
         log.error("GameStateStreamBridge:delta:parse-error", { streamId: streamIdRef.current, error: (err as any)?.message || String(err) });
+      }
+    };
+    const onLaserShot = (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data) as {
+          type?: string;
+          origin?: Pos;
+          target?: Pos;
+        };
+        if (payload.type !== "laser_shot" || !payload.origin || !payload.target) return;
+        window.dispatchEvent(new CustomEvent("bitwars:laser-shot", {
+          detail: { origin: payload.origin, target: payload.target },
+        }));
+      } catch (err) {
+        console.error("[GameStateStreamBridge] laser-shot parse error", err);
       }
     };
 
@@ -532,6 +560,7 @@ export default function GameStateStreamBridge() {
 
     es.addEventListener("snapshot", onSnapshot as EventListener);
     es.addEventListener("delta", onDelta as EventListener);
+    es.addEventListener("laser-shot", onLaserShot as EventListener);
     es.addEventListener("lifecycle", onLifecycle as EventListener);
     es.addEventListener("open", onOpen as EventListener);
     es.addEventListener("error", onError as EventListener);
@@ -540,6 +569,7 @@ export default function GameStateStreamBridge() {
       log.info("GameStateStreamBridge:cleanup", { streamId: streamIdRef.current });
       es.removeEventListener("snapshot", onSnapshot as EventListener);
       es.removeEventListener("delta", onDelta as EventListener);
+      es.removeEventListener("laser-shot", onLaserShot as EventListener);
       es.removeEventListener("lifecycle", onLifecycle as EventListener);
       es.removeEventListener("open", onOpen as EventListener);
       es.removeEventListener("error", onError as EventListener);

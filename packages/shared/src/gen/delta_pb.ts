@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delta.proto.
  */
 export const file_delta: GenFile = /*@__PURE__*/
-  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyI8CgVEZWx0YRIMCgR0aWNrGAEgASgEEiUKB3VwZGF0ZXMYAiADKAsyFC5iaXR3YXJzLkVudGl0eURlbHRhYgZwcm90bzM", [file_entity_delta]);
+  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyJYCgVEZWx0YRIMCgR0aWNrGAEgASgEEiUKB3VwZGF0ZXMYAiADKAsyFC5iaXR3YXJzLkVudGl0eURlbHRhEhoKEnJlbW92ZWRfZW50aXR5X2lkcxgDIAMoBGIGcHJvdG8z", [file_entity_delta]);
 
 /**
  * @generated from message bitwars.Delta
@@ -27,6 +27,13 @@ export type Delta = Message<"bitwars.Delta"> & {
    * @generated from field: repeated bitwars.EntityDelta updates = 2;
    */
   updates: EntityDelta[];
+
+  /**
+   * Entity IDs removed from the authoritative world since the previous delta.
+   *
+   * @generated from field: repeated uint64 removed_entity_ids = 3;
+   */
+  removedEntityIds: bigint[];
 };
 
 /**

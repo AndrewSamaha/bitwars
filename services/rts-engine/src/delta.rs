@@ -76,8 +76,52 @@ pub fn compute_delta(
             updates.push(ed);
         }
     }
+    let curr_ids: std::collections::HashSet<u64> = curr.entities.iter().map(|entity| entity.id).collect();
+    let mut removed_entity_ids: Vec<u64> = prev_by_id
+        .keys()
+        .filter(|id| !curr_ids.contains(id))
+        .copied()
+        .collect();
+    removed_entity_ids.sort_unstable();
     Delta {
         tick: curr.tick,
         updates,
+        removed_entity_ids,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::state::GameState;
+
+    fn entity(id: u64) -> Entity {
+        Entity {
+            id,
+            entity_type_id: "worker".to_string(),
+            pos: None,
+            vel: None,
+            force: None,
+            owner_player_id: "player".to_string(),
+            health: 100.0,
+        }
+    }
+
+    #[test]
+    fn reports_removed_entities_in_stable_id_order() {
+        let previous = GameState {
+            tick: 10,
+            entities: vec![entity(9), entity(2), entity(5)],
+            ledger: HashMap::new(),
+        };
+        let current = GameState {
+            tick: 11,
+            entities: vec![entity(5)],
+            ledger: HashMap::new(),
+        };
+
+        let delta = compute_delta(&previous, &current, 0.01, 0.01);
+        assert!(delta.updates.is_empty());
+        assert_eq!(delta.removed_entity_ids, vec![2, 9]);
     }
 }
