@@ -66,6 +66,8 @@ const LIFECYCLE_STATE_IN_PROGRESS = 3;
 const LIFECYCLE_STATE_FINISHED = 5;
 const LIFECYCLE_STATE_CANCELED = 6;
 const LIFECYCLE_STATE_REJECTED = 7;
+const DEBUG_LOG_GAMESTATE_ENTITIES =
+  process.env.NEXT_PUBLIC_DEBUG_LOG_GAMESTATE_ENTITIES === "1";
 
 /**
  * The stream does not identify a damage source. Classify a health decrease as
@@ -304,7 +306,7 @@ export default function GameStateStreamBridge() {
         game.ready = true;
         log.info("GameStateStreamBridge:world:ready", { streamId: streamIdRef.current });
       }
-      logEntitiesAndOwnership("after snapshot");
+      if (DEBUG_LOG_GAMESTATE_ENTITIES) logEntitiesAndOwnership("after snapshot");
     };
 
     const applyDelta = (payload: DeltaPayload) => {
@@ -370,7 +372,9 @@ export default function GameStateStreamBridge() {
         }
       }
       log.debug("GameStateStreamBridge:delta:applied", { streamId: streamIdRef.current, existingEntities, newEntities });
-      if (payload.updates.length > 0) logEntitiesAndOwnership("after delta");
+      if (DEBUG_LOG_GAMESTATE_ENTITIES && payload.updates.length > 0) {
+        logEntitiesAndOwnership("after delta");
+      }
     };
 
     const onSnapshot = (e: MessageEvent) => {
