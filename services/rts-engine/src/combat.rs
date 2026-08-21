@@ -3,9 +3,9 @@
 //! Damage is resolved at the firing tick.  Projectile/tracer rendering can use
 //! the same firing decision later, without making client animation authoritative.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use crate::content::ContentPack;
+use crate::content::{ContentPack, NearEnemyStrategy};
 use crate::pb::{Entity, Vec2};
 use crate::spawn_config::NEUTRAL_OWNER;
 
@@ -27,14 +27,27 @@ pub struct LaserShot {
 }
 
 impl CombatSystem {
-    /// Drives neutral entities with combat profiles and returns entity IDs that
-    /// died this tick. Target ties are intentionally resolved by entity ID.
+    /// Drives entities with combat profiles and returns entity IDs that died
+    /// this tick. Target ties are intentionally resolved by entity ID.
     pub fn tick(
         &mut self,
         entities: &mut [Entity],
         content: &ContentPack,
         tick: u64,
         dt: f32,
+    ) -> CombatTick {
+        self.tick_with_player_orders(entities, content, tick, dt, &HashSet::new())
+    }
+
+    /// As [`Self::tick`], except that active player orders suppress autonomous
+    /// combat for the commanded entity until its intent completes or is replaced.
+    pub fn tick_with_player_orders(
+        &mut self,
+        entities: &mut [Entity],
+        content: &ContentPack,
+        tick: u64,
+        dt: f32,
+        commanded_entity_ids: &HashSet<u64>,
     ) -> CombatTick {
         if dt <= 0.0 {
             return CombatTick {
@@ -47,11 +60,14 @@ impl CombatSystem {
             .iter()
             .filter_map(|entity| {
                 let pos = entity.pos.as_ref()?;
-                (entity.owner_player_id != NEUTRAL_OWNER
+                (content
+                    .get(&entity.entity_type_id)
+                    .is_some_and(|definition| definition.combat_targetable)
                     && !entity.owner_player_id.is_empty()
                     && entity.health > 0.0)
                     .then(|| Target {
                         id: entity.id,
+                        owner_player_id: entity.owner_player_id.clone(),
                         x: pos.x,
                         y: pos.y,
                     })
@@ -61,7 +77,10 @@ impl CombatSystem {
         let mut damage_by_target: HashMap<u64, f32> = HashMap::new();
         let mut laser_shots = Vec::new();
         for attacker in entities.iter_mut() {
-            if attacker.owner_player_id != NEUTRAL_OWNER || attacker.health <= 0.0 {
+            if attacker.owner_player_id.is_empty()
+                || attacker.health <= 0.0
+                || commanded_entity_ids.contains(&attacker.id)
+            {
                 continue;
             }
             let Some(profile) = content
@@ -77,6 +96,11 @@ impl CombatSystem {
             let target = targets
                 .iter()
                 .filter_map(|candidate| {
+                    if candidate.id == attacker.id
+                        || candidate.owner_player_id == attacker.owner_player_id
+                    {
+                        return None;
+                    }
                     let distance_sq = squared_distance(pos.x, pos.y, candidate.x, candidate.y);
                     (distance_sq <= acquisition_sq).then_some((distance_sq, candidate))
                 })
@@ -88,7 +112,11 @@ impl CombatSystem {
                 })
                 .map(|(_, target)| target);
             let Some(target) = target else {
-                zero_velocity(attacker);
+                // Neutrals have no player-issued movement to preserve. Player
+                // units resume their current intent after hostiles leave range.
+                if attacker.owner_player_id == NEUTRAL_OWNER {
+                    zero_velocity(attacker);
+                }
                 continue;
             };
 
@@ -96,6 +124,28 @@ impl CombatSystem {
             let dy = target.y - pos.y;
             let distance_sq = dx * dx + dy * dy;
             let range = profile.attack_range.max(0.0);
+            match profile.on_near_enemy_strategy {
+                NearEnemyStrategy::Flee => {
+                    if distance_sq > f32::EPSILON {
+                        let distance = distance_sq.sqrt();
+                        let speed = content
+                            .get(&attacker.entity_type_id)
+                            .map(|definition| definition.speed.max(0.0))
+                            .unwrap_or(0.0);
+                        let velocity = attacker.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
+                        velocity.x = -dx / distance * speed;
+                        velocity.y = -dy / distance * speed;
+                    } else {
+                        zero_velocity(attacker);
+                    }
+                    continue;
+                }
+                NearEnemyStrategy::Stay if distance_sq > range * range => {
+                    zero_velocity(attacker);
+                    continue;
+                }
+                NearEnemyStrategy::Approach | NearEnemyStrategy::Stay => {}
+            }
             if distance_sq <= range * range {
                 let origin = Vec2 { x: pos.x, y: pos.y };
                 zero_velocity(attacker);
@@ -110,7 +160,10 @@ impl CombatSystem {
                         attacker_id: attacker.id,
                         target_id: target.id,
                         origin,
-                        target: Vec2 { x: target.x, y: target.y },
+                        target: Vec2 {
+                            x: target.x,
+                            y: target.y,
+                        },
                     });
                     self.next_attack_tick.insert(
                         attacker.id,
@@ -159,6 +212,7 @@ impl CombatSystem {
 
 struct Target {
     id: u64,
+    owner_player_id: String,
     x: f32,
     y: f32,
 }
@@ -180,7 +234,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::content::{CombatDef, EntityTypeDef};
+    use crate::content::{CombatDef, EntityTypeDef, NearEnemyStrategy};
 
     fn content() -> ContentPack {
         let raider = EntityTypeDef {
@@ -193,7 +247,9 @@ mod tests {
                 damage: 6.0,
                 cooldown_ticks: 2,
                 acquisition_range: 100.0,
+                on_near_enemy_strategy: NearEnemyStrategy::Approach,
             }),
+            combat_targetable: true,
             visual_scale: 1.0,
             z_index: 0,
             suppress_hover: false,
@@ -206,8 +262,14 @@ mod tests {
             maintenance_cost_per_minute: HashMap::new(),
             builds: Vec::new(),
         };
+        let mut worker = raider.clone();
+        worker.combat = None;
+        worker.combat_targetable = true;
         ContentPack {
-            entity_types: HashMap::from([("raider".to_string(), raider)]),
+            entity_types: HashMap::from([
+                ("raider".to_string(), raider),
+                ("worker".to_string(), worker),
+            ]),
             resource_types: HashMap::new(),
             content_hash: "test".to_string(),
         }
@@ -278,5 +340,117 @@ mod tests {
         CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
         assert_eq!(entities[1].health, 20.0);
         assert_eq!(entities[2].health, 14.0);
+    }
+
+    #[test]
+    fn player_combatant_attacks_neutrals_and_other_players_but_not_allies() {
+        let pack = content();
+        let mut entities = vec![
+            entity(1, "raider", "player-a", 0.0, 20.0),
+            entity(2, "worker", "player-a", 5.0, 20.0),
+            entity(3, "worker", NEUTRAL_OWNER, 8.0, 20.0),
+            entity(4, "worker", "player-b", 9.0, 20.0),
+        ];
+
+        let result = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
+
+        assert_eq!(entities[1].health, 20.0, "allies are never hostile");
+        assert_eq!(entities[2].health, 14.0, "neutral is the nearest hostile");
+        assert_eq!(entities[3].health, 20.0);
+        assert_eq!(result.laser_shots[0].attacker_id, 1);
+        assert_eq!(result.laser_shots[0].target_id, 3);
+    }
+
+    #[test]
+    fn player_combatant_preserves_velocity_when_no_hostile_is_nearby() {
+        let pack = content();
+        let mut entities = vec![entity(1, "raider", "player-a", 0.0, 20.0)];
+        entities[0].vel = Some(Vec2 { x: 7.0, y: -3.0 });
+
+        CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
+
+        assert_eq!(entities[0].vel, Some(Vec2 { x: 7.0, y: -3.0 }));
+    }
+
+    #[test]
+    fn non_targetable_celestial_bodies_are_ignored() {
+        let mut pack = content();
+        let mut planet = pack.entity_types["worker"].clone();
+        planet.combat_targetable = false;
+        pack.entity_types.insert("planet_blue".to_string(), planet);
+        let mut entities = vec![
+            entity(1, "raider", "player-a", 0.0, 20.0),
+            entity(2, "planet_blue", NEUTRAL_OWNER, 20.0, 100.0),
+        ];
+
+        let result = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
+
+        assert!(result.laser_shots.is_empty());
+        assert_eq!(entities[1].health, 100.0);
+        assert_eq!(entities[0].vel, Some(Vec2 { x: 0.0, y: 0.0 }));
+    }
+
+    #[test]
+    fn stay_strategy_does_not_approach_an_out_of_range_hostile() {
+        let mut pack = content();
+        pack.entity_types
+            .get_mut("raider")
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .on_near_enemy_strategy = NearEnemyStrategy::Stay;
+        let mut entities = vec![
+            entity(1, "raider", "player-a", 0.0, 20.0),
+            entity(2, "worker", NEUTRAL_OWNER, 20.0, 20.0),
+        ];
+
+        let result = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
+
+        assert!(result.laser_shots.is_empty());
+        assert_eq!(entities[0].pos.as_ref().unwrap().x, 0.0);
+        assert_eq!(entities[0].vel, Some(Vec2 { x: 0.0, y: 0.0 }));
+    }
+
+    #[test]
+    fn flee_strategy_moves_away_without_firing() {
+        let mut pack = content();
+        pack.entity_types
+            .get_mut("raider")
+            .unwrap()
+            .combat
+            .as_mut()
+            .unwrap()
+            .on_near_enemy_strategy = NearEnemyStrategy::Flee;
+        let mut entities = vec![
+            entity(1, "raider", "player-a", 0.0, 20.0),
+            entity(2, "worker", NEUTRAL_OWNER, 5.0, 20.0),
+        ];
+
+        let result = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
+
+        assert!(result.laser_shots.is_empty());
+        assert_eq!(entities[0].vel, Some(Vec2 { x: -10.0, y: 0.0 }));
+    }
+
+    #[test]
+    fn player_order_suppresses_autonomous_combat() {
+        let pack = content();
+        let mut entities = vec![
+            entity(1, "raider", "player-a", 0.0, 20.0),
+            entity(2, "worker", NEUTRAL_OWNER, 5.0, 20.0),
+        ];
+        let commanded = HashSet::from([1]);
+
+        let result = CombatSystem::default().tick_with_player_orders(
+            &mut entities,
+            &pack,
+            0,
+            1.0,
+            &commanded,
+        );
+
+        assert!(result.laser_shots.is_empty());
+        assert_eq!(entities[1].health, 20.0);
     }
 }

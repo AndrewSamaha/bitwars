@@ -217,6 +217,7 @@ mod radiation_tests {
                 mass: 500.0,
                 health: 100.0,
                 combat: None,
+                combat_targetable: false,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -259,6 +260,7 @@ mod radiation_tests {
                 mass: 500.0,
                 health: 100.0,
                 combat: None,
+                combat_targetable: false,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -280,6 +282,7 @@ mod radiation_tests {
                 mass: 1.0,
                 health: 100.0,
                 combat: None,
+                combat_targetable: false,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -456,7 +459,7 @@ pub struct Engine {
     maintenance_spend_fractional: HashMap<(String, String), f32>,
     /// M8b: Per-collector runtime telemetry projected to Redis/UI.
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
-    /// Runtime-only cooldown tracking for autonomous neutral combatants.
+    /// Runtime-only cooldown tracking for autonomous combatants.
     combat: CombatSystem,
 }
 
@@ -1428,19 +1431,29 @@ impl Engine {
         }
     }
 
-    /// Advance autonomous neutral combat and remove entities killed by it.
+    /// Advance autonomous combat and remove entities killed by it.
     /// Returns killed IDs so the tick loop can cancel any active player intent
     /// and update reconnect tracking before publishing the resulting delta.
-    fn apply_npc_combat(&mut self, dt: f32) -> crate::combat::CombatTick {
+    fn apply_autonomous_combat(&mut self, dt: f32) -> crate::combat::CombatTick {
         let Some(content) = self.content.as_ref() else {
             return crate::combat::CombatTick {
                 dead_entity_ids: Vec::new(),
                 laser_shots: Vec::new(),
             };
         };
-        let outcome = self
-            .combat
-            .tick(&mut self.state.entities, content, self.state.tick, dt);
+        let commanded_entity_ids: HashSet<u64> = self
+            .intents
+            .active_intents()
+            .keys()
+            .copied()
+            .collect();
+        let outcome = self.combat.tick_with_player_orders(
+            &mut self.state.entities,
+            content,
+            self.state.tick,
+            dt,
+            &commanded_entity_ids,
+        );
         if outcome.dead_entity_ids.is_empty() {
             return outcome;
         }
@@ -2016,7 +2029,7 @@ impl Engine {
                 warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
             }
         }
-        let combat = self.apply_npc_combat(dt);
+        let combat = self.apply_autonomous_combat(dt);
         self.emit_laser_shots(&combat.laser_shots).await;
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_resource_collection(dt);
@@ -2132,7 +2145,7 @@ impl Engine {
                     warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
                 }
             }
-            let combat = self.apply_npc_combat(dt);
+            let combat = self.apply_autonomous_combat(dt);
             self.emit_laser_shots(&combat.laser_shots).await;
             self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
             self.apply_resource_collection(dt);

@@ -93,6 +93,7 @@ entity_types:
     stop_radius: 1
     mass: 500.0
     health: 100.0
+    combat_targetable: true
     build_cost:
       minerals: 100.0
       energy: 50.0
@@ -112,6 +113,7 @@ entity_types:
     stop_radius: 0.75
     mass: 1.0
     health: 100.0
+    combat_targetable: true
     build_cost:
       minerals: 50.0
       energy: 50.0
@@ -132,12 +134,18 @@ entity_types:
         spend_rates:
           minerals: 1.2
           energy: 1.2
+      - entity_type_id: defense_pilon
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2
+
 
   habitat:
     speed: 70.0
     stop_radius: 0.5
     mass: 4.0
-    health: 200.0
+    health: 400.0
+    combat_targetable: true
     refinery:
       accepts: [food]
     build_cost:
@@ -157,6 +165,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7.0
     health: 150.0
+    combat_targetable: true
     maintenance_cost_per_minute:
       energy: 1.0
       food: 2.0
@@ -168,20 +177,45 @@ entity_types:
     stop_radius: 0.5
     mass: 7.0
     health: 150.0
+    combat_targetable: true
 
   scout:
     speed: 140.0
     stop_radius: 0.5
     mass: 0.6
     health: 60.0
+    combat_targetable: true
+    combat:
+      attack_range: 120.0
+      damage: 2.0
+      cooldown_ticks: 75
+      acquisition_range: 450.0
+      on_near_enemy_strategy: approach
+
+  defense_pilon:
+    build_cost:
+      minerals: 100.0
+      energy: 50.0
+    speed: 5.0
+    stop_radius: 0.5
+    mass: 1.0
+    health: 500.0
+    combat:
+      attack_range: 200.0
+      damage: 2.0
+      cooldown_ticks: 51
+      acquisition_range: 200.0
+      on_near_enemy_strategy: stay
 
   raider:
     speed: 10.0
     stop_radius: 0.5
     mass: 0.8
     health: 80.0
+    combat_targetable: true
     combat:
       attack_range: 180.0
       damage: 4.0
       cooldown_ticks: 100
       acquisition_range: 500.0
+      on_near_enemy_strategy: approach

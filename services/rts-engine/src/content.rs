@@ -28,10 +28,14 @@ pub struct EntityTypeDef {
     pub stop_radius: f32,
     pub mass: f32,
     pub health: f32,
-    /// Optional autonomous-combat profile.  When present on a neutral entity,
-    /// the server acquires nearby player-owned targets and drives the unit.
+    /// Optional autonomous-combat profile. When present, the server acquires
+    /// nearby hostile entities and drives the unit according to its strategy.
     #[serde(default)]
     pub combat: Option<CombatDef>,
+    /// Whether autonomous combat may select this entity type as a target.
+    /// Defaults to false so scenery and resource entities are safe by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub combat_targetable: bool,
     /// Client-only multiplier for the entity's rendered size.
     #[serde(
         default = "default_visual_scale",
@@ -70,7 +74,7 @@ pub struct EntityTypeDef {
     pub builds: Vec<BuildOptionDef>,
 }
 
-/// Data needed for the first server-authoritative NPC combat behavior.
+/// Data needed for server-authoritative autonomous combat.
 ///
 /// Timings are ticks, rather than seconds, so a combat replay is a pure
 /// function of the content version and tick stream.
@@ -82,8 +86,24 @@ pub struct CombatDef {
     pub damage: f32,
     /// Minimum whole ticks between shots. Zero is treated as one tick.
     pub cooldown_ticks: u64,
-    /// Maximum distance at which this neutral will acquire a player-owned target.
+    /// Maximum distance at which this unit acquires a hostile target.
     pub acquisition_range: f32,
+    /// How this unit responds after acquiring a nearby hostile.
+    #[serde(default)]
+    pub on_near_enemy_strategy: NearEnemyStrategy,
+}
+
+/// Autonomous movement response to a nearby hostile entity.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NearEnemyStrategy {
+    /// Move into weapon range, then fire. This preserves existing NPC behavior.
+    #[default]
+    Approach,
+    /// Move directly away from the nearest hostile without firing.
+    Flee,
+    /// Do not move; fire only if the hostile is already in weapon range.
+    Stay,
 }
 
 /// One content-defined production option available to a builder.
@@ -307,6 +327,7 @@ mod tests {
                 mass: 1.0,
                 health: 100.0,
                 combat: None,
+                combat_targetable: false,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -328,6 +349,7 @@ mod tests {
                 mass: 0.6,
                 health: 60.0,
                 combat: None,
+                combat_targetable: false,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -360,6 +382,7 @@ mod tests {
                 mass: 1.0,
                 health: 100.0,
                 combat: None,
+                combat_targetable: false,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -381,6 +404,7 @@ mod tests {
                 mass: 0.6,
                 health: 60.0,
                 combat: None,
+                combat_targetable: false,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -404,6 +428,7 @@ mod tests {
                 mass: 0.6,
                 health: 60.0,
                 combat: None,
+                combat_targetable: false,
                 collector: None,
                 resource_node: None,
                 refinery: None,
@@ -425,6 +450,7 @@ mod tests {
                 mass: 1.0,
                 health: 100.0,
                 combat: None,
+                combat_targetable: false,
                 collector: None,
                 resource_node: None,
                 refinery: None,
