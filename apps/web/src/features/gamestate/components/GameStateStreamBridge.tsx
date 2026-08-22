@@ -7,7 +7,7 @@ import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
-import { GAMESTATE_UPDATED_EVENT } from "@/features/gamestate/events";
+import { dispatchGameStateUpdated } from "@/features/gamestate/events";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -163,13 +163,16 @@ export default function GameStateStreamBridge() {
   useEffect(() => {
     let mounted = true;
     let timer: number | undefined;
+    let requestInFlight = false;
 
     const syncCollectorState = async () => {
+      if (requestInFlight) return;
       const ids = Array.from(byIdRef.current.values())
         .map((ent) => String(ent.id ?? ""))
         .filter((id, index, arr) => id.length > 0 && arr.indexOf(id) === index);
 
       if (ids.length === 0) return;
+      requestInFlight = true;
 
       try {
         const res = await fetch(`/api/v2/collector-state?ids=${encodeURIComponent(ids.join(","))}`, {
@@ -184,15 +187,36 @@ export default function GameStateStreamBridge() {
         if (!mounted) return;
 
         const nextStates = data.collector_state_by_entity ?? {};
+        const changedIds: string[] = [];
         for (const id of ids) {
           const ent = byIdRef.current.get(id);
           if (!ent) continue;
           const nextState = nextStates[id];
-          if (nextState) ent.collector_state = { ...nextState };
-          else delete ent.collector_state;
+          const currentState = ent.collector_state;
+          if (nextState) {
+            const changed = !currentState ||
+              currentState.activity !== nextState.activity ||
+              currentState.resource_type !== nextState.resource_type ||
+              currentState.carry_amount !== nextState.carry_amount ||
+              currentState.carry_capacity !== nextState.carry_capacity ||
+              currentState.effective_rate_per_second !== nextState.effective_rate_per_second ||
+              currentState.updated_tick !== nextState.updated_tick;
+            if (changed) {
+              ent.collector_state = { ...nextState };
+              changedIds.push(id);
+            }
+          } else if (currentState) {
+            delete ent.collector_state;
+            changedIds.push(id);
+          }
+        }
+        if (changedIds.length > 0) {
+          dispatchGameStateUpdated(changedIds);
         }
       } catch {
         // Keep rendering resilient on transient polling failures.
+      } finally {
+        requestInFlight = false;
       }
     };
 
@@ -301,7 +325,7 @@ export default function GameStateStreamBridge() {
       log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("bitwars:snapshot-applied"));
-        window.dispatchEvent(new Event(GAMESTATE_UPDATED_EVENT));
+        dispatchGameStateUpdated(payload.entities.map((entity) => normalizeId(entity.id)));
       }
       // Signal that the world is ready for ticking/rendering
       if (!game.ready) {
@@ -378,7 +402,10 @@ export default function GameStateStreamBridge() {
         logEntitiesAndOwnership("after delta");
       }
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event(GAMESTATE_UPDATED_EVENT));
+        dispatchGameStateUpdated([
+          ...(payload.removed_entity_ids ?? []).map(normalizeId),
+          ...payload.updates.map((update) => normalizeId(update.id)),
+        ]);
       }
     };
 
@@ -487,6 +514,7 @@ export default function GameStateStreamBridge() {
               activeIntentByEntityRef.current.delete(entityKey);
             }
             refreshIntentOverlays();
+            dispatchGameStateUpdated([entityKey]);
           }
         }
       } catch (err) {
@@ -537,6 +565,7 @@ export default function GameStateStreamBridge() {
           }
           activeIntentByEntityRef.current = nextIntentMap;
           refreshIntentOverlays();
+          dispatchGameStateUpdated(Array.from(byId.keys()));
 
           // M4: Validate content version and fetch if stale
           const serverContentVersion = handshake.content_version ?? "";

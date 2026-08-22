@@ -7,9 +7,21 @@ import { game } from "@/features/gamestate/world";
 import { contentManager } from "@/features/content/contentManager";
 import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
-import { GAMESTATE_UPDATED_EVENT } from "@/features/gamestate/events";
+import { GAMESTATE_UPDATED_EVENT, type GameStateUpdatedDetail } from "@/features/gamestate/events";
 
 const GAMESTATE_UI_REFRESH_INTERVAL_MS = 100;
+type BuildState = { blueprint_id?: string; progress?: number };
+type BuildStateById = Record<string, BuildState>;
+
+function sameBuildStates(left: BuildStateById, right: BuildStateById): boolean {
+  const leftIds = Object.keys(left);
+  const rightIds = Object.keys(right);
+  if (leftIds.length !== rightIds.length) return false;
+  return leftIds.every((id) =>
+    right[id]?.blueprint_id === left[id]?.blueprint_id &&
+    right[id]?.progress === left[id]?.progress,
+  );
+}
 
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
@@ -17,8 +29,7 @@ export default function EntityDetailPanel() {
   const selectedIdsKey = selectedEntities.join(",");
   const [, forceRerender] = useState(0);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
-  const [collectorStateById, setCollectorStateById] = useState<Record<string, any>>({});
-  const [buildStateById, setBuildStateById] = useState<Record<string, { blueprint_id?: string; progress?: number }>>({});
+  const [buildStateById, setBuildStateById] = useState<BuildStateById>({});
 
   // The ECS changes when the authoritative game stream applies a snapshot or
   // delta. Do not make the DOM follow Pixi's render loop; coalesce stream
@@ -31,7 +42,9 @@ export default function EntityDetailPanel() {
       lastRefreshAt = performance.now();
       forceRerender((n) => (n + 1) % 1_000_000);
     };
-    const onGameStateUpdated = () => {
+    const onGameStateUpdated = (event: Event) => {
+      const changedIds = (event as CustomEvent<GameStateUpdatedDetail>).detail?.entityIds;
+      if (changedIds && !selectedEntities.some((id) => changedIds.includes(id))) return;
       const remaining = GAMESTATE_UI_REFRESH_INTERVAL_MS - (performance.now() - lastRefreshAt);
       if (remaining <= 0) {
         refresh();
@@ -44,49 +57,7 @@ export default function EntityDetailPanel() {
       window.removeEventListener(GAMESTATE_UPDATED_EVENT, onGameStateUpdated);
       if (trailingRefresh !== undefined) window.clearTimeout(trailingRefresh);
     };
-  }, []);
-
-  useEffect(() => {
-    if (!selectedEntities?.length) {
-      setCollectorStateById({});
-      setBuildStateById({});
-      return;
-    }
-    let mounted = true;
-    let timer: number | undefined;
-    const ids = selectedEntities.join(",");
-    const refresh = async () => {
-      try {
-        const res = await fetch(`/api/v2/collector-state?ids=${encodeURIComponent(ids)}`, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as { collector_state_by_entity?: Record<string, any> };
-        if (!mounted) return;
-        setCollectorStateById(data.collector_state_by_entity ?? {});
-        const buildResponse = await fetch(`/api/v2/build-state?ids=${encodeURIComponent(ids)}`, {
-          cache: "no-store",
-        });
-        if (!buildResponse.ok || !mounted) return;
-        const buildData = await buildResponse.json() as {
-          build_state_by_entity?: Record<string, { blueprint_id?: string; progress?: number }>;
-        };
-        setBuildStateById(buildData.build_state_by_entity ?? {});
-      } catch {
-        // keep pane resilient on transient fetch failures
-      }
-    };
-    void refresh();
-    timer = window.setInterval(() => {
-      void refresh();
-    }, 500);
-    return () => {
-      mounted = false;
-      if (timer !== undefined) window.clearInterval(timer);
-    };
-  }, [selectedIdsKey]);
+  }, [selectedEntities, selectedIdsKey]);
 
   useEffect(() => {
     setBuildMenuOpen(false);
@@ -186,6 +157,45 @@ export default function EntityDetailPanel() {
     const ai = idToActiveIntent.get(id);
     return (ai?.kind ?? "").toLowerCase() === "collect";
   });
+  const isSelectedEntityBuilding = selectedEntities.length === 1 &&
+    (idToActiveIntent.get(firstId)?.kind ?? "").toLowerCase() === "build";
+
+  useEffect(() => {
+    if (!isSelectedEntityBuilding) {
+      setBuildStateById({});
+      return;
+    }
+    let mounted = true;
+    let timer: number | undefined;
+    let requestInFlight = false;
+    const refresh = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const response = await fetch(`/api/v2/build-state?ids=${encodeURIComponent(firstId)}`, {
+          cache: "no-store",
+        });
+        if (!response.ok || !mounted) return;
+        const data = (await response.json()) as {
+          build_state_by_entity?: BuildStateById;
+        };
+        const nextState = data.build_state_by_entity ?? {};
+        setBuildStateById((current) =>
+          sameBuildStates(current, nextState) ? current : nextState,
+        );
+      } catch {
+        // Keep build details resilient on transient fetch failures.
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    void refresh();
+    timer = window.setInterval(() => void refresh(), 500);
+    return () => {
+      mounted = false;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [firstId, isSelectedEntityBuilding]);
 
   const onClickAction = (val: "Move" | "Collect" | "Build") => {
     if (val === "Build") {
@@ -275,7 +285,7 @@ export default function EntityDetailPanel() {
                 const health = idToHealth.get(id);
                 const maxHealth = contentManager.getEntityType(entityTypeId)?.health;
                 const activeIntent = idToActiveIntent.get(id);
-                const collectorState = collectorStateById[id] ?? idToCollectorState.get(id);
+                const collectorState = idToCollectorState.get(id);
                 const buildState = buildStateById[id];
                 const shortIntentId = activeIntent?.intentId
                   ? `${activeIntent.intentId.slice(0, 8)}...`
