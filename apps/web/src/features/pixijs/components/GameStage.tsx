@@ -611,7 +611,12 @@ export default function GameStage() {
           }
 
           // 4) M1: Render waypoint indicators for entities with queued intents
-          waypointContainer.removeChildren();
+          // removeChildren only detaches Pixi display objects; destroying the
+          // removed Graphics releases their associated GPU/JS resources before
+          // this frame creates replacement waypoint markers.
+          for (const child of waypointContainer.removeChildren()) {
+            child.destroy();
+          }
           for (const entityId of intentQueue.getActiveEntityIds()) {
             const waypoints = intentQueue.getWaypoints(entityId);
             let prevX: number | undefined;
