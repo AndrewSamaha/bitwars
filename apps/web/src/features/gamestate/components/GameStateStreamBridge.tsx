@@ -7,6 +7,7 @@ import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
+import { GAMESTATE_UPDATED_EVENT } from "@/features/gamestate/events";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -300,6 +301,7 @@ export default function GameStateStreamBridge() {
       log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("bitwars:snapshot-applied"));
+        window.dispatchEvent(new Event(GAMESTATE_UPDATED_EVENT));
       }
       // Signal that the world is ready for ticking/rendering
       if (!game.ready) {
@@ -374,6 +376,9 @@ export default function GameStateStreamBridge() {
       log.debug("GameStateStreamBridge:delta:applied", { streamId: streamIdRef.current, existingEntities, newEntities });
       if (DEBUG_LOG_GAMESTATE_ENTITIES && payload.updates.length > 0) {
         logEntitiesAndOwnership("after delta");
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(GAMESTATE_UPDATED_EVENT));
       }
     };
 

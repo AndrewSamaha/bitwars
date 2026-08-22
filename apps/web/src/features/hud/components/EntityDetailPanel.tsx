@@ -7,28 +7,44 @@ import { game } from "@/features/gamestate/world";
 import { contentManager } from "@/features/content/contentManager";
 import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
+import { GAMESTATE_UPDATED_EVENT } from "@/features/gamestate/events";
+
+const GAMESTATE_UI_REFRESH_INTERVAL_MS = 100;
 
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
   const { selectedEntities, selectedAction } = selectors;
   const selectedIdsKey = selectedEntities.join(",");
-  // Access Pixi application to subscribe to ticker
-  const { app } = selectors as any;
   const [, forceRerender] = useState(0);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [collectorStateById, setCollectorStateById] = useState<Record<string, any>>({});
   const [buildStateById, setBuildStateById] = useState<Record<string, { blueprint_id?: string; progress?: number }>>({});
 
-  // Re-render every Pixi frame so entity positions are fresh
+  // The ECS changes when the authoritative game stream applies a snapshot or
+  // delta. Do not make the DOM follow Pixi's render loop; coalesce stream
+  // bursts to a modest UI refresh rate instead.
   useEffect(() => {
-    if (!app) return;
-    const tick = () => forceRerender((n) => (n + 1) % 1000000);
-    app.ticker.add(tick);
-    return () => {
-      const ticker = (app as { ticker?: typeof app.ticker | null }).ticker;
-      ticker?.remove(tick);
+    let lastRefreshAt = 0;
+    let trailingRefresh: number | undefined;
+    const refresh = () => {
+      trailingRefresh = undefined;
+      lastRefreshAt = performance.now();
+      forceRerender((n) => (n + 1) % 1_000_000);
     };
-  }, [app]);
+    const onGameStateUpdated = () => {
+      const remaining = GAMESTATE_UI_REFRESH_INTERVAL_MS - (performance.now() - lastRefreshAt);
+      if (remaining <= 0) {
+        refresh();
+      } else if (trailingRefresh === undefined) {
+        trailingRefresh = window.setTimeout(refresh, remaining);
+      }
+    };
+    window.addEventListener(GAMESTATE_UPDATED_EVENT, onGameStateUpdated);
+    return () => {
+      window.removeEventListener(GAMESTATE_UPDATED_EVENT, onGameStateUpdated);
+      if (trailingRefresh !== undefined) window.clearTimeout(trailingRefresh);
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedEntities?.length) {
@@ -105,51 +121,53 @@ export default function EntityDetailPanel() {
       effective_rate_per_second: number;
     }
   >();
-  try {
-    for (const e of game.world.with("pos", "id")) {
-      const id = String((e as any).id);
-      const pos = (e as any).pos as { x: number; y: number } | undefined;
-      const entityTypeId = (e as any).entity_type_id as string | undefined;
-      const health = Number((e as any).health);
-      const activeIntentKind = (e as any).active_intent_kind as string | undefined;
-      const activeIntentId = (e as any).active_intent_id as string | undefined;
-      const activeIntentStartedTick = (e as any).active_intent_started_tick as number | undefined;
-      const activeIntentMoveTarget = (e as any).active_intent_move_target as { x: number; y: number } | undefined;
-      const collectorState = (e as any).collector_state as
-        | {
-            activity?: string;
-            resource_type?: string;
-            carry_amount?: number;
-            carry_capacity?: number;
-            effective_rate_per_second?: number;
+  if (selectedEntities.length > 0) {
+    try {
+      for (const e of game.world.with("pos", "id")) {
+        const id = String((e as any).id);
+        const pos = (e as any).pos as { x: number; y: number } | undefined;
+        const entityTypeId = (e as any).entity_type_id as string | undefined;
+        const health = Number((e as any).health);
+        const activeIntentKind = (e as any).active_intent_kind as string | undefined;
+        const activeIntentId = (e as any).active_intent_id as string | undefined;
+        const activeIntentStartedTick = (e as any).active_intent_started_tick as number | undefined;
+        const activeIntentMoveTarget = (e as any).active_intent_move_target as { x: number; y: number } | undefined;
+        const collectorState = (e as any).collector_state as
+          | {
+              activity?: string;
+              resource_type?: string;
+              carry_amount?: number;
+              carry_capacity?: number;
+              effective_rate_per_second?: number;
+            }
+          | undefined;
+        if (id != null && pos) {
+          idToPos.set(id, pos);
+        }
+        if (id != null) {
+          idToType.set(id, entityTypeId ?? "—");
+          if (Number.isFinite(health)) idToHealth.set(id, health);
+          if (activeIntentKind) {
+            idToActiveIntent.set(id, {
+              kind: activeIntentKind,
+              intentId: activeIntentId,
+              startedTick: activeIntentStartedTick,
+              moveTarget: activeIntentMoveTarget,
+            });
           }
-        | undefined;
-      if (id != null && pos) {
-        idToPos.set(id, pos);
-      }
-      if (id != null) {
-        idToType.set(id, entityTypeId ?? "—");
-        if (Number.isFinite(health)) idToHealth.set(id, health);
-        if (activeIntentKind) {
-          idToActiveIntent.set(id, {
-            kind: activeIntentKind,
-            intentId: activeIntentId,
-            startedTick: activeIntentStartedTick,
-            moveTarget: activeIntentMoveTarget,
-          });
-        }
-        if (collectorState) {
-          idToCollectorState.set(id, {
-            activity: String(collectorState.activity ?? "idle"),
-            resource_type: String(collectorState.resource_type ?? ""),
-            carry_amount: Number(collectorState.carry_amount ?? 0),
-            carry_capacity: Number(collectorState.carry_capacity ?? 0),
-            effective_rate_per_second: Number(collectorState.effective_rate_per_second ?? 0),
-          });
+          if (collectorState) {
+            idToCollectorState.set(id, {
+              activity: String(collectorState.activity ?? "idle"),
+              resource_type: String(collectorState.resource_type ?? ""),
+              carry_amount: Number(collectorState.carry_amount ?? 0),
+              carry_capacity: Number(collectorState.carry_capacity ?? 0),
+              effective_rate_per_second: Number(collectorState.effective_rate_per_second ?? 0),
+            });
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   // Dynamic actions for a given entity.
   const getActionsForEntity = (entityId: string): ActionDef[] => {
