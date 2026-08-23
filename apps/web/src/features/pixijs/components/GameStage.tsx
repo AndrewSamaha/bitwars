@@ -12,7 +12,9 @@ import { createHoverIndicator, drawBuildArc, drawHealthArc } from "@/features/hu
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
 import { reconcileEntityRenderEffects } from "@/features/pixijs/effects/renderEffects";
+import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
+import { ENTITY_DESPAWN_EVENT } from "@/features/gamestate/events";
 import {
   createGameEntityVisual,
   createGameWorldContainer,
@@ -203,6 +205,13 @@ export default function GameStage() {
               .stroke({ color: 0xff_3b_81, width: 10, alpha: 1 - progress * 0.35 });
           }
         };
+
+        const despawnExplosions = createDespawnExplosionSystem(worldContainer);
+        const onEntityDespawn = (event: Event) => {
+          const entity = (event as CustomEvent<Entity>).detail;
+          if (entity) despawnExplosions.explode(entity);
+        };
+        window.addEventListener(ENTITY_DESPAWN_EVENT, onEntityDespawn);
 
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
@@ -888,6 +897,7 @@ export default function GameStage() {
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             renderLasers(performance.now());
+            despawnExplosions.update(performance.now());
             render();
 
         });
@@ -902,6 +912,8 @@ export default function GameStage() {
           window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
+          window.removeEventListener(ENTITY_DESPAWN_EVENT, onEntityDespawn);
+          despawnExplosions.destroy();
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });
           }

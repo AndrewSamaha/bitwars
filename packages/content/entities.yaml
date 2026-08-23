@@ -68,7 +68,7 @@ entity_types:
         max_effective_distance_border_color:
         max_effective_distance_fill_color: "#facc15"
         min_effective_distance: 0.0
-        full_damage_distance: 600.0
+        full_damage_distance: 900.0
         max_effective_distance: 1200.0
         damage_per_second: 2.0
     resource_node:
