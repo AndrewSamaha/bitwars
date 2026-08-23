@@ -7,6 +7,7 @@ import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
+import { dispatchGameStateUpdated } from "@/features/gamestate/events";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -18,6 +19,11 @@ type CollectorStatePayload = {
   effective_rate_per_second: number;
   updated_tick?: number;
 };
+type StreamCollectorStatePayload = CollectorStatePayload & { entity_id: number | string };
+
+function collectorStateFromStream({ entity_id: _entityId, ...state }: StreamCollectorStatePayload): CollectorStatePayload {
+  return state;
+}
 
 type ResourceEntryPayload = { resource_type: string; amount: number };
 type PlayerLedgerPayload = { player_id: string; resources: ResourceEntryPayload[] };
@@ -33,9 +39,9 @@ type SnapshotPayload = {
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
-    collector_state?: CollectorStatePayload;
   }>;
   player_ledgers?: PlayerLedgerPayload[];
+  collector_states?: StreamCollectorStatePayload[];
 };
 
 type DeltaPayload = {
@@ -50,8 +56,8 @@ type DeltaPayload = {
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
-    collector_state?: CollectorStatePayload;
   }>;
+  collector_state_updates?: StreamCollectorStatePayload[];
 };
 
 type ActiveIntentOverlay = {
@@ -66,6 +72,8 @@ const LIFECYCLE_STATE_IN_PROGRESS = 3;
 const LIFECYCLE_STATE_FINISHED = 5;
 const LIFECYCLE_STATE_CANCELED = 6;
 const LIFECYCLE_STATE_REJECTED = 7;
+const DEBUG_LOG_GAMESTATE_ENTITIES =
+  process.env.NEXT_PUBLIC_DEBUG_LOG_GAMESTATE_ENTITIES === "1";
 
 /**
  * The stream does not identify a damage source. Classify a health decrease as
@@ -93,7 +101,6 @@ export default function GameStateStreamBridge() {
   const hud = useHUD();
   const { player } = usePlayer();
   const RESOURCE_LEDGER_POLL_MS = 2000;
-  const COLLECTOR_STATE_POLL_MS = 500;
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
   const streamIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
@@ -155,55 +162,6 @@ export default function GameStateStreamBridge() {
     };
   }, [hud.actions, RESOURCE_LEDGER_POLL_MS]);
 
-  // Collector activity is persisted separately in Redis/UI state and is currently
-  // only injected during bootstrap snapshots. Poll it so in-world FX can react live.
-  useEffect(() => {
-    let mounted = true;
-    let timer: number | undefined;
-
-    const syncCollectorState = async () => {
-      const ids = Array.from(byIdRef.current.values())
-        .map((ent) => String(ent.id ?? ""))
-        .filter((id, index, arr) => id.length > 0 && arr.indexOf(id) === index);
-
-      if (ids.length === 0) return;
-
-      try {
-        const res = await fetch(`/api/v2/collector-state?ids=${encodeURIComponent(ids.join(","))}`, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          collector_state_by_entity?: Record<string, CollectorStatePayload>;
-        };
-        if (!mounted) return;
-
-        const nextStates = data.collector_state_by_entity ?? {};
-        for (const id of ids) {
-          const ent = byIdRef.current.get(id);
-          if (!ent) continue;
-          const nextState = nextStates[id];
-          if (nextState) ent.collector_state = { ...nextState };
-          else delete ent.collector_state;
-        }
-      } catch {
-        // Keep rendering resilient on transient polling failures.
-      }
-    };
-
-    timer = window.setInterval(() => {
-      void syncCollectorState();
-    }, COLLECTOR_STATE_POLL_MS);
-    void syncCollectorState();
-
-    return () => {
-      mounted = false;
-      if (timer !== undefined) window.clearInterval(timer);
-    };
-  }, [COLLECTOR_STATE_POLL_MS]);
-
   useEffect(() => {
     const byId = byIdRef.current;
     const world = game.world;
@@ -261,9 +219,13 @@ export default function GameStateStreamBridge() {
         world.remove(ent);
       }
       byId.clear();
+      const collectorStateByEntity = new Map(
+        (payload.collector_states ?? []).map((state) => [normalizeId(state.entity_id), state]),
+      );
 
       // Add new ones
       for (const s of payload.entities) {
+        const collectorState = collectorStateByEntity.get(normalizeId(s.id));
         const ent: Entity = {
           id: s.id,
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
@@ -271,7 +233,7 @@ export default function GameStateStreamBridge() {
           ...(s.health !== undefined ? { health: s.health } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
-          ...(s.collector_state ? { collector_state: { ...s.collector_state } } : {}),
+          ...(collectorState ? { collector_state: collectorStateFromStream(collectorState) } : {}),
           // force exists but is currently unused by systems
         };
         world.add(ent);
@@ -298,13 +260,14 @@ export default function GameStateStreamBridge() {
       log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("bitwars:snapshot-applied"));
+        dispatchGameStateUpdated(payload.entities.map((entity) => normalizeId(entity.id)));
       }
       // Signal that the world is ready for ticking/rendering
       if (!game.ready) {
         game.ready = true;
         log.info("GameStateStreamBridge:world:ready", { streamId: streamIdRef.current });
       }
-      logEntitiesAndOwnership("after snapshot");
+      if (DEBUG_LOG_GAMESTATE_ENTITIES) logEntitiesAndOwnership("after snapshot");
     };
 
     const applyDelta = (payload: DeltaPayload) => {
@@ -336,7 +299,6 @@ export default function GameStateStreamBridge() {
             else { existing.vel.x = u.vel.x; existing.vel.y = u.vel.y; }
           }
           if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
-          if (u.collector_state !== undefined) existing.collector_state = { ...u.collector_state };
           if (u.health !== undefined) {
             // Health decreases arrive every engine tick. Refresh liveness, but
             // only start a new particle timeline after the prior plume expires.
@@ -361,7 +323,6 @@ export default function GameStateStreamBridge() {
             ...(u.health !== undefined ? { health: u.health } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
-            ...(u.collector_state ? { collector_state: { ...u.collector_state } } : {}),
           };
           newEntities++;
           world.add(ent);
@@ -369,8 +330,21 @@ export default function GameStateStreamBridge() {
           applyIntentOverlayToEntity(ent, activeIntentByEntityRef.current.get(key));
         }
       }
+      for (const state of payload.collector_state_updates ?? []) {
+        const existing = byId.get(normalizeId(state.entity_id));
+        if (existing) existing.collector_state = collectorStateFromStream(state);
+      }
       log.debug("GameStateStreamBridge:delta:applied", { streamId: streamIdRef.current, existingEntities, newEntities });
-      if (payload.updates.length > 0) logEntitiesAndOwnership("after delta");
+      if (DEBUG_LOG_GAMESTATE_ENTITIES && payload.updates.length > 0) {
+        logEntitiesAndOwnership("after delta");
+      }
+      if (typeof window !== "undefined") {
+        dispatchGameStateUpdated([
+          ...(payload.removed_entity_ids ?? []).map(normalizeId),
+          ...payload.updates.map((update) => normalizeId(update.id)),
+          ...(payload.collector_state_updates ?? []).map((state) => normalizeId(state.entity_id)),
+        ]);
+      }
     };
 
     const onSnapshot = (e: MessageEvent) => {
@@ -478,6 +452,7 @@ export default function GameStateStreamBridge() {
               activeIntentByEntityRef.current.delete(entityKey);
             }
             refreshIntentOverlays();
+            dispatchGameStateUpdated([entityKey]);
           }
         }
       } catch (err) {
@@ -528,6 +503,7 @@ export default function GameStateStreamBridge() {
           }
           activeIntentByEntityRef.current = nextIntentMap;
           refreshIntentOverlays();
+          dispatchGameStateUpdated(Array.from(byId.keys()));
 
           // M4: Validate content version and fetch if stale
           const serverContentVersion = handshake.content_version ?? "";

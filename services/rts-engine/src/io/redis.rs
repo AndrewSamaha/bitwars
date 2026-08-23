@@ -7,8 +7,8 @@ use crate::engine::intent::{format_uuid, IntentMetadata};
 use crate::engine::state::GameState;
 use crate::pb::events_stream_record;
 use crate::pb::{
-    self, Delta, EventsStreamRecord, LaserShotEvent, LifecycleEvent, PlayerResourceLedger,
-    ResourceEntry, Snapshot,
+    self, CollectorState, Delta, EventsStreamRecord, LaserShotEvent, LifecycleEvent,
+    PlayerResourceLedger, ResourceEntry, Snapshot,
 };
 
 // ── M2: Per-entity tracking types ───────────────────────────────────────────
@@ -127,10 +127,6 @@ impl RedisClient {
     }
 
     /// M8b: Hash holding per-entity collector telemetry JSON blobs.
-    fn collector_state_key(&self) -> String {
-        format!("rts:match:{}:collector_state", self.game_id)
-    }
-
     /// M4: Key holding the content hash (xxh3 hex string).
     fn content_version_key(&self) -> String {
         format!("rts:match:{}:content_version", self.game_id)
@@ -144,6 +140,11 @@ impl RedisClient {
     /// M6: Set of player_ids for which backend has already enqueued a join (avoid duplicate push).
     fn join_requested_key(&self) -> String {
         format!("rts:match:{}:join_requested", self.game_id)
+    }
+
+    /// Cleanup-only: collector state used to live in a separately polled hash.
+    fn legacy_collector_state_key(&self) -> String {
+        format!("rts:match:{}:collector_state", self.game_id)
     }
 
     pub async fn connect(url: &str, game_id: String) -> anyhow::Result<Self> {
@@ -200,6 +201,7 @@ impl RedisClient {
         &mut self,
         state: &GameState,
         boundary_stream_id: &str,
+        collector_states: Vec<CollectorState>,
     ) -> anyhow::Result<()> {
         let player_ledgers = state
             .ledger
@@ -226,6 +228,7 @@ impl RedisClient {
             tick: state.tick as i64,
             entities: state.entities.clone(),
             player_ledgers,
+            collector_states,
         };
         let bytes = snap.encode_to_vec();
 
@@ -411,9 +414,9 @@ impl RedisClient {
             self.snapshot_meta_key(),
             self.player_seq_key(),
             self.active_intents_key(),
-            self.collector_state_key(),
             self.pending_joins_key(),
             self.join_requested_key(),
+            self.legacy_collector_state_key(),
         ];
         info!(game_id = %self.game_id, keys = ?keys, "flushing game streams (clean start)");
         for key in &keys {
@@ -655,31 +658,6 @@ impl RedisClient {
             .arg(&field)
             .query_async(&mut self.conn)
             .await?;
-        Ok(())
-    }
-
-    /// Persist collector telemetry for a batch of entities.
-    pub async fn persist_collector_states(
-        &mut self,
-        states: &[(u64, CollectorUiState)],
-        ttl_secs: u64,
-    ) -> anyhow::Result<()> {
-        if states.is_empty() {
-            return Ok(());
-        }
-        let key = self.collector_state_key();
-        let mut pipe = redis::pipe();
-        pipe.atomic();
-        for (entity_id, state) in states {
-            let json = serde_json::to_string(state)?;
-            pipe.cmd("HSET")
-                .arg(&key)
-                .arg(entity_id.to_string())
-                .arg(json);
-        }
-        let ttl: i64 = ttl_secs.try_into().unwrap_or(i64::MAX);
-        pipe.cmd("EXPIRE").arg(&key).arg(ttl);
-        let _: () = pipe.query_async(&mut self.conn).await?;
         Ok(())
     }
 

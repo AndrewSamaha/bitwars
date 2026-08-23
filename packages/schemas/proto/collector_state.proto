@@ -1,0 +1,13 @@
+syntax = "proto3";
+package bitwars;
+
+// Authoritative collector telemetry for one entity. This travels with the
+// normal snapshot/delta stream instead of a separately polled UI side channel.
+message CollectorState {
+  uint64 entity_id = 1;
+  string activity = 2;
+  string resource_type = 3;
+  float carry_amount = 4;
+  float carry_capacity = 5;
+  float effective_rate_per_second = 6;
+}

@@ -7,70 +7,57 @@ import { game } from "@/features/gamestate/world";
 import { contentManager } from "@/features/content/contentManager";
 import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
+import { GAMESTATE_UPDATED_EVENT, type GameStateUpdatedDetail } from "@/features/gamestate/events";
+
+const GAMESTATE_UI_REFRESH_INTERVAL_MS = 100;
+type BuildState = { blueprint_id?: string; progress?: number };
+type BuildStateById = Record<string, BuildState>;
+
+function sameBuildStates(left: BuildStateById, right: BuildStateById): boolean {
+  const leftIds = Object.keys(left);
+  const rightIds = Object.keys(right);
+  if (leftIds.length !== rightIds.length) return false;
+  return leftIds.every((id) =>
+    right[id]?.blueprint_id === left[id]?.blueprint_id &&
+    right[id]?.progress === left[id]?.progress,
+  );
+}
 
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
   const { selectedEntities, selectedAction } = selectors;
   const selectedIdsKey = selectedEntities.join(",");
-  // Access Pixi application to subscribe to ticker
-  const { app } = selectors as any;
   const [, forceRerender] = useState(0);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
-  const [collectorStateById, setCollectorStateById] = useState<Record<string, any>>({});
-  const [buildStateById, setBuildStateById] = useState<Record<string, { blueprint_id?: string; progress?: number }>>({});
+  const [buildStateById, setBuildStateById] = useState<BuildStateById>({});
 
-  // Re-render every Pixi frame so entity positions are fresh
+  // The ECS changes when the authoritative game stream applies a snapshot or
+  // delta. Do not make the DOM follow Pixi's render loop; coalesce stream
+  // bursts to a modest UI refresh rate instead.
   useEffect(() => {
-    if (!app) return;
-    const tick = () => forceRerender((n) => (n + 1) % 1000000);
-    app.ticker.add(tick);
-    return () => {
-      const ticker = (app as { ticker?: typeof app.ticker | null }).ticker;
-      ticker?.remove(tick);
+    let lastRefreshAt = 0;
+    let trailingRefresh: number | undefined;
+    const refresh = () => {
+      trailingRefresh = undefined;
+      lastRefreshAt = performance.now();
+      forceRerender((n) => (n + 1) % 1_000_000);
     };
-  }, [app]);
-
-  useEffect(() => {
-    if (!selectedEntities?.length) {
-      setCollectorStateById({});
-      setBuildStateById({});
-      return;
-    }
-    let mounted = true;
-    let timer: number | undefined;
-    const ids = selectedEntities.join(",");
-    const refresh = async () => {
-      try {
-        const res = await fetch(`/api/v2/collector-state?ids=${encodeURIComponent(ids)}`, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as { collector_state_by_entity?: Record<string, any> };
-        if (!mounted) return;
-        setCollectorStateById(data.collector_state_by_entity ?? {});
-        const buildResponse = await fetch(`/api/v2/build-state?ids=${encodeURIComponent(ids)}`, {
-          cache: "no-store",
-        });
-        if (!buildResponse.ok || !mounted) return;
-        const buildData = await buildResponse.json() as {
-          build_state_by_entity?: Record<string, { blueprint_id?: string; progress?: number }>;
-        };
-        setBuildStateById(buildData.build_state_by_entity ?? {});
-      } catch {
-        // keep pane resilient on transient fetch failures
+    const onGameStateUpdated = (event: Event) => {
+      const changedIds = (event as CustomEvent<GameStateUpdatedDetail>).detail?.entityIds;
+      if (changedIds && !selectedEntities.some((id) => changedIds.includes(id))) return;
+      const remaining = GAMESTATE_UI_REFRESH_INTERVAL_MS - (performance.now() - lastRefreshAt);
+      if (remaining <= 0) {
+        refresh();
+      } else if (trailingRefresh === undefined) {
+        trailingRefresh = window.setTimeout(refresh, remaining);
       }
     };
-    void refresh();
-    timer = window.setInterval(() => {
-      void refresh();
-    }, 500);
+    window.addEventListener(GAMESTATE_UPDATED_EVENT, onGameStateUpdated);
     return () => {
-      mounted = false;
-      if (timer !== undefined) window.clearInterval(timer);
+      window.removeEventListener(GAMESTATE_UPDATED_EVENT, onGameStateUpdated);
+      if (trailingRefresh !== undefined) window.clearTimeout(trailingRefresh);
     };
-  }, [selectedIdsKey]);
+  }, [selectedEntities, selectedIdsKey]);
 
   useEffect(() => {
     setBuildMenuOpen(false);
@@ -105,51 +92,53 @@ export default function EntityDetailPanel() {
       effective_rate_per_second: number;
     }
   >();
-  try {
-    for (const e of game.world.with("pos", "id")) {
-      const id = String((e as any).id);
-      const pos = (e as any).pos as { x: number; y: number } | undefined;
-      const entityTypeId = (e as any).entity_type_id as string | undefined;
-      const health = Number((e as any).health);
-      const activeIntentKind = (e as any).active_intent_kind as string | undefined;
-      const activeIntentId = (e as any).active_intent_id as string | undefined;
-      const activeIntentStartedTick = (e as any).active_intent_started_tick as number | undefined;
-      const activeIntentMoveTarget = (e as any).active_intent_move_target as { x: number; y: number } | undefined;
-      const collectorState = (e as any).collector_state as
-        | {
-            activity?: string;
-            resource_type?: string;
-            carry_amount?: number;
-            carry_capacity?: number;
-            effective_rate_per_second?: number;
+  if (selectedEntities.length > 0) {
+    try {
+      for (const e of game.world.with("pos", "id")) {
+        const id = String((e as any).id);
+        const pos = (e as any).pos as { x: number; y: number } | undefined;
+        const entityTypeId = (e as any).entity_type_id as string | undefined;
+        const health = Number((e as any).health);
+        const activeIntentKind = (e as any).active_intent_kind as string | undefined;
+        const activeIntentId = (e as any).active_intent_id as string | undefined;
+        const activeIntentStartedTick = (e as any).active_intent_started_tick as number | undefined;
+        const activeIntentMoveTarget = (e as any).active_intent_move_target as { x: number; y: number } | undefined;
+        const collectorState = (e as any).collector_state as
+          | {
+              activity?: string;
+              resource_type?: string;
+              carry_amount?: number;
+              carry_capacity?: number;
+              effective_rate_per_second?: number;
+            }
+          | undefined;
+        if (id != null && pos) {
+          idToPos.set(id, pos);
+        }
+        if (id != null) {
+          idToType.set(id, entityTypeId ?? "—");
+          if (Number.isFinite(health)) idToHealth.set(id, health);
+          if (activeIntentKind) {
+            idToActiveIntent.set(id, {
+              kind: activeIntentKind,
+              intentId: activeIntentId,
+              startedTick: activeIntentStartedTick,
+              moveTarget: activeIntentMoveTarget,
+            });
           }
-        | undefined;
-      if (id != null && pos) {
-        idToPos.set(id, pos);
-      }
-      if (id != null) {
-        idToType.set(id, entityTypeId ?? "—");
-        if (Number.isFinite(health)) idToHealth.set(id, health);
-        if (activeIntentKind) {
-          idToActiveIntent.set(id, {
-            kind: activeIntentKind,
-            intentId: activeIntentId,
-            startedTick: activeIntentStartedTick,
-            moveTarget: activeIntentMoveTarget,
-          });
-        }
-        if (collectorState) {
-          idToCollectorState.set(id, {
-            activity: String(collectorState.activity ?? "idle"),
-            resource_type: String(collectorState.resource_type ?? ""),
-            carry_amount: Number(collectorState.carry_amount ?? 0),
-            carry_capacity: Number(collectorState.carry_capacity ?? 0),
-            effective_rate_per_second: Number(collectorState.effective_rate_per_second ?? 0),
-          });
+          if (collectorState) {
+            idToCollectorState.set(id, {
+              activity: String(collectorState.activity ?? "idle"),
+              resource_type: String(collectorState.resource_type ?? ""),
+              carry_amount: Number(collectorState.carry_amount ?? 0),
+              carry_capacity: Number(collectorState.carry_capacity ?? 0),
+              effective_rate_per_second: Number(collectorState.effective_rate_per_second ?? 0),
+            });
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   // Dynamic actions for a given entity.
   const getActionsForEntity = (entityId: string): ActionDef[] => {
@@ -168,6 +157,45 @@ export default function EntityDetailPanel() {
     const ai = idToActiveIntent.get(id);
     return (ai?.kind ?? "").toLowerCase() === "collect";
   });
+  const isSelectedEntityBuilding = selectedEntities.length === 1 &&
+    (idToActiveIntent.get(firstId)?.kind ?? "").toLowerCase() === "build";
+
+  useEffect(() => {
+    if (!isSelectedEntityBuilding) {
+      setBuildStateById({});
+      return;
+    }
+    let mounted = true;
+    let timer: number | undefined;
+    let requestInFlight = false;
+    const refresh = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const response = await fetch(`/api/v2/build-state?ids=${encodeURIComponent(firstId)}`, {
+          cache: "no-store",
+        });
+        if (!response.ok || !mounted) return;
+        const data = (await response.json()) as {
+          build_state_by_entity?: BuildStateById;
+        };
+        const nextState = data.build_state_by_entity ?? {};
+        setBuildStateById((current) =>
+          sameBuildStates(current, nextState) ? current : nextState,
+        );
+      } catch {
+        // Keep build details resilient on transient fetch failures.
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    void refresh();
+    timer = window.setInterval(() => void refresh(), 500);
+    return () => {
+      mounted = false;
+      if (timer !== undefined) window.clearInterval(timer);
+    };
+  }, [firstId, isSelectedEntityBuilding]);
 
   const onClickAction = (val: "Move" | "Collect" | "Build") => {
     if (val === "Build") {
@@ -257,7 +285,7 @@ export default function EntityDetailPanel() {
                 const health = idToHealth.get(id);
                 const maxHealth = contentManager.getEntityType(entityTypeId)?.health;
                 const activeIntent = idToActiveIntent.get(id);
-                const collectorState = collectorStateById[id] ?? idToCollectorState.get(id);
+                const collectorState = idToCollectorState.get(id);
                 const buildState = buildStateById[id];
                 const shortIntentId = activeIntent?.intentId
                   ? `${activeIntent.intentId.slice(0, 8)}...`

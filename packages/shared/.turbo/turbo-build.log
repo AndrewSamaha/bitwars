@@ -1,5 +1,0 @@
-
-
-> @bitwars/shared@0.0.0 build /Users/andrew/Development/bitwars/packages/shared
-> rimraf dist && tsc -p tsconfig.build.json
-
