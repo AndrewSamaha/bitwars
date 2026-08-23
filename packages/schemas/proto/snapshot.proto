@@ -2,6 +2,7 @@ syntax = "proto3";
 package bitwars;
 
 import "entity.proto";
+import "collector_state.proto";
 
 // M7: Per-player resource totals. Resource types are data-driven (string IDs).
 message ResourceEntry {
@@ -18,4 +19,5 @@ message Snapshot {
   int64 tick = 2;
   repeated Entity entities = 3;
   repeated PlayerResourceLedger player_ledgers = 4;
+  repeated CollectorState collector_states = 5;
 }

@@ -6,13 +6,15 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { EntityDelta } from "./entity_delta_pb.js";
 import { file_entity_delta } from "./entity_delta_pb.js";
+import type { CollectorState } from "./collector_state_pb.js";
+import { file_collector_state } from "./collector_state_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file delta.proto.
  */
 export const file_delta: GenFile = /*@__PURE__*/
-  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyJYCgVEZWx0YRIMCgR0aWNrGAEgASgEEiUKB3VwZGF0ZXMYAiADKAsyFC5iaXR3YXJzLkVudGl0eURlbHRhEhoKEnJlbW92ZWRfZW50aXR5X2lkcxgDIAMoBGIGcHJvdG8z", [file_entity_delta]);
+  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyKSAQoFRGVsdGESDAoEdGljaxgBIAEoBBIlCgd1cGRhdGVzGAIgAygLMhQuYml0d2Fycy5FbnRpdHlEZWx0YRIaChJyZW1vdmVkX2VudGl0eV9pZHMYAyADKAQSOAoXY29sbGVjdG9yX3N0YXRlX3VwZGF0ZXMYBCADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlYgZwcm90bzM", [file_entity_delta, file_collector_state]);
 
 /**
  * @generated from message bitwars.Delta
@@ -34,6 +36,11 @@ export type Delta = Message<"bitwars.Delta"> & {
    * @generated from field: repeated uint64 removed_entity_ids = 3;
    */
   removedEntityIds: bigint[];
+
+  /**
+   * @generated from field: repeated bitwars.CollectorState collector_state_updates = 4;
+   */
+  collectorStateUpdates: CollectorState[];
 };
 
 /**

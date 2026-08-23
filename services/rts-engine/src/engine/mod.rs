@@ -9,8 +9,8 @@ use tokio::time::{interval, Duration, Instant};
 use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
 
-use crate::config::GameConfig;
 use crate::combat::CombatSystem;
+use crate::config::GameConfig;
 use crate::content::{CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
@@ -120,26 +120,14 @@ mod maintenance_tests {
         )]);
         let mut fractional = HashMap::new();
 
-        debit_maintenance_without_debt(
-            &mut ledger,
-            &mut fractional,
-            "player-1",
-            "energy",
-            2.25,
-        );
+        debit_maintenance_without_debt(&mut ledger, &mut fractional, "player-1", "energy", 2.25);
         assert_eq!(ledger["player-1"]["energy"], 0);
         assert_eq!(
             fractional[&("player-1".to_string(), "energy".to_string())],
             0.25
         );
 
-        debit_maintenance_without_debt(
-            &mut ledger,
-            &mut fractional,
-            "player-1",
-            "energy",
-            0.75,
-        );
+        debit_maintenance_without_debt(&mut ledger, &mut fractional, "player-1", "energy", 0.75);
         assert_eq!(ledger["player-1"]["energy"], 0);
         assert!(fractional.is_empty());
     }
@@ -457,8 +445,10 @@ pub struct Engine {
     build_spend_fractional: HashMap<(String, String), f32>,
     /// Fractional upkeep accumulated between whole-unit ledger debits.
     maintenance_spend_fractional: HashMap<(String, String), f32>,
-    /// M8b: Per-collector runtime telemetry projected to Redis/UI.
+    /// Per-collector runtime telemetry published through authoritative snapshots and deltas.
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
+    /// Previous telemetry state used to emit sparse authoritative delta updates.
+    prev_collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
     /// Runtime-only cooldown tracking for autonomous combatants.
     combat: CombatSystem,
 }
@@ -741,6 +731,7 @@ impl Engine {
                     build_spend_fractional: HashMap::new(),
                     maintenance_spend_fractional: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
+                    prev_collector_ui_state_by_entity: HashMap::new(),
                     combat: CombatSystem::default(),
                 };
                 engine.hydrate_entity_health_if_missing();
@@ -748,7 +739,11 @@ impl Engine {
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
                 engine
                     .redis
-                    .publish_snapshot(&engine.state, snap_boundary)
+                    .publish_snapshot(
+                        &engine.state,
+                        snap_boundary,
+                        engine.collector_states_for_stream(),
+                    )
                     .await?;
 
                 // M4: Publish content hash + definitions in restore path too
@@ -807,9 +802,13 @@ impl Engine {
             build_spend_fractional: HashMap::new(),
             maintenance_spend_fractional: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
+            prev_collector_ui_state_by_entity: HashMap::new(),
             combat: CombatSystem::default(),
         };
-        engine.redis.publish_snapshot(&engine.state, "0-0").await?;
+        engine
+            .redis
+            .publish_snapshot(&engine.state, "0-0", Vec::new())
+            .await?;
 
         // M4: Publish content hash + definitions to Redis
         if let Some(ref pack) = engine.content {
@@ -1441,12 +1440,8 @@ impl Engine {
                 laser_shots: Vec::new(),
             };
         };
-        let commanded_entity_ids: HashSet<u64> = self
-            .intents
-            .active_intents()
-            .keys()
-            .copied()
-            .collect();
+        let commanded_entity_ids: HashSet<u64> =
+            self.intents.active_intents().keys().copied().collect();
         let outcome = self.combat.tick_with_player_orders(
             &mut self.state.entities,
             content,
@@ -1458,7 +1453,9 @@ impl Engine {
             return outcome;
         }
         let dead_ids: HashSet<u64> = outcome.dead_entity_ids.iter().copied().collect();
-        self.state.entities.retain(|entity| !dead_ids.contains(&entity.id));
+        self.state
+            .entities
+            .retain(|entity| !dead_ids.contains(&entity.id));
         for entity_id in &outcome.dead_entity_ids {
             self.clear_fractional_for_entity(*entity_id);
         }
@@ -1475,7 +1472,12 @@ impl Engine {
                 server_tick: self.state.tick,
             };
             if let Err(error) = self.redis.publish_laser_shot(&event).await {
-                warn!(?error, attacker_id = shot.attacker_id, target_id = shot.target_id, "failed to publish laser shot");
+                warn!(
+                    ?error,
+                    attacker_id = shot.attacker_id,
+                    target_id = shot.target_id,
+                    "failed to publish laser shot"
+                );
             }
         }
     }
@@ -1486,7 +1488,10 @@ impl Engine {
                 continue;
             };
             if let Err(error) = self.redis.clear_active_intent(*entity_id).await {
-                warn!(?error, entity_id, "failed to clear destroyed entity intent tracking");
+                warn!(
+                    ?error,
+                    entity_id, "failed to clear destroyed entity intent tracking"
+                );
             }
             if let Err(error) = self
                 .emit_lifecycle_event(
@@ -1497,7 +1502,10 @@ impl Engine {
                 )
                 .await
             {
-                warn!(?error, entity_id, "failed to emit destroyed entity cancellation");
+                warn!(
+                    ?error,
+                    entity_id, "failed to emit destroyed entity cancellation"
+                );
             }
         }
     }
@@ -1945,20 +1953,21 @@ impl Engine {
         }
     }
 
-    async fn publish_collector_ui_state(&mut self) {
-        let mut states: Vec<(u64, CollectorUiState)> = self
+    fn collector_states_for_stream(&self) -> Vec<pb::CollectorState> {
+        let mut states: Vec<pb::CollectorState> = self
             .collector_ui_state_by_entity
             .iter()
-            .map(|(id, state)| (*id, state.clone()))
+            .map(|(entity_id, state)| pb::CollectorState {
+                entity_id: *entity_id,
+                activity: state.activity.clone(),
+                resource_type: state.resource_type.clone(),
+                carry_amount: state.carry_amount,
+                carry_capacity: state.carry_capacity,
+                effective_rate_per_second: state.effective_rate_per_second,
+            })
             .collect();
-        states.sort_by_key(|(id, _)| *id);
-        if let Err(err) = self
-            .redis
-            .persist_collector_states(&states, self.cfg.tracking_ttl_secs)
-            .await
-        {
-            warn!(error = ?err, "failed to persist collector ui state");
-        }
+        states.sort_by_key(|state| state.entity_id);
+        states
     }
 
     /// Run one tick (for tests). Does not wait for ticker.
@@ -2034,7 +2043,6 @@ impl Engine {
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_resource_collection(dt);
         self.advance_builds(dt).await;
-        self.publish_collector_ui_state().await;
         integrate(&self.cfg, &mut self.state, dt);
         self.apply_radiation_damage(dt);
         self.state.tick += 1;
@@ -2042,6 +2050,8 @@ impl Engine {
         let delta = compute_delta(
             &self.prev_state,
             &self.state,
+            &self.prev_collector_ui_state_by_entity,
+            &self.collector_ui_state_by_entity,
             self.cfg.eps_pos,
             self.cfg.eps_vel,
         );
@@ -2052,12 +2062,17 @@ impl Engine {
         }
         if self.state.tick % snapshot_interval == 0 {
             let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
-            let _ = self.redis.publish_snapshot(&self.state, boundary).await;
+            let collector_states = self.collector_states_for_stream();
+            let _ = self
+                .redis
+                .publish_snapshot(&self.state, boundary, collector_states)
+                .await;
         }
         if self.state.tick % (self.cfg.tps as u64) == 0 {
             log_sample(&self.state);
         }
         self.prev_state = self.state.clone();
+        self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
         Ok(())
     }
 
@@ -2151,7 +2166,6 @@ impl Engine {
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
             self.apply_maintenance_costs(dt);
-            self.publish_collector_ui_state().await;
             integrate(&self.cfg, &mut self.state, dt);
             self.apply_radiation_damage(dt);
             self.state.tick += 1;
@@ -2160,6 +2174,8 @@ impl Engine {
             let delta = compute_delta(
                 &self.prev_state,
                 &self.state,
+                &self.prev_collector_ui_state_by_entity,
+                &self.collector_ui_state_by_entity,
                 self.cfg.eps_pos,
                 self.cfg.eps_vel,
             );
@@ -2172,7 +2188,12 @@ impl Engine {
             // Periodic snapshot
             if self.state.tick % snapshot_interval == 0 {
                 let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
-                if let Err(e) = self.redis.publish_snapshot(&self.state, boundary).await {
+                let collector_states = self.collector_states_for_stream();
+                if let Err(e) = self
+                    .redis
+                    .publish_snapshot(&self.state, boundary, collector_states)
+                    .await
+                {
                     error!(?e, "snapshot publish failed");
                 }
             }
@@ -2183,6 +2204,7 @@ impl Engine {
             }
 
             self.prev_state = self.state.clone();
+            self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
         }
     }
 

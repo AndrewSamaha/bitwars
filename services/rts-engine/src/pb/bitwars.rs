@@ -47,6 +47,23 @@ pub struct EntityDelta {
     #[prost(float, optional, tag = "7")]
     pub health: ::core::option::Option<f32>,
 }
+/// Authoritative collector telemetry for one entity. This travels with the
+/// normal snapshot/delta stream instead of a separately polled UI side channel.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectorState {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(string, tag = "2")]
+    pub activity: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub resource_type: ::prost::alloc::string::String,
+    #[prost(float, tag = "4")]
+    pub carry_amount: f32,
+    #[prost(float, tag = "5")]
+    pub carry_capacity: f32,
+    #[prost(float, tag = "6")]
+    pub effective_rate_per_second: f32,
+}
 /// M7: Per-player resource totals. Resource types are data-driven (string IDs).
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceEntry {
@@ -70,6 +87,8 @@ pub struct Snapshot {
     pub entities: ::prost::alloc::vec::Vec<Entity>,
     #[prost(message, repeated, tag = "4")]
     pub player_ledgers: ::prost::alloc::vec::Vec<PlayerResourceLedger>,
+    #[prost(message, repeated, tag = "5")]
+    pub collector_states: ::prost::alloc::vec::Vec<CollectorState>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotMeta {
@@ -91,6 +110,8 @@ pub struct Delta {
     /// Entity IDs removed from the authoritative world since the previous delta.
     #[prost(uint64, repeated, tag = "3")]
     pub removed_entity_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "4")]
+    pub collector_state_updates: ::prost::alloc::vec::Vec<CollectorState>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]

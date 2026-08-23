@@ -24,6 +24,14 @@ export const mapDeltaToJson = (d: Delta) => ({
       ...(uAny.health !== undefined ? { health: uAny.health } : {}),
     };
   }),
+  collector_state_updates: (d.collectorStateUpdates ?? []).map((state) => ({
+    entity_id: biToNumOrStr(state.entityId),
+    activity: state.activity,
+    resource_type: state.resourceType,
+    carry_amount: state.carryAmount,
+    carry_capacity: state.carryCapacity,
+    effective_rate_per_second: state.effectiveRatePerSecond,
+  })),
 });
 
 export const mapSnapshotToJson = (s: Snapshot) => {
@@ -50,5 +58,13 @@ export const mapSnapshotToJson = (s: Snapshot) => {
       };
     }),
     player_ledgers,
+    collector_states: (s.collectorStates ?? []).map((state) => ({
+      entity_id: biToNumOrStr(state.entityId),
+      activity: state.activity,
+      resource_type: state.resourceType,
+      carry_amount: state.carryAmount,
+      carry_capacity: state.carryCapacity,
+      effective_rate_per_second: state.effectiveRatePerSecond,
+    })),
   };
 };

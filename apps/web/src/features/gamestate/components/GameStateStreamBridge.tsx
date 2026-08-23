@@ -19,6 +19,11 @@ type CollectorStatePayload = {
   effective_rate_per_second: number;
   updated_tick?: number;
 };
+type StreamCollectorStatePayload = CollectorStatePayload & { entity_id: number | string };
+
+function collectorStateFromStream({ entity_id: _entityId, ...state }: StreamCollectorStatePayload): CollectorStatePayload {
+  return state;
+}
 
 type ResourceEntryPayload = { resource_type: string; amount: number };
 type PlayerLedgerPayload = { player_id: string; resources: ResourceEntryPayload[] };
@@ -34,9 +39,9 @@ type SnapshotPayload = {
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
-    collector_state?: CollectorStatePayload;
   }>;
   player_ledgers?: PlayerLedgerPayload[];
+  collector_states?: StreamCollectorStatePayload[];
 };
 
 type DeltaPayload = {
@@ -51,8 +56,8 @@ type DeltaPayload = {
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
-    collector_state?: CollectorStatePayload;
   }>;
+  collector_state_updates?: StreamCollectorStatePayload[];
 };
 
 type ActiveIntentOverlay = {
@@ -96,7 +101,6 @@ export default function GameStateStreamBridge() {
   const hud = useHUD();
   const { player } = usePlayer();
   const RESOURCE_LEDGER_POLL_MS = 2000;
-  const COLLECTOR_STATE_POLL_MS = 500;
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
   const streamIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
@@ -158,79 +162,6 @@ export default function GameStateStreamBridge() {
     };
   }, [hud.actions, RESOURCE_LEDGER_POLL_MS]);
 
-  // Collector activity is persisted separately in Redis/UI state and is currently
-  // only injected during bootstrap snapshots. Poll it so in-world FX can react live.
-  useEffect(() => {
-    let mounted = true;
-    let timer: number | undefined;
-    let requestInFlight = false;
-
-    const syncCollectorState = async () => {
-      if (requestInFlight) return;
-      const ids = Array.from(byIdRef.current.values())
-        .map((ent) => String(ent.id ?? ""))
-        .filter((id, index, arr) => id.length > 0 && arr.indexOf(id) === index);
-
-      if (ids.length === 0) return;
-      requestInFlight = true;
-
-      try {
-        const res = await fetch(`/api/v2/collector-state?ids=${encodeURIComponent(ids.join(","))}`, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          collector_state_by_entity?: Record<string, CollectorStatePayload>;
-        };
-        if (!mounted) return;
-
-        const nextStates = data.collector_state_by_entity ?? {};
-        const changedIds: string[] = [];
-        for (const id of ids) {
-          const ent = byIdRef.current.get(id);
-          if (!ent) continue;
-          const nextState = nextStates[id];
-          const currentState = ent.collector_state;
-          if (nextState) {
-            const changed = !currentState ||
-              currentState.activity !== nextState.activity ||
-              currentState.resource_type !== nextState.resource_type ||
-              currentState.carry_amount !== nextState.carry_amount ||
-              currentState.carry_capacity !== nextState.carry_capacity ||
-              currentState.effective_rate_per_second !== nextState.effective_rate_per_second ||
-              currentState.updated_tick !== nextState.updated_tick;
-            if (changed) {
-              ent.collector_state = { ...nextState };
-              changedIds.push(id);
-            }
-          } else if (currentState) {
-            delete ent.collector_state;
-            changedIds.push(id);
-          }
-        }
-        if (changedIds.length > 0) {
-          dispatchGameStateUpdated(changedIds);
-        }
-      } catch {
-        // Keep rendering resilient on transient polling failures.
-      } finally {
-        requestInFlight = false;
-      }
-    };
-
-    timer = window.setInterval(() => {
-      void syncCollectorState();
-    }, COLLECTOR_STATE_POLL_MS);
-    void syncCollectorState();
-
-    return () => {
-      mounted = false;
-      if (timer !== undefined) window.clearInterval(timer);
-    };
-  }, [COLLECTOR_STATE_POLL_MS]);
-
   useEffect(() => {
     const byId = byIdRef.current;
     const world = game.world;
@@ -288,9 +219,13 @@ export default function GameStateStreamBridge() {
         world.remove(ent);
       }
       byId.clear();
+      const collectorStateByEntity = new Map(
+        (payload.collector_states ?? []).map((state) => [normalizeId(state.entity_id), state]),
+      );
 
       // Add new ones
       for (const s of payload.entities) {
+        const collectorState = collectorStateByEntity.get(normalizeId(s.id));
         const ent: Entity = {
           id: s.id,
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
@@ -298,7 +233,7 @@ export default function GameStateStreamBridge() {
           ...(s.health !== undefined ? { health: s.health } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
-          ...(s.collector_state ? { collector_state: { ...s.collector_state } } : {}),
+          ...(collectorState ? { collector_state: collectorStateFromStream(collectorState) } : {}),
           // force exists but is currently unused by systems
         };
         world.add(ent);
@@ -364,7 +299,6 @@ export default function GameStateStreamBridge() {
             else { existing.vel.x = u.vel.x; existing.vel.y = u.vel.y; }
           }
           if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
-          if (u.collector_state !== undefined) existing.collector_state = { ...u.collector_state };
           if (u.health !== undefined) {
             // Health decreases arrive every engine tick. Refresh liveness, but
             // only start a new particle timeline after the prior plume expires.
@@ -389,13 +323,16 @@ export default function GameStateStreamBridge() {
             ...(u.health !== undefined ? { health: u.health } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
-            ...(u.collector_state ? { collector_state: { ...u.collector_state } } : {}),
           };
           newEntities++;
           world.add(ent);
           byId.set(key, ent);
           applyIntentOverlayToEntity(ent, activeIntentByEntityRef.current.get(key));
         }
+      }
+      for (const state of payload.collector_state_updates ?? []) {
+        const existing = byId.get(normalizeId(state.entity_id));
+        if (existing) existing.collector_state = collectorStateFromStream(state);
       }
       log.debug("GameStateStreamBridge:delta:applied", { streamId: streamIdRef.current, existingEntities, newEntities });
       if (DEBUG_LOG_GAMESTATE_ENTITIES && payload.updates.length > 0) {
@@ -405,6 +342,7 @@ export default function GameStateStreamBridge() {
         dispatchGameStateUpdated([
           ...(payload.removed_entity_ids ?? []).map(normalizeId),
           ...payload.updates.map((update) => normalizeId(update.id)),
+          ...(payload.collector_state_updates ?? []).map((state) => normalizeId(state.entity_id)),
         ]);
       }
     };
