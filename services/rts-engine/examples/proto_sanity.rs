@@ -15,6 +15,7 @@ fn main() {
         tick: 0,
         entities: vec![e],
         player_ledgers: vec![],
+        collector_states: vec![],
     };
     println!("OK: {} entities", s.entities.len());
 }

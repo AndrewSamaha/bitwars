@@ -14,6 +14,7 @@
     "logs": "axiom query 'bitwars | where _time > ago(1d) | sort by _time desc | take 50 | sort by _time asc' || echo 'Warning: Be sure to run gvm use g1.25 before running this command'",
     "engine:run": "cargo run -p rts-engine",
     "engine:build": "cargo build -p rts-engine",
+    "engine:test": "cargo test --manifest-path services/rts-engine/Cargo.toml",
     "engine:read-snapshot": "cargo run --example read_snapshot --manifest-path services/rts-engine/Cargo.toml",
     "engine:read-deltas": "cargo run --example read_deltas --manifest-path services/rts-engine/Cargo.toml",
     "engine:generate-examples": "cargo run --example generate_examples --manifest-path services/rts-engine/Cargo.toml",
