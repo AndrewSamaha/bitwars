@@ -392,6 +392,44 @@ mod radiation_tests {
             "expected stacked damage, got {worker_damage}"
         );
     }
+
+    #[test]
+    fn zero_health_entities_are_removed_after_radiation_resolution() {
+        let mut entities = vec![
+            pb::Entity {
+                id: 1,
+                entity_type_id: "worker".to_string(),
+                pos: None,
+                vel: None,
+                force: None,
+                owner_player_id: "p1".to_string(),
+                health: 0.0,
+            },
+            pb::Entity {
+                id: 2,
+                entity_type_id: "worker".to_string(),
+                pos: None,
+                vel: None,
+                force: None,
+                owner_player_id: "p1".to_string(),
+                health: 1.0,
+            },
+        ];
+
+        assert_eq!(remove_zero_health_entities(&mut entities), vec![1]);
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].id, 2);
+    }
+
+    #[test]
+    fn removal_only_deltas_are_published() {
+        let delta = pb::Delta {
+            removed_entity_ids: vec![42],
+            ..Default::default()
+        };
+        assert!(should_publish_delta(&delta));
+        assert!(!should_publish_delta(&pb::Delta::default()));
+    }
 }
 
 /// Load spawn config from cfg.spawn_config_path. Exits the process if path is empty or load fails.
@@ -620,6 +658,26 @@ mod integration_tests {
 
         Ok(())
     }
+}
+
+fn remove_zero_health_entities(entities: &mut Vec<pb::Entity>) -> Vec<u64> {
+    let dead_entity_ids: Vec<u64> = entities
+        .iter()
+        .filter(|entity| entity.health <= 0.0)
+        .map(|entity| entity.id)
+        .collect();
+    if dead_entity_ids.is_empty() {
+        return dead_entity_ids;
+    }
+    let dead_ids: HashSet<u64> = dead_entity_ids.iter().copied().collect();
+    entities.retain(|entity| !dead_ids.contains(&entity.id));
+    dead_entity_ids
+}
+
+/// A removal-only delta is still an authoritative state change. Keep all
+/// other no-op delta suppression intact.
+fn should_publish_delta(delta: &pb::Delta) -> bool {
+    !delta.updates.is_empty() || !delta.removed_entity_ids.is_empty()
 }
 
 impl Engine {
@@ -1430,6 +1488,17 @@ impl Engine {
         }
     }
 
+    /// Removes every entity whose authoritative health has reached zero.
+    /// Radiation resolves after autonomous combat, so it needs this separate
+    /// cleanup path to produce the same removal delta as combat deaths.
+    fn remove_zero_health_entities(&mut self) -> Vec<u64> {
+        let dead_entity_ids = remove_zero_health_entities(&mut self.state.entities);
+        for entity_id in &dead_entity_ids {
+            self.clear_fractional_for_entity(*entity_id);
+        }
+        dead_entity_ids
+    }
+
     /// Advance autonomous combat and remove entities killed by it.
     /// Returns killed IDs so the tick loop can cancel any active player intent
     /// and update reconnect tracking before publishing the resulting delta.
@@ -2045,6 +2114,9 @@ impl Engine {
         self.advance_builds(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
         self.apply_radiation_damage(dt);
+        let radiation_dead_entity_ids = self.remove_zero_health_entities();
+        self.cancel_destroyed_intents(&radiation_dead_entity_ids)
+            .await;
         self.state.tick += 1;
 
         let delta = compute_delta(
@@ -2055,7 +2127,7 @@ impl Engine {
             self.cfg.eps_pos,
             self.cfg.eps_vel,
         );
-        if !delta.updates.is_empty() {
+        if should_publish_delta(&delta) {
             if let Ok(id) = self.redis.publish_delta(&delta).await {
                 self.last_delta_id = Some(id);
             }
@@ -2168,6 +2240,9 @@ impl Engine {
             self.apply_maintenance_costs(dt);
             integrate(&self.cfg, &mut self.state, dt);
             self.apply_radiation_damage(dt);
+            let radiation_dead_entity_ids = self.remove_zero_health_entities();
+            self.cancel_destroyed_intents(&radiation_dead_entity_ids)
+                .await;
             self.state.tick += 1;
 
             // Delta
@@ -2179,7 +2254,7 @@ impl Engine {
                 self.cfg.eps_pos,
                 self.cfg.eps_vel,
             );
-            if !delta.updates.is_empty() {
+            if should_publish_delta(&delta) {
                 match self.redis.publish_delta(&delta).await {
                     Ok(id) => self.last_delta_id = Some(id),
                     Err(e) => error!(?e, "delta publish failed"),

@@ -4,6 +4,7 @@ import { SELECTED_COLOR } from "../styles/style";
 const HEALTH_ARC_RADIUS = 170;
 const HEALTH_ARC_START = Math.PI * 1.12;
 const HEALTH_ARC_END = Math.PI * 1.88;
+const BUILD_ARC_RADIUS = 190;
 
 function healthColor(healthFraction: number): number {
   if (healthFraction > 0.6) return 0x58_d6_72;
@@ -39,6 +40,21 @@ export function drawHealthArc(graphics: Graphics, health: number, maxHealth: num
         color: healthColor(fraction),
         alpha: 0.98,
       });
+  }
+}
+
+/** Draw a clockwise build-progress ring outside the health meter. */
+export function drawBuildArc(graphics: Graphics, progress: number) {
+  const fraction = Math.min(1, Math.max(0, progress));
+  graphics.clear();
+  if (fraction === 1) {
+    graphics.circle(0, 0, BUILD_ARC_RADIUS).stroke({ width: 7, color: 0x44_aa_ff, alpha: 0.98 });
+  } else if (fraction > 0) {
+    graphics.arc(0, 0, BUILD_ARC_RADIUS, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * fraction).stroke({
+      width: 7,
+      color: 0x44_aa_ff,
+      alpha: 0.98,
+    });
   }
 }
 

@@ -8,11 +8,13 @@ import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
 import { FpsOverlay } from "@/features/hud/components/FpsOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
-import { createHoverIndicator, drawHealthArc } from "@/features/hud/graphics/hoverIndicator";
+import { createHoverIndicator, drawBuildArc, drawHealthArc } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
 import { reconcileEntityRenderEffects } from "@/features/pixijs/effects/renderEffects";
+import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
+import { ENTITY_DESPAWN_EVENT } from "@/features/gamestate/events";
 import {
   createGameEntityVisual,
   createGameWorldContainer,
@@ -45,6 +47,7 @@ const NON_OWNED_TINT = 0x66_66_66;
 const MINIMAP_MY_COLOR = 0x44_aa_ff;
 const MINIMAP_OTHER_COLOR = 0xee_66_44;
 const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
+const BUILD_PROGRESS_POLL_MS = 500;
 
 const PAN_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
@@ -202,6 +205,13 @@ export default function GameStage() {
               .stroke({ color: 0xff_3b_81, width: 10, alpha: 1 - progress * 0.35 });
           }
         };
+
+        const despawnExplosions = createDespawnExplosionSystem(worldContainer);
+        const onEntityDespawn = (event: Event) => {
+          const entity = (event as CustomEvent<Entity>).detail;
+          if (entity) despawnExplosions.explode(entity);
+        };
+        window.addEventListener(ENTITY_DESPAWN_EVENT, onEntityDespawn);
 
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
@@ -368,6 +378,33 @@ export default function GameStage() {
         const waypointContainer = new Container();
         (waypointContainer as any).label = 'waypoints';
         worldContainer.addChild(waypointContainer);
+
+        const buildProgressByEntity = new Map<string, number>();
+        let lastBuildProgressPollAt = 0;
+        let buildProgressRequestInFlight = false;
+        const refreshBuildProgress = (nowMs: number) => {
+          if (buildProgressRequestInFlight || nowMs - lastBuildProgressPollAt < BUILD_PROGRESS_POLL_MS) return;
+          const entityIds = Array.from(game.world.with("id"))
+            .filter((entity) => String((entity as any).active_intent_kind).toLowerCase() === "build")
+            .map((entity) => String((entity as any).id));
+          if (entityIds.length === 0) {
+            buildProgressByEntity.clear();
+            return;
+          }
+          lastBuildProgressPollAt = nowMs;
+          buildProgressRequestInFlight = true;
+          void fetch(`/api/v2/build-state?ids=${encodeURIComponent(entityIds.join(","))}`, { cache: "no-store" })
+            .then(async (response) => response.ok ? response.json() : {})
+            .then((data: { build_state_by_entity?: Record<string, { progress?: number }> }) => {
+              buildProgressByEntity.clear();
+              for (const [id, state] of Object.entries(data.build_state_by_entity ?? {})) {
+                const progress = Number(state.progress);
+                if (Number.isFinite(progress)) buildProgressByEntity.set(id, progress);
+              }
+            })
+            .catch(() => {})
+            .finally(() => { buildProgressRequestInFlight = false; });
+        };
 
         // Keyboard: M to set Move, C to issue Collect, Escape to clear; WASD/arrows to pan (M5.1/M8)
         const onKeyDown = (ev: KeyboardEvent) => {
@@ -575,6 +612,8 @@ export default function GameStage() {
             const maxHealth = contentManager.getEntityType(typeId)?.health;
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
             const shouldShowHealthArc = hasHealth && ((e as any).hover || (isOwned && health < maxHealth));
+            const buildProgress = buildProgressByEntity.get(String((e as any).id));
+            const isBuilding = String((e as any).active_intent_kind).toLowerCase() === "build";
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if ((e as any).hover && !suppressHover) {
               if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
@@ -607,6 +646,21 @@ export default function GameStage() {
             } else if (healthArc) {
               healthArc.parent?.removeChild(healthArc);
               healthArc.destroy();
+            }
+
+            let buildArc = container.children.find((c) => c.label === "buildArc") as Graphics | undefined;
+            if (isBuilding && Number.isFinite(buildProgress)) {
+              if (!buildArc) {
+                buildArc = new Graphics();
+                buildArc.label = "buildArc";
+                buildArc.eventMode = "none";
+                container.addChild(buildArc);
+              }
+              drawBuildArc(buildArc, buildProgress!);
+              buildArc.rotation = -container.rotation;
+            } else if (buildArc) {
+              buildArc.parent?.removeChild(buildArc);
+              buildArc.destroy();
             }
           }
 
@@ -822,6 +876,7 @@ export default function GameStage() {
             // M5.2: Transform the cached border every frame, then redraw only
             // when its sampling basis is old enough or has drifted materially.
             const now = performance.now();
+            refreshBuildProgress(now);
             const camX = worldContainer.position.x;
             const camY = worldContainer.position.y;
             const camScale = worldContainer.scale.x;
@@ -842,6 +897,7 @@ export default function GameStage() {
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             renderLasers(performance.now());
+            despawnExplosions.update(performance.now());
             render();
 
         });
@@ -856,6 +912,8 @@ export default function GameStage() {
           window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
+          window.removeEventListener(ENTITY_DESPAWN_EVENT, onEntityDespawn);
+          despawnExplosions.destroy();
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });
           }
