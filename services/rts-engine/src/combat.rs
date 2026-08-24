@@ -49,6 +49,27 @@ impl CombatSystem {
         dt: f32,
         commanded_entity_ids: &HashSet<u64>,
     ) -> CombatTick {
+        self.tick_with_scripted_targets(
+            entities,
+            content,
+            tick,
+            dt,
+            commanded_entity_ids,
+            &HashMap::new(),
+            &HashSet::new(),
+        )
+    }
+
+    pub fn tick_with_scripted_targets(
+        &mut self,
+        entities: &mut [Entity],
+        content: &ContentPack,
+        tick: u64,
+        dt: f32,
+        commanded_entity_ids: &HashSet<u64>,
+        scripted_targets: &HashMap<u64, u64>,
+        scripted_entity_ids: &HashSet<u64>,
+    ) -> CombatTick {
         if dt <= 0.0 {
             return CombatTick {
                 dead_entity_ids: Vec::new(),
@@ -93,28 +114,36 @@ impl CombatSystem {
                 continue;
             };
             let acquisition_sq = profile.acquisition_range.max(0.0).powi(2);
-            let target = targets
-                .iter()
-                .filter_map(|candidate| {
-                    if candidate.id == attacker.id
-                        || candidate.owner_player_id == attacker.owner_player_id
-                    {
-                        return None;
-                    }
-                    let distance_sq = squared_distance(pos.x, pos.y, candidate.x, candidate.y);
-                    (distance_sq <= acquisition_sq).then_some((distance_sq, candidate))
+            let target = if scripted_entity_ids.contains(&attacker.id) {
+                scripted_targets.get(&attacker.id).and_then(|target_id| {
+                    targets.iter().find(|candidate| candidate.id == *target_id)
                 })
-                .min_by(|(distance_a, target_a), (distance_b, target_b)| {
-                    distance_a
-                        .partial_cmp(distance_b)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                        .then_with(|| target_a.id.cmp(&target_b.id))
-                })
-                .map(|(_, target)| target);
+            } else {
+                targets
+                    .iter()
+                    .filter_map(|candidate| {
+                        if candidate.id == attacker.id
+                            || candidate.owner_player_id == attacker.owner_player_id
+                        {
+                            return None;
+                        }
+                        let distance_sq = squared_distance(pos.x, pos.y, candidate.x, candidate.y);
+                        (distance_sq <= acquisition_sq).then_some((distance_sq, candidate))
+                    })
+                    .min_by(|(distance_a, target_a), (distance_b, target_b)| {
+                        distance_a
+                            .partial_cmp(distance_b)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                            .then_with(|| target_a.id.cmp(&target_b.id))
+                    })
+                    .map(|(_, target)| target)
+            };
             let Some(target) = target else {
                 // Neutrals have no player-issued movement to preserve. Player
                 // units resume their current intent after hostiles leave range.
-                if attacker.owner_player_id == NEUTRAL_OWNER {
+                if attacker.owner_player_id == NEUTRAL_OWNER
+                    && !scripted_entity_ids.contains(&attacker.id)
+                {
                     zero_velocity(attacker);
                 }
                 continue;

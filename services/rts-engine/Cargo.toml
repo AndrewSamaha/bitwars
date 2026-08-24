@@ -28,6 +28,7 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 # Local sim crate
 sim = { path = "crates/sim" }
 serde_yaml = "0.9.34"
+mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
 
 [dev-dependencies]
 redis = { version = "0.25", features = ["tokio-comp"] }

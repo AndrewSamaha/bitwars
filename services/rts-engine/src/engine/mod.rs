@@ -16,6 +16,7 @@ use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::{CollectorUiState, IntentPoint, RedisClient};
 use crate::io::telemetry::Telemetry;
+use crate::npc_scripting::RaiderScript;
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
 use crate::spawn_config::SpawnConfig;
@@ -489,6 +490,7 @@ pub struct Engine {
     prev_collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
     /// Runtime-only cooldown tracking for autonomous combatants.
     combat: CombatSystem,
+    raider_script: RaiderScript,
 }
 
 #[cfg(test)]
@@ -791,6 +793,7 @@ impl Engine {
                     collector_ui_state_by_entity: HashMap::new(),
                     prev_collector_ui_state_by_entity: HashMap::new(),
                     combat: CombatSystem::default(),
+                    raider_script: RaiderScript::new()?,
                 };
                 engine.hydrate_entity_health_if_missing();
                 // Publish a fresh snapshot so newly connecting clients see current state
@@ -862,6 +865,7 @@ impl Engine {
             collector_ui_state_by_entity: HashMap::new(),
             prev_collector_ui_state_by_entity: HashMap::new(),
             combat: CombatSystem::default(),
+            raider_script: RaiderScript::new()?,
         };
         engine
             .redis
@@ -1511,12 +1515,29 @@ impl Engine {
         };
         let commanded_entity_ids: HashSet<u64> =
             self.intents.active_intents().keys().copied().collect();
-        let outcome = self.combat.tick_with_player_orders(
+        let commands = match self.raider_script.tick(
+            &mut self.state.entities,
+            content,
+            self.state.tick,
+            self.cfg.tps,
+        ) {
+            Ok(commands) => commands,
+            Err(error) => {
+                warn!(?error, tick = self.state.tick, "raider Lua script failed");
+                crate::npc_scripting::NpcCommands {
+                    scripted_entity_ids: HashSet::new(),
+                    target_by_entity: HashMap::new(),
+                }
+            }
+        };
+        let outcome = self.combat.tick_with_scripted_targets(
             &mut self.state.entities,
             content,
             self.state.tick,
             dt,
             &commanded_entity_ids,
+            &commands.target_by_entity,
+            &commands.scripted_entity_ids,
         );
         if outcome.dead_entity_ids.is_empty() {
             return outcome;
