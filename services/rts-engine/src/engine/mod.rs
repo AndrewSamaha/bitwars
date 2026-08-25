@@ -508,7 +508,7 @@ mod integration_tests {
     /// Paths to spawn config and content pack (must exist when test runs from crate root).
     fn test_spawn_and_content_paths() -> (String, String) {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let spawn = manifest.join("config/spawn.example.yaml");
+        let spawn = manifest.join("config/spawn.yaml");
         let content = manifest.join("../../packages/content/entities.yaml");
         (
             spawn.to_string_lossy().into_owned(),
