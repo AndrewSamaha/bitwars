@@ -15,7 +15,7 @@ use crate::spawn_config::NEUTRAL_OWNER;
 
 const RAIDER_TYPE: &str = "raider";
 const STAR_TYPE: &str = "star_yellow";
-const SPAWN_INTERVAL_SECS: u64 = 4 * 60;
+const SPAWN_INTERVAL_SECS: u64 = 150;
 const ORBIT_CLEARANCE: f32 = 100.0;
 const MAX_SCRIPT_BYTES: usize = 128 * 1024;
 const MAX_SCRIPT_HOOKS: usize = 20;
