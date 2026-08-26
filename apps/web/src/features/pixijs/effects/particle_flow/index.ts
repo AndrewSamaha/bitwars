@@ -24,6 +24,10 @@ const MINERAL_COLLECTION_COLOR = 0x6f_c8_ff;
 const MINERAL_COLLECTION_GLOW_COLOR = 0xb9_e7_ff;
 const MINERAL_COLLECTION_CORE_COLOR = 0xe7_f7_ff;
 const MINERAL_COLLECTION_SIZE_MULTIPLIER = 6.4;
+const DISMANTLE_COLOR = 0xef_44_44;
+const DISMANTLE_GLOW_COLOR = 0xff_8a_65;
+const DISMANTLE_CORE_COLOR = 0xff_d0_c4;
+const DISMANTLE_SIZE_MULTIPLIER = 4;
 const FALLBACK_ENERGY_SOURCE_TYPES = new Set(["theta", "star_yellow"]);
 const FALLBACK_MINERAL_SOURCE_TYPES = new Set(["minerals"]);
 
@@ -77,6 +81,28 @@ export function resolveParticleFlowEffects(
   const pos = entity.pos;
   if (!pos) return [];
 
+  // Combat takes precedence over gathering: workers retain their collector
+  // telemetry while an autonomous contact attack is active.
+  const combatEffect = entity.combat_effect_state;
+  if (combatEffect?.activity === "dismantling") {
+    const target = Array.from(world.entities()).find(
+      (candidate) => String(candidate.id) === String(combatEffect.target_id),
+    );
+    if (target?.pos) {
+      return [{
+        key: `dismantle-flow:${entity.id}:${target.id}`,
+        kind: "particle_flow",
+        sourceWorldPos: pos,
+        targetWorldPos: target.pos,
+        color: DISMANTLE_COLOR,
+        glowColor: DISMANTLE_GLOW_COLOR,
+        coreColor: DISMANTLE_CORE_COLOR,
+        sizeMultiplier: DISMANTLE_SIZE_MULTIPLIER,
+        showTargetHalo: false,
+      }];
+    }
+  }
+
   if (entityTypeId === SOLAR_COLLECTOR_TYPE && activity === "proximity_collecting") {
     const source = findNearestResourceSource(world, "energy", pos.x, pos.y);
     return source ? [{
@@ -114,38 +140,42 @@ export function drawParticleFlowEffect(
     new Point(effect.sourceWorldPos.x, effect.sourceWorldPos.y),
     container.parent ?? undefined,
   );
+  const targetLocal = container.toLocal(
+    new Point(effect.targetWorldPos.x, effect.targetWorldPos.y),
+    container.parent ?? undefined,
+  );
   const t = nowMs / 1000;
   const pulse = (Math.sin(t * 5.2) + 1) * 0.5;
   const size = effect.sizeMultiplier;
-  const dx = sourceLocal.x;
-  const dy = sourceLocal.y;
+  const dx = targetLocal.x - sourceLocal.x;
+  const dy = targetLocal.y - sourceLocal.y;
   const distance = Math.hypot(dx, dy);
   const dirX = distance > 0 ? dx / distance : 0;
   const dirY = distance > 0 ? dy / distance : 0;
   const perpX = -dirY;
   const perpY = dirX;
   const sourceInset = Math.min(16 * size, distance * 0.12);
-  const streamStartX = dx - dirX * sourceInset;
-  const streamStartY = dy - dirY * sourceInset;
+  const streamStartX = sourceLocal.x + dirX * sourceInset;
+  const streamStartY = sourceLocal.y + dirY * sourceInset;
   graphics.clear();
 
   if (effect.showTargetHalo !== false) {
     const haloRadius = (24 + pulse * 6) * size;
     const innerHaloRadius = (12 + pulse * 3) * size;
-    graphics.circle(0, 0, haloRadius).stroke({ width: 2 * size, color: effect.color, alpha: 0.3 + pulse * 0.18 });
-    graphics.circle(0, 0, innerHaloRadius).stroke({ width: 2 * size, color: effect.glowColor, alpha: 0.55 + pulse * 0.2 });
-    graphics.circle(0, 0, (8 + pulse * 2) * size).fill({ color: effect.coreColor, alpha: 0.24 + pulse * 0.12 });
+    graphics.circle(targetLocal.x, targetLocal.y, haloRadius).stroke({ width: 2 * size, color: effect.color, alpha: 0.3 + pulse * 0.18 });
+    graphics.circle(targetLocal.x, targetLocal.y, innerHaloRadius).stroke({ width: 2 * size, color: effect.glowColor, alpha: 0.55 + pulse * 0.2 });
+    graphics.circle(targetLocal.x, targetLocal.y, (8 + pulse * 2) * size).fill({ color: effect.coreColor, alpha: 0.24 + pulse * 0.12 });
   }
 
   graphics.moveTo(streamStartX, streamStartY);
-  graphics.lineTo(0, 0);
+  graphics.lineTo(targetLocal.x, targetLocal.y);
   graphics.stroke({ width: 1.5 * size, color: effect.color, alpha: 0.16 + pulse * 0.08 });
 
   const particleCount = 9;
   for (let i = 0; i < particleCount; i++) {
     const travel = (t * 0.9 + i / particleCount) % 1;
-    const px = streamStartX * (1 - travel);
-    const py = streamStartY * (1 - travel);
+    const px = streamStartX + (targetLocal.x - streamStartX) * travel;
+    const py = streamStartY + (targetLocal.y - streamStartY) * travel;
     const wobble = Math.sin((t * 8) + i * 1.7) * 6 * size;
     const particleRadius = ((i % 3 === 0 ? 2.4 : 1.6) + pulse * 0.5) * size;
     graphics.circle(px + perpX * wobble, py + perpY * wobble, particleRadius).fill({
@@ -154,6 +184,6 @@ export function drawParticleFlowEffect(
   }
 
   if (effect.showTargetHalo !== false) {
-    graphics.circle(0, 0, (15 + pulse * 4) * size).stroke({ width: 1.5 * size, color: effect.glowColor, alpha: 0.4 + pulse * 0.18 });
+    graphics.circle(targetLocal.x, targetLocal.y, (15 + pulse * 4) * size).stroke({ width: 1.5 * size, color: effect.glowColor, alpha: 0.4 + pulse * 0.18 });
   }
 }

@@ -35,6 +35,14 @@ export type CollectorStateView = {
     updated_tick?: number;
   };
 };
+export type CombatEffectStateView = {
+  combat_effect_state?: {
+    activity: string;
+    target_id: number | string;
+    attack_id: string;
+    updated_tick?: number | string;
+  };
+};
 
 // Entity uses proto-shaped components (pos, vel, id, entity_type_id, owner_player_id) and render extras
 export type Entity = Partial<
@@ -47,6 +55,7 @@ export type Entity = Partial<
   RadiationDamagePresentation &
   ActiveIntentView &
   CollectorStateView &
+  CombatEffectStateView &
   ContainerRef &
   Scale &
   { selectable?: true } &

@@ -64,6 +64,21 @@ pub struct CollectorState {
     #[prost(float, tag = "6")]
     pub effective_rate_per_second: f32,
 }
+/// Authoritative presentation state for a continuous contact attack.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CombatEffectState {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    /// "idle" | "dismantling"
+    #[prost(string, tag = "2")]
+    pub activity: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub target_id: u64,
+    #[prost(string, tag = "4")]
+    pub attack_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "5")]
+    pub updated_tick: u64,
+}
 /// M7: Per-player resource totals. Resource types are data-driven (string IDs).
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceEntry {
@@ -89,6 +104,8 @@ pub struct Snapshot {
     pub player_ledgers: ::prost::alloc::vec::Vec<PlayerResourceLedger>,
     #[prost(message, repeated, tag = "5")]
     pub collector_states: ::prost::alloc::vec::Vec<CollectorState>,
+    #[prost(message, repeated, tag = "6")]
+    pub combat_effect_states: ::prost::alloc::vec::Vec<CombatEffectState>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotMeta {
@@ -112,6 +129,8 @@ pub struct Delta {
     pub removed_entity_ids: ::prost::alloc::vec::Vec<u64>,
     #[prost(message, repeated, tag = "4")]
     pub collector_state_updates: ::prost::alloc::vec::Vec<CollectorState>,
+    #[prost(message, repeated, tag = "5")]
+    pub combat_effect_state_updates: ::prost::alloc::vec::Vec<CombatEffectState>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]

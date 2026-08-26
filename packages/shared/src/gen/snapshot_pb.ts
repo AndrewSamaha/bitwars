@@ -8,13 +8,15 @@ import type { Entity } from "./entity_pb.js";
 import { file_entity } from "./entity_pb.js";
 import type { CollectorState } from "./collector_state_pb.js";
 import { file_collector_state } from "./collector_state_pb.js";
+import type { CombatEffectState } from "./combat_effect_state_pb.js";
+import { file_combat_effect_state } from "./combat_effect_state_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file snapshot.proto.
  */
 export const file_snapshot: GenFile = /*@__PURE__*/
-  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyI2Cg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDIlQKFFBsYXllclJlc291cmNlTGVkZ2VyEhEKCXBsYXllcl9pZBgBIAEoCRIpCglyZXNvdXJjZXMYAiADKAsyFi5iaXR3YXJzLlJlc291cmNlRW50cnkipQEKCFNuYXBzaG90EgwKBHRpY2sYAiABKAMSIQoIZW50aXRpZXMYAyADKAsyDy5iaXR3YXJzLkVudGl0eRI1Cg5wbGF5ZXJfbGVkZ2VycxgEIAMoCzIdLmJpdHdhcnMuUGxheWVyUmVzb3VyY2VMZWRnZXISMQoQY29sbGVjdG9yX3N0YXRlcxgFIAMoCzIXLmJpdHdhcnMuQ29sbGVjdG9yU3RhdGViBnByb3RvMw", [file_entity, file_collector_state]);
+  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyI2Cg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDIlQKFFBsYXllclJlc291cmNlTGVkZ2VyEhEKCXBsYXllcl9pZBgBIAEoCRIpCglyZXNvdXJjZXMYAiADKAsyFi5iaXR3YXJzLlJlc291cmNlRW50cnki3wEKCFNuYXBzaG90EgwKBHRpY2sYAiABKAMSIQoIZW50aXRpZXMYAyADKAsyDy5iaXR3YXJzLkVudGl0eRI1Cg5wbGF5ZXJfbGVkZ2VycxgEIAMoCzIdLmJpdHdhcnMuUGxheWVyUmVzb3VyY2VMZWRnZXISMQoQY29sbGVjdG9yX3N0YXRlcxgFIAMoCzIXLmJpdHdhcnMuQ29sbGVjdG9yU3RhdGUSOAoUY29tYmF0X2VmZmVjdF9zdGF0ZXMYBiADKAsyGi5iaXR3YXJzLkNvbWJhdEVmZmVjdFN0YXRlYgZwcm90bzM", [file_entity, file_collector_state, file_combat_effect_state]);
 
 /**
  * M7: Per-player resource totals. Resource types are data-driven (string IDs).
@@ -85,6 +87,11 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
    * @generated from field: repeated bitwars.CollectorState collector_states = 5;
    */
   collectorStates: CollectorState[];
+
+  /**
+   * @generated from field: repeated bitwars.CombatEffectState combat_effect_states = 6;
+   */
+  combatEffectStates: CombatEffectState[];
 };
 
 /**

@@ -11,7 +11,7 @@ import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { createHoverIndicator, drawBuildArc, drawHealthArc } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
-import { reconcileEntityRenderEffects } from "@/features/pixijs/effects/renderEffects";
+import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from "@/features/pixijs/effects/renderEffects";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
 import { ENTITY_DESPAWN_EVENT } from "@/features/gamestate/events";
@@ -164,6 +164,11 @@ export default function GameStage() {
         laserContainer.eventMode = "none";
         laserContainer.zIndex = 1_000_000;
         worldContainer.addChild(laserContainer);
+        const particleFlowContainer = new Container();
+        particleFlowContainer.label = "particleFlowEffects";
+        particleFlowContainer.eventMode = "none";
+        particleFlowContainer.zIndex = 1_000_001;
+        worldContainer.addChild(particleFlowContainer);
         const lasers: Array<{
           graphics: Graphics;
           origin: { x: number; y: number };
@@ -663,6 +668,8 @@ export default function GameStage() {
               buildArc.destroy();
             }
           }
+
+          reconcileWorldParticleFlowEffects(particleFlowContainer, liveById.values(), nowMs);
 
           // 4) M1: Render waypoint indicators for entities with queued intents
           // removeChildren only detaches Pixi display objects; destroying the

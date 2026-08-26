@@ -28,6 +28,10 @@ pub struct EntityTypeDef {
     pub stop_radius: f32,
     pub mass: f32,
     pub health: f32,
+    /// Physical hull radius used by contact attacks. This is deliberately
+    /// separate from visual scale and movement-order stop radius.
+    #[serde(default)]
+    pub hull_radius: f32,
     /// Optional autonomous-combat profile. When present, the server acquires
     /// nearby hostile entities and drives the unit according to its strategy.
     #[serde(default)]
@@ -80,17 +84,37 @@ pub struct EntityTypeDef {
 /// function of the content version and tick stream.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CombatDef {
-    /// Maximum distance at which the weapon can fire.
-    pub attack_range: f32,
-    /// Damage dealt once per successful shot.
-    pub damage: f32,
-    /// Minimum whole ticks between shots. Zero is treated as one tick.
-    pub cooldown_ticks: u64,
     /// Maximum distance at which this unit acquires a hostile target.
     pub acquisition_range: f32,
     /// How this unit responds after acquiring a nearby hostile.
     #[serde(default)]
     pub on_near_enemy_strategy: NearEnemyStrategy,
+    /// Weapons available to this entity. Their stable IDs also key cooldowns.
+    pub attacks: Vec<AttackDef>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AttackDef {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub attack_type: AttackType,
+    /// Maximum center-to-center range for a ranged weapon.
+    #[serde(default)]
+    pub range: f32,
+    pub damage: f32,
+    pub cooldown_ticks: u64,
+    #[serde(default)]
+    pub priority: i32,
+    /// Extra slack beyond two touching hulls for a dismantle attack.
+    #[serde(default)]
+    pub contact_tolerance: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AttackType {
+    Laser,
+    Dismantle,
 }
 
 /// Autonomous movement response to a nearby hostile entity.
@@ -326,6 +350,7 @@ mod tests {
                 stop_radius: 0.75,
                 mass: 1.0,
                 health: 100.0,
+                hull_radius: 0.0,
                 combat: None,
                 combat_targetable: false,
                 collector: None,
@@ -348,6 +373,7 @@ mod tests {
                 stop_radius: 0.5,
                 mass: 0.6,
                 health: 60.0,
+                hull_radius: 0.0,
                 combat: None,
                 combat_targetable: false,
                 collector: None,
@@ -381,6 +407,7 @@ mod tests {
                 stop_radius: 0.75,
                 mass: 1.0,
                 health: 100.0,
+                hull_radius: 0.0,
                 combat: None,
                 combat_targetable: false,
                 collector: None,
@@ -403,6 +430,7 @@ mod tests {
                 stop_radius: 0.5,
                 mass: 0.6,
                 health: 60.0,
+                hull_radius: 0.0,
                 combat: None,
                 combat_targetable: false,
                 collector: None,
@@ -427,6 +455,7 @@ mod tests {
                 stop_radius: 0.5,
                 mass: 0.6,
                 health: 60.0,
+                hull_radius: 0.0,
                 combat: None,
                 combat_targetable: false,
                 collector: None,
@@ -449,6 +478,7 @@ mod tests {
                 stop_radius: 0.75,
                 mass: 1.0,
                 health: 100.0,
+                hull_radius: 0.0,
                 combat: None,
                 combat_targetable: false,
                 collector: None,

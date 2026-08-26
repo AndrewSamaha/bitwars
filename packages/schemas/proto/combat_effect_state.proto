@@ -1,0 +1,11 @@
+syntax = "proto3";
+package bitwars;
+
+// Authoritative presentation state for a continuous contact attack.
+message CombatEffectState {
+  uint64 entity_id = 1;
+  string activity = 2; // "idle" | "dismantling"
+  uint64 target_id = 3;
+  string attack_id = 4;
+  uint64 updated_tick = 5;
+}

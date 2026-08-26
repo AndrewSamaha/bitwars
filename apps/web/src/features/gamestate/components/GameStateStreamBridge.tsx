@@ -20,6 +20,13 @@ type CollectorStatePayload = {
   updated_tick?: number;
 };
 type StreamCollectorStatePayload = CollectorStatePayload & { entity_id: number | string };
+type CombatEffectStatePayload = {
+  entity_id: number | string;
+  activity: string;
+  target_id: number | string;
+  attack_id: string;
+  updated_tick?: number | string;
+};
 
 function collectorStateFromStream({ entity_id: _entityId, ...state }: StreamCollectorStatePayload): CollectorStatePayload {
   return state;
@@ -42,6 +49,7 @@ type SnapshotPayload = {
   }>;
   player_ledgers?: PlayerLedgerPayload[];
   collector_states?: StreamCollectorStatePayload[];
+  combat_effect_states?: CombatEffectStatePayload[];
 };
 
 type DeltaPayload = {
@@ -58,6 +66,7 @@ type DeltaPayload = {
     force?: Pos;
   }>;
   collector_state_updates?: StreamCollectorStatePayload[];
+  combat_effect_state_updates?: CombatEffectStatePayload[];
 };
 
 type ActiveIntentOverlay = {
@@ -222,10 +231,14 @@ export default function GameStateStreamBridge() {
       const collectorStateByEntity = new Map(
         (payload.collector_states ?? []).map((state) => [normalizeId(state.entity_id), state]),
       );
+      const combatEffectStateByEntity = new Map(
+        (payload.combat_effect_states ?? []).map((state) => [normalizeId(state.entity_id), state]),
+      );
 
       // Add new ones
       for (const s of payload.entities) {
         const collectorState = collectorStateByEntity.get(normalizeId(s.id));
+        const combatEffectState = combatEffectStateByEntity.get(normalizeId(s.id));
         const ent: Entity = {
           id: s.id,
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
@@ -234,6 +247,7 @@ export default function GameStateStreamBridge() {
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
           ...(collectorState ? { collector_state: collectorStateFromStream(collectorState) } : {}),
+          ...(combatEffectState ? { combat_effect_state: combatEffectState } : {}),
           // force exists but is currently unused by systems
         };
         world.add(ent);
@@ -335,6 +349,10 @@ export default function GameStateStreamBridge() {
         const existing = byId.get(normalizeId(state.entity_id));
         if (existing) existing.collector_state = collectorStateFromStream(state);
       }
+      for (const state of payload.combat_effect_state_updates ?? []) {
+        const existing = byId.get(normalizeId(state.entity_id));
+        if (existing) existing.combat_effect_state = state;
+      }
       log.debug("GameStateStreamBridge:delta:applied", { streamId: streamIdRef.current, existingEntities, newEntities });
       if (DEBUG_LOG_GAMESTATE_ENTITIES && payload.updates.length > 0) {
         logEntitiesAndOwnership("after delta");
@@ -344,6 +362,7 @@ export default function GameStateStreamBridge() {
           ...(payload.removed_entity_ids ?? []).map(normalizeId),
           ...payload.updates.map((update) => normalizeId(update.id)),
           ...(payload.collector_state_updates ?? []).map((state) => normalizeId(state.entity_id)),
+          ...(payload.combat_effect_state_updates ?? []).map((state) => normalizeId(state.entity_id)),
         ]);
       }
     };
