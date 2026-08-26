@@ -100,7 +100,7 @@ entity_types:
     radiation_shielding:
       stellar_heat:
         distance_offset: 90.0
-        damage_multiplier: 0.35
+        damage_multiplier: 0.10
     collector:
       collects: [energy]
       proximity_rate_per_second: 12.0
@@ -153,7 +153,7 @@ entity_types:
       energy: 1000.0
     maintenance_cost_per_minute:
       energy: 5.0
-      food: 10.0
+      food: 60.0
     builds:
       - entity_type_id: worker
         spend_rates:
@@ -167,8 +167,8 @@ entity_types:
     health: 150.0
     combat_targetable: true
     maintenance_cost_per_minute:
-      energy: 1.0
-      food: 2.0
+      energy: 5.0
+      food: 5.0
     refinery:
       accepts: [minerals]
 
@@ -196,6 +196,8 @@ entity_types:
     build_cost:
       minerals: 100.0
       energy: 50.0
+    maintenance_cost_per_minute:
+      energy: 200.0
     speed: 5.0
     stop_radius: 0.5
     mass: 1.0
@@ -208,14 +210,14 @@ entity_types:
       on_near_enemy_strategy: stay
 
   raider:
-    speed: 10.0
+    speed: 80.0
     stop_radius: 0.5
     mass: 0.8
     health: 80.0
     combat_targetable: true
     combat:
       attack_range: 180.0
-      damage: 4.0
+      damage: 8.0
       cooldown_ticks: 100
-      acquisition_range: 500.0
+      acquisition_range: 1200.0
       on_near_enemy_strategy: approach

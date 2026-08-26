@@ -1,4 +1,4 @@
-# Spawn config: spawn on join + random loadout.
+# Active spawn config: spawn on join + random loadout.
 # Set SPAWN_CONFIG_PATH to this file. No player entities spawn at match start;
 # when a player joins (first stream connect), the engine picks a procedural
 # spawn location and one loadout chosen at random from the loadouts list.
@@ -24,18 +24,16 @@ loadouts:
 
 # Optional: neutrals near each spawn (owner = "neutral")
 neutrals_near_spawn:
-  - type: raider
-    count: 2
-    min_distance_from_spawn: 650
-    max_distance_from_spawn: 850
   - type: theta
     count: 1
     min_distance_from_spawn: 1200
     max_distance_from_spawn: 2000
   - type: star_yellow
     count: 1
-    min_distance_from_spawn: 200
-    max_distance_from_spawn: 2000
+    # A yellow star needs 1,800 units of clearance from player-owned entities
+    # because of its radiation field. Keep it well beyond the starting loadout.
+    min_distance_from_spawn: 3000
+    max_distance_from_spawn: 4500
   - type: minerals
     count: 1
     min_distance_from_spawn: 200

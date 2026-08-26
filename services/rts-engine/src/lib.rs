@@ -1,9 +1,10 @@
-pub mod config;
 pub mod combat;
+pub mod config;
 pub mod content;
 pub mod delta;
 pub mod engine;
 pub mod io;
+pub mod npc_scripting;
 pub mod physics;
 pub mod spawn_config;
 
