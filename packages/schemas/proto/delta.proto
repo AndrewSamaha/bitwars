@@ -3,6 +3,7 @@ package bitwars;
 
 import "entity_delta.proto";
 import "collector_state.proto";
+import "combat_effect_state.proto";
 
 message Delta {
   uint64 tick = 1;
@@ -10,4 +11,5 @@ message Delta {
   // Entity IDs removed from the authoritative world since the previous delta.
   repeated uint64 removed_entity_ids = 3;
   repeated CollectorState collector_state_updates = 4;
+  repeated CombatEffectState combat_effect_state_updates = 5;
 }

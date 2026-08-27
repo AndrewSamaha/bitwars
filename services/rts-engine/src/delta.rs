@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    io::redis::CollectorUiState,
-    pb::{CollectorState, Delta, Entity, EntityDelta},
+    io::redis::{CollectorUiState, CombatEffectUiState},
+    pb::{CollectorState, CombatEffectState, Delta, Entity, EntityDelta},
 };
 
 pub fn compute_delta(
@@ -10,6 +10,8 @@ pub fn compute_delta(
     curr: &crate::engine::state::GameState,
     prev_collector_states: &HashMap<u64, CollectorUiState>,
     curr_collector_states: &HashMap<u64, CollectorUiState>,
+    prev_combat_effect_states: &HashMap<u64, CombatEffectUiState>,
+    curr_combat_effect_states: &HashMap<u64, CombatEffectUiState>,
     eps_pos: f32,
     eps_vel: f32,
 ) -> Delta {
@@ -113,11 +115,24 @@ pub fn compute_delta(
         })
         .collect();
     collector_state_updates.sort_by_key(|state| state.entity_id);
+    let mut combat_effect_state_updates: Vec<CombatEffectState> = curr_combat_effect_states
+        .iter()
+        .filter(|(entity_id, state)| prev_combat_effect_states.get(entity_id) != Some(*state))
+        .map(|(entity_id, state)| CombatEffectState {
+            entity_id: *entity_id,
+            activity: state.activity.clone(),
+            target_id: state.target_id,
+            attack_id: state.attack_id.clone(),
+            updated_tick: state.updated_tick,
+        })
+        .collect();
+    combat_effect_state_updates.sort_by_key(|state| state.entity_id);
     Delta {
         tick: curr.tick,
         updates,
         removed_entity_ids,
         collector_state_updates,
+        combat_effect_state_updates,
     }
 }
 
@@ -157,6 +172,8 @@ mod tests {
             &current,
             &HashMap::new(),
             &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
             0.01,
             0.01,
         );
@@ -182,11 +199,30 @@ mod tests {
         let previous = HashMap::from([(4, collector.clone())]);
         let mut current = previous.clone();
 
-        let unchanged = compute_delta(&state, &state, &previous, &current, 0.01, 0.01);
+        let combat_states = HashMap::new();
+        let unchanged = compute_delta(
+            &state,
+            &state,
+            &previous,
+            &current,
+            &combat_states,
+            &combat_states,
+            0.01,
+            0.01,
+        );
         assert!(unchanged.collector_state_updates.is_empty());
 
         current.get_mut(&4).unwrap().carry_amount = 3.0;
-        let changed = compute_delta(&state, &state, &previous, &current, 0.01, 0.01);
+        let changed = compute_delta(
+            &state,
+            &state,
+            &previous,
+            &current,
+            &combat_states,
+            &combat_states,
+            0.01,
+            0.01,
+        );
         assert_eq!(changed.collector_state_updates.len(), 1);
         assert_eq!(changed.collector_state_updates[0].entity_id, 4);
         assert_eq!(changed.collector_state_updates[0].carry_amount, 3.0);

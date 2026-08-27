@@ -5,18 +5,19 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::content::{ContentPack, NearEnemyStrategy};
+use crate::content::{AttackDef, AttackType, ContentPack, NearEnemyStrategy};
 use crate::pb::{Entity, Vec2};
 use crate::spawn_config::NEUTRAL_OWNER;
 
 #[derive(Default)]
 pub struct CombatSystem {
-    next_attack_tick: HashMap<u64, u64>,
+    next_attack_tick: HashMap<(u64, String), u64>,
 }
 
 pub struct CombatTick {
     pub dead_entity_ids: Vec<u64>,
     pub laser_shots: Vec<LaserShot>,
+    pub dismantling: Vec<Dismantling>,
 }
 
 pub struct LaserShot {
@@ -24,6 +25,12 @@ pub struct LaserShot {
     pub target_id: u64,
     pub origin: Vec2,
     pub target: Vec2,
+}
+
+pub struct Dismantling {
+    pub attacker_id: u64,
+    pub target_id: u64,
+    pub attack_id: String,
 }
 
 impl CombatSystem {
@@ -74,6 +81,7 @@ impl CombatSystem {
             return CombatTick {
                 dead_entity_ids: Vec::new(),
                 laser_shots: Vec::new(),
+                dismantling: Vec::new(),
             };
         }
 
@@ -91,12 +99,17 @@ impl CombatSystem {
                         owner_player_id: entity.owner_player_id.clone(),
                         x: pos.x,
                         y: pos.y,
+                        hull_radius: content
+                            .get(&entity.entity_type_id)
+                            .map(|definition| definition.hull_radius.max(0.0))
+                            .unwrap_or(0.0),
                     })
             })
             .collect();
 
         let mut damage_by_target: HashMap<u64, f32> = HashMap::new();
         let mut laser_shots = Vec::new();
+        let mut dismantling = Vec::new();
         for attacker in entities.iter_mut() {
             if attacker.owner_player_id.is_empty()
                 || attacker.health <= 0.0
@@ -104,12 +117,15 @@ impl CombatSystem {
             {
                 continue;
             }
-            let Some(profile) = content
-                .get(&attacker.entity_type_id)
-                .and_then(|definition| definition.combat.as_ref())
-            else {
+            let Some(definition) = content.get(&attacker.entity_type_id) else {
                 continue;
             };
+            let Some(profile) = definition.combat.as_ref() else {
+                continue;
+            };
+            if profile.attacks.is_empty() {
+                continue;
+            }
             let Some(pos) = attacker.pos.as_mut() else {
                 continue;
             };
@@ -152,7 +168,12 @@ impl CombatSystem {
             let dx = target.x - pos.x;
             let dy = target.y - pos.y;
             let distance_sq = dx * dx + dy * dy;
-            let range = profile.attack_range.max(0.0);
+            let attacker_hull_radius = definition.hull_radius.max(0.0);
+            let max_range = profile
+                .attacks
+                .iter()
+                .map(|attack| attack_range(attack, attacker_hull_radius, target.hull_radius))
+                .fold(0.0_f32, f32::max);
             match profile.on_near_enemy_strategy {
                 NearEnemyStrategy::Flee => {
                     if distance_sq > f32::EPSILON {
@@ -169,35 +190,49 @@ impl CombatSystem {
                     }
                     continue;
                 }
-                NearEnemyStrategy::Stay if distance_sq > range * range => {
+                NearEnemyStrategy::Stay if distance_sq > max_range * max_range => {
                     zero_velocity(attacker);
                     continue;
                 }
                 NearEnemyStrategy::Approach | NearEnemyStrategy::Stay => {}
             }
-            if distance_sq <= range * range {
+            if let Some(attack) = select_attack(
+                &profile.attacks,
+                distance_sq,
+                attacker_hull_radius,
+                target.hull_radius,
+            ) {
                 let origin = Vec2 { x: pos.x, y: pos.y };
                 zero_velocity(attacker);
                 let next_tick = self
                     .next_attack_tick
-                    .get(&attacker.id)
+                    .get(&(attacker.id, attack.id.clone()))
                     .copied()
                     .unwrap_or(0);
-                if tick >= next_tick && profile.damage.is_finite() && profile.damage > 0.0 {
-                    *damage_by_target.entry(target.id).or_insert(0.0) += profile.damage;
-                    laser_shots.push(LaserShot {
+                if tick >= next_tick && attack.damage.is_finite() && attack.damage > 0.0 {
+                    *damage_by_target.entry(target.id).or_insert(0.0) += attack.damage;
+                    if attack.attack_type == AttackType::Laser {
+                        laser_shots.push(LaserShot {
+                            attacker_id: attacker.id,
+                            target_id: target.id,
+                            origin,
+                            target: Vec2 {
+                                x: target.x,
+                                y: target.y,
+                            },
+                        });
+                    }
+                    self.next_attack_tick.insert(
+                        (attacker.id, attack.id.clone()),
+                        tick.saturating_add(attack.cooldown_ticks.max(1)),
+                    );
+                }
+                if attack.attack_type == AttackType::Dismantle {
+                    dismantling.push(Dismantling {
                         attacker_id: attacker.id,
                         target_id: target.id,
-                        origin,
-                        target: Vec2 {
-                            x: target.x,
-                            y: target.y,
-                        },
+                        attack_id: attack.id.clone(),
                     });
-                    self.next_attack_tick.insert(
-                        attacker.id,
-                        tick.saturating_add(profile.cooldown_ticks.max(1)),
-                    );
                 }
                 continue;
             }
@@ -209,10 +244,10 @@ impl CombatSystem {
                 .get(&attacker.entity_type_id)
                 .map(|definition| definition.speed.max(0.0))
                 .unwrap_or(0.0);
-            let remaining = distance - range;
+            let remaining = distance - max_range;
             if speed * dt >= remaining {
-                pos.x = target.x - direction_x * range;
-                pos.y = target.y - direction_y * range;
+                pos.x = target.x - direction_x * max_range;
+                pos.y = target.y - direction_y * max_range;
                 zero_velocity(attacker);
             } else {
                 let velocity = attacker.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
@@ -231,10 +266,12 @@ impl CombatSystem {
                 }
             }
         }
-        self.next_attack_tick.retain(|id, _| !dead.contains(id));
+        self.next_attack_tick
+            .retain(|(id, _), _| !dead.contains(id));
         CombatTick {
             dead_entity_ids: dead,
             laser_shots,
+            dismantling,
         }
     }
 }
@@ -244,6 +281,34 @@ struct Target {
     owner_player_id: String,
     x: f32,
     y: f32,
+    hull_radius: f32,
+}
+
+fn attack_range(attack: &AttackDef, attacker_hull_radius: f32, target_hull_radius: f32) -> f32 {
+    match attack.attack_type {
+        AttackType::Laser => attack.range.max(0.0),
+        AttackType::Dismantle => {
+            attacker_hull_radius + target_hull_radius + attack.contact_tolerance.max(0.0)
+        }
+    }
+}
+
+fn select_attack<'a>(
+    attacks: &'a [AttackDef],
+    distance_sq: f32,
+    attacker_hull_radius: f32,
+    target_hull_radius: f32,
+) -> Option<&'a AttackDef> {
+    attacks
+        .iter()
+        .filter(|attack| {
+            distance_sq <= attack_range(attack, attacker_hull_radius, target_hull_radius).powi(2)
+        })
+        .max_by(|left, right| {
+            left.priority
+                .cmp(&right.priority)
+                .then_with(|| right.id.cmp(&left.id))
+        })
 }
 
 fn squared_distance(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
@@ -263,7 +328,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::content::{CombatDef, EntityTypeDef, NearEnemyStrategy};
+    use crate::content::{AttackDef, AttackType, CombatDef, EntityTypeDef, NearEnemyStrategy};
 
     fn content() -> ContentPack {
         let raider = EntityTypeDef {
@@ -271,12 +336,19 @@ mod tests {
             stop_radius: 0.5,
             mass: 1.0,
             health: 20.0,
+            hull_radius: 0.0,
             combat: Some(CombatDef {
-                attack_range: 10.0,
-                damage: 6.0,
-                cooldown_ticks: 2,
                 acquisition_range: 100.0,
                 on_near_enemy_strategy: NearEnemyStrategy::Approach,
+                attacks: vec![AttackDef {
+                    id: "laser".to_string(),
+                    attack_type: AttackType::Laser,
+                    range: 10.0,
+                    damage: 6.0,
+                    cooldown_ticks: 2,
+                    priority: 0,
+                    contact_tolerance: 0.0,
+                }],
             }),
             combat_targetable: true,
             visual_scale: 1.0,
@@ -399,6 +471,41 @@ mod tests {
         CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
 
         assert_eq!(entities[0].vel, Some(Vec2 { x: 7.0, y: -3.0 }));
+    }
+
+    #[test]
+    fn dismantle_requires_hull_contact_and_emits_continuous_effect_state() {
+        let mut pack = content();
+        let worker = pack.entity_types.get_mut("worker").unwrap();
+        worker.hull_radius = 3.0;
+        worker.combat = Some(CombatDef {
+            acquisition_range: 100.0,
+            on_near_enemy_strategy: NearEnemyStrategy::Approach,
+            attacks: vec![AttackDef {
+                id: "dismantle".to_string(),
+                attack_type: AttackType::Dismantle,
+                range: 0.0,
+                damage: 5.0,
+                cooldown_ticks: 2,
+                priority: 0,
+                contact_tolerance: 2.0,
+            }],
+        });
+        let raider = pack.entity_types.get_mut("raider").unwrap();
+        raider.hull_radius = 4.0;
+        raider.combat = None;
+        let mut entities = vec![
+            entity(1, "worker", "player", 0.0, 20.0),
+            entity(2, "raider", NEUTRAL_OWNER, 9.0, 20.0),
+        ];
+
+        let outcome = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
+
+        assert!(outcome.laser_shots.is_empty());
+        assert_eq!(outcome.dismantling.len(), 1);
+        assert_eq!(outcome.dismantling[0].attacker_id, 1);
+        assert_eq!(outcome.dismantling[0].target_id, 2);
+        assert_eq!(entities[1].health, 15.0);
     }
 
     #[test]

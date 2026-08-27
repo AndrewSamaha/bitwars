@@ -19,9 +19,10 @@ import type { RenderEffectsWorld } from "./types";
 export { drawRadiationShedEffect, RADIATION_SHED_DURATION_MS };
 export type { RadiationShedEffect, RenderEffectsWorld };
 
-type RenderEffectDescriptor = ParticleFlowEffect | RadiationShedEffect;
+type RenderEffectDescriptor = RadiationShedEffect;
 
 const RENDER_EFFECT_LABEL_PREFIX = "renderEffect:";
+const PARTICLE_FLOW_LABEL_PREFIX = "particleFlowEffect:";
 
 const liveRenderEffectsWorld: RenderEffectsWorld = {
   entities: () => game.world.with("pos", "id"),
@@ -30,7 +31,6 @@ const liveRenderEffectsWorld: RenderEffectsWorld = {
 
 function resolveRenderEffects(entity: Entity, nowMs: number, world: RenderEffectsWorld): RenderEffectDescriptor[] {
   return [
-    ...resolveParticleFlowEffects(entity, world),
     ...resolveRadiationShedEffects(entity, nowMs, world),
   ];
 }
@@ -42,12 +42,38 @@ function destroyEffect(graphics: Graphics) {
 
 function drawEffect(graphics: Graphics, container: Container, effect: RenderEffectDescriptor, nowMs: number) {
   switch (effect.kind) {
-    case "particle_flow":
-      drawParticleFlowEffect(graphics, container, effect, nowMs);
-      break;
     case "radiation_shed":
       drawRadiationShedEffect(graphics, container, effect, nowMs);
       break;
+  }
+}
+
+/** Draws particle flows in a world-level overlay above every entity. */
+export function reconcileWorldParticleFlowEffects(
+  container: Container,
+  entities: Iterable<Entity>,
+  nowMs: number,
+  world: RenderEffectsWorld = liveRenderEffectsWorld,
+) {
+  const effects = Array.from(entities).flatMap((entity) => resolveParticleFlowEffects(entity, world));
+  const activeKeys = new Set(effects.map((effect) => effect.key));
+
+  for (const child of container.children) {
+    if (!(child instanceof Graphics) || !child.label?.startsWith(PARTICLE_FLOW_LABEL_PREFIX)) continue;
+    if (!activeKeys.has(child.label.slice(PARTICLE_FLOW_LABEL_PREFIX.length))) destroyEffect(child);
+  }
+
+  for (const effect of effects) {
+    const label = `${PARTICLE_FLOW_LABEL_PREFIX}${effect.key}`;
+    const graphics = container.children.find((child) => child.label === label) as Graphics | undefined
+      ?? (() => {
+        const next = new Graphics();
+        next.label = label;
+        next.eventMode = "none";
+        container.addChild(next);
+        return next;
+      })();
+    drawParticleFlowEffect(graphics, container, effect, nowMs);
   }
 }
 

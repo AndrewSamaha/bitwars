@@ -11,7 +11,7 @@ import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { createHoverIndicator, drawBuildArc, drawHealthArc } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
-import { reconcileEntityRenderEffects } from "@/features/pixijs/effects/renderEffects";
+import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from "@/features/pixijs/effects/renderEffects";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
 import { ENTITY_DESPAWN_EVENT } from "@/features/gamestate/events";
@@ -24,6 +24,7 @@ import {
   type EntityVisual,
 } from "@/features/pixijs/renderer/entityVisuals";
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
+import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
 import {
   CELL_SIZE,
   SEED,
@@ -45,7 +46,7 @@ const ZOOM_SENSITIVITY = 0.0015;
 const NON_OWNED_TINT = 0x66_66_66;
 /** M6: Minimap dot colors by ownership */
 const MINIMAP_MY_COLOR = 0x44_aa_ff;
-const MINIMAP_OTHER_COLOR = 0xee_66_44;
+const MINIMAP_HOSTILE_COLOR = 0xef_44_44;
 const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
 const BUILD_PROGRESS_POLL_MS = 500;
 
@@ -66,8 +67,9 @@ export default function GameStage() {
   const [moveDebug, setMoveDebug] = useState<string>("idle");
   const { player } = usePlayer();
   const {
-    actions: { setHovered, setApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction },
+    actions: { setHovered, setApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction, setTerminalOpen },
     selectors,
+    refs: { inputRef },
   } = useHUD();
   // Keep latest selectors in a ref so event handlers see current selection/action
   const latestSelectorsRef = useRef(selectors);
@@ -164,6 +166,11 @@ export default function GameStage() {
         laserContainer.eventMode = "none";
         laserContainer.zIndex = 1_000_000;
         worldContainer.addChild(laserContainer);
+        const particleFlowContainer = new Container();
+        particleFlowContainer.label = "particleFlowEffects";
+        particleFlowContainer.eventMode = "none";
+        particleFlowContainer.zIndex = 1_000_001;
+        worldContainer.addChild(particleFlowContainer);
         const lasers: Array<{
           graphics: Graphics;
           origin: { x: number; y: number };
@@ -358,15 +365,19 @@ export default function GameStage() {
           const vw = Math.max(1, Math.min(vmax.px - vmin.px, MINIMAP_SIZE_PX - vx));
           const vh = Math.max(1, Math.min(vmax.py - vmin.py, MINIMAP_SIZE_PX - vy));
           minimapGraphics.rect(vx, vy, vw, vh).stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
-          // Unit dots (M6: color by ownership — my / other / neutral)
+          // Unit dots: own units are blue; all non-owned combat targets are
+          // red, while planets and other non-targetable entities stay gray.
           const myId = myPlayerIdRef.current;
           for (const e of game.world.with("pos", "id")) {
             const pos = (e as { pos: { x: number; y: number } }).pos;
             const ownerId = (e as { owner_player_id?: string }).owner_player_id;
-            let color = MINIMAP_NEUTRAL_COLOR;
-            if (ownerId !== undefined && ownerId !== "" && ownerId !== "neutral") {
-              color = myId != null && ownerId === myId ? MINIMAP_MY_COLOR : MINIMAP_OTHER_COLOR;
-            }
+            const isOwned = myId != null && ownerId === myId;
+            const isCombatTarget = contentManager.getEntityType(e.entity_type_id?.trim() ?? "")?.combat_targetable === true;
+            const color = isOwned
+              ? MINIMAP_MY_COLOR
+              : isCombatTarget
+                ? MINIMAP_HOSTILE_COLOR
+                : MINIMAP_NEUTRAL_COLOR;
             const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
             if (px >= 0 && px <= MINIMAP_SIZE_PX && py >= 0 && py <= MINIMAP_SIZE_PX) {
               minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
@@ -409,7 +420,11 @@ export default function GameStage() {
         // Keyboard: M to set Move, C to issue Collect, Escape to clear; WASD/arrows to pan (M5.1/M8)
         const onKeyDown = (ev: KeyboardEvent) => {
           const sel = latestSelectorsRef.current;
-          if (ev.key === 'm' || ev.key === 'M') {
+          if ((ev.key === "i" || ev.key === "I") && !isFocusInEditable()) {
+            setTerminalOpen(true);
+            requestAnimationFrame(() => inputRef.current?.focus());
+            ev.preventDefault();
+          } else if (ev.key === 'm' || ev.key === 'M') {
             if (sel.hasSelection) setSelectedAction('Move');
           } else if (ev.key === 'c' || ev.key === 'C') {
             if (sel.hasSelection) {
@@ -422,6 +437,24 @@ export default function GameStage() {
             }
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
+          } else if (ev.code === "Space" && !isFocusInEditable()) {
+            const myId = myPlayerIdRef.current;
+            if (!myId) return;
+            const ownedIds = Array.from(game.world.with("id"))
+              .filter((entity) => (entity as any).owner_player_id === myId)
+              .map((entity) => String((entity as any).id));
+            if (ownedIds.length === 0) return;
+            const currentIndex = ownedIds.indexOf(sel.firstSelectedId ?? "");
+            setSelection([ownedIds[(currentIndex + 1) % ownedIds.length]!]);
+            ev.preventDefault();
+          } else if (ev.code === "KeyZ" && !isFocusInEditable()) {
+            const entity = sel.firstSelectedId ? findLiveEntityById(sel.firstSelectedId) : null;
+            if (!entity?.pos) return;
+            worldContainer.position.set(
+              app.screen.width / 2 - entity.pos.x * worldContainer.scale.x,
+              app.screen.height / 2 - entity.pos.y * worldContainer.scale.y,
+            );
+            ev.preventDefault();
           } else if (PAN_KEYS.has(ev.code)) {
             if (!isFocusInEditable()) {
               panKeysRef.current.add(ev.code);
@@ -611,19 +644,20 @@ export default function GameStage() {
             const health = Number((e as Entity).health);
             const maxHealth = contentManager.getEntityType(typeId)?.health;
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
-            const shouldShowHealthArc = hasHealth && ((e as any).hover || (isOwned && health < maxHealth));
+            const isSelected = latestSelectorsRef.current.isSelected(id);
+            const shouldShowHealthArc = hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildProgress = buildProgressByEntity.get(String((e as any).id));
             const isBuilding = String((e as any).active_intent_kind).toLowerCase() === "build";
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
-            if ((e as any).hover && !suppressHover) {
+            if (((e as any).hover || isSelected) && !suppressHover) {
               if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
-              // ensure a hover indicator exists as a child after sprite (only for owned so we don't highlight enemy)
+              // Ensure a selection indicator exists after the sprite (only for owned units).
               let hoverIndicator = container.children.find((c) => c.label === 'hoverIndicator') as Graphics | undefined;
               if (isOwned && !hoverIndicator) {
                 hoverIndicator = createHoverIndicator();
                 container.addChild(hoverIndicator);
               }
-              setHovered(e);
+              if ((e as any).hover) setHovered(e);
             } else {
               if (primary) (primary as any).tint = baseTint;
               // remove hover indicator if present
@@ -663,6 +697,8 @@ export default function GameStage() {
               buildArc.destroy();
             }
           }
+
+          reconcileWorldParticleFlowEffects(particleFlowContainer, liveById.values(), nowMs);
 
           // 4) M1: Render waypoint indicators for entities with queued intents
           // removeChildren only detaches Pixi display objects; destroying the
@@ -774,13 +810,19 @@ export default function GameStage() {
             const shift = !!origEvent?.shiftKey;
             const ctrl = !!origEvent?.ctrlKey || !!origEvent?.metaKey;
 
-            // Issue the same order to every currently selected unit.
-            for (const id of sel.selectedEntities) {
+            const target = { x: Number(local.x), y: Number(local.y) };
+            const targets = spreadMoveTargets(target, sel.selectedEntities.map((id) => {
+              const entityTypeId = findLiveEntityById(id)?.entity_type_id ?? "";
+              return contentManager.getEntityType(entityTypeId)?.hull_radius ?? 0;
+            }));
+
+            // Issue nearby, non-overlapping destinations to every selected unit.
+            for (const [index, id] of sel.selectedEntities.entries()) {
               const entityIdNum = Number(id);
               if (!Number.isFinite(entityIdNum)) continue;
               intentQueue.handleMoveCommand(
                 entityIdNum,
-                { x: Number(local.x), y: Number(local.y) },
+                targets[index]!,
                 { shift, ctrl },
               );
             }

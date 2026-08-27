@@ -7,8 +7,8 @@ use crate::engine::intent::{format_uuid, IntentMetadata};
 use crate::engine::state::GameState;
 use crate::pb::events_stream_record;
 use crate::pb::{
-    self, CollectorState, Delta, EventsStreamRecord, LaserShotEvent, LifecycleEvent,
-    PlayerResourceLedger, ResourceEntry, Snapshot,
+    self, CollectorState, CombatEffectState, Delta, EventsStreamRecord, LaserShotEvent,
+    LifecycleEvent, PlayerResourceLedger, ResourceEntry, Snapshot,
 };
 
 // ── M2: Per-entity tracking types ───────────────────────────────────────────
@@ -62,6 +62,15 @@ pub struct CollectorUiState {
     #[serde(default)]
     pub effective_rate_per_second: f32,
     #[serde(default)]
+    pub updated_tick: u64,
+}
+
+/// Runtime combat telemetry used to render continuous contact attacks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CombatEffectUiState {
+    pub activity: String,
+    pub target_id: u64,
+    pub attack_id: String,
     pub updated_tick: u64,
 }
 
@@ -202,6 +211,7 @@ impl RedisClient {
         state: &GameState,
         boundary_stream_id: &str,
         collector_states: Vec<CollectorState>,
+        combat_effect_states: Vec<CombatEffectState>,
     ) -> anyhow::Result<()> {
         let player_ledgers = state
             .ledger
@@ -229,6 +239,7 @@ impl RedisClient {
             entities: state.entities.clone(),
             player_ledgers,
             collector_states,
+            combat_effect_states,
         };
         let bytes = snap.encode_to_vec();
 

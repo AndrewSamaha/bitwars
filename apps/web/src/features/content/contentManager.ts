@@ -25,6 +25,21 @@ export type EntityTypeDef = {
   stop_radius: number;
   mass: number;
   health: number;
+  combat_targetable?: boolean;
+  hull_radius?: number;
+  combat?: {
+    acquisition_range: number;
+    on_near_enemy_strategy?: "approach" | "flee" | "stay";
+    attacks: Array<{
+      id: string;
+      type: "laser" | "dismantle";
+      range?: number;
+      damage: number;
+      cooldown_ticks: number;
+      priority?: number;
+      contact_tolerance?: number;
+    }>;
+  };
   /** Client-only multiplier for this entity type's rendered size. */
   visual_scale?: number;
   /** Draw order within the game world; higher values render in front. */

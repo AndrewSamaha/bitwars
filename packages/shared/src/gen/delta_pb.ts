@@ -8,13 +8,15 @@ import type { EntityDelta } from "./entity_delta_pb.js";
 import { file_entity_delta } from "./entity_delta_pb.js";
 import type { CollectorState } from "./collector_state_pb.js";
 import { file_collector_state } from "./collector_state_pb.js";
+import type { CombatEffectState } from "./combat_effect_state_pb.js";
+import { file_combat_effect_state } from "./combat_effect_state_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file delta.proto.
  */
 export const file_delta: GenFile = /*@__PURE__*/
-  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyKSAQoFRGVsdGESDAoEdGljaxgBIAEoBBIlCgd1cGRhdGVzGAIgAygLMhQuYml0d2Fycy5FbnRpdHlEZWx0YRIaChJyZW1vdmVkX2VudGl0eV9pZHMYAyADKAQSOAoXY29sbGVjdG9yX3N0YXRlX3VwZGF0ZXMYBCADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlYgZwcm90bzM", [file_entity_delta, file_collector_state]);
+  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyLTAQoFRGVsdGESDAoEdGljaxgBIAEoBBIlCgd1cGRhdGVzGAIgAygLMhQuYml0d2Fycy5FbnRpdHlEZWx0YRIaChJyZW1vdmVkX2VudGl0eV9pZHMYAyADKAQSOAoXY29sbGVjdG9yX3N0YXRlX3VwZGF0ZXMYBCADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEj8KG2NvbWJhdF9lZmZlY3Rfc3RhdGVfdXBkYXRlcxgFIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGViBnByb3RvMw", [file_entity_delta, file_collector_state, file_combat_effect_state]);
 
 /**
  * @generated from message bitwars.Delta
@@ -41,6 +43,11 @@ export type Delta = Message<"bitwars.Delta"> & {
    * @generated from field: repeated bitwars.CollectorState collector_state_updates = 4;
    */
   collectorStateUpdates: CollectorState[];
+
+  /**
+   * @generated from field: repeated bitwars.CombatEffectState combat_effect_state_updates = 5;
+   */
+  combatEffectStateUpdates: CombatEffectState[];
 };
 
 /**

@@ -32,6 +32,13 @@ export const mapDeltaToJson = (d: Delta) => ({
     carry_capacity: state.carryCapacity,
     effective_rate_per_second: state.effectiveRatePerSecond,
   })),
+  combat_effect_state_updates: (d.combatEffectStateUpdates ?? []).map((state) => ({
+    entity_id: biToNumOrStr(state.entityId),
+    activity: state.activity,
+    target_id: biToNumOrStr(state.targetId),
+    attack_id: state.attackId,
+    updated_tick: biToNumOrStr(state.updatedTick),
+  })),
 });
 
 export const mapSnapshotToJson = (s: Snapshot) => {
@@ -65,6 +72,13 @@ export const mapSnapshotToJson = (s: Snapshot) => {
       carry_amount: state.carryAmount,
       carry_capacity: state.carryCapacity,
       effective_rate_per_second: state.effectiveRatePerSecond,
+    })),
+    combat_effect_states: (s.combatEffectStates ?? []).map((state) => ({
+      entity_id: biToNumOrStr(state.entityId),
+      activity: state.activity,
+      target_id: biToNumOrStr(state.targetId),
+      attack_id: state.attackId,
+      updated_tick: biToNumOrStr(state.updatedTick),
     })),
   };
 };

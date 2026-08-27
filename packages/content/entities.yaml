@@ -39,7 +39,7 @@ entity_types:
 
   planet_blue:
     speed: 0.0
-    z_index: -1
+    z_index: -2
     suppress_hover: true
     stop_radius: 1
     mass: 500.0
@@ -79,6 +79,7 @@ entity_types:
 
   minerals:
     speed: 0.0
+    z_index: -1
     stop_radius: 1
     mass: 500.0
     health: 100.0
@@ -93,6 +94,7 @@ entity_types:
     stop_radius: 1
     mass: 500.0
     health: 100.0
+    hull_radius: 12.0
     combat_targetable: true
     build_cost:
       minerals: 100.0
@@ -112,8 +114,19 @@ entity_types:
     speed: 90.0
     stop_radius: 0.75
     mass: 1.0
-    health: 100.0
+    health: 200.0
+    hull_radius: 50.0
     combat_targetable: true
+    combat:
+      acquisition_range: 250.0
+      on_near_enemy_strategy: approach
+      attacks:
+        - id: dismantle
+          type: dismantle
+          damage: 4.0
+          cooldown_ticks: 60
+          priority: 100
+          contact_tolerance: 2.0
     build_cost:
       minerals: 50.0
       energy: 50.0
@@ -145,6 +158,7 @@ entity_types:
     stop_radius: 0.5
     mass: 4.0
     health: 400.0
+    hull_radius: 18.0
     combat_targetable: true
     refinery:
       accepts: [food]
@@ -165,6 +179,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7.0
     health: 150.0
+    hull_radius: 16.0
     combat_targetable: true
     maintenance_cost_per_minute:
       energy: 5.0
@@ -177,6 +192,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7.0
     health: 150.0
+    hull_radius: 16.0
     combat_targetable: true
 
   scout:
@@ -184,13 +200,18 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 60.0
+    hull_radius: 10.0
     combat_targetable: true
     combat:
-      attack_range: 120.0
-      damage: 2.0
-      cooldown_ticks: 75
       acquisition_range: 450.0
       on_near_enemy_strategy: approach
+      attacks:
+        - id: laser
+          type: laser
+          range: 120.0
+          damage: 2.0
+          cooldown_ticks: 75
+          priority: 0
 
   defense_pilon:
     build_cost:
@@ -202,22 +223,32 @@ entity_types:
     stop_radius: 0.5
     mass: 1.0
     health: 500.0
+    hull_radius: 15.0
     combat:
-      attack_range: 500.0
-      damage: 2.0
-      cooldown_ticks: 51
       acquisition_range: 500.0
       on_near_enemy_strategy: stay
+      attacks:
+        - id: laser
+          type: laser
+          range: 500.0
+          damage: 2.0
+          cooldown_ticks: 51
+          priority: 0
 
   raider:
     speed: 80.0
     stop_radius: 0.5
     mass: 0.8
     health: 80.0
+    hull_radius: 50.0
     combat_targetable: true
     combat:
-      attack_range: 180.0
-      damage: 8.0
-      cooldown_ticks: 100
       acquisition_range: 1200.0
       on_near_enemy_strategy: approach
+      attacks:
+        - id: laser
+          type: laser
+          range: 180.0
+          damage: 8.0
+          cooldown_ticks: 100
+          priority: 0

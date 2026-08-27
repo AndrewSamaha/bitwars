@@ -10,6 +10,7 @@ import { file_vec2 } from "./vec2_pb.js";
 import { file_entity } from "./entity_pb.js";
 import { file_entity_delta } from "./entity_delta_pb.js";
 import { file_collector_state } from "./collector_state_pb.js";
+import { file_combat_effect_state } from "./combat_effect_state_pb.js";
 import { file_snapshot } from "./snapshot_pb.js";
 import { file_snapshot_meta } from "./snapshot_meta_pb.js";
 import { file_delta } from "./delta_pb.js";
@@ -19,5 +20,5 @@ import { file_intent } from "./intent_pb.js";
  * Describes the file world.proto.
  */
 export const file_world: GenFile = /*@__PURE__*/
-  fileDesc("Cgt3b3JsZC5wcm90bxIHYml0d2Fyc2IGcHJvdG8z", [file_vec2, file_entity, file_entity_delta, file_collector_state, file_snapshot, file_snapshot_meta, file_delta, file_intent]);
+  fileDesc("Cgt3b3JsZC5wcm90bxIHYml0d2Fyc2IGcHJvdG8z", [file_vec2, file_entity, file_entity_delta, file_collector_state, file_combat_effect_state, file_snapshot, file_snapshot_meta, file_delta, file_intent]);
 

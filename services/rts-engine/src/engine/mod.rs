@@ -14,7 +14,7 @@ use crate::config::GameConfig;
 use crate::content::{CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
-use crate::io::redis::{CollectorUiState, IntentPoint, RedisClient};
+use crate::io::redis::{CollectorUiState, CombatEffectUiState, IntentPoint, RedisClient};
 use crate::io::telemetry::Telemetry;
 use crate::npc_scripting::RaiderScript;
 use crate::pb::{self, intent_envelope};
@@ -205,6 +205,7 @@ mod radiation_tests {
                 stop_radius: 1.0,
                 mass: 500.0,
                 health: 100.0,
+                hull_radius: 0.0,
                 combat: None,
                 combat_targetable: false,
                 collector: None,
@@ -248,6 +249,7 @@ mod radiation_tests {
                 stop_radius: 1.0,
                 mass: 500.0,
                 health: 100.0,
+                hull_radius: 0.0,
                 combat: None,
                 combat_targetable: false,
                 collector: None,
@@ -270,6 +272,7 @@ mod radiation_tests {
                 stop_radius: 0.75,
                 mass: 1.0,
                 health: 100.0,
+                hull_radius: 0.0,
                 combat: None,
                 combat_targetable: false,
                 collector: None,
@@ -488,6 +491,9 @@ pub struct Engine {
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
     /// Previous telemetry state used to emit sparse authoritative delta updates.
     prev_collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
+    /// Per-attacker continuous combat effects, streamed for presentation.
+    combat_effect_ui_state_by_entity: HashMap<u64, CombatEffectUiState>,
+    prev_combat_effect_ui_state_by_entity: HashMap<u64, CombatEffectUiState>,
     /// Runtime-only cooldown tracking for autonomous combatants.
     combat: CombatSystem,
     raider_script: RaiderScript,
@@ -679,7 +685,10 @@ fn remove_zero_health_entities(entities: &mut Vec<pb::Entity>) -> Vec<u64> {
 /// A removal-only delta is still an authoritative state change. Keep all
 /// other no-op delta suppression intact.
 fn should_publish_delta(delta: &pb::Delta) -> bool {
-    !delta.updates.is_empty() || !delta.removed_entity_ids.is_empty()
+    !delta.updates.is_empty()
+        || !delta.removed_entity_ids.is_empty()
+        || !delta.collector_state_updates.is_empty()
+        || !delta.combat_effect_state_updates.is_empty()
 }
 
 impl Engine {
@@ -792,6 +801,8 @@ impl Engine {
                     maintenance_spend_fractional: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
                     prev_collector_ui_state_by_entity: HashMap::new(),
+                    combat_effect_ui_state_by_entity: HashMap::new(),
+                    prev_combat_effect_ui_state_by_entity: HashMap::new(),
                     combat: CombatSystem::default(),
                     raider_script: RaiderScript::new()?,
                 };
@@ -804,6 +815,7 @@ impl Engine {
                         &engine.state,
                         snap_boundary,
                         engine.collector_states_for_stream(),
+                        engine.combat_effect_states_for_stream(),
                     )
                     .await?;
 
@@ -864,12 +876,14 @@ impl Engine {
             maintenance_spend_fractional: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
             prev_collector_ui_state_by_entity: HashMap::new(),
+            combat_effect_ui_state_by_entity: HashMap::new(),
+            prev_combat_effect_ui_state_by_entity: HashMap::new(),
             combat: CombatSystem::default(),
             raider_script: RaiderScript::new()?,
         };
         engine
             .redis
-            .publish_snapshot(&engine.state, "0-0", Vec::new())
+            .publish_snapshot(&engine.state, "0-0", Vec::new(), Vec::new())
             .await?;
 
         // M4: Publish content hash + definitions to Redis
@@ -1511,6 +1525,7 @@ impl Engine {
             return crate::combat::CombatTick {
                 dead_entity_ids: Vec::new(),
                 laser_shots: Vec::new(),
+                dismantling: Vec::new(),
             };
         };
         let commanded_entity_ids: HashSet<u64> =
@@ -1539,6 +1554,7 @@ impl Engine {
             &commands.target_by_entity,
             &commands.scripted_entity_ids,
         );
+        self.update_combat_effect_states(&outcome.dismantling);
         if outcome.dead_entity_ids.is_empty() {
             return outcome;
         }
@@ -1550,6 +1566,57 @@ impl Engine {
             self.clear_fractional_for_entity(*entity_id);
         }
         outcome
+    }
+
+    fn update_combat_effect_states(&mut self, dismantling: &[crate::combat::Dismantling]) {
+        let active: HashMap<u64, &crate::combat::Dismantling> = dismantling
+            .iter()
+            .map(|state| (state.attacker_id, state))
+            .collect();
+        let previous_ids: Vec<u64> = self
+            .combat_effect_ui_state_by_entity
+            .keys()
+            .copied()
+            .collect();
+        for entity_id in previous_ids {
+            if active.contains_key(&entity_id) {
+                continue;
+            }
+            let previous = self.combat_effect_ui_state_by_entity.get(&entity_id);
+            if previous.is_some_and(|state| state.activity == "idle") {
+                continue;
+            }
+            self.combat_effect_ui_state_by_entity.insert(
+                entity_id,
+                CombatEffectUiState {
+                    activity: "idle".to_string(),
+                    target_id: 0,
+                    attack_id: String::new(),
+                    updated_tick: self.state.tick,
+                },
+            );
+        }
+        for state in dismantling {
+            let unchanged = self
+                .combat_effect_ui_state_by_entity
+                .get(&state.attacker_id)
+                .is_some_and(|previous| {
+                    previous.activity == "dismantling"
+                        && previous.target_id == state.target_id
+                        && previous.attack_id == state.attack_id
+                });
+            if !unchanged {
+                self.combat_effect_ui_state_by_entity.insert(
+                    state.attacker_id,
+                    CombatEffectUiState {
+                        activity: "dismantling".to_string(),
+                        target_id: state.target_id,
+                        attack_id: state.attack_id.clone(),
+                        updated_tick: self.state.tick,
+                    },
+                );
+            }
+        }
     }
 
     async fn emit_laser_shots(&mut self, shots: &[crate::combat::LaserShot]) {
@@ -2060,6 +2127,22 @@ impl Engine {
         states
     }
 
+    fn combat_effect_states_for_stream(&self) -> Vec<pb::CombatEffectState> {
+        let mut states: Vec<pb::CombatEffectState> = self
+            .combat_effect_ui_state_by_entity
+            .iter()
+            .map(|(entity_id, state)| pb::CombatEffectState {
+                entity_id: *entity_id,
+                activity: state.activity.clone(),
+                target_id: state.target_id,
+                attack_id: state.attack_id.clone(),
+                updated_tick: state.updated_tick,
+            })
+            .collect();
+        states.sort_by_key(|state| state.entity_id);
+        states
+    }
+
     /// Run one tick (for tests). Does not wait for ticker.
     pub async fn run_one_tick(&mut self) -> Result<()> {
         let dt = 1.0 / self.cfg.tps as f32;
@@ -2145,6 +2228,8 @@ impl Engine {
             &self.state,
             &self.prev_collector_ui_state_by_entity,
             &self.collector_ui_state_by_entity,
+            &self.prev_combat_effect_ui_state_by_entity,
+            &self.combat_effect_ui_state_by_entity,
             self.cfg.eps_pos,
             self.cfg.eps_vel,
         );
@@ -2156,9 +2241,15 @@ impl Engine {
         if self.state.tick % snapshot_interval == 0 {
             let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
             let collector_states = self.collector_states_for_stream();
+            let combat_effect_states = self.combat_effect_states_for_stream();
             let _ = self
                 .redis
-                .publish_snapshot(&self.state, boundary, collector_states)
+                .publish_snapshot(
+                    &self.state,
+                    boundary,
+                    collector_states,
+                    combat_effect_states,
+                )
                 .await;
         }
         if self.state.tick % (self.cfg.tps as u64) == 0 {
@@ -2166,6 +2257,7 @@ impl Engine {
         }
         self.prev_state = self.state.clone();
         self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
+        self.prev_combat_effect_ui_state_by_entity = self.combat_effect_ui_state_by_entity.clone();
         Ok(())
     }
 
@@ -2272,6 +2364,8 @@ impl Engine {
                 &self.state,
                 &self.prev_collector_ui_state_by_entity,
                 &self.collector_ui_state_by_entity,
+                &self.prev_combat_effect_ui_state_by_entity,
+                &self.combat_effect_ui_state_by_entity,
                 self.cfg.eps_pos,
                 self.cfg.eps_vel,
             );
@@ -2285,9 +2379,15 @@ impl Engine {
             if self.state.tick % snapshot_interval == 0 {
                 let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
                 let collector_states = self.collector_states_for_stream();
+                let combat_effect_states = self.combat_effect_states_for_stream();
                 if let Err(e) = self
                     .redis
-                    .publish_snapshot(&self.state, boundary, collector_states)
+                    .publish_snapshot(
+                        &self.state,
+                        boundary,
+                        collector_states,
+                        combat_effect_states,
+                    )
                     .await
                 {
                     error!(?e, "snapshot publish failed");
@@ -2301,6 +2401,8 @@ impl Engine {
 
             self.prev_state = self.state.clone();
             self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
+            self.prev_combat_effect_ui_state_by_entity =
+                self.combat_effect_ui_state_by_entity.clone();
         }
     }
 
