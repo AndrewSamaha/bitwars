@@ -25,6 +25,7 @@ export type EntityTypeDef = {
   stop_radius: number;
   mass: number;
   health: number;
+  combat_targetable?: boolean;
   hull_radius?: number;
   combat?: {
     acquisition_range: number;

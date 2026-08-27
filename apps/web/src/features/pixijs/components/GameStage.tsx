@@ -46,7 +46,7 @@ const ZOOM_SENSITIVITY = 0.0015;
 const NON_OWNED_TINT = 0x66_66_66;
 /** M6: Minimap dot colors by ownership */
 const MINIMAP_MY_COLOR = 0x44_aa_ff;
-const MINIMAP_OTHER_COLOR = 0xee_66_44;
+const MINIMAP_HOSTILE_COLOR = 0xef_44_44;
 const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
 const BUILD_PROGRESS_POLL_MS = 500;
 
@@ -365,15 +365,19 @@ export default function GameStage() {
           const vw = Math.max(1, Math.min(vmax.px - vmin.px, MINIMAP_SIZE_PX - vx));
           const vh = Math.max(1, Math.min(vmax.py - vmin.py, MINIMAP_SIZE_PX - vy));
           minimapGraphics.rect(vx, vy, vw, vh).stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
-          // Unit dots (M6: color by ownership — my / other / neutral)
+          // Unit dots: own units are blue; all non-owned combat targets are
+          // red, while planets and other non-targetable entities stay gray.
           const myId = myPlayerIdRef.current;
           for (const e of game.world.with("pos", "id")) {
             const pos = (e as { pos: { x: number; y: number } }).pos;
             const ownerId = (e as { owner_player_id?: string }).owner_player_id;
-            let color = MINIMAP_NEUTRAL_COLOR;
-            if (ownerId !== undefined && ownerId !== "" && ownerId !== "neutral") {
-              color = myId != null && ownerId === myId ? MINIMAP_MY_COLOR : MINIMAP_OTHER_COLOR;
-            }
+            const isOwned = myId != null && ownerId === myId;
+            const isCombatTarget = contentManager.getEntityType(e.entity_type_id?.trim() ?? "")?.combat_targetable === true;
+            const color = isOwned
+              ? MINIMAP_MY_COLOR
+              : isCombatTarget
+                ? MINIMAP_HOSTILE_COLOR
+                : MINIMAP_NEUTRAL_COLOR;
             const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
             if (px >= 0 && px <= MINIMAP_SIZE_PX && py >= 0 && py <= MINIMAP_SIZE_PX) {
               minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
