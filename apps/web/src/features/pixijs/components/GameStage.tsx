@@ -24,6 +24,7 @@ import {
   type EntityVisual,
 } from "@/features/pixijs/renderer/entityVisuals";
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
+import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
 import {
   CELL_SIZE,
   SEED,
@@ -781,13 +782,19 @@ export default function GameStage() {
             const shift = !!origEvent?.shiftKey;
             const ctrl = !!origEvent?.ctrlKey || !!origEvent?.metaKey;
 
-            // Issue the same order to every currently selected unit.
-            for (const id of sel.selectedEntities) {
+            const target = { x: Number(local.x), y: Number(local.y) };
+            const targets = spreadMoveTargets(target, sel.selectedEntities.map((id) => {
+              const entityTypeId = findLiveEntityById(id)?.entity_type_id ?? "";
+              return contentManager.getEntityType(entityTypeId)?.hull_radius ?? 0;
+            }));
+
+            // Issue nearby, non-overlapping destinations to every selected unit.
+            for (const [index, id] of sel.selectedEntities.entries()) {
               const entityIdNum = Number(id);
               if (!Number.isFinite(entityIdNum)) continue;
               intentQueue.handleMoveCommand(
                 entityIdNum,
-                { x: Number(local.x), y: Number(local.y) },
+                targets[index]!,
                 { shift, ctrl },
               );
             }
