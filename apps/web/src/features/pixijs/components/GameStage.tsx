@@ -428,6 +428,16 @@ export default function GameStage() {
             }
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
+          } else if (ev.code === "Space" && !isFocusInEditable()) {
+            const myId = myPlayerIdRef.current;
+            if (!myId) return;
+            const ownedIds = Array.from(game.world.with("id"))
+              .filter((entity) => (entity as any).owner_player_id === myId)
+              .map((entity) => String((entity as any).id));
+            if (ownedIds.length === 0) return;
+            const currentIndex = ownedIds.indexOf(sel.firstSelectedId ?? "");
+            setSelection([ownedIds[(currentIndex + 1) % ownedIds.length]!]);
+            ev.preventDefault();
           } else if (PAN_KEYS.has(ev.code)) {
             if (!isFocusInEditable()) {
               panKeysRef.current.add(ev.code);
@@ -617,19 +627,20 @@ export default function GameStage() {
             const health = Number((e as Entity).health);
             const maxHealth = contentManager.getEntityType(typeId)?.health;
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
-            const shouldShowHealthArc = hasHealth && ((e as any).hover || (isOwned && health < maxHealth));
+            const isSelected = latestSelectorsRef.current.isSelected(id);
+            const shouldShowHealthArc = hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildProgress = buildProgressByEntity.get(String((e as any).id));
             const isBuilding = String((e as any).active_intent_kind).toLowerCase() === "build";
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
-            if ((e as any).hover && !suppressHover) {
+            if (((e as any).hover || isSelected) && !suppressHover) {
               if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
-              // ensure a hover indicator exists as a child after sprite (only for owned so we don't highlight enemy)
+              // Ensure a selection indicator exists after the sprite (only for owned units).
               let hoverIndicator = container.children.find((c) => c.label === 'hoverIndicator') as Graphics | undefined;
               if (isOwned && !hoverIndicator) {
                 hoverIndicator = createHoverIndicator();
                 container.addChild(hoverIndicator);
               }
-              setHovered(e);
+              if ((e as any).hover) setHovered(e);
             } else {
               if (primary) (primary as any).tint = baseTint;
               // remove hover indicator if present
