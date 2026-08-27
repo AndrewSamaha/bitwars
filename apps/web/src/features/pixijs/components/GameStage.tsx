@@ -447,6 +447,14 @@ export default function GameStage() {
             const currentIndex = ownedIds.indexOf(sel.firstSelectedId ?? "");
             setSelection([ownedIds[(currentIndex + 1) % ownedIds.length]!]);
             ev.preventDefault();
+          } else if (ev.code === "KeyZ" && !isFocusInEditable()) {
+            const entity = sel.firstSelectedId ? findLiveEntityById(sel.firstSelectedId) : null;
+            if (!entity?.pos) return;
+            worldContainer.position.set(
+              app.screen.width / 2 - entity.pos.x * worldContainer.scale.x,
+              app.screen.height / 2 - entity.pos.y * worldContainer.scale.y,
+            );
+            ev.preventDefault();
           } else if (PAN_KEYS.has(ev.code)) {
             if (!isFocusInEditable()) {
               panKeysRef.current.add(ev.code);
