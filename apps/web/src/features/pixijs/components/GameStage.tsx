@@ -67,8 +67,9 @@ export default function GameStage() {
   const [moveDebug, setMoveDebug] = useState<string>("idle");
   const { player } = usePlayer();
   const {
-    actions: { setHovered, setApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction },
+    actions: { setHovered, setApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction, setTerminalOpen },
     selectors,
+    refs: { inputRef },
   } = useHUD();
   // Keep latest selectors in a ref so event handlers see current selection/action
   const latestSelectorsRef = useRef(selectors);
@@ -415,7 +416,11 @@ export default function GameStage() {
         // Keyboard: M to set Move, C to issue Collect, Escape to clear; WASD/arrows to pan (M5.1/M8)
         const onKeyDown = (ev: KeyboardEvent) => {
           const sel = latestSelectorsRef.current;
-          if (ev.key === 'm' || ev.key === 'M') {
+          if ((ev.key === "i" || ev.key === "I") && !isFocusInEditable()) {
+            setTerminalOpen(true);
+            requestAnimationFrame(() => inputRef.current?.focus());
+            ev.preventDefault();
+          } else if (ev.key === 'm' || ev.key === 'M') {
             if (sel.hasSelection) setSelectedAction('Move');
           } else if (ev.key === 'c' || ev.key === 'C') {
             if (sel.hasSelection) {
