@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use rand::seq::SliceRandom;
 use tracing::debug;
 
 use crate::pb::{Entity, Vec2};
@@ -8,6 +9,15 @@ use crate::spawn_config::{Loadout, NeutralNearSpawn, SpawnConfig, NEUTRAL_OWNER}
 
 const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
 const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
+const STAR_COUNT: usize = 100;
+const STAR_FIELD_HALF_SIZE: f32 = 55_000.0;
+const MIN_STAR_DISTANCE: f32 = 7_500.0;
+const MAX_STAR_POSITION_ATTEMPTS: usize = STAR_COUNT * 500;
+const PLANET_COUNT: usize = STAR_COUNT * 3 / 4;
+// Keep planets well outside a star's 1,200-unit radiation range while leaving
+// room for a player loadout to spawn 200–800 units from the planet.
+const PLANET_MIN_DISTANCE_FROM_STAR: f32 = 3_000.0;
+const PLANET_MAX_DISTANCE_FROM_STAR: f32 = 4_500.0;
 
 /// M7: Per-player resource totals. Outer key = player_id, inner key = resource_type_id.
 pub type ResourceLedger = HashMap<String, HashMap<String, i64>>;
@@ -31,6 +41,57 @@ pub fn init_world(spawn_config: &SpawnConfig) -> GameState {
         tick: 0,
         entities: Vec::new(),
         ledger: ResourceLedger::new(),
+    }
+}
+
+/// Creates the fixed neutral celestial field once, before any players join.
+pub fn spawn_celestial_field(
+    entities: &mut Vec<Entity>,
+    content: &ContentPack,
+    spawn_config: &SpawnConfig,
+    rng: &mut impl rand::Rng,
+) {
+    let mut next_id = entities.iter().map(|entity| entity.id).max().unwrap_or(0) + 1;
+    let mut star_positions = Vec::with_capacity(STAR_COUNT);
+    for _ in 0..MAX_STAR_POSITION_ATTEMPTS {
+        if star_positions.len() == STAR_COUNT {
+            break;
+        }
+        let x = spawn_config.origin_x() + rng.gen_range(-STAR_FIELD_HALF_SIZE..=STAR_FIELD_HALF_SIZE);
+        let y = spawn_config.origin_y() + rng.gen_range(-STAR_FIELD_HALF_SIZE..=STAR_FIELD_HALF_SIZE);
+        if star_positions.iter().all(|&(other_x, other_y)| {
+            squared_distance(x, y, other_x, other_y) >= MIN_STAR_DISTANCE * MIN_STAR_DISTANCE
+        }) {
+            star_positions.push((x, y));
+            entities.push(neutral_entity(next_id, "star_yellow", x, y, content));
+            next_id += 1;
+        }
+    }
+    assert_eq!(star_positions.len(), STAR_COUNT, "celestial field could not place all stars");
+
+    star_positions.shuffle(rng);
+    for (star_x, star_y) in star_positions.into_iter().take(PLANET_COUNT) {
+        let (x, y) = sample_position_in_annulus(
+            star_x,
+            star_y,
+            PLANET_MIN_DISTANCE_FROM_STAR,
+            PLANET_MAX_DISTANCE_FROM_STAR,
+            rng,
+        );
+        entities.push(neutral_entity(next_id, "planet_blue", x, y, content));
+        next_id += 1;
+    }
+}
+
+fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &ContentPack) -> Entity {
+    Entity {
+        id,
+        entity_type_id: entity_type_id.to_string(),
+        pos: Some(Vec2 { x, y }),
+        vel: Some(Vec2 { x: 0.0, y: 0.0 }),
+        force: Some(Vec2 { x: 0.0, y: 0.0 }),
+        owner_player_id: NEUTRAL_OWNER.to_string(),
+        health: content.get(entity_type_id).map(|def| def.health.max(0.0)).unwrap_or(0.0),
     }
 }
 
@@ -250,4 +311,31 @@ pub fn log_sample(state: &GameState) {
         }
     }
     debug!("tick={} | {}", state.tick, out);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+
+    #[test]
+    fn celestial_field_has_one_hundred_stars_and_seventy_five_planets() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
+        let config = SpawnConfig::load(&root.join("services/rts-engine/config/spawn.yaml")).unwrap();
+        let mut entities = Vec::new();
+        spawn_celestial_field(&mut entities, &content, &config, &mut rand::rngs::StdRng::seed_from_u64(1));
+
+        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "star_yellow").count(), STAR_COUNT);
+        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "planet_blue").count(), PLANET_COUNT);
+        let stars: Vec<_> = entities.iter().filter(|entity| entity.entity_type_id == "star_yellow").collect();
+        let mean_nearest_distance = stars.iter().map(|star| {
+            let position = star.pos.as_ref().unwrap();
+            stars.iter().filter(|other| other.id != star.id).map(|other| {
+                let other_position = other.pos.as_ref().unwrap();
+                squared_distance(position.x, position.y, other_position.x, other_position.y).sqrt()
+            }).fold(f32::INFINITY, f32::min)
+        }).sum::<f32>() / STAR_COUNT as f32;
+        assert!((8_000.0..=12_000.0).contains(&mean_nearest_distance));
+    }
 }
