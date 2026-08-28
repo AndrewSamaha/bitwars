@@ -73,6 +73,12 @@ pub struct EntityTypeDef {
     /// Per-resource upkeep charged to the entity owner, in units per minute.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub maintenance_cost_per_minute: HashMap<String, f32>,
+    /// Optional area sensor. Its operating costs are charged continuously.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sensor: Option<SensorDef>,
+    /// Target-side detection range used to extend a player's sensor coverage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility_range: Option<f32>,
     /// Units this entity type can produce.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub builds: Vec<BuildOptionDef>,
@@ -137,6 +143,16 @@ pub struct BuildOptionDef {
     /// Resource conversion rates. A missing required resource defaults to 1/s.
     #[serde(default)]
     pub spend_rates: HashMap<String, f32>,
+}
+
+/// Content-defined sensor available to any entity type.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SensorDef {
+    /// Per-resource operating cost, in units per minute.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub cost_per_minute: HashMap<String, f32>,
+    /// Circular detection radius in world units.
+    pub range: f32,
 }
 
 /// M7: Per-resource-type definition for display (name, order) in HUD.
@@ -363,6 +379,8 @@ mod tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -386,6 +404,8 @@ mod tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -420,6 +440,8 @@ mod tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -443,6 +465,8 @@ mod tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -468,6 +492,8 @@ mod tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -491,6 +517,8 @@ mod tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -525,6 +553,10 @@ mod tests {
             pack.entity_types.contains_key("scout"),
             "should have scout type"
         );
+        let habitat_sensor = pack.entity_types["habitat"].sensor.as_ref().unwrap();
+        assert_eq!(habitat_sensor.range, 4000.0);
+        assert_eq!(habitat_sensor.cost_per_minute["energy"], 5.0);
+        assert_eq!(pack.entity_types["star_yellow"].visibility_range, Some(40_000.0));
         assert!(
             !pack.content_hash.is_empty(),
             "content hash should be non-empty"

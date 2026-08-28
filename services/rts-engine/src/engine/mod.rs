@@ -230,6 +230,8 @@ mod radiation_tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -262,6 +264,8 @@ mod radiation_tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -285,6 +289,8 @@ mod radiation_tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -1073,13 +1079,17 @@ impl Engine {
             let Some(def) = content.get(&entity.entity_type_id) else {
                 continue;
             };
-            for (resource_type, per_minute) in &def.maintenance_cost_per_minute {
-                if !per_minute.is_finite() || *per_minute <= 0.0 {
-                    continue;
+            for costs in std::iter::once(&def.maintenance_cost_per_minute)
+                .chain(def.sensor.iter().map(|sensor| &sensor.cost_per_minute))
+            {
+                for (resource_type, per_minute) in costs {
+                    if !per_minute.is_finite() || *per_minute <= 0.0 {
+                        continue;
+                    }
+                    *totals
+                        .entry((entity.owner_player_id.clone(), resource_type.clone()))
+                        .or_insert(0.0) += per_minute * dt / 60.0;
                 }
-                *totals
-                    .entry((entity.owner_player_id.clone(), resource_type.clone()))
-                    .or_insert(0.0) += per_minute * dt / 60.0;
             }
         }
 

@@ -50,6 +50,13 @@ export type EntityTypeDef = {
   build_cost?: Record<string, number>;
   /** Per-resource upkeep charged to the owner, in units per minute. */
   maintenance_cost_per_minute?: Record<string, number>;
+  /** Optional circular sensor available to any entity type. */
+  sensor?: {
+    cost_per_minute?: Record<string, number>;
+    range: number;
+  };
+  /** Target-side detection range used to extend player sensor coverage. */
+  visibility_range?: number;
   /** Content-defined production options offered by this entity type. */
   builds?: Array<{
     entity_type_id: string;
