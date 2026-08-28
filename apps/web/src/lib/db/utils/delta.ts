@@ -4,6 +4,7 @@ import { mapDeltaToJson } from "@/lib/db/utils/protobuf";
 import { EventsStreamRecordSchema } from "@bitwars/shared/gen/intent_pb";
 import { fromBinary } from "@bufbuild/protobuf";
 import { stringify as uuidStringify } from "uuid";
+import type { VisibilityFilter } from "@/lib/db/utils/visibility";
 
 function bufferToEventsStreamRecord(buf: Buffer) {
   try {
@@ -29,7 +30,8 @@ export async function emitEventFromBuffer(
   channel: SseChannel,
   id: string,
   dataBuf: Buffer,
-  logErr: (...args: any[]) => void
+  logErr: (...args: any[]) => void,
+  visibility?: VisibilityFilter,
 ): Promise<void> {
   const record = bufferToEventsStreamRecord(dataBuf);
   if (!record || !record.record) {
@@ -39,6 +41,7 @@ export async function emitEventFromBuffer(
 
   switch (record.record.case) {
     case "lifecycle": {
+      if (visibility && record.record.value.playerId !== visibility.playerId) break;
       const payload = {
         type: "lifecycle",
         intentId: uuidBytesToString(record.record.value.intentId),
@@ -54,7 +57,8 @@ export async function emitEventFromBuffer(
     }
     case "delta": {
       const deltaJson = mapDeltaToJson(record.record.value as any);
-      await channel.write(sseFormat({ event: "delta", id, data: deltaJson }));
+      const filtered = visibility ? visibility.filterDelta(deltaJson) : deltaJson;
+      if (filtered) await channel.write(sseFormat({ event: "delta", id, data: filtered }));
       break;
     }
     case "laserShot": {
@@ -67,7 +71,9 @@ export async function emitEventFromBuffer(
         target: shot.target ? { x: shot.target.x, y: shot.target.y } : undefined,
         server_tick: shot.serverTick.toString(),
       };
-      await channel.write(sseFormat({ event: "laser-shot", id, data: payload }));
+      if (!visibility || (payload.origin && visibility.isPositionVisible(payload.origin)) || (payload.target && visibility.isPositionVisible(payload.target))) {
+        await channel.write(sseFormat({ event: "laser-shot", id, data: payload }));
+      }
       break;
     }
     default:

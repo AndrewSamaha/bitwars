@@ -6,6 +6,7 @@ import type { SseChannel } from "@/lib/db/utils/sse-channel";
 import { xRangeWithBuffers } from "@/lib/db/utils/redis-streams";
 import { emitEventFromBuffer } from "@/lib/db/utils/delta";
 import { logger } from "@/lib/axiom/server";
+import type { VisibilityFilter } from "@/lib/db/utils/visibility";
 
 const XRANGE_BATCH_COUNT = 512;
 
@@ -13,7 +14,8 @@ export async function bootstrapAndCatchUp(
   gameId: string,
   channel: SseChannel,
   isClosed: () => boolean,
-  logErr: (...args: any[]) => void
+  logErr: (...args: any[]) => void,
+  visibility?: VisibilityFilter,
 ): Promise<string | undefined> {
   const keySnapshot = `snapshot:${gameId}`;
   const keySnapshotMeta = `snapshot_meta:${gameId}`;
@@ -38,6 +40,7 @@ export async function bootstrapAndCatchUp(
   try {
     const snapshot = decodeSnapshotBinary(snapshotBuf);
     const payload = mapSnapshotToJson(snapshot as any);
+    const visiblePayload = visibility ? visibility.filterSnapshot(payload) : payload;
     const entCount = Array.isArray((payload as any)?.entities) ? (payload as any).entities.length : 0;
     let concerningEntities = 0;
     let greatEntities = 0;
@@ -50,7 +53,7 @@ export async function bootstrapAndCatchUp(
     }
     logger.info("v2/bootstrap:snapshot", { GAME_ID: gameId, boundaryId: boundaryId || null, entCount, concerningEntities, greatEntities });
     await channel.write(
-      sseFormat({ event: "snapshot", id: boundaryId || "0-0", data: payload })
+      sseFormat({ event: "snapshot", id: boundaryId || "0-0", data: visiblePayload })
     );
   } catch (e) {
     logErr("snapshot decode error", e);
@@ -75,7 +78,7 @@ export async function bootstrapAndCatchUp(
       const id = ent.id;
       const dataBuf = ent.data;
       if (!dataBuf) continue;
-      await emitEventFromBuffer(channel, id, dataBuf, (msg, e) => logErr(`${msg} (gap)`, e));
+      await emitEventFromBuffer(channel, id, dataBuf, (msg, e) => logErr(`${msg} (gap)`, e), visibility);
       if (firstEmitCount < 5) {
         firstEmitCount++;
         logger.debug("v2/bootstrap:emit:first", { GAME_ID: gameId, id, size: dataBuf.length });
