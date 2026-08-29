@@ -28,6 +28,8 @@ type DeltaPayload = {
   type: "delta";
   tick: number | string;
   removed_entity_ids?: Array<number | string>;
+  /** Connection-local visibility loss, not an authoritative world removal. */
+  hidden_entity_ids?: Array<number | string>;
   updates: StreamEntity[];
   collector_state_updates?: Array<{ entity_id: number | string }>;
   combat_effect_state_updates?: Array<{ entity_id: number | string }>;
@@ -62,6 +64,7 @@ export class VisibilityFilter {
   filterDelta(delta: DeltaPayload): DeltaPayload | undefined {
     const wasVisible = new Set(this.visible);
     const removed: Array<number | string> = [];
+    const hidden: Array<number | string> = [];
     for (const id of delta.removed_entity_ids ?? []) {
       const key = idOf(id);
       if (wasVisible.has(key)) removed.push(id);
@@ -78,7 +81,7 @@ export class VisibilityFilter {
       if (!wasVisible.has(key) && nowVisible.has(key)) {
         updates.push(entity);
       } else if (wasVisible.has(key) && !nowVisible.has(key)) {
-        removed.push(entity.id);
+        hidden.push(entity.id);
       }
     }
     for (const update of delta.updates) {
@@ -89,8 +92,15 @@ export class VisibilityFilter {
 
     const collector_state_updates = delta.collector_state_updates?.filter((state) => nowVisible.has(idOf(state.entity_id)));
     const combat_effect_state_updates = delta.combat_effect_state_updates?.filter((state) => nowVisible.has(idOf(state.entity_id)));
-    if (updates.length === 0 && removed.length === 0 && !collector_state_updates?.length && !combat_effect_state_updates?.length) return undefined;
-    return { ...delta, removed_entity_ids: removed, updates, collector_state_updates, combat_effect_state_updates };
+    if (updates.length === 0 && removed.length === 0 && hidden.length === 0 && !collector_state_updates?.length && !combat_effect_state_updates?.length) return undefined;
+    return {
+      ...delta,
+      removed_entity_ids: removed,
+      hidden_entity_ids: hidden,
+      updates,
+      collector_state_updates,
+      combat_effect_state_updates,
+    };
   }
 
   isPositionVisible(position: Pos): boolean {

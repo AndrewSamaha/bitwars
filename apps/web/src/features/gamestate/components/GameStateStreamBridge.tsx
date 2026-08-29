@@ -56,6 +56,7 @@ type DeltaPayload = {
   type: "delta";
   tick: number | string;
   removed_entity_ids?: Array<number | string>;
+  hidden_entity_ids?: Array<number | string>;
   updates: Array<{
     id: number | string;
     entity_type_id?: string;
@@ -287,6 +288,19 @@ export default function GameStateStreamBridge() {
     const applyDelta = (payload: DeltaPayload) => {
       let existingEntities = 0;
       let newEntities = 0;
+      // Fog-of-war loss only removes local presentation; it is not a death.
+      for (const id of payload.hidden_entity_ids ?? []) {
+        const key = normalizeId(id);
+        const existing = byId.get(key);
+        if (!existing) continue;
+        try {
+          // @ts-ignore - sprite is optional
+          existing.sprite?.destroy?.();
+        } catch {}
+        world.remove(existing);
+        byId.delete(key);
+        activeIntentByEntityRef.current.delete(key);
+      }
       for (const id of payload.removed_entity_ids ?? []) {
         const key = normalizeId(id);
         const existing = byId.get(key);
@@ -360,6 +374,7 @@ export default function GameStateStreamBridge() {
       if (typeof window !== "undefined") {
         dispatchGameStateUpdated([
           ...(payload.removed_entity_ids ?? []).map(normalizeId),
+          ...(payload.hidden_entity_ids ?? []).map(normalizeId),
           ...payload.updates.map((update) => normalizeId(update.id)),
           ...(payload.collector_state_updates ?? []).map((state) => normalizeId(state.entity_id)),
           ...(payload.combat_effect_state_updates ?? []).map((state) => normalizeId(state.entity_id)),

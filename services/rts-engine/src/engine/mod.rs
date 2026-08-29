@@ -14,7 +14,10 @@ use crate::config::GameConfig;
 use crate::content::{CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
-use crate::io::redis::{CollectorUiState, CombatEffectUiState, IntentPoint, RedisClient};
+use crate::io::redis::{
+    CollectorUiState, CombatEffectUiState, GameplayEntityRef, GameplayEvent, IntentPoint,
+    RedisClient,
+};
 use crate::io::telemetry::Telemetry;
 use crate::npc_scripting::RaiderScript;
 use crate::pb::{self, intent_envelope};
@@ -24,7 +27,7 @@ use crate::spawn_config::NEUTRAL_OWNER;
 use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 6;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 7;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
 const COLLECTOR_ACTIVITY_IDLE: &str = "idle";
@@ -697,6 +700,39 @@ fn should_publish_delta(delta: &pb::Delta) -> bool {
         || !delta.combat_effect_state_updates.is_empty()
 }
 
+fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<String> {
+    let mut recipients = Vec::new();
+    for owner in [victim_owner, attacker_owner] {
+        if !owner.is_empty() && owner != NEUTRAL_OWNER && !recipients.iter().any(|id| id == owner) {
+            recipients.push(owner.to_string());
+        }
+    }
+    recipients
+}
+
+fn gameplay_entity_ref(entity: &pb::Entity) -> GameplayEntityRef {
+    GameplayEntityRef {
+        entity_id: entity.id,
+        entity_type_id: entity.entity_type_id.clone(),
+        owner_player_id: entity.owner_player_id.clone(),
+    }
+}
+
+fn entity_position(entity: &pb::Entity) -> IntentPoint {
+    let position = entity.pos.as_ref();
+    IntentPoint {
+        x: position.map(|pos| pos.x).unwrap_or(0.0),
+        y: position.map(|pos| pos.y).unwrap_or(0.0),
+    }
+}
+
+fn unix_time_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
 impl Engine {
     pub async fn new(cfg: GameConfig) -> anyhow::Result<Self> {
         let mut redis = RedisClient::connect(&cfg.redis_url, cfg.game_id.clone()).await?;
@@ -855,7 +891,12 @@ impl Engine {
 
         let mut state = init_world(&spawn_config);
         if let Some(content) = content.as_ref() {
-            spawn_celestial_field(&mut state.entities, content, &spawn_config, &mut rand::thread_rng());
+            spawn_celestial_field(
+                &mut state.entities,
+                content,
+                &spawn_config,
+                &mut rand::thread_rng(),
+            );
         }
         info!(
             "Initialized world: entities={}, tps={}, friction={}",
@@ -926,9 +967,16 @@ impl Engine {
         };
 
         let mut rng = rand::thread_rng();
-        let planets: Vec<_> = self.state.entities.iter().filter_map(|entity| {
-            (entity.entity_type_id == "planet_blue").then_some(entity.pos.as_ref()).flatten()
-        }).collect();
+        let planets: Vec<_> = self
+            .state
+            .entities
+            .iter()
+            .filter_map(|entity| {
+                (entity.entity_type_id == "planet_blue")
+                    .then_some(entity.pos.as_ref())
+                    .flatten()
+            })
+            .collect();
         let Some(planet) = planets.choose(&mut rng) else {
             anyhow::bail!("cannot spawn player: celestial field has no planet_blue");
         };
@@ -1545,6 +1593,7 @@ impl Engine {
                 dead_entity_ids: Vec::new(),
                 laser_shots: Vec::new(),
                 dismantling: Vec::new(),
+                destructions: Vec::new(),
             };
         };
         let commanded_entity_ids: HashSet<u64> =
@@ -1653,6 +1702,71 @@ impl Engine {
                     attacker_id = shot.attacker_id,
                     target_id = shot.target_id,
                     "failed to publish laser shot"
+                );
+            }
+        }
+    }
+
+    async fn emit_combat_destructions(
+        &mut self,
+        destructions: &[crate::combat::CombatDestruction],
+    ) {
+        for destruction in destructions {
+            let recipients = gameplay_event_recipients(
+                &destruction.victim.owner_player_id,
+                &destruction.attacker_owner_player_id,
+            );
+            if recipients.is_empty() {
+                continue;
+            }
+            let event = GameplayEvent {
+                event_type: "entity_destroyed".to_string(),
+                server_tick: self.state.tick,
+                occurred_at_ms: unix_time_ms(),
+                victim: gameplay_entity_ref(&destruction.victim),
+                attacker: Some(GameplayEntityRef {
+                    entity_id: destruction.attacker_id,
+                    entity_type_id: destruction.attacker_entity_type_id.clone(),
+                    owner_player_id: destruction.attacker_owner_player_id.clone(),
+                }),
+                cause: match destruction.cause {
+                    crate::content::AttackType::Laser => "laser".to_string(),
+                    crate::content::AttackType::Dismantle => "dismantle".to_string(),
+                },
+                position: entity_position(&destruction.victim),
+                recipients,
+            };
+            if let Err(error) = self.redis.publish_gameplay_event(&event).await {
+                warn!(
+                    ?error,
+                    victim_id = destruction.victim.id,
+                    "failed to publish gameplay destruction event"
+                );
+            }
+        }
+    }
+
+    async fn emit_radiation_destructions(&mut self, victims: &[pb::Entity]) {
+        for victim in victims {
+            let recipients = gameplay_event_recipients(&victim.owner_player_id, "");
+            if recipients.is_empty() {
+                continue;
+            }
+            let event = GameplayEvent {
+                event_type: "entity_destroyed".to_string(),
+                server_tick: self.state.tick,
+                occurred_at_ms: unix_time_ms(),
+                victim: gameplay_entity_ref(victim),
+                attacker: None,
+                cause: "radiation".to_string(),
+                position: entity_position(victim),
+                recipients,
+            };
+            if let Err(error) = self.redis.publish_gameplay_event(&event).await {
+                warn!(
+                    ?error,
+                    victim_id = victim.id,
+                    "failed to publish gameplay radiation-destruction event"
                 );
             }
         }
@@ -2232,12 +2346,21 @@ impl Engine {
         }
         let combat = self.apply_autonomous_combat(dt);
         self.emit_laser_shots(&combat.laser_shots).await;
+        self.emit_combat_destructions(&combat.destructions).await;
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_resource_collection(dt);
         self.advance_builds(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
         self.apply_radiation_damage(dt);
+        let radiation_victims: Vec<pb::Entity> = self
+            .state
+            .entities
+            .iter()
+            .filter(|entity| entity.health <= 0.0)
+            .cloned()
+            .collect();
         let radiation_dead_entity_ids = self.remove_zero_health_entities();
+        self.emit_radiation_destructions(&radiation_victims).await;
         self.cancel_destroyed_intents(&radiation_dead_entity_ids)
             .await;
         self.state.tick += 1;
@@ -2366,13 +2489,22 @@ impl Engine {
             }
             let combat = self.apply_autonomous_combat(dt);
             self.emit_laser_shots(&combat.laser_shots).await;
+            self.emit_combat_destructions(&combat.destructions).await;
             self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
             self.apply_maintenance_costs(dt);
             integrate(&self.cfg, &mut self.state, dt);
             self.apply_radiation_damage(dt);
+            let radiation_victims: Vec<pb::Entity> = self
+                .state
+                .entities
+                .iter()
+                .filter(|entity| entity.health <= 0.0)
+                .cloned()
+                .collect();
             let radiation_dead_entity_ids = self.remove_zero_health_entities();
+            self.emit_radiation_destructions(&radiation_victims).await;
             self.cancel_destroyed_intents(&radiation_dead_entity_ids)
                 .await;
             self.state.tick += 1;
