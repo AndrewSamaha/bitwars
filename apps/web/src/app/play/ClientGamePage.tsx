@@ -1,6 +1,7 @@
 "use client";
 
 import GameStage from "@/features/pixijs/components/GameStage";
+import AudioEventBridge from "@/features/audio/components/AudioEventBridge";
 import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge";
 import GameStreamGate from "@/features/gamestate/components/GameStreamGate";
 import { HUDProvider } from "@/features/hud/components/HUDContext";
@@ -39,11 +40,12 @@ function GameClientShell() {
         aria-hidden={fading}
       >
         <GameStreamGate>
-            <GameStateStreamBridge />
-            <ResourceHUD />
-            <EntityDetailPanel />
-            <IntentQueuePanel />
-            <GameStage />
+          <AudioEventBridge />
+          <GameStateStreamBridge />
+          <ResourceHUD />
+          <EntityDetailPanel />
+          <IntentQueuePanel />
+          <GameStage />
         </GameStreamGate>
       </div>
       <TerminalPanel />

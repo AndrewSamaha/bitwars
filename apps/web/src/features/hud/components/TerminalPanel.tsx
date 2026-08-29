@@ -4,6 +4,7 @@ import { useEffect, useCallback, useState } from "react";
 import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { audio } from "@/features/audio/audioManager";
 import EntitiesStreamCounter from "@/features/gamestate/components/EntitiesStreamCounter";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount";
@@ -46,8 +47,11 @@ export default function TerminalPanel() {
       setCommandRunning(true);
       try {
         if (status === "logged-out") {
+          // Must run inside the form submit gesture, before the login request awaits.
+          void audio.unlock();
           actions.pushCommandHistory({ command: `BitWars login: ${cmd}`, output: "Authenticating…" });
           const output = await login(cmd);
+          audio.playMusic();
           actions.pushCommandHistory({ command: "", output });
           return;
         }
