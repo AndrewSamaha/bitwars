@@ -9,8 +9,20 @@ export enum BackgroundMusicState {
   Exploration = "exploration",
 }
 
+/** Semantic game events that have a registered sound effect. */
+export enum SoundEffect {
+  EntityExplosion = "entity-explosion",
+}
+
 const backgroundMusicSources: Record<BackgroundMusicState, AudioSource> = {
   [BackgroundMusicState.Exploration]: "/audio/music/exploration_theme.ogg",
+};
+
+const soundEffectDefinitions: Record<SoundEffect, { source: AudioSource; options: SfxOptions }> = {
+  [SoundEffect.EntityExplosion]: {
+    source: "/audio/sfx/explosion/DeathFlash.flac",
+    options: { volume: 0.7, pool: 8 },
+  },
 };
 
 type MusicOptions = {
@@ -132,6 +144,12 @@ class AudioManager {
     });
 
     this.effects.set(name, { sound, sourceVolume });
+  }
+
+  /** Registers one of the sound effects declared by the game's audio catalog. */
+  registerSoundEffect(effect: SoundEffect): void {
+    const { source, options } = soundEffectDefinitions[effect];
+    this.registerSfx(effect, source, options);
   }
 
   unregisterSfx(name: string): void {
