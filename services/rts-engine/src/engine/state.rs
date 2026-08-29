@@ -10,9 +10,7 @@ use crate::spawn_config::{Loadout, NeutralNearSpawn, SpawnConfig, NEUTRAL_OWNER}
 const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
 const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
 const STAR_COUNT: usize = 100;
-const STAR_FIELD_HALF_SIZE: f32 = 55_000.0;
-const MIN_STAR_DISTANCE: f32 = 7_500.0;
-const MAX_STAR_POSITION_ATTEMPTS: usize = STAR_COUNT * 500;
+const STAR_FIELD_STANDARD_DEVIATION: f32 = 50_000.0;
 const PLANET_COUNT: usize = STAR_COUNT * 3 / 4;
 // Keep planets well outside a star's 1,200-unit radiation range while leaving
 // room for a player loadout to spawn 200–800 units from the planet.
@@ -53,21 +51,17 @@ pub fn spawn_celestial_field(
 ) {
     let mut next_id = entities.iter().map(|entity| entity.id).max().unwrap_or(0) + 1;
     let mut star_positions = Vec::with_capacity(STAR_COUNT);
-    for _ in 0..MAX_STAR_POSITION_ATTEMPTS {
-        if star_positions.len() == STAR_COUNT {
-            break;
-        }
-        let x = spawn_config.origin_x() + rng.gen_range(-STAR_FIELD_HALF_SIZE..=STAR_FIELD_HALF_SIZE);
-        let y = spawn_config.origin_y() + rng.gen_range(-STAR_FIELD_HALF_SIZE..=STAR_FIELD_HALF_SIZE);
-        if star_positions.iter().all(|&(other_x, other_y)| {
-            squared_distance(x, y, other_x, other_y) >= MIN_STAR_DISTANCE * MIN_STAR_DISTANCE
-        }) {
-            star_positions.push((x, y));
-            entities.push(neutral_entity(next_id, "star_yellow", x, y, content));
-            next_id += 1;
-        }
+    for _ in 0..STAR_COUNT {
+        let (x, y) = sample_normal_position(
+            spawn_config.origin_x(),
+            spawn_config.origin_y(),
+            STAR_FIELD_STANDARD_DEVIATION,
+            rng,
+        );
+        star_positions.push((x, y));
+        entities.push(neutral_entity(next_id, "star_yellow", x, y, content));
+        next_id += 1;
     }
-    assert_eq!(star_positions.len(), STAR_COUNT, "celestial field could not place all stars");
 
     star_positions.shuffle(rng);
     for (star_x, star_y) in star_positions.into_iter().take(PLANET_COUNT) {
@@ -81,6 +75,24 @@ pub fn spawn_celestial_field(
         entities.push(neutral_entity(next_id, "planet_blue", x, y, content));
         next_id += 1;
     }
+}
+
+/// Samples independent normal X/Y coordinates around an origin using Box-Muller.
+fn sample_normal_position(
+    origin_x: f32,
+    origin_y: f32,
+    standard_deviation: f32,
+    rng: &mut impl rand::Rng,
+) -> (f32, f32) {
+    // Never let u1 be zero: ln(0) would produce an infinite sample.
+    let u1 = rng.gen_range(f32::MIN_POSITIVE..1.0);
+    let u2 = rng.gen_range(0.0..1.0);
+    let radius = (-2.0 * u1.ln()).sqrt() * standard_deviation;
+    let angle = std::f32::consts::TAU * u2;
+    (
+        origin_x + radius * angle.cos(),
+        origin_y + radius * angle.sin(),
+    )
 }
 
 fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &ContentPack) -> Entity {
@@ -328,14 +340,33 @@ mod tests {
 
         assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "star_yellow").count(), STAR_COUNT);
         assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "planet_blue").count(), PLANET_COUNT);
-        let stars: Vec<_> = entities.iter().filter(|entity| entity.entity_type_id == "star_yellow").collect();
-        let mean_nearest_distance = stars.iter().map(|star| {
-            let position = star.pos.as_ref().unwrap();
-            stars.iter().filter(|other| other.id != star.id).map(|other| {
-                let other_position = other.pos.as_ref().unwrap();
-                squared_distance(position.x, position.y, other_position.x, other_position.y).sqrt()
-            }).fold(f32::INFINITY, f32::min)
-        }).sum::<f32>() / STAR_COUNT as f32;
-        assert!((8_000.0..=12_000.0).contains(&mean_nearest_distance));
+    }
+
+    #[test]
+    fn normal_star_position_sampler_is_centered_with_requested_standard_deviation() {
+        const SAMPLE_COUNT: usize = 10_000;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(2);
+        let positions: Vec<_> = (0..SAMPLE_COUNT)
+            .map(|_| sample_normal_position(0.0, 0.0, STAR_FIELD_STANDARD_DEVIATION, &mut rng))
+            .collect();
+        let mean_x = positions.iter().map(|(x, _)| x).sum::<f32>() / SAMPLE_COUNT as f32;
+        let mean_y = positions.iter().map(|(_, y)| y).sum::<f32>() / SAMPLE_COUNT as f32;
+        let standard_deviation_x = (positions
+            .iter()
+            .map(|(x, _)| (x - mean_x).powi(2))
+            .sum::<f32>()
+            / SAMPLE_COUNT as f32)
+            .sqrt();
+        let standard_deviation_y = (positions
+            .iter()
+            .map(|(_, y)| (y - mean_y).powi(2))
+            .sum::<f32>()
+            / SAMPLE_COUNT as f32)
+            .sqrt();
+
+        assert!(mean_x.abs() < 2_000.0);
+        assert!(mean_y.abs() < 2_000.0);
+        assert!((48_000.0..=52_000.0).contains(&standard_deviation_x));
+        assert!((48_000.0..=52_000.0).contains(&standard_deviation_y));
     }
 }

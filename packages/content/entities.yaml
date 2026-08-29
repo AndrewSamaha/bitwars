@@ -32,6 +32,18 @@ entity_types:
     stop_radius: 0.75
     mass: 500.0
     health: 100.0
+    radiation_sources:
+      - radiation_type: theta
+        min_effective_distance_border_color:
+        min_effective_distance_fill_color: "#ef4444"
+        full_damage_distance_border_color:
+        full_damage_distance_fill_color: "#f97316"
+        max_effective_distance_border_color:
+        max_effective_distance_fill_color: "#facc15"
+        min_effective_distance: 0.0
+        full_damage_distance: 900.0
+        max_effective_distance: 1200.0
+        damage_per_second: 6.0
     resource_node:
       resource_type: energy
       collection_mode: proximity
@@ -163,7 +175,7 @@ entity_types:
     hull_radius: 18.0
     combat_targetable: true
     refinery:
-      accepts: [food]
+      accepts: [food,minerals]
     build_cost:
       minerals: 1000.0
       energy: 1000.0
