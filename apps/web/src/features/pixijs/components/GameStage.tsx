@@ -13,9 +13,8 @@ import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hu
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
 import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from "@/features/pixijs/effects/renderEffects";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
-import { audio, SoundEffect } from "@/features/audio/audioManager";
 import { contentManager } from "@/features/content/contentManager";
-import { ENTITY_DESPAWN_EVENT } from "@/features/gamestate/events";
+import { ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
 import {
   createGameEntityVisual,
   createGameWorldContainer,
@@ -219,14 +218,12 @@ export default function GameStage() {
         };
 
         const despawnExplosions = createDespawnExplosionSystem(worldContainer);
-        audio.registerSoundEffect(SoundEffect.EntityExplosion);
-        const onEntityDespawn = (event: Event) => {
+        const onEntityExploded = (event: Event) => {
           const entity = (event as CustomEvent<Entity>).detail;
           if (!entity) return;
           despawnExplosions.explode(entity);
-          audio.playSfx(SoundEffect.EntityExplosion);
         };
-        window.addEventListener(ENTITY_DESPAWN_EVENT, onEntityDespawn);
+        window.addEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
 
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
@@ -1037,8 +1034,7 @@ export default function GameStage() {
           window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
-          window.removeEventListener(ENTITY_DESPAWN_EVENT, onEntityDespawn);
-          audio.unregisterSfx(SoundEffect.EntityExplosion);
+          window.removeEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
           despawnExplosions.destroy();
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });

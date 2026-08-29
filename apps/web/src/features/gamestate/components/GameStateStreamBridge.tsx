@@ -7,7 +7,7 @@ import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
-import { dispatchEntityDespawn, dispatchGameStateUpdated } from "@/features/gamestate/events";
+import { dispatchEntityExploded, dispatchGameStateUpdated } from "@/features/gamestate/events";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -305,7 +305,7 @@ export default function GameStateStreamBridge() {
         const key = normalizeId(id);
         const existing = byId.get(key);
         if (!existing) continue;
-        dispatchEntityDespawn(existing);
+        dispatchEntityExploded(existing);
         try {
           // @ts-ignore - sprite is optional
           existing.sprite?.destroy?.();
