@@ -24,7 +24,7 @@ use crate::spawn_config::NEUTRAL_OWNER;
 use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 5;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 6;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
 const COLLECTOR_ACTIVITY_IDLE: &str = "idle";
