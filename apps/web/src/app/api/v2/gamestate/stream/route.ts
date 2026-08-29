@@ -6,6 +6,7 @@ import { emitEventFromBuffer } from "@/lib/db/utils/delta";
 import { logger, withAxiom } from "@/lib/axiom/server";
 import { requireAuthOr401 } from "@/features/users/utils/auth";
 import { redis } from "@/lib/db/connection";
+import { VisibilityFilter } from "@/lib/db/utils/visibility";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,39 +56,28 @@ export const GET = withAxiom(async (req: Request) => {
     try {
       // (Handshake and boot delay removed; client now gates readiness.)
 
-      // Determine resume behavior
-      let startFromId: string | undefined = undefined;
-      if (sinceParam && sinceParam.trim().length > 0) {
-        startFromId = sinceParam;
-      } else if (lastEventId && lastEventId.trim().length > 0) {
-        startFromId = lastEventId;
-      }
-
       const streamEvents = `rts:match:${GAME_ID}:events`;
+      const contentDefsKey = `rts:match:${GAME_ID}:content_defs`;
+      const contentDefs = await redis.get(contentDefsKey);
+      const entityTypes = contentDefs ? JSON.parse(contentDefs).entity_types ?? {} : {};
+      const visibility = new VisibilityFilter(playerId ?? "", entityTypes);
+      let lastId: string | undefined;
 
-      let lastId = startFromId; 
-
-      if (!lastId) {
-        // Full bootstrap: snapshot + gap catch-up using the snapshot boundary
-        // as the live cursor. On a fresh engine, wait for its first snapshot
-        // rather than replaying the complete match history from 0-0.
-        logger.info("v2/stream:bootstrap:start", { GAME_ID, sid });
-        while (!channel.isClosed() && !lastId) {
+      // Visibility state is connection-local, so every connection starts from
+      // a filtered snapshot rather than replaying an unfiltered cursor.
+      logger.info("v2/stream:bootstrap:start", { GAME_ID, sid, resumedFrom: sinceParam ?? lastEventId });
+      while (!channel.isClosed() && !lastId) {
           const bootLast = await bootstrapAndCatchUp(GAME_ID, channel, () => channel.isClosed(), (msg, e) => {
             logErr(msg, e);
             logger.error("v2/stream:bootstrap:error", { GAME_ID, sid, msg, error: e?.message || String(e) });
-          });
-          if (bootLast) {
-            lastId = bootLast;
-            logger.info("v2/stream:bootstrap:complete", { GAME_ID, sid, lastId });
-            break;
-          }
-          log("snapshot unavailable; waiting before bootstrap retry");
-          await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_RETRY_MS));
+          }, visibility);
+        if (bootLast) {
+          lastId = bootLast;
+          logger.info("v2/stream:bootstrap:complete", { GAME_ID, sid, lastId });
+          break;
         }
-      } else {
-        log("resuming from", lastId);
-        logger.info("v2/stream:resume", { GAME_ID, sid, lastId });
+        log("snapshot unavailable; waiting before bootstrap retry");
+        await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_RETRY_MS));
       }
 
       if (!lastId || channel.isClosed()) return;
@@ -121,7 +111,7 @@ export const GET = withAxiom(async (req: Request) => {
             await emitEventFromBuffer(channel, id, dataBuf, (msg, e) => {
               logErr(`${msg} (live)`, e);
               logger.error("v2/stream:emit:error", { GAME_ID, sid, id, msg, error: e?.message || String(e) });
-            });
+            }, visibility);
             lastId = id;
           }
         } catch (e: any) {

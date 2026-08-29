@@ -2,6 +2,8 @@ import { Container, Graphics, Sprite, type Texture } from "pixi.js";
 import { drawRadiationRanges, type RadiationSource } from "../radiationRanges";
 import { createStarYellowFilter, setStarYellowFilterTime } from "../shaders/starYellow";
 
+const ENABLE_SHADERS = process.env.NEXT_PUBLIC_ENABLE_SHADERS === "1";
+
 export type StarVisualProps = {
   /** The already-loaded star texture to render. */
   texture: Texture;
@@ -33,13 +35,15 @@ export function createStarVisual({
 
   const sprite = Sprite.from(texture);
   sprite.anchor.set(0.5);
-  const filter = createStarYellowFilter();
-  sprite.filters = [filter];
+  const filter = ENABLE_SHADERS ? createStarYellowFilter() : undefined;
+  if (filter) sprite.filters = [filter];
   container.addChild(sprite);
 
   return {
     container,
     sprite,
-    update: (elapsedMs) => setStarYellowFilterTime(filter, elapsedMs),
+    update: (elapsedMs) => {
+      if (filter) setStarYellowFilterTime(filter, elapsedMs);
+    },
   };
 }

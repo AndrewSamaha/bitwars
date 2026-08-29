@@ -361,6 +361,8 @@ mod tests {
             radiation_shielding: HashMap::new(),
             build_cost: HashMap::new(),
             maintenance_cost_per_minute: HashMap::new(),
+            sensor: None,
+            visibility_range: None,
             builds: Vec::new(),
         };
         let mut worker = raider.clone();

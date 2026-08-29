@@ -3,14 +3,12 @@
 # when a player joins (first stream connect), the engine picks a procedural
 # spawn location and one loadout chosen at random from the loadouts list.
 #
-# game_origin: [x, y] center of world (default [0, 0]); used for procedural player spawn.
-# max_distance_from_origin: max distance for procedural player spawn (default 10000).
+# game_origin: [x, y] center of the one-time celestial field (default [0, 0]).
 # min_entity_spawn_distance / max_entity_spawn_distance: controls spacing between newly spawned player-owned units.
 # loadouts: list of loadout options; each player gets one chosen at random.
 # neutrals_near_spawn: optional server-owned entities near each player's spawn.
 
 game_origin: [0, 0]   # optional, default
-max_distance_from_origin: 10000   # optional, default
 min_entity_spawn_distance: 200
 max_entity_spawn_distance: 300
 
@@ -28,20 +26,10 @@ neutrals_near_spawn:
     count: 1
     min_distance_from_spawn: 1200
     max_distance_from_spawn: 2000
-  - type: star_yellow
-    count: 1
-    # A yellow star needs 1,800 units of clearance from player-owned entities
-    # because of its radiation field. Keep it well beyond the starting loadout.
-    min_distance_from_spawn: 3000
-    max_distance_from_spawn: 4500
   - type: minerals
     count: 1
     min_distance_from_spawn: 200
     max_distance_from_spawn: 650
-  - type: planet_blue
-    count: 1
-    min_distance_from_spawn: 200
-    max_distance_from_spawn: 800
 
 
 

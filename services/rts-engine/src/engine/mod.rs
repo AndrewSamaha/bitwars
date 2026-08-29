@@ -4,7 +4,7 @@ pub mod state;
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Context, Result};
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 use tokio::time::{interval, Duration, Instant};
 use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
@@ -22,9 +22,9 @@ use crate::physics::integrate;
 use crate::spawn_config::SpawnConfig;
 use crate::spawn_config::NEUTRAL_OWNER;
 use prost::Message;
-use state::{init_world, log_sample, on_player_spawn, GameState};
+use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 5;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 6;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
 const COLLECTOR_ACTIVITY_IDLE: &str = "idle";
@@ -230,6 +230,8 @@ mod radiation_tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -262,6 +264,8 @@ mod radiation_tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -285,6 +289,8 @@ mod radiation_tests {
                 suppress_hover: false,
                 build_cost: HashMap::new(),
                 maintenance_cost_per_minute: HashMap::new(),
+                sensor: None,
+                visibility_range: None,
                 builds: Vec::new(),
             },
         );
@@ -847,7 +853,10 @@ impl Engine {
             "loaded spawn config"
         );
 
-        let state = init_world(&spawn_config);
+        let mut state = init_world(&spawn_config);
+        if let Some(content) = content.as_ref() {
+            spawn_celestial_field(&mut state.entities, content, &spawn_config, &mut rand::thread_rng());
+        }
         info!(
             "Initialized world: entities={}, tps={}, friction={}",
             state.entities.len(),
@@ -899,7 +908,7 @@ impl Engine {
         Ok(engine)
     }
 
-    /// M6: Spawn for one player on join (idempotent). Picks a procedural spawn location and random loadout.
+    /// M6: Spawn for one player on join (idempotent), near a random planet.
     fn ensure_spawned(&mut self, player_id: &str) -> Result<()> {
         if self.joined_players.contains(player_id) {
             return Ok(());
@@ -917,10 +926,16 @@ impl Engine {
         };
 
         let mut rng = rand::thread_rng();
+        let planets: Vec<_> = self.state.entities.iter().filter_map(|entity| {
+            (entity.entity_type_id == "planet_blue").then_some(entity.pos.as_ref()).flatten()
+        }).collect();
+        let Some(planet) = planets.choose(&mut rng) else {
+            anyhow::bail!("cannot spawn player: celestial field has no planet_blue");
+        };
         let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-        let dist = rng.gen_range(0.0..sc.max_distance_from_origin);
-        let spawn_x = sc.origin_x() + angle.cos() * dist;
-        let spawn_y = sc.origin_y() + angle.sin() * dist;
+        let dist = rng.gen_range(200.0..=800.0);
+        let spawn_x = planet.x + angle.cos() * dist;
+        let spawn_y = planet.y + angle.sin() * dist;
 
         let loadout_idx = rand::thread_rng().gen_range(0..sc.loadouts.len());
         let loadout = &sc.loadouts[loadout_idx];
@@ -1073,13 +1088,17 @@ impl Engine {
             let Some(def) = content.get(&entity.entity_type_id) else {
                 continue;
             };
-            for (resource_type, per_minute) in &def.maintenance_cost_per_minute {
-                if !per_minute.is_finite() || *per_minute <= 0.0 {
-                    continue;
+            for costs in std::iter::once(&def.maintenance_cost_per_minute)
+                .chain(def.sensor.iter().map(|sensor| &sensor.cost_per_minute))
+            {
+                for (resource_type, per_minute) in costs {
+                    if !per_minute.is_finite() || *per_minute <= 0.0 {
+                        continue;
+                    }
+                    *totals
+                        .entry((entity.owner_player_id.clone(), resource_type.clone()))
+                        .or_insert(0.0) += per_minute * dt / 60.0;
                 }
-                *totals
-                    .entry((entity.owner_player_id.clone(), resource_type.clone()))
-                    .or_insert(0.0) += per_minute * dt / 60.0;
             }
         }
 

@@ -1,8 +1,8 @@
-//! Spawn configuration: procedural player spawns, loadouts, and optional neutrals.
+//! Spawn configuration: player loadouts and optional per-player neutrals.
 //!
 //! When present, init_world does not spawn any player entities at match start.
-//! Players spawn on join: engine picks a procedural location near game_origin and one
-//! loadout (chosen at random from the loadouts list) per player when they are enqueued via
+//! Players spawn on join near a generated planet and receive one loadout (chosen at random)
+//! when they are enqueued via
 //! pending_joins.
 
 use std::collections::HashMap;
@@ -36,17 +36,12 @@ pub type Loadout = HashMap<String, usize>;
 /// M7: Starting resources per player (resource_type_id → amount). Applied when a player spawns.
 pub type StartingResources = HashMap<String, i64>;
 
-/// Root spawn config: optional game origin, max distance for procedural spawn,
-/// list of loadout options (one chosen at random per player on join), and optional
-/// neutrals near each spawn.
+/// Root spawn config: celestial-field origin, loadout options, and optional neutrals.
 #[derive(Clone, Debug, Deserialize)]
 pub struct SpawnConfig {
-    /// Center of the world; used for procedural player spawns.
+    /// Center of the one-time celestial field.
     #[serde(default)]
     pub game_origin: [f32; 2],
-    /// Max distance from game_origin for procedural player spawns.
-    #[serde(default = "default_max_distance_from_origin")]
-    pub max_distance_from_origin: f32,
     /// Min random distance from already placed player-owned units when spawning a new player-owned unit.
     #[serde(default)]
     pub min_entity_spawn_distance: f32,
@@ -61,10 +56,6 @@ pub struct SpawnConfig {
     /// M7: Starting resources granted to each player on spawn (resource_type_id → amount).
     #[serde(default)]
     pub starting_resources: StartingResources,
-}
-
-fn default_max_distance_from_origin() -> f32 {
-    10_000.0
 }
 
 fn default_max_entity_spawn_distance() -> f32 {

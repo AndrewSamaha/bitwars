@@ -24,6 +24,7 @@ import {
   type EntityVisual,
 } from "@/features/pixijs/renderer/entityVisuals";
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
+import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog";
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
 import {
   CELL_SIZE,
@@ -38,7 +39,7 @@ import {
 /** World units per second when panning with WASD / arrows */
 const PAN_SPEED = 400;
 /** Camera scale bounds for mouse-wheel and trackpad zoom. */
-const MIN_ZOOM = 0.10;
+const MIN_ZOOM = 0.010;
 const MAX_ZOOM = 2;
 const ZOOM_SENSITIVITY = 0.0015;
 
@@ -48,7 +49,10 @@ const NON_OWNED_TINT = 0x66_66_66;
 const MINIMAP_MY_COLOR = 0x44_aa_ff;
 const MINIMAP_HOSTILE_COLOR = 0xef_44_44;
 const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
+const MINIMAP_STAR_YELLOW_COLOR = 0xff_dd_22;
 const BUILD_PROGRESS_POLL_MS = 500;
+const FOG_COLOR = 0x67_6b_73;
+const FOG_ALPHA = 0.20;
 
 const PAN_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
@@ -265,6 +269,12 @@ export default function GameStage() {
         voronoiBorderGraphics.eventMode = "none";
         app.stage.addChild(voronoiBorderGraphics);
 
+        // Screen-space fog keeps the camera transform out of the draw path.
+        const fogGraphics = new Graphics();
+        fogGraphics.label = "visibilityFog";
+        fogGraphics.eventMode = "none";
+        app.stage.addChild(fogGraphics);
+
         let lastVoronoiUpdate = -1000;
         let lastCamX = worldContainer.position.x;
         let lastCamY = worldContainer.position.y;
@@ -312,9 +322,12 @@ export default function GameStage() {
           );
         }
 
-        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, top-right
-        // 200 px → 20_000 world units ⇒ 1 minimap pixel = 100 world units
-        const MINIMAP_HALF_EXTENT = 10_000;
+        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, top-right.
+        // Keep its view wider than the camera's while allowing both to zoom
+        // out together. The minimum prevents an overly tight minimap at high
+        // camera zoom.
+        const MINIMAP_VIEWPORT_MULTIPLIER = 2.5;
+        const MINIMAP_MIN_HALF_EXTENT = 2_000;
         const MINIMAP_SIZE_PX = 200;
         const MINIMAP_MARGIN = 10;
         const MINIMAP_UNIT_DOT_RADIUS = 2;
@@ -324,6 +337,15 @@ export default function GameStage() {
         const minimapContainer = new Container();
         (minimapContainer as any).label = "minimapContainer";
         minimapContainer.addChild(minimapGraphics);
+        const minimapFogGraphics = new Graphics();
+        minimapFogGraphics.label = "minimapVisibilityFog";
+        minimapFogGraphics.eventMode = "none";
+        const minimapFogMask = new Graphics().rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).fill(0xffffff);
+        minimapFogGraphics.mask = minimapFogMask;
+        minimapContainer.addChild(minimapFogGraphics, minimapFogMask);
+        const minimapViewportGraphics = new Graphics();
+        minimapViewportGraphics.eventMode = "none";
+        minimapContainer.addChild(minimapViewportGraphics);
         app.stage.addChild(minimapContainer);
 
         const selectionBoxGraphics = new Graphics();
@@ -336,11 +358,53 @@ export default function GameStage() {
           wy: number,
           centerX: number,
           centerY: number,
+          halfExtent: number,
         ): { px: number; py: number } {
-          const range = MINIMAP_HALF_EXTENT * 2;
-          const px = ((wx - centerX + MINIMAP_HALF_EXTENT) / range) * MINIMAP_SIZE_PX;
-          const py = ((wy - centerY + MINIMAP_HALF_EXTENT) / range) * MINIMAP_SIZE_PX;
+          const range = halfExtent * 2;
+          const px = ((wx - centerX + halfExtent) / range) * MINIMAP_SIZE_PX;
+          const py = ((wy - centerY + halfExtent) / range) * MINIMAP_SIZE_PX;
           return { px, py };
+        }
+
+        function minimapHalfExtent() {
+          const cameraScale = Math.max(worldContainer.scale.x, Number.EPSILON);
+          const viewportLongestSide = Math.max(app.screen.width, app.screen.height) / cameraScale;
+          return Math.max(
+            MINIMAP_MIN_HALF_EXTENT,
+            viewportLongestSide * MINIMAP_VIEWPORT_MULTIPLIER / 2,
+          );
+        }
+
+        const sensorSources = () => {
+          return getOwnedSensorSources(
+            game.world.with("pos", "entity_type_id"),
+            myPlayerIdRef.current,
+            (typeId) => contentManager.getEntityType(typeId)?.sensor?.range,
+          );
+        };
+
+        const drawFog = (
+          graphics: Graphics,
+          width: number,
+          height: number,
+          sources: Array<{ x: number; y: number; range: number }>,
+        ) => {
+          const padding = Math.max(0, ...sources.map((source) => source.range));
+          graphics.clear().rect(-padding, -padding, width + padding * 2, height + padding * 2).fill({ color: FOG_COLOR, alpha: FOG_ALPHA });
+          for (const source of sources) graphics.circle(source.x, source.y, source.range).cut();
+        };
+
+        function updateVisibilityFog() {
+          const sources = sensorSources();
+          drawFog(
+            fogGraphics,
+            app.screen.width,
+            app.screen.height,
+            sources.map((source) => {
+              const screen = worldContainer.toGlobal(source);
+              return { x: screen.x, y: screen.y, range: source.range * worldContainer.scale.x };
+            }),
+          );
         }
 
         function updateMinimap() {
@@ -353,18 +417,19 @@ export default function GameStage() {
             MINIMAP_MARGIN,
           );
           minimapGraphics.clear();
+          minimapViewportGraphics.clear();
+          const halfExtent = minimapHalfExtent();
           // Background
           minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).fill({ color: 0x0a_0c_10, alpha: 0.9 });
           minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).stroke({ width: 1, color: 0x3a_3e_4a });
           // Viewport rect (visible world AABB)
           const viewportAabb = getViewportWorldAABB(worldContainer, app.screen.width, app.screen.height, 0);
-          const vmin = worldToMinimapPx(viewportAabb.minX, viewportAabb.minY, centerWorld.x, centerWorld.y);
-          const vmax = worldToMinimapPx(viewportAabb.maxX, viewportAabb.maxY, centerWorld.x, centerWorld.y);
+          const vmin = worldToMinimapPx(viewportAabb.minX, viewportAabb.minY, centerWorld.x, centerWorld.y, halfExtent);
+          const vmax = worldToMinimapPx(viewportAabb.maxX, viewportAabb.maxY, centerWorld.x, centerWorld.y, halfExtent);
           const vx = Math.max(0, Math.min(vmin.px, MINIMAP_SIZE_PX - 1));
           const vy = Math.max(0, Math.min(vmin.py, MINIMAP_SIZE_PX - 1));
           const vw = Math.max(1, Math.min(vmax.px - vmin.px, MINIMAP_SIZE_PX - vx));
           const vh = Math.max(1, Math.min(vmax.py - vmin.py, MINIMAP_SIZE_PX - vy));
-          minimapGraphics.rect(vx, vy, vw, vh).stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
           // Unit dots: own units are blue; all non-owned combat targets are
           // red, while planets and other non-targetable entities stay gray.
           const myId = myPlayerIdRef.current;
@@ -372,17 +437,30 @@ export default function GameStage() {
             const pos = (e as { pos: { x: number; y: number } }).pos;
             const ownerId = (e as { owner_player_id?: string }).owner_player_id;
             const isOwned = myId != null && ownerId === myId;
-            const isCombatTarget = contentManager.getEntityType(e.entity_type_id?.trim() ?? "")?.combat_targetable === true;
-            const color = isOwned
-              ? MINIMAP_MY_COLOR
-              : isCombatTarget
-                ? MINIMAP_HOSTILE_COLOR
-                : MINIMAP_NEUTRAL_COLOR;
-            const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
+            const entityTypeId = e.entity_type_id?.trim() ?? "";
+            const isCombatTarget = contentManager.getEntityType(entityTypeId)?.combat_targetable === true;
+            const color = entityTypeId === "star_yellow"
+              ? MINIMAP_STAR_YELLOW_COLOR
+              : isOwned
+                ? MINIMAP_MY_COLOR
+                : isCombatTarget
+                  ? MINIMAP_HOSTILE_COLOR
+                  : MINIMAP_NEUTRAL_COLOR;
+            const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y, halfExtent);
             if (px >= 0 && px <= MINIMAP_SIZE_PX && py >= 0 && py <= MINIMAP_SIZE_PX) {
               minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
             }
           }
+          drawFog(
+            minimapFogGraphics,
+            MINIMAP_SIZE_PX,
+            MINIMAP_SIZE_PX,
+            sensorSources().map((source) => {
+              const { px, py } = worldToMinimapPx(source.x, source.y, centerWorld.x, centerWorld.y, halfExtent);
+              return { x: px, y: py, range: source.range * MINIMAP_SIZE_PX / (halfExtent * 2) };
+            }),
+          );
+          minimapViewportGraphics.rect(vx, vy, vw, vh).stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
         }
 
         // M1: Container for waypoint indicator graphics (drawn each frame)
@@ -935,6 +1013,7 @@ export default function GameStage() {
 
             // M5.3: Minimap (viewport rect + unit dots)
             updateMinimap();
+            updateVisibilityFog();
 
             // Advance ECS systems (including movement)
             game.tick(performance.now());

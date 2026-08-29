@@ -10,6 +10,7 @@
 # - All numeric values are floats. Add new fields with serde defaults so
 #   existing definitions don't break.
 # - maintenance_cost_per_minute values are charged continuously to the owner.
+# - sensor.cost_per_minute values are charged continuously to the owner.
 
 # M7: Resource types (id = key). Display order and name for HUD; theme-agnostic.
 resource_types:
@@ -53,6 +54,7 @@ entity_types:
   
   star_yellow:
     speed: 0.0
+    visibility_range: 40000.0
     z_index: -10
     suppress_hover: true
     stop_radius: 1
@@ -154,7 +156,7 @@ entity_types:
 
 
   habitat:
-    speed: 70.0
+    speed: 400.0
     stop_radius: 0.5
     mass: 4.0
     health: 400.0
@@ -166,8 +168,11 @@ entity_types:
       minerals: 1000.0
       energy: 1000.0
     maintenance_cost_per_minute:
-      energy: 5.0
       food: 60.0
+    sensor:
+      range: 4000.0
+      cost_per_minute:
+        energy: 5.0
     builds:
       - entity_type_id: worker
         spend_rates:
