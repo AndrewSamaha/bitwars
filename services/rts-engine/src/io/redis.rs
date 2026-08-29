@@ -74,6 +74,29 @@ pub struct CombatEffectUiState {
     pub updated_tick: u64,
 }
 
+/// Durable, player-scoped gameplay notification. Unlike the high-volume state
+/// stream, these records are retained for offline/reconnect history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameplayEvent {
+    pub event_type: String,
+    pub server_tick: u64,
+    pub occurred_at_ms: i64,
+    pub victim: GameplayEntityRef,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attacker: Option<GameplayEntityRef>,
+    pub cause: String,
+    pub position: IntentPoint,
+    /// Internal delivery policy; the web API removes this before responding.
+    pub recipients: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameplayEntityRef {
+    pub entity_id: u64,
+    pub entity_type_id: String,
+    pub owner_player_id: String,
+}
+
 /// Everything the reconnect handshake needs for one player.
 #[derive(Debug, Clone)]
 pub struct PlayerTrackingState {
@@ -106,6 +129,10 @@ impl RedisClient {
 
     fn snapshots_stream(&self) -> String {
         format!("rts:match:{}:snapshots", self.game_id)
+    }
+
+    fn gameplay_events_stream(&self) -> String {
+        format!("rts:match:{}:gameplay_events", self.game_id)
     }
 
     fn dedupe_key(&self, player_id: &str, client_cmd_id: &[u8]) -> String {
@@ -185,6 +212,25 @@ impl RedisClient {
             record: Some(events_stream_record::Record::LaserShot(event.clone())),
         };
         self.publish_event_record(&record).await
+    }
+
+    pub async fn publish_gameplay_event(
+        &mut self,
+        event: &GameplayEvent,
+    ) -> anyhow::Result<String> {
+        let data = serde_json::to_vec(event)?;
+        let stream = self.gameplay_events_stream();
+        let id: String = redis::cmd("XADD")
+            .arg(&stream)
+            .arg("MAXLEN")
+            .arg("~")
+            .arg(100_000)
+            .arg("*")
+            .arg("data")
+            .arg(data)
+            .query_async(&mut self.conn)
+            .await?;
+        Ok(id)
     }
 
     pub async fn publish_event_record(
@@ -420,6 +466,7 @@ impl RedisClient {
         let keys = vec![
             self.intents_stream(),
             self.events_stream(),
+            self.gameplay_events_stream(),
             self.snapshots_stream(),
             self.snapshot_key(),
             self.snapshot_meta_key(),

@@ -18,6 +18,7 @@ pub struct CombatTick {
     pub dead_entity_ids: Vec<u64>,
     pub laser_shots: Vec<LaserShot>,
     pub dismantling: Vec<Dismantling>,
+    pub destructions: Vec<CombatDestruction>,
 }
 
 pub struct LaserShot {
@@ -31,6 +32,25 @@ pub struct Dismantling {
     pub attacker_id: u64,
     pub target_id: u64,
     pub attack_id: String,
+}
+
+/// Attribution for a combat death. When simultaneous attacks destroy a
+/// target, the highest-damage contributor wins; ties use the lower ID.
+pub struct CombatDestruction {
+    pub victim: Entity,
+    pub attacker_id: u64,
+    pub attacker_entity_type_id: String,
+    pub attacker_owner_player_id: String,
+    pub cause: AttackType,
+}
+
+struct DamageContribution {
+    total: f32,
+    attacker_id: u64,
+    attacker_entity_type_id: String,
+    attacker_owner_player_id: String,
+    cause: AttackType,
+    largest_hit: f32,
 }
 
 impl CombatSystem {
@@ -82,6 +102,7 @@ impl CombatSystem {
                 dead_entity_ids: Vec::new(),
                 laser_shots: Vec::new(),
                 dismantling: Vec::new(),
+                destructions: Vec::new(),
             };
         }
 
@@ -107,7 +128,7 @@ impl CombatSystem {
             })
             .collect();
 
-        let mut damage_by_target: HashMap<u64, f32> = HashMap::new();
+        let mut damage_by_target: HashMap<u64, DamageContribution> = HashMap::new();
         let mut laser_shots = Vec::new();
         let mut dismantling = Vec::new();
         for attacker in entities.iter_mut() {
@@ -210,7 +231,28 @@ impl CombatSystem {
                     .copied()
                     .unwrap_or(0);
                 if tick >= next_tick && attack.damage.is_finite() && attack.damage > 0.0 {
-                    *damage_by_target.entry(target.id).or_insert(0.0) += attack.damage;
+                    let contribution =
+                        damage_by_target
+                            .entry(target.id)
+                            .or_insert_with(|| DamageContribution {
+                                total: 0.0,
+                                attacker_id: attacker.id,
+                                attacker_entity_type_id: attacker.entity_type_id.clone(),
+                                attacker_owner_player_id: attacker.owner_player_id.clone(),
+                                cause: attack.attack_type,
+                                largest_hit: 0.0,
+                            });
+                    contribution.total += attack.damage;
+                    if attack.damage > contribution.largest_hit
+                        || (attack.damage == contribution.largest_hit
+                            && attacker.id < contribution.attacker_id)
+                    {
+                        contribution.attacker_id = attacker.id;
+                        contribution.attacker_entity_type_id = attacker.entity_type_id.clone();
+                        contribution.attacker_owner_player_id = attacker.owner_player_id.clone();
+                        contribution.cause = attack.attack_type;
+                        contribution.largest_hit = attack.damage;
+                    }
                     if attack.attack_type == AttackType::Laser {
                         laser_shots.push(LaserShot {
                             attacker_id: attacker.id,
@@ -257,12 +299,22 @@ impl CombatSystem {
         }
 
         let mut dead = Vec::new();
+        let mut destructions = Vec::new();
         for entity in entities.iter_mut() {
-            let damage = damage_by_target.get(&entity.id).copied().unwrap_or(0.0);
-            if damage > 0.0 {
-                entity.health = (entity.health - damage).max(0.0);
+            let Some(damage) = damage_by_target.get(&entity.id) else {
+                continue;
+            };
+            if damage.total > 0.0 {
+                entity.health = (entity.health - damage.total).max(0.0);
                 if entity.health <= 0.0 {
                     dead.push(entity.id);
+                    destructions.push(CombatDestruction {
+                        victim: entity.clone(),
+                        attacker_id: damage.attacker_id,
+                        attacker_entity_type_id: damage.attacker_entity_type_id.clone(),
+                        attacker_owner_player_id: damage.attacker_owner_player_id.clone(),
+                        cause: damage.cause,
+                    });
                 }
             }
         }
@@ -272,6 +324,7 @@ impl CombatSystem {
             dead_entity_ids: dead,
             laser_shots,
             dismantling,
+            destructions,
         }
     }
 }
@@ -508,6 +561,25 @@ mod tests {
         assert_eq!(outcome.dismantling[0].attacker_id, 1);
         assert_eq!(outcome.dismantling[0].target_id, 2);
         assert_eq!(entities[1].health, 15.0);
+    }
+
+    #[test]
+    fn records_victim_and_attacker_for_a_combat_destruction() {
+        let pack = content();
+        let mut entities = vec![
+            entity(1, "raider", NEUTRAL_OWNER, 0.0, 20.0),
+            entity(2, "worker", "player", 5.0, 5.0),
+        ];
+
+        let outcome = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
+
+        assert_eq!(outcome.dead_entity_ids, vec![2]);
+        assert_eq!(outcome.destructions.len(), 1);
+        let destruction = &outcome.destructions[0];
+        assert_eq!(destruction.victim.id, 2);
+        assert_eq!(destruction.attacker_id, 1);
+        assert_eq!(destruction.attacker_entity_type_id, "raider");
+        assert_eq!(destruction.cause, AttackType::Laser);
     }
 
     #[test]
