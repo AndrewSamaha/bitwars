@@ -1,4 +1,4 @@
-//! Spawn configuration: player loadouts and optional per-player neutrals.
+//! Spawn configuration: player loadouts, global neutral fields, and optional per-player neutrals.
 //!
 //! When present, init_world does not spawn any player entities at match start.
 //! Players spawn on join near a generated planet and receive one loadout (chosen at random)
@@ -30,24 +30,38 @@ pub struct NeutralNearSpawn {
     pub max_distance_from_spawn: f32,
 }
 
+/// Server-owned entities sampled once from a normal distribution at world creation.
+#[derive(Clone, Debug, Deserialize)]
+pub struct GlobalNeutralField {
+    /// Entity type id from the content pack.
+    #[serde(rename = "type")]
+    pub entity_type_id: String,
+    /// Number of entities to create in this field.
+    pub count: usize,
+    /// Center of this entity type's field.
+    pub origin: [f32; 2],
+    /// Per-axis standard deviation of this entity type's normal distribution.
+    pub standard_deviation: f32,
+}
+
 /// One loadout: entity_type_id -> count. Keys are type ids, values are counts.
 pub type Loadout = HashMap<String, usize>;
 
 /// M7: Starting resources per player (resource_type_id → amount). Applied when a player spawns.
 pub type StartingResources = HashMap<String, i64>;
 
-/// Root spawn config: celestial-field origin, loadout options, and optional neutrals.
+/// Root spawn config: celestial field, global neutral fields, loadout options, and optional per-player neutrals.
 #[derive(Clone, Debug, Deserialize)]
 pub struct SpawnConfig {
-    /// Center of the one-time celestial field.
-    #[serde(default)]
-    pub game_origin: [f32; 2],
     /// Min random distance from already placed player-owned units when spawning a new player-owned unit.
     #[serde(default)]
     pub min_entity_spawn_distance: f32,
     /// Max random distance from already placed player-owned units when spawning a new player-owned unit.
     #[serde(default = "default_max_entity_spawn_distance")]
     pub max_entity_spawn_distance: f32,
+    /// Server-owned fields sampled once when the world is created.
+    #[serde(default)]
+    pub global_neutral_fields: Vec<GlobalNeutralField>,
     /// Pool of loadout options. When a player joins, one is chosen at random from this list.
     pub loadouts: Vec<Loadout>,
     /// Optional: server-owned entities spawned near each player's spawn (e.g. neutral creeps).
@@ -75,15 +89,5 @@ impl SpawnConfig {
     /// Returns true if this config is usable for on-join spawning (at least one loadout).
     pub fn is_valid(&self) -> bool {
         !self.loadouts.is_empty()
-    }
-
-    /// Origin X (for procedural spawn).
-    pub fn origin_x(&self) -> f32 {
-        self.game_origin.get(0).copied().unwrap_or(0.0)
-    }
-
-    /// Origin Y (for procedural spawn).
-    pub fn origin_y(&self) -> f32 {
-        self.game_origin.get(1).copied().unwrap_or(0.0)
     }
 }

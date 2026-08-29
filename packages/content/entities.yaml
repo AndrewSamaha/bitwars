@@ -32,16 +32,18 @@ entity_types:
     stop_radius: 0.75
     mass: 500.0
     health: 100.0
+    visibility_range: 4000.0
+    visual_scale: 2.0
     radiation_sources:
       - radiation_type: theta
         min_effective_distance_border_color:
-        min_effective_distance_fill_color: "#ef4444"
+        min_effective_distance_fill_color: "#882cd6"
         full_damage_distance_border_color:
-        full_damage_distance_fill_color: "#f97316"
+        full_damage_distance_fill_color: "#a753ef"
         max_effective_distance_border_color:
-        max_effective_distance_fill_color: "#facc15"
+        max_effective_distance_fill_color: "#c384f8"
         min_effective_distance: 0.0
-        full_damage_distance: 900.0
+        full_damage_distance: 700.0
         max_effective_distance: 1200.0
         damage_per_second: 6.0
     resource_node:
@@ -168,7 +170,7 @@ entity_types:
 
 
   habitat:
-    speed: 400.0
+    speed: 60.0
     stop_radius: 0.5
     mass: 4.0
     health: 400.0
@@ -213,7 +215,7 @@ entity_types:
     combat_targetable: true
 
   scout:
-    speed: 140.0
+    speed: 500.0
     stop_radius: 0.5
     mass: 0.6
     health: 60.0
@@ -229,6 +231,11 @@ entity_types:
           damage: 2.0
           cooldown_ticks: 75
           priority: 0
+    sensor:
+      range: 2000.0
+      cost_per_minute:
+        energy: 2.5
+
 
   defense_pilon:
     build_cost:

@@ -9,9 +9,6 @@ use crate::spawn_config::{Loadout, NeutralNearSpawn, SpawnConfig, NEUTRAL_OWNER}
 
 const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
 const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
-const STAR_COUNT: usize = 100;
-const STAR_FIELD_STANDARD_DEVIATION: f32 = 50_000.0;
-const PLANET_COUNT: usize = STAR_COUNT * 3 / 4;
 // Keep planets well outside a star's 1,200-unit radiation range while leaving
 // room for a player loadout to spawn 200–800 units from the planet.
 const PLANET_MIN_DISTANCE_FROM_STAR: f32 = 3_000.0;
@@ -50,12 +47,17 @@ pub fn spawn_celestial_field(
     rng: &mut impl rand::Rng,
 ) {
     let mut next_id = entities.iter().map(|entity| entity.id).max().unwrap_or(0) + 1;
-    let mut star_positions = Vec::with_capacity(STAR_COUNT);
-    for _ in 0..STAR_COUNT {
+    let star_field = spawn_config
+        .global_neutral_fields
+        .iter()
+        .find(|field| field.entity_type_id == "star_yellow")
+        .expect("spawn config must define a global star_yellow field");
+    let mut star_positions = Vec::with_capacity(star_field.count);
+    for _ in 0..star_field.count {
         let (x, y) = sample_normal_position(
-            spawn_config.origin_x(),
-            spawn_config.origin_y(),
-            STAR_FIELD_STANDARD_DEVIATION,
+            star_field.origin[0],
+            star_field.origin[1],
+            star_field.standard_deviation.max(0.0),
             rng,
         );
         star_positions.push((x, y));
@@ -64,7 +66,8 @@ pub fn spawn_celestial_field(
     }
 
     star_positions.shuffle(rng);
-    for (star_x, star_y) in star_positions.into_iter().take(PLANET_COUNT) {
+    let planet_count = star_positions.len() * 3 / 4;
+    for (star_x, star_y) in star_positions.into_iter().take(planet_count) {
         let (x, y) = sample_position_in_annulus(
             star_x,
             star_y,
@@ -74,6 +77,23 @@ pub fn spawn_celestial_field(
         );
         entities.push(neutral_entity(next_id, "planet_blue", x, y, content));
         next_id += 1;
+    }
+
+    for field in spawn_config
+        .global_neutral_fields
+        .iter()
+        .filter(|field| field.entity_type_id != "star_yellow")
+    {
+        for _ in 0..field.count {
+            let (x, y) = sample_normal_position(
+                field.origin[0],
+                field.origin[1],
+                field.standard_deviation.max(0.0),
+                rng,
+            );
+            entities.push(neutral_entity(next_id, &field.entity_type_id, x, y, content));
+            next_id += 1;
+        }
     }
 }
 
@@ -335,11 +355,19 @@ mod tests {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
         let config = SpawnConfig::load(&root.join("services/rts-engine/config/spawn.yaml")).unwrap();
+        let star_count = config
+            .global_neutral_fields
+            .iter()
+            .find(|field| field.entity_type_id == "star_yellow")
+            .unwrap()
+            .count;
         let mut entities = Vec::new();
         spawn_celestial_field(&mut entities, &content, &config, &mut rand::rngs::StdRng::seed_from_u64(1));
 
-        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "star_yellow").count(), STAR_COUNT);
-        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "planet_blue").count(), PLANET_COUNT);
+        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "star_yellow").count(), star_count);
+        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "planet_blue").count(), star_count * 3 / 4);
+        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "theta").count(), 1);
+        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "minerals").count(), 1);
     }
 
     #[test]
@@ -347,7 +375,7 @@ mod tests {
         const SAMPLE_COUNT: usize = 10_000;
         let mut rng = rand::rngs::StdRng::seed_from_u64(2);
         let positions: Vec<_> = (0..SAMPLE_COUNT)
-            .map(|_| sample_normal_position(0.0, 0.0, STAR_FIELD_STANDARD_DEVIATION, &mut rng))
+            .map(|_| sample_normal_position(0.0, 0.0, 50_000.0, &mut rng))
             .collect();
         let mean_x = positions.iter().map(|(x, _)| x).sum::<f32>() / SAMPLE_COUNT as f32;
         let mean_y = positions.iter().map(|(_, y)| y).sum::<f32>() / SAMPLE_COUNT as f32;
