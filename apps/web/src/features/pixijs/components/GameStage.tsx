@@ -39,7 +39,7 @@ import {
 /** World units per second when panning with WASD / arrows */
 const PAN_SPEED = 400;
 /** Camera scale bounds for mouse-wheel and trackpad zoom. */
-const MIN_ZOOM = 0.10;
+const MIN_ZOOM = 0.010;
 const MAX_ZOOM = 2;
 const ZOOM_SENSITIVITY = 0.0015;
 
@@ -322,9 +322,12 @@ export default function GameStage() {
           );
         }
 
-        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, top-right
-        // 200 px → 20_000 world units ⇒ 1 minimap pixel = 100 world units
-        const MINIMAP_HALF_EXTENT = 10_000;
+        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, top-right.
+        // Keep its view wider than the camera's while allowing both to zoom
+        // out together. The minimum prevents an overly tight minimap at high
+        // camera zoom.
+        const MINIMAP_VIEWPORT_MULTIPLIER = 2.5;
+        const MINIMAP_MIN_HALF_EXTENT = 2_000;
         const MINIMAP_SIZE_PX = 200;
         const MINIMAP_MARGIN = 10;
         const MINIMAP_UNIT_DOT_RADIUS = 2;
@@ -355,11 +358,21 @@ export default function GameStage() {
           wy: number,
           centerX: number,
           centerY: number,
+          halfExtent: number,
         ): { px: number; py: number } {
-          const range = MINIMAP_HALF_EXTENT * 2;
-          const px = ((wx - centerX + MINIMAP_HALF_EXTENT) / range) * MINIMAP_SIZE_PX;
-          const py = ((wy - centerY + MINIMAP_HALF_EXTENT) / range) * MINIMAP_SIZE_PX;
+          const range = halfExtent * 2;
+          const px = ((wx - centerX + halfExtent) / range) * MINIMAP_SIZE_PX;
+          const py = ((wy - centerY + halfExtent) / range) * MINIMAP_SIZE_PX;
           return { px, py };
+        }
+
+        function minimapHalfExtent() {
+          const cameraScale = Math.max(worldContainer.scale.x, Number.EPSILON);
+          const viewportLongestSide = Math.max(app.screen.width, app.screen.height) / cameraScale;
+          return Math.max(
+            MINIMAP_MIN_HALF_EXTENT,
+            viewportLongestSide * MINIMAP_VIEWPORT_MULTIPLIER / 2,
+          );
         }
 
         const sensorSources = () => {
@@ -405,13 +418,14 @@ export default function GameStage() {
           );
           minimapGraphics.clear();
           minimapViewportGraphics.clear();
+          const halfExtent = minimapHalfExtent();
           // Background
           minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).fill({ color: 0x0a_0c_10, alpha: 0.9 });
           minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).stroke({ width: 1, color: 0x3a_3e_4a });
           // Viewport rect (visible world AABB)
           const viewportAabb = getViewportWorldAABB(worldContainer, app.screen.width, app.screen.height, 0);
-          const vmin = worldToMinimapPx(viewportAabb.minX, viewportAabb.minY, centerWorld.x, centerWorld.y);
-          const vmax = worldToMinimapPx(viewportAabb.maxX, viewportAabb.maxY, centerWorld.x, centerWorld.y);
+          const vmin = worldToMinimapPx(viewportAabb.minX, viewportAabb.minY, centerWorld.x, centerWorld.y, halfExtent);
+          const vmax = worldToMinimapPx(viewportAabb.maxX, viewportAabb.maxY, centerWorld.x, centerWorld.y, halfExtent);
           const vx = Math.max(0, Math.min(vmin.px, MINIMAP_SIZE_PX - 1));
           const vy = Math.max(0, Math.min(vmin.py, MINIMAP_SIZE_PX - 1));
           const vw = Math.max(1, Math.min(vmax.px - vmin.px, MINIMAP_SIZE_PX - vx));
@@ -432,7 +446,7 @@ export default function GameStage() {
                 : isCombatTarget
                   ? MINIMAP_HOSTILE_COLOR
                   : MINIMAP_NEUTRAL_COLOR;
-            const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
+            const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y, halfExtent);
             if (px >= 0 && px <= MINIMAP_SIZE_PX && py >= 0 && py <= MINIMAP_SIZE_PX) {
               minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
             }
@@ -442,8 +456,8 @@ export default function GameStage() {
             MINIMAP_SIZE_PX,
             MINIMAP_SIZE_PX,
             sensorSources().map((source) => {
-              const { px, py } = worldToMinimapPx(source.x, source.y, centerWorld.x, centerWorld.y);
-              return { x: px, y: py, range: source.range * MINIMAP_SIZE_PX / (MINIMAP_HALF_EXTENT * 2) };
+              const { px, py } = worldToMinimapPx(source.x, source.y, centerWorld.x, centerWorld.y, halfExtent);
+              return { x: px, y: py, range: source.range * MINIMAP_SIZE_PX / (halfExtent * 2) };
             }),
           );
           minimapViewportGraphics.rect(vx, vy, vw, vh).stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
