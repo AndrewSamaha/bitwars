@@ -4,6 +4,15 @@ import { Howl, Howler } from "howler";
 
 export type AudioSource = string | string[];
 
+/** Semantic world states that select a background music track. */
+export enum BackgroundMusicState {
+  Exploration = "exploration",
+}
+
+const backgroundMusicSources: Record<BackgroundMusicState, AudioSource> = {
+  [BackgroundMusicState.Exploration]: "/audio/music/exploration_theme.ogg",
+};
+
 type MusicOptions = {
   /** Volume before the music bus is applied, from 0 to 1. */
   volume?: number;
@@ -37,7 +46,7 @@ class AudioManager {
   private musicVolume = 0.35;
   private sfxVolume = 0.8;
   private music: Howl | null = null;
-  private musicSource: AudioSource | null = null;
+  private musicState: BackgroundMusicState | null = null;
   private musicSourceVolume = 1;
   private readonly effects = new Map<string, RegisteredSfx>();
 
@@ -73,11 +82,14 @@ class AudioManager {
   }
 
   /** Replaces the current music track, fading in the replacement by default. */
-  playMusic(source: AudioSource, { volume = 1, fadeInMs = 750 }: MusicOptions = {}): void {
+  playMusic(
+    state: BackgroundMusicState = BackgroundMusicState.Exploration,
+    { volume = 1, fadeInMs = 750 }: MusicOptions = {},
+  ): void {
     this.stopMusic();
 
     const sound = new Howl({
-      src: source,
+      src: backgroundMusicSources[state],
       loop: true,
       preload: true,
       volume: 0,
@@ -92,7 +104,7 @@ class AudioManager {
     }
 
     this.music = sound;
-    this.musicSource = source;
+    this.musicState = state;
     this.musicSourceVolume = clampVolume(volume);
   }
 
@@ -101,12 +113,12 @@ class AudioManager {
     this.music?.stop();
     this.music?.unload();
     this.music = null;
-    this.musicSource = null;
+    this.musicState = null;
     this.musicSourceVolume = 1;
   }
 
-  isPlayingMusic(source?: AudioSource): boolean {
-    return this.music?.playing() === true && (source === undefined || source === this.musicSource);
+  isPlayingMusic(state?: BackgroundMusicState): boolean {
+    return this.music?.playing() === true && (state === undefined || state === this.musicState);
   }
 
   registerSfx(name: string, source: AudioSource, { volume = 1, pool = 5 }: SfxOptions = {}): void {

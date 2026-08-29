@@ -13,7 +13,6 @@ import { executeTerminalCommand } from "@/features/hud/terminal/commands";
 import { useSession } from "@/features/users/components/identity/SessionContext";
 
 const SHOW_STREAM_COUNTER = false;
-const BACKGROUND_MUSIC = "/audio/music/exploration_theme.ogg";
 
 export default function TerminalPanel() {
   const { player } = usePlayer();
@@ -52,7 +51,7 @@ export default function TerminalPanel() {
           void audio.unlock();
           actions.pushCommandHistory({ command: `BitWars login: ${cmd}`, output: "Authenticating…" });
           const output = await login(cmd);
-          audio.playMusic(BACKGROUND_MUSIC);
+          audio.playMusic();
           actions.pushCommandHistory({ command: "", output });
           return;
         }
