@@ -1,5 +1,5 @@
 "use client";
-import { Application, Container, Graphics } from "pixi.js";
+import { Application, Container, Graphics, RenderTexture, Sprite } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { game, type Entity } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
@@ -53,6 +53,8 @@ const MINIMAP_STAR_YELLOW_COLOR = 0xff_dd_22;
 const BUILD_PROGRESS_POLL_MS = 500;
 const FOG_COLOR = 0x67_6b_73;
 const FOG_ALPHA = 0.20;
+const FOG_ZOOM_SETTLE_MS = 150;
+const FOG_ZOOM_UPDATE_INTERVAL_MS = 1000 / 30;
 
 const PAN_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
@@ -270,11 +272,26 @@ export default function GameStage() {
         voronoiBorderGraphics.eventMode = "none";
         app.stage.addChild(voronoiBorderGraphics);
 
-        // Screen-space fog keeps the camera transform out of the draw path.
+        // The fog is rendered to a fixed, viewport-sized texture. This keeps
+        // its allocation and origin stable as sensor circles grow/shrink with
+        // camera zoom, while erase blending unions overlapping circles.
+        const fogRenderContainer = new Container();
         const fogGraphics = new Graphics();
-        fogGraphics.label = "visibilityFog";
         fogGraphics.eventMode = "none";
-        app.stage.addChild(fogGraphics);
+        const fogCutoutGraphics = new Graphics();
+        fogCutoutGraphics.eventMode = "none";
+        fogCutoutGraphics.blendMode = "erase";
+        fogRenderContainer.addChild(fogGraphics, fogCutoutGraphics);
+        const fogTexture = RenderTexture.create({
+          width: Math.max(1, app.screen.width),
+          height: Math.max(1, app.screen.height),
+          resolution: app.renderer.resolution,
+          antialias: true,
+        });
+        const fogSprite = new Sprite(fogTexture);
+        fogSprite.label = "visibilityFog";
+        fogSprite.eventMode = "none";
+        app.stage.addChild(fogSprite);
 
         let lastVoronoiUpdate = -1000;
         let lastCamX = worldContainer.position.x;
@@ -338,12 +355,25 @@ export default function GameStage() {
         const minimapContainer = new Container();
         (minimapContainer as any).label = "minimapContainer";
         minimapContainer.addChild(minimapGraphics);
+        const minimapFogRenderContainer = new Container();
         const minimapFogGraphics = new Graphics();
-        minimapFogGraphics.label = "minimapVisibilityFog";
         minimapFogGraphics.eventMode = "none";
+        const minimapFogCutoutGraphics = new Graphics();
+        minimapFogCutoutGraphics.eventMode = "none";
+        minimapFogCutoutGraphics.blendMode = "erase";
+        minimapFogRenderContainer.addChild(minimapFogGraphics, minimapFogCutoutGraphics);
+        const minimapFogTexture = RenderTexture.create({
+          width: MINIMAP_SIZE_PX,
+          height: MINIMAP_SIZE_PX,
+          resolution: app.renderer.resolution,
+          antialias: true,
+        });
+        const minimapFogSprite = new Sprite(minimapFogTexture);
+        minimapFogSprite.label = "minimapVisibilityFog";
+        minimapFogSprite.eventMode = "none";
         const minimapFogMask = new Graphics().rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).fill(0xffffff);
-        minimapFogGraphics.mask = minimapFogMask;
-        minimapContainer.addChild(minimapFogGraphics, minimapFogMask);
+        minimapFogSprite.mask = minimapFogMask;
+        minimapContainer.addChild(minimapFogSprite, minimapFogMask);
         const minimapViewportGraphics = new Graphics();
         minimapViewportGraphics.eventMode = "none";
         minimapContainer.addChild(minimapViewportGraphics);
@@ -385,20 +415,30 @@ export default function GameStage() {
         };
 
         const drawFog = (
-          graphics: Graphics,
+          fog: Graphics,
+          cutouts: Graphics,
+          renderContainer: Container,
+          texture: RenderTexture,
           width: number,
           height: number,
           sources: Array<{ x: number; y: number; range: number }>,
         ) => {
-          const padding = Math.max(0, ...sources.map((source) => source.range));
-          graphics.clear().rect(-padding, -padding, width + padding * 2, height + padding * 2).fill({ color: FOG_COLOR, alpha: FOG_ALPHA });
-          for (const source of sources) graphics.circle(source.x, source.y, source.range).cut();
+          if (texture.width !== width || texture.height !== height || texture.source.resolution !== app.renderer.resolution) {
+            texture.resize(width, height, app.renderer.resolution);
+          }
+          fog.clear().rect(0, 0, width, height).fill({ color: FOG_COLOR, alpha: FOG_ALPHA });
+          cutouts.clear();
+          for (const source of sources) cutouts.circle(source.x, source.y, source.range).fill(0xffffff);
+          app.renderer.render({ container: renderContainer, target: texture, clear: true });
         };
 
         function updateVisibilityFog() {
           const sources = sensorSources();
           drawFog(
             fogGraphics,
+            fogCutoutGraphics,
+            fogRenderContainer,
+            fogTexture,
             app.screen.width,
             app.screen.height,
             sources.map((source) => {
@@ -408,7 +448,7 @@ export default function GameStage() {
           );
         }
 
-        function updateMinimap() {
+        function updateMinimap(updateFog: boolean) {
           const centerWorld = worldContainer.toLocal({
             x: app.screen.width / 2,
             y: app.screen.height / 2,
@@ -452,15 +492,20 @@ export default function GameStage() {
               minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
             }
           }
-          drawFog(
-            minimapFogGraphics,
-            MINIMAP_SIZE_PX,
-            MINIMAP_SIZE_PX,
-            sensorSources().map((source) => {
-              const { px, py } = worldToMinimapPx(source.x, source.y, centerWorld.x, centerWorld.y, halfExtent);
-              return { x: px, y: py, range: source.range * MINIMAP_SIZE_PX / (halfExtent * 2) };
-            }),
-          );
+          if (updateFog) {
+            drawFog(
+              minimapFogGraphics,
+              minimapFogCutoutGraphics,
+              minimapFogRenderContainer,
+              minimapFogTexture,
+              MINIMAP_SIZE_PX,
+              MINIMAP_SIZE_PX,
+              sensorSources().map((source) => {
+                const { px, py } = worldToMinimapPx(source.x, source.y, centerWorld.x, centerWorld.y, halfExtent);
+                return { x: px, y: py, range: source.range * MINIMAP_SIZE_PX / (halfExtent * 2) };
+              }),
+            );
+          }
           minimapViewportGraphics.rect(vx, vy, vw, vh).stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
         }
 
@@ -551,6 +596,8 @@ export default function GameStage() {
 
         // Wheel events cover both mouse wheels and two-finger trackpad scrolling.
         // Keep the world point under the cursor fixed as the camera scale changes.
+        let fogRefreshAfterZoomAt = 0;
+        let lastFogUpdateAt = -Infinity;
         const onWheel = (event: WheelEvent) => {
           event.preventDefault();
 
@@ -574,6 +621,7 @@ export default function GameStage() {
             pointer.x - worldPoint.x * nextZoom,
             pointer.y - worldPoint.y * nextZoom,
           );
+          fogRefreshAfterZoomAt = performance.now() + FOG_ZOOM_SETTLE_MS;
         };
         app.canvas.addEventListener("wheel", onWheel, { passive: false });
 
@@ -1012,15 +1060,22 @@ export default function GameStage() {
               lastVoronoiUpdate = now;
             }
 
-            // M5.3: Minimap (viewport rect + unit dots)
-            updateMinimap();
-            updateVisibilityFog();
-
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             renderLasers(performance.now());
             despawnExplosions.update(performance.now());
             render();
+
+            // Keep fog aligned with post-tick entity positions. During an active
+            // zoom gesture, cap render-texture redraws while still updating often
+            // enough for circles to follow the camera smoothly.
+            const zooming = now < fogRefreshAfterZoomAt;
+            const updateFog = !zooming || now - lastFogUpdateAt >= FOG_ZOOM_UPDATE_INTERVAL_MS;
+            updateMinimap(updateFog);
+            if (updateFog) {
+              updateVisibilityFog();
+              lastFogUpdateAt = now;
+            }
 
         });
 
@@ -1036,6 +1091,8 @@ export default function GameStage() {
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
           window.removeEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
           despawnExplosions.destroy();
+          fogTexture.destroy(true);
+          minimapFogTexture.destroy(true);
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });
           }
