@@ -28,11 +28,11 @@ global_neutral_fields:
     origin: [0, 0]
     standard_deviation: 50000
   - type: theta
-    count: 125
+    count: 75
     origin: [0, 0]
     standard_deviation: 50000
   - type: minerals
-    count: 125
+    count: 225
     origin: [0, 0]
     standard_deviation: 50000
 
