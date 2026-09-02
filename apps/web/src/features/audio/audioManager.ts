@@ -44,6 +44,11 @@ type RegisteredSfx = {
   sourceVolume: number;
 };
 
+export type AudioStatus = {
+  muted: boolean;
+  musicPlaying: boolean;
+};
+
 const clampVolume = (volume: number) => Math.min(1, Math.max(0, volume));
 
 /**
@@ -61,6 +66,26 @@ class AudioManager {
   private musicState: BackgroundMusicState | null = null;
   private musicSourceVolume = 1;
   private readonly effects = new Map<string, RegisteredSfx>();
+  private muted = false;
+  private readonly listeners = new Set<() => void>();
+  private status: AudioStatus = { muted: false, musicPlaying: false };
+
+  private emitChange(): void {
+    this.status = {
+      muted: this.muted,
+      musicPlaying: this.music?.playing() === true,
+    };
+    for (const listener of this.listeners) listener();
+  }
+
+  getStatus(): AudioStatus {
+    return this.status;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
 
   /** Call directly from a click, tap, or key-submit handler before any await. */
   async unlock(): Promise<void> {
@@ -70,6 +95,7 @@ class AudioManager {
     if (Howler.ctx.state !== "running") {
       await Howler.ctx.resume();
     }
+    this.emitChange();
   }
 
   setMasterVolume(volume: number): void {
@@ -90,7 +116,9 @@ class AudioManager {
   }
 
   setMuted(muted: boolean): void {
+    this.muted = muted;
     Howler.mute(muted);
+    this.emitChange();
   }
 
   /** Replaces the current music track, fading in the replacement by default. */
@@ -105,6 +133,9 @@ class AudioManager {
       loop: true,
       preload: true,
       volume: 0,
+      onplay: () => this.emitChange(),
+      onplayerror: () => this.emitChange(),
+      onstop: () => this.emitChange(),
     });
     const id = sound.play();
     const targetVolume = clampVolume(volume) * this.musicVolume;
@@ -118,6 +149,7 @@ class AudioManager {
     this.music = sound;
     this.musicState = state;
     this.musicSourceVolume = clampVolume(volume);
+    this.emitChange();
   }
 
   /** Stops and releases the active music asset. */
@@ -127,6 +159,7 @@ class AudioManager {
     this.music = null;
     this.musicState = null;
     this.musicSourceVolume = 1;
+    this.emitChange();
   }
 
   isPlayingMusic(state?: BackgroundMusicState): boolean {

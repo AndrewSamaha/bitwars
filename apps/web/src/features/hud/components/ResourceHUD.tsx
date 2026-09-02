@@ -3,11 +3,12 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { contentManager } from "@/features/content/contentManager";
+import { AudioToggle } from "@/features/audio/components/AudioToggle";
 
 const HUD_BASE =
   "pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded bg-black/70 px-3 py-2 font-sans text-sm";
-const HUD_EMPTY = `${HUD_BASE} text-white/80`;
-const HUD_FULL = `${HUD_BASE} flex flex-wrap items-center gap-3 text-white/95`;
+const HUD_EMPTY = "text-white/80";
+const HUD_FULL = "flex flex-wrap items-center gap-3 text-white/95";
 
 const formatKey = (key: string) => key.charAt(0).toUpperCase() + key.slice(1);
 
@@ -57,20 +58,24 @@ export function ResourceHUD() {
 
   if (sortedKeys.length === 0) {
     return (
-      <div className={HUD_EMPTY} role="status" aria-label={ariaLabel}>
-        Resources: —
+      <div className={`${HUD_BASE} flex items-center gap-2`}>
+        <AudioToggle />
+        <div className={HUD_EMPTY} role="status" aria-label={ariaLabel}>Resources: —</div>
       </div>
     );
   }
 
   return (
-    <div className={HUD_FULL} role="status" aria-label={ariaLabel}>
-      {sortedKeys.map((key) => (
-        <span key={key} className="flex items-center gap-1.5">
-          <span className="text-white/80">{labelFor(key)}</span>
-          <span className="font-medium tabular-nums">{Number(resources[key] ?? 0)}</span>
-        </span>
-      ))}
+    <div className={`${HUD_BASE} flex items-center gap-2`}>
+      <AudioToggle />
+      <div className={HUD_FULL} role="status" aria-label={ariaLabel}>
+        {sortedKeys.map((key) => (
+          <span key={key} className="flex items-center gap-1.5">
+            <span className="text-white/80">{labelFor(key)}</span>
+            <span className="font-medium tabular-nums">{Number(resources[key] ?? 0)}</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
