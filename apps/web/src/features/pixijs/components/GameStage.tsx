@@ -14,7 +14,7 @@ import { intentQueue, type SendIntentParams } from "@/features/intent-queue/inte
 import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from "@/features/pixijs/effects/renderEffects";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
-import { ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
+import { ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
 import {
   createGameEntityVisual,
   createGameWorldContainer,
@@ -56,6 +56,7 @@ const FOG_COLOR = 0x67_6b_73;
 const FOG_ALPHA = 0.20;
 const FOG_ZOOM_SETTLE_MS = 150;
 const FOG_ZOOM_UPDATE_INTERVAL_MS = 1000 / 30;
+const SONAR_PING_DURATION_MS = 900;
 
 const PAN_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
@@ -178,6 +179,45 @@ export default function GameStage() {
         particleFlowContainer.eventMode = "none";
         particleFlowContainer.zIndex = 1_000_001;
         worldContainer.addChild(particleFlowContainer);
+        const sonarPingContainer = new Container();
+        sonarPingContainer.label = "sonarPings";
+        sonarPingContainer.eventMode = "none";
+        sonarPingContainer.zIndex = 1_000_002;
+        worldContainer.addChild(sonarPingContainer);
+        const sonarPings: Array<{
+          graphics: Graphics;
+          position: { x: number; y: number };
+          startedAt: number;
+        }> = [];
+        const onEntityDetected = (event: Event) => {
+          const entity = (event as CustomEvent<Entity>).detail;
+          if (!entity?.pos) return;
+          const graphics = new Graphics();
+          graphics.eventMode = "none";
+          sonarPingContainer.addChild(graphics);
+          sonarPings.push({
+            graphics,
+            position: { x: entity.pos.x, y: entity.pos.y },
+            startedAt: performance.now(),
+          });
+        };
+        window.addEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
+        const renderSonarPings = (nowMs: number) => {
+          for (let index = sonarPings.length - 1; index >= 0; index -= 1) {
+            const ping = sonarPings[index];
+            const progress = (nowMs - ping.startedAt) / SONAR_PING_DURATION_MS;
+            if (progress >= 1) {
+              ping.graphics.destroy();
+              sonarPings.splice(index, 1);
+              continue;
+            }
+            const cameraScale = worldContainer.scale.x;
+            ping.graphics
+              .clear()
+              .circle(ping.position.x, ping.position.y, (10 + progress * 90) / cameraScale)
+              .stroke({ color: 0x67_e8_f9, width: 2.5 / cameraScale, alpha: (1 - progress) ** 2 });
+          }
+        };
         const lasers: Array<{
           graphics: Graphics;
           origin: { x: number; y: number };
@@ -532,13 +572,9 @@ export default function GameStage() {
                   : MINIMAP_NEUTRAL_COLOR;
             const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
             if (Math.hypot(px - MINIMAP_RADIUS_PX, py - MINIMAP_RADIUS_PX) < MINIMAP_RADIUS_PX) {
-              if (remembered) {
-                minimapMemoryGraphics
-                  .circle(px, py, MINIMAP_UNIT_DOT_RADIUS + 1)
-                  .stroke({ width: 1, color: REMEMBERED_TINT, alpha: 0.8 });
-              } else {
-                minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
-              }
+              (remembered ? minimapMemoryGraphics : minimapGraphics)
+                .circle(px, py, MINIMAP_UNIT_DOT_RADIUS)
+                .fill({ color });
             }
           }
           if (updateFog) {
@@ -1119,6 +1155,7 @@ export default function GameStage() {
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             renderLasers(performance.now());
+            renderSonarPings(performance.now());
             despawnExplosions.update(performance.now());
             render();
 
@@ -1145,6 +1182,7 @@ export default function GameStage() {
           window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
+          window.removeEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
           window.removeEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
           despawnExplosions.destroy();
           fogTexture.destroy(true);

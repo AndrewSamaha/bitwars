@@ -1,5 +1,17 @@
 export type VisibilitySource = { x: number; y: number; range: number };
 
+export function isWithinSensorRange(
+  position: { x: number; y: number },
+  sources: Iterable<VisibilitySource>,
+): boolean {
+  for (const source of sources) {
+    const dx = source.x - position.x;
+    const dy = source.y - position.y;
+    if (dx * dx + dy * dy <= source.range * source.range) return true;
+  }
+  return false;
+}
+
 type PositionedEntity = {
   entity_type_id?: string;
   owner_player_id?: string;
