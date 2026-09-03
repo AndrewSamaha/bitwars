@@ -340,13 +340,12 @@ export default function GameStage() {
           );
         }
 
-        // M5.3: Minimap (centered on camera, unit dots, viewport rect) — screen space, top-right.
-        // Keep its view wider than the camera's while allowing both to zoom
-        // out together. The minimum prevents an overly tight minimap at high
-        // camera zoom.
-        const MINIMAP_VIEWPORT_MULTIPLIER = 2.5;
-        const MINIMAP_MIN_HALF_EXTENT = 2_000;
-        const MINIMAP_SIZE_PX = 200;
+        // Camera-centered Poincaré-style minimap — screen space, top-right.
+        // Space is compressed radially, so the map always represents the
+        // whole world without changing scale as the camera zoom changes.
+        const MINIMAP_RADIUS_PX = 100;
+        const MINIMAP_SIZE_PX = MINIMAP_RADIUS_PX * 2;
+        const MINIMAP_DISTANCE_SCALE = 45_000;
         const MINIMAP_MARGIN = 10;
         const MINIMAP_UNIT_DOT_RADIUS = 2;
         const minimapGraphics = new Graphics();
@@ -371,7 +370,9 @@ export default function GameStage() {
         const minimapFogSprite = new Sprite(minimapFogTexture);
         minimapFogSprite.label = "minimapVisibilityFog";
         minimapFogSprite.eventMode = "none";
-        const minimapFogMask = new Graphics().rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).fill(0xffffff);
+        const minimapFogMask = new Graphics()
+          .circle(MINIMAP_RADIUS_PX, MINIMAP_RADIUS_PX, MINIMAP_RADIUS_PX)
+          .fill(0xffffff);
         minimapFogSprite.mask = minimapFogMask;
         minimapContainer.addChild(minimapFogSprite, minimapFogMask);
         const minimapViewportGraphics = new Graphics();
@@ -389,21 +390,38 @@ export default function GameStage() {
           wy: number,
           centerX: number,
           centerY: number,
-          halfExtent: number,
         ): { px: number; py: number } {
-          const range = halfExtent * 2;
-          const px = ((wx - centerX + halfExtent) / range) * MINIMAP_SIZE_PX;
-          const py = ((wy - centerY + halfExtent) / range) * MINIMAP_SIZE_PX;
+          const dx = wx - centerX;
+          const dy = wy - centerY;
+          const distance = Math.hypot(dx, dy);
+          const compressedRadius = Math.tanh(distance / MINIMAP_DISTANCE_SCALE);
+          const scale = distance === 0 ? 0 : MINIMAP_RADIUS_PX * compressedRadius / distance;
+          const px = MINIMAP_RADIUS_PX + dx * scale;
+          const py = MINIMAP_RADIUS_PX + dy * scale;
           return { px, py };
         }
 
-        function minimapHalfExtent() {
-          const cameraScale = Math.max(worldContainer.scale.x, Number.EPSILON);
-          const viewportLongestSide = Math.max(app.screen.width, app.screen.height) / cameraScale;
-          return Math.max(
-            MINIMAP_MIN_HALF_EXTENT,
-            viewportLongestSide * MINIMAP_VIEWPORT_MULTIPLIER / 2,
-          );
+        function drawProjectedWorldCircle(
+          graphics: Graphics,
+          x: number,
+          y: number,
+          range: number,
+          centerX: number,
+          centerY: number,
+        ) {
+          const segments = 32;
+          for (let index = 0; index <= segments; index += 1) {
+            const angle = index / segments * Math.PI * 2;
+            const point = worldToMinimapPx(
+              x + Math.cos(angle) * range,
+              y + Math.sin(angle) * range,
+              centerX,
+              centerY,
+            );
+            if (index === 0) graphics.moveTo(point.px, point.py);
+            else graphics.lineTo(point.px, point.py);
+          }
+          graphics.fill(0xffffff);
         }
 
         const sensorSources = () => {
@@ -459,18 +477,37 @@ export default function GameStage() {
           );
           minimapGraphics.clear();
           minimapViewportGraphics.clear();
-          const halfExtent = minimapHalfExtent();
           // Background
-          minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).fill({ color: 0x0a_0c_10, alpha: 0.9 });
-          minimapGraphics.rect(0, 0, MINIMAP_SIZE_PX, MINIMAP_SIZE_PX).stroke({ width: 1, color: 0x3a_3e_4a });
-          // Viewport rect (visible world AABB)
+          minimapGraphics
+            .circle(MINIMAP_RADIUS_PX, MINIMAP_RADIUS_PX, MINIMAP_RADIUS_PX)
+            .fill({ color: 0x0a_0c_10, alpha: 0.9 })
+            .stroke({ width: 1, color: 0x3a_3e_4a });
+          // Project the visible world boundary into the disk. Unlike the old
+          // minimap this is not a square, linear viewport rectangle.
           const viewportAabb = getViewportWorldAABB(worldContainer, app.screen.width, app.screen.height, 0);
-          const vmin = worldToMinimapPx(viewportAabb.minX, viewportAabb.minY, centerWorld.x, centerWorld.y, halfExtent);
-          const vmax = worldToMinimapPx(viewportAabb.maxX, viewportAabb.maxY, centerWorld.x, centerWorld.y, halfExtent);
-          const vx = Math.max(0, Math.min(vmin.px, MINIMAP_SIZE_PX - 1));
-          const vy = Math.max(0, Math.min(vmin.py, MINIMAP_SIZE_PX - 1));
-          const vw = Math.max(1, Math.min(vmax.px - vmin.px, MINIMAP_SIZE_PX - vx));
-          const vh = Math.max(1, Math.min(vmax.py - vmin.py, MINIMAP_SIZE_PX - vy));
+          const viewportCorners = [
+            [viewportAabb.minX, viewportAabb.minY],
+            [viewportAabb.maxX, viewportAabb.minY],
+            [viewportAabb.maxX, viewportAabb.maxY],
+            [viewportAabb.minX, viewportAabb.maxY],
+          ] as const;
+          const segmentsPerEdge = 8;
+          for (let edgeIndex = 0; edgeIndex < viewportCorners.length; edgeIndex += 1) {
+            const [startX, startY] = viewportCorners[edgeIndex];
+            const [endX, endY] = viewportCorners[(edgeIndex + 1) % viewportCorners.length];
+            for (let segment = 0; segment <= segmentsPerEdge; segment += 1) {
+              if (edgeIndex > 0 && segment === 0) continue;
+              const progress = segment / segmentsPerEdge;
+              const point = worldToMinimapPx(
+                startX + (endX - startX) * progress,
+                startY + (endY - startY) * progress,
+                centerWorld.x,
+                centerWorld.y,
+              );
+              if (edgeIndex === 0 && segment === 0) minimapViewportGraphics.moveTo(point.px, point.py);
+              else minimapViewportGraphics.lineTo(point.px, point.py);
+            }
+          }
           // Unit dots: own units are blue; all non-owned combat targets are
           // red, while planets and other non-targetable entities stay gray.
           const myId = myPlayerIdRef.current;
@@ -487,26 +524,29 @@ export default function GameStage() {
                 : isCombatTarget
                   ? MINIMAP_HOSTILE_COLOR
                   : MINIMAP_NEUTRAL_COLOR;
-            const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y, halfExtent);
-            if (px >= 0 && px <= MINIMAP_SIZE_PX && py >= 0 && py <= MINIMAP_SIZE_PX) {
+            const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
+            if (Math.hypot(px - MINIMAP_RADIUS_PX, py - MINIMAP_RADIUS_PX) < MINIMAP_RADIUS_PX) {
               minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
             }
           }
           if (updateFog) {
-            drawFog(
-              minimapFogGraphics,
-              minimapFogCutoutGraphics,
-              minimapFogRenderContainer,
-              minimapFogTexture,
-              MINIMAP_SIZE_PX,
-              MINIMAP_SIZE_PX,
-              sensorSources().map((source) => {
-                const { px, py } = worldToMinimapPx(source.x, source.y, centerWorld.x, centerWorld.y, halfExtent);
-                return { x: px, y: py, range: source.range * MINIMAP_SIZE_PX / (halfExtent * 2) };
-              }),
-            );
+            minimapFogGraphics.clear()
+              .circle(MINIMAP_RADIUS_PX, MINIMAP_RADIUS_PX, MINIMAP_RADIUS_PX)
+              .fill({ color: FOG_COLOR, alpha: FOG_ALPHA });
+            minimapFogCutoutGraphics.clear();
+            for (const source of sensorSources()) {
+              drawProjectedWorldCircle(
+                minimapFogCutoutGraphics,
+                source.x,
+                source.y,
+                source.range,
+                centerWorld.x,
+                centerWorld.y,
+              );
+            }
+            app.renderer.render({ container: minimapFogRenderContainer, target: minimapFogTexture, clear: true });
           }
-          minimapViewportGraphics.rect(vx, vy, vw, vh).stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
+          minimapViewportGraphics.stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
         }
 
         // M1: Container for waypoint indicator graphics (drawn each frame)
@@ -901,13 +941,11 @@ export default function GameStage() {
           try {
             const global = ev.global;
             // Keep minimap as informational-only; clicks there should not issue move intents.
-            const minimapBounds = minimapContainer.getBounds();
-            if (
-              global.x >= minimapBounds.minX &&
-              global.x <= minimapBounds.maxX &&
-              global.y >= minimapBounds.minY &&
-              global.y <= minimapBounds.maxY
-            ) {
+            const minimapPoint = minimapContainer.toLocal(global);
+            if (Math.hypot(
+              minimapPoint.x - MINIMAP_RADIUS_PX,
+              minimapPoint.y - MINIMAP_RADIUS_PX,
+            ) <= MINIMAP_RADIUS_PX) {
               if (DEBUG_MOVE_INPUT) {
                 console.debug("[MoveInput] ignored: minimap click", { x: global.x, y: global.y });
               }
