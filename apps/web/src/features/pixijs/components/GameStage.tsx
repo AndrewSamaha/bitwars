@@ -45,6 +45,7 @@ const ZOOM_SENSITIVITY = 0.0015;
 
 /** M6: Tint for entities not owned by the current player */
 const NON_OWNED_TINT = 0x66_66_66;
+const REMEMBERED_TINT = 0x8a_93_a3;
 /** M6: Minimap dot colors by ownership */
 const MINIMAP_MY_COLOR = 0x44_aa_ff;
 const MINIMAP_HOSTILE_COLOR = 0xef_44_44;
@@ -229,7 +230,7 @@ export default function GameStage() {
 
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
-          for (const entity of game.world.with("pos", "entity_type_id")) {
+          for (const entity of game.world.with("pos", "entity_type_id").without("remembered")) {
             const sources = contentManager.getEntityType(entity.entity_type_id ?? "")?.radiation_sources;
             drawRadiationRanges(radiationRangeGraphics, sources, entity.pos.x, entity.pos.y);
           }
@@ -375,6 +376,9 @@ export default function GameStage() {
           .fill(0xffffff);
         minimapFogSprite.mask = minimapFogMask;
         minimapContainer.addChild(minimapFogSprite, minimapFogMask);
+        const minimapMemoryGraphics = new Graphics();
+        minimapMemoryGraphics.eventMode = "none";
+        minimapContainer.addChild(minimapMemoryGraphics);
         const minimapViewportGraphics = new Graphics();
         minimapViewportGraphics.eventMode = "none";
         minimapContainer.addChild(minimapViewportGraphics);
@@ -426,7 +430,7 @@ export default function GameStage() {
 
         const sensorSources = () => {
           return getOwnedSensorSources(
-            game.world.with("pos", "entity_type_id"),
+            game.world.with("pos", "entity_type_id").without("remembered"),
             myPlayerIdRef.current,
             (typeId) => contentManager.getEntityType(typeId)?.sensor?.range,
           );
@@ -476,6 +480,7 @@ export default function GameStage() {
             MINIMAP_MARGIN,
           );
           minimapGraphics.clear();
+          minimapMemoryGraphics.clear();
           minimapViewportGraphics.clear();
           // Background
           minimapGraphics
@@ -516,6 +521,7 @@ export default function GameStage() {
             const ownerId = (e as { owner_player_id?: string }).owner_player_id;
             const isOwned = myId != null && ownerId === myId;
             const entityTypeId = e.entity_type_id?.trim() ?? "";
+            const remembered = e.remembered !== undefined;
             const isCombatTarget = contentManager.getEntityType(entityTypeId)?.combat_targetable === true;
             const color = entityTypeId === "star_yellow"
               ? MINIMAP_STAR_YELLOW_COLOR
@@ -526,7 +532,13 @@ export default function GameStage() {
                   : MINIMAP_NEUTRAL_COLOR;
             const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
             if (Math.hypot(px - MINIMAP_RADIUS_PX, py - MINIMAP_RADIUS_PX) < MINIMAP_RADIUS_PX) {
-              minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
+              if (remembered) {
+                minimapMemoryGraphics
+                  .circle(px, py, MINIMAP_UNIT_DOT_RADIUS + 1)
+                  .stroke({ width: 1, color: REMEMBERED_TINT, alpha: 0.8 });
+              } else {
+                minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
+              }
             }
           }
           if (updateFog) {
@@ -713,7 +725,7 @@ export default function GameStage() {
                 .on("mouseover", () => {
                   const live = findLiveEntityById(id);
                   if (!live) return;
-                  if (contentManager.getEntityType(live.entity_type_id ?? "")?.suppress_hover) return;
+                  if (!live.remembered && contentManager.getEntityType(live.entity_type_id ?? "")?.suppress_hover) return;
                   (live as any).hover = true;
                   (live as any).pixiContainer = entityContainer;
                   setHovered(live);
@@ -774,7 +786,8 @@ export default function GameStage() {
             if ((e as any).scale === undefined) (e as any).scale = 1;
 
             const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
-            const suppressHover = contentManager.getEntityType(typeId)?.suppress_hover === true;
+            const remembered = e.remembered !== undefined;
+            const suppressHover = !remembered && contentManager.getEntityType(typeId)?.suppress_hover === true;
             if (suppressHover && (e as any).hover) {
               (e as any).hover = false;
               setHovered(null);
@@ -783,13 +796,14 @@ export default function GameStage() {
               ref.sprite.texture = getGameEntityTexture(textureCache, typeId);
               ref.lastEntityTypeId = typeId;
             }
-            updateGameEntityVisual(ref, nowMs);
+            if (!remembered) updateGameEntityVisual(ref, nowMs);
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
             const scale = (e as any).scale ?? 1;
             const visualScale = contentManager.getEntityType(typeId)?.visual_scale ?? 1;
             container.scale.set((scale * visualScale) / 2);
             container.zIndex = contentManager.getEntityType(typeId)?.z_index ?? 0;
+            container.alpha = remembered ? 0.45 : 1;
 
             // Rotation: if we have proto velocity, rotate to face direction of travel
             const vel = e.vel as { x: number; y: number } | undefined;
@@ -807,12 +821,12 @@ export default function GameStage() {
             const ownerId = (e as any).owner_player_id;
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
             const isNeutral = ownerId === "neutral";
-            const baseTint = isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
+            const baseTint = remembered ? REMEMBERED_TINT : isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
             const health = Number((e as Entity).health);
             const maxHealth = contentManager.getEntityType(typeId)?.health;
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
             const isSelected = latestSelectorsRef.current.isSelected(id);
-            const shouldShowHealthArc = hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
+            const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildProgress = buildProgressByEntity.get(String((e as any).id));
             const isBuilding = String((e as any).active_intent_kind).toLowerCase() === "build";
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
@@ -865,7 +879,11 @@ export default function GameStage() {
             }
           }
 
-          reconcileWorldParticleFlowEffects(particleFlowContainer, liveById.values(), nowMs);
+          reconcileWorldParticleFlowEffects(
+            particleFlowContainer,
+            [...liveById.values()].filter((entity) => !entity.remembered),
+            nowMs,
+          );
 
           // 4) M1: Render waypoint indicators for entities with queued intents
           // removeChildren only detaches Pixi display objects; destroying the

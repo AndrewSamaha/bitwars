@@ -25,11 +25,12 @@ const RENDER_EFFECT_LABEL_PREFIX = "renderEffect:";
 const PARTICLE_FLOW_LABEL_PREFIX = "particleFlowEffect:";
 
 const liveRenderEffectsWorld: RenderEffectsWorld = {
-  entities: () => game.world.with("pos", "id"),
+  entities: () => game.world.with("pos", "id").without("remembered"),
   getEntityType: (entityTypeId) => contentManager.getEntityType(entityTypeId),
 };
 
 function resolveRenderEffects(entity: Entity, nowMs: number, world: RenderEffectsWorld): RenderEffectDescriptor[] {
+  if (entity.remembered) return [];
   return [
     ...resolveRadiationShedEffects(entity, nowMs, world),
   ];

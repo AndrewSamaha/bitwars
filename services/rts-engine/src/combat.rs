@@ -385,6 +385,7 @@ mod tests {
 
     fn content() -> ContentPack {
         let raider = EntityTypeDef {
+            fog_memory: Default::default(),
             speed: 10.0,
             stop_radius: 0.5,
             mass: 1.0,

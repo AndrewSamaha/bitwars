@@ -92,7 +92,7 @@ const DEBUG_LOG_GAMESTATE_ENTITIES =
 function isWithinRadiationRange(target: Entity): boolean {
   const targetPos = target.pos;
   if (!targetPos) return false;
-  for (const source of game.world.with("pos", "id")) {
+  for (const source of game.world.with("pos", "id").without("remembered")) {
     if (String(source.id) === String(target.id)) continue;
     const sources = contentManager.getEntityType(source.entity_type_id?.trim() ?? "")?.radiation_sources ?? [];
     const dx = source.pos.x - targetPos.x;
@@ -221,14 +221,15 @@ export default function GameStateStreamBridge() {
 
     const applySnapshot = (payload: SnapshotPayload) => {
       // Remove old streamed entities (and destroy any attached sprites)
-      for (const [, ent] of byId) {
+      for (const [id, ent] of byId) {
+        if (ent.remembered) continue;
         try {
           // @ts-ignore - sprite is optional
           ent.sprite?.destroy?.();
         } catch {}
         world.remove(ent);
+        byId.delete(id);
       }
-      byId.clear();
       const collectorStateByEntity = new Map(
         (payload.collector_states ?? []).map((state) => [normalizeId(state.entity_id), state]),
       );
@@ -240,6 +241,18 @@ export default function GameStateStreamBridge() {
       for (const s of payload.entities) {
         const collectorState = collectorStateByEntity.get(normalizeId(s.id));
         const combatEffectState = combatEffectStateByEntity.get(normalizeId(s.id));
+        const remembered = byId.get(normalizeId(s.id));
+        if (remembered) {
+          world.removeComponent(remembered, "remembered");
+          if (s.entity_type_id !== undefined) remembered.entity_type_id = s.entity_type_id;
+          if (s.owner_player_id !== undefined) remembered.owner_player_id = s.owner_player_id;
+          if (s.health !== undefined) remembered.health = s.health;
+          if (s.pos) remembered.pos = { x: s.pos.x, y: s.pos.y };
+          if (s.vel) remembered.vel = { x: s.vel.x, y: s.vel.y };
+          if (collectorState) remembered.collector_state = collectorStateFromStream(collectorState);
+          if (combatEffectState) remembered.combat_effect_state = combatEffectState;
+          continue;
+        }
         const ent: Entity = {
           id: s.id,
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
@@ -293,6 +306,11 @@ export default function GameStateStreamBridge() {
         const key = normalizeId(id);
         const existing = byId.get(key);
         if (!existing) continue;
+        const fogMemory = contentManager.getEntityType(existing.entity_type_id ?? "")?.fog_memory;
+        if (fogMemory === "retain_last_known") {
+          world.addComponent(existing, "remembered", { last_seen_at: Date.now() });
+          continue;
+        }
         try {
           // @ts-ignore - sprite is optional
           existing.sprite?.destroy?.();
@@ -318,6 +336,7 @@ export default function GameStateStreamBridge() {
         const key = normalizeId(u.id);
         const existing = byId.get(key);
         if (existing) {
+          if (existing.remembered) world.removeComponent(existing, "remembered");
           if (u.entity_type_id !== undefined) existing.entity_type_id = u.entity_type_id;
           if (u.pos) {
             if (!existing.pos) existing.pos = { x: u.pos.x, y: u.pos.y };
