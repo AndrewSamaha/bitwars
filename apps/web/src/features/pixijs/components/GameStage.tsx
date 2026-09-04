@@ -676,6 +676,9 @@ export default function GameStage() {
           }
         };
         const onKeyUp = (ev: KeyboardEvent) => {
+          if (ev.key === "Shift" && latestSelectorsRef.current.selectedAction === "Move") {
+            setSelectedAction(null);
+          }
           if (PAN_KEYS.has(ev.code)) {
             panKeysRef.current.delete(ev.code);
           }
