@@ -21,6 +21,8 @@
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type EntityTypeDef = {
+  /** Client behavior when an entity of this type leaves sensor coverage. */
+  fog_memory: "retain_last_known" | "forget_when_hidden";
   speed: number;
   stop_radius: number;
   mass: number;

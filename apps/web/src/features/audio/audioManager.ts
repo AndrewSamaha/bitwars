@@ -12,6 +12,8 @@ export enum BackgroundMusicState {
 /** Semantic game events that have a registered sound effect. */
 export enum SoundEffect {
   EntityExplosion = "entity-explosion",
+  SonarPing = "sonar-ping",
+  BuildComplete = "build-complete",
 }
 
 const backgroundMusicSources: Record<BackgroundMusicState, AudioSource> = {
@@ -22,6 +24,14 @@ const soundEffectDefinitions: Record<SoundEffect, { source: AudioSource; options
   [SoundEffect.EntityExplosion]: {
     source: "/audio/sfx/explosion/DeathFlash.flac",
     options: { volume: 0.7, pool: 8 },
+  },
+  [SoundEffect.SonarPing]: {
+    source: "/audio/sfx/sonar_ping/sonarping-38269.mp3",
+    options: { volume: 0.65, pool: 2 },
+  },
+  [SoundEffect.BuildComplete]: {
+    source: "/audio/sfx/jobs_finished/jobs-finished-90258.mp3",
+    options: { volume: 0.7, pool: 4 },
   },
 };
 

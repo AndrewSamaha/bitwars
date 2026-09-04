@@ -14,7 +14,7 @@ import { intentQueue, type SendIntentParams } from "@/features/intent-queue/inte
 import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from "@/features/pixijs/effects/renderEffects";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
-import { ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
+import { BUILD_COMPLETED_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
 import {
   createGameEntityVisual,
   createGameWorldContainer,
@@ -45,6 +45,7 @@ const ZOOM_SENSITIVITY = 0.0015;
 
 /** M6: Tint for entities not owned by the current player */
 const NON_OWNED_TINT = 0x66_66_66;
+const REMEMBERED_TINT = 0x8a_93_a3;
 /** M6: Minimap dot colors by ownership */
 const MINIMAP_MY_COLOR = 0x44_aa_ff;
 const MINIMAP_HOSTILE_COLOR = 0xef_44_44;
@@ -55,6 +56,7 @@ const FOG_COLOR = 0x67_6b_73;
 const FOG_ALPHA = 0.20;
 const FOG_ZOOM_SETTLE_MS = 150;
 const FOG_ZOOM_UPDATE_INTERVAL_MS = 1000 / 30;
+const SONAR_PING_DURATION_MS = 900;
 
 const PAN_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
@@ -177,6 +179,46 @@ export default function GameStage() {
         particleFlowContainer.eventMode = "none";
         particleFlowContainer.zIndex = 1_000_001;
         worldContainer.addChild(particleFlowContainer);
+        const sonarPingContainer = new Container();
+        sonarPingContainer.label = "sonarPings";
+        sonarPingContainer.eventMode = "none";
+        sonarPingContainer.zIndex = 1_000_002;
+        worldContainer.addChild(sonarPingContainer);
+        const sonarPings: Array<{
+          graphics: Graphics;
+          position: { x: number; y: number };
+          startedAt: number;
+        }> = [];
+        const onEntityDetected = (event: Event) => {
+          const entity = (event as CustomEvent<Entity>).detail;
+          if (!entity?.pos) return;
+          const graphics = new Graphics();
+          graphics.eventMode = "none";
+          sonarPingContainer.addChild(graphics);
+          sonarPings.push({
+            graphics,
+            position: { x: entity.pos.x, y: entity.pos.y },
+            startedAt: performance.now(),
+          });
+        };
+        window.addEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
+        window.addEventListener(BUILD_COMPLETED_EVENT, onEntityDetected);
+        const renderSonarPings = (nowMs: number) => {
+          for (let index = sonarPings.length - 1; index >= 0; index -= 1) {
+            const ping = sonarPings[index];
+            const progress = (nowMs - ping.startedAt) / SONAR_PING_DURATION_MS;
+            if (progress >= 1) {
+              ping.graphics.destroy();
+              sonarPings.splice(index, 1);
+              continue;
+            }
+            const cameraScale = worldContainer.scale.x;
+            ping.graphics
+              .clear()
+              .circle(ping.position.x, ping.position.y, (10 + progress * 90) / cameraScale)
+              .stroke({ color: 0x67_e8_f9, width: 2.5 / cameraScale, alpha: (1 - progress) ** 2 });
+          }
+        };
         const lasers: Array<{
           graphics: Graphics;
           origin: { x: number; y: number };
@@ -229,7 +271,7 @@ export default function GameStage() {
 
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
-          for (const entity of game.world.with("pos", "entity_type_id")) {
+          for (const entity of game.world.with("pos", "entity_type_id").without("remembered")) {
             const sources = contentManager.getEntityType(entity.entity_type_id ?? "")?.radiation_sources;
             drawRadiationRanges(radiationRangeGraphics, sources, entity.pos.x, entity.pos.y);
           }
@@ -375,6 +417,9 @@ export default function GameStage() {
           .fill(0xffffff);
         minimapFogSprite.mask = minimapFogMask;
         minimapContainer.addChild(minimapFogSprite, minimapFogMask);
+        const minimapMemoryGraphics = new Graphics();
+        minimapMemoryGraphics.eventMode = "none";
+        minimapContainer.addChild(minimapMemoryGraphics);
         const minimapViewportGraphics = new Graphics();
         minimapViewportGraphics.eventMode = "none";
         minimapContainer.addChild(minimapViewportGraphics);
@@ -426,7 +471,7 @@ export default function GameStage() {
 
         const sensorSources = () => {
           return getOwnedSensorSources(
-            game.world.with("pos", "entity_type_id"),
+            game.world.with("pos", "entity_type_id").without("remembered"),
             myPlayerIdRef.current,
             (typeId) => contentManager.getEntityType(typeId)?.sensor?.range,
           );
@@ -476,6 +521,7 @@ export default function GameStage() {
             MINIMAP_MARGIN,
           );
           minimapGraphics.clear();
+          minimapMemoryGraphics.clear();
           minimapViewportGraphics.clear();
           // Background
           minimapGraphics
@@ -516,6 +562,7 @@ export default function GameStage() {
             const ownerId = (e as { owner_player_id?: string }).owner_player_id;
             const isOwned = myId != null && ownerId === myId;
             const entityTypeId = e.entity_type_id?.trim() ?? "";
+            const remembered = e.remembered !== undefined;
             const isCombatTarget = contentManager.getEntityType(entityTypeId)?.combat_targetable === true;
             const color = entityTypeId === "star_yellow"
               ? MINIMAP_STAR_YELLOW_COLOR
@@ -526,7 +573,9 @@ export default function GameStage() {
                   : MINIMAP_NEUTRAL_COLOR;
             const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
             if (Math.hypot(px - MINIMAP_RADIUS_PX, py - MINIMAP_RADIUS_PX) < MINIMAP_RADIUS_PX) {
-              minimapGraphics.circle(px, py, MINIMAP_UNIT_DOT_RADIUS).fill({ color });
+              (remembered ? minimapMemoryGraphics : minimapGraphics)
+                .circle(px, py, MINIMAP_UNIT_DOT_RADIUS)
+                .fill({ color });
             }
           }
           if (updateFog) {
@@ -713,7 +762,7 @@ export default function GameStage() {
                 .on("mouseover", () => {
                   const live = findLiveEntityById(id);
                   if (!live) return;
-                  if (contentManager.getEntityType(live.entity_type_id ?? "")?.suppress_hover) return;
+                  if (!live.remembered && contentManager.getEntityType(live.entity_type_id ?? "")?.suppress_hover) return;
                   (live as any).hover = true;
                   (live as any).pixiContainer = entityContainer;
                   setHovered(live);
@@ -774,7 +823,8 @@ export default function GameStage() {
             if ((e as any).scale === undefined) (e as any).scale = 1;
 
             const typeId = ((e as any).entity_type_id as string | undefined) ?? "";
-            const suppressHover = contentManager.getEntityType(typeId)?.suppress_hover === true;
+            const remembered = e.remembered !== undefined;
+            const suppressHover = !remembered && contentManager.getEntityType(typeId)?.suppress_hover === true;
             if (suppressHover && (e as any).hover) {
               (e as any).hover = false;
               setHovered(null);
@@ -783,13 +833,14 @@ export default function GameStage() {
               ref.sprite.texture = getGameEntityTexture(textureCache, typeId);
               ref.lastEntityTypeId = typeId;
             }
-            updateGameEntityVisual(ref, nowMs);
+            if (!remembered) updateGameEntityVisual(ref, nowMs);
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
             const scale = (e as any).scale ?? 1;
             const visualScale = contentManager.getEntityType(typeId)?.visual_scale ?? 1;
             container.scale.set((scale * visualScale) / 2);
             container.zIndex = contentManager.getEntityType(typeId)?.z_index ?? 0;
+            container.alpha = remembered ? 0.45 : 1;
 
             // Rotation: if we have proto velocity, rotate to face direction of travel
             const vel = e.vel as { x: number; y: number } | undefined;
@@ -807,12 +858,12 @@ export default function GameStage() {
             const ownerId = (e as any).owner_player_id;
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
             const isNeutral = ownerId === "neutral";
-            const baseTint = isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
+            const baseTint = remembered ? REMEMBERED_TINT : isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
             const health = Number((e as Entity).health);
             const maxHealth = contentManager.getEntityType(typeId)?.health;
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
             const isSelected = latestSelectorsRef.current.isSelected(id);
-            const shouldShowHealthArc = hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
+            const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildProgress = buildProgressByEntity.get(String((e as any).id));
             const isBuilding = String((e as any).active_intent_kind).toLowerCase() === "build";
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
@@ -865,7 +916,11 @@ export default function GameStage() {
             }
           }
 
-          reconcileWorldParticleFlowEffects(particleFlowContainer, liveById.values(), nowMs);
+          reconcileWorldParticleFlowEffects(
+            particleFlowContainer,
+            [...liveById.values()].filter((entity) => !entity.remembered),
+            nowMs,
+          );
 
           // 4) M1: Render waypoint indicators for entities with queued intents
           // removeChildren only detaches Pixi display objects; destroying the
@@ -1101,6 +1156,7 @@ export default function GameStage() {
             // Advance ECS systems (including movement)
             game.tick(performance.now());
             renderLasers(performance.now());
+            renderSonarPings(performance.now());
             despawnExplosions.update(performance.now());
             render();
 
@@ -1127,6 +1183,8 @@ export default function GameStage() {
           window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
+          window.removeEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
+          window.removeEventListener(BUILD_COMPLETED_EVENT, onEntityDetected);
           window.removeEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
           despawnExplosions.destroy();
           fogTexture.destroy(true);

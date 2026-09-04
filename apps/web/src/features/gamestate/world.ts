@@ -17,6 +17,8 @@ export type RadiationDamagePresentation = {
   radiation_damage_last_at?: number;
   radiation_shed_started_at?: number;
 };
+/** Client-only marker for an entity whose state is no longer authoritative. */
+export type FogMemoryView = { remembered?: { last_seen_at: number } };
 export const RADIATION_DAMAGE_VISUAL_LINGER_MS = 2_000;
 export type UIState = { hover: boolean };
 export type ActiveIntentView = {
@@ -52,6 +54,7 @@ export type Entity = Partial<
   EntityTypeId &
   OwnerPlayerId &
   Health &
+  FogMemoryView &
   RadiationDamagePresentation &
   ActiveIntentView &
   CollectorStateView &
@@ -73,7 +76,7 @@ class GameWorld {
     this.last = now;
 
     // Proto-shaped movement (pos: {x,y}, vel: {x,y})
-    for (const e of this.world.with("pos", "vel")) {
+    for (const e of this.world.with("pos", "vel").without("remembered")) {
       if (e.pos && e.vel) {
         e.pos.x += e.vel.x * dt;
         e.pos.y += e.vel.y * dt;

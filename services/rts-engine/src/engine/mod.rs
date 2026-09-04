@@ -204,6 +204,7 @@ mod radiation_tests {
         entity_types.insert(
             "star_yellow".to_string(),
             EntityTypeDef {
+                fog_memory: Default::default(),
                 speed: 0.0,
                 stop_radius: 1.0,
                 mass: 500.0,
@@ -250,6 +251,7 @@ mod radiation_tests {
         entity_types.insert(
             "collector_solar".to_string(),
             EntityTypeDef {
+                fog_memory: Default::default(),
                 speed: 20.0,
                 stop_radius: 1.0,
                 mass: 500.0,
@@ -275,6 +277,7 @@ mod radiation_tests {
         entity_types.insert(
             "worker".to_string(),
             EntityTypeDef {
+                fog_memory: Default::default(),
                 speed: 90.0,
                 stop_radius: 0.75,
                 mass: 1.0,

@@ -24,6 +24,8 @@ pub struct ContentPack {
 /// Per-entity-type definition loaded from the content YAML.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EntityTypeDef {
+    /// Client behavior when this entity leaves sensor coverage.
+    pub fog_memory: FogMemory,
     pub speed: f32,
     pub stop_radius: f32,
     pub mass: f32,
@@ -82,6 +84,14 @@ pub struct EntityTypeDef {
     /// Units this entity type can produce.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub builds: Vec<BuildOptionDef>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FogMemory {
+    RetainLastKnown,
+    #[default]
+    ForgetWhenHidden,
 }
 
 /// Data needed for server-authoritative autonomous combat.
@@ -362,6 +372,7 @@ mod tests {
         types.insert(
             "worker".into(),
             EntityTypeDef {
+                fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
                 stop_radius: 0.75,
                 mass: 1.0,
@@ -387,6 +398,7 @@ mod tests {
         types.insert(
             "scout".into(),
             EntityTypeDef {
+                fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
                 stop_radius: 0.5,
                 mass: 0.6,
@@ -423,6 +435,7 @@ mod tests {
         types_a.insert(
             "worker".into(),
             EntityTypeDef {
+                fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
                 stop_radius: 0.75,
                 mass: 1.0,
@@ -448,6 +461,7 @@ mod tests {
         types_a.insert(
             "scout".into(),
             EntityTypeDef {
+                fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
                 stop_radius: 0.5,
                 mass: 0.6,
@@ -475,6 +489,7 @@ mod tests {
         types_b.insert(
             "scout".into(),
             EntityTypeDef {
+                fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
                 stop_radius: 0.5,
                 mass: 0.6,
@@ -500,6 +515,7 @@ mod tests {
         types_b.insert(
             "worker".into(),
             EntityTypeDef {
+                fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
                 stop_radius: 0.75,
                 mass: 1.0,
@@ -556,7 +572,10 @@ mod tests {
         let habitat_sensor = pack.entity_types["habitat"].sensor.as_ref().unwrap();
         assert_eq!(habitat_sensor.range, 4000.0);
         assert_eq!(habitat_sensor.cost_per_minute["energy"], 5.0);
-        assert_eq!(pack.entity_types["star_yellow"].visibility_range, Some(40_000.0));
+        assert_eq!(
+            pack.entity_types["star_yellow"].visibility_range,
+            Some(40_000.0)
+        );
         assert!(
             !pack.content_hash.is_empty(),
             "content hash should be non-empty"
@@ -568,5 +587,21 @@ mod tests {
 
         let scout = pack.get("scout").unwrap();
         assert_eq!(scout.speed, 140.0);
+    }
+
+    #[test]
+    fn loads_explicit_fog_memory_policy() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let pack =
+            ContentPack::load(&manifest_dir.join("../../packages/content/entities.yaml")).unwrap();
+
+        assert_eq!(
+            pack.entity_types["planet_blue"].fog_memory,
+            FogMemory::RetainLastKnown
+        );
+        assert_eq!(
+            pack.entity_types["raider"].fog_memory,
+            FogMemory::ForgetWhenHidden
+        );
     }
 }

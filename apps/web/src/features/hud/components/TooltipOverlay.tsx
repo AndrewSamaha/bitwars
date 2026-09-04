@@ -108,6 +108,7 @@ export function TooltipOverlay() {
   const health = Number((hoveredEntity as any).health);
   const maxHealth = contentManager.getEntityType(entityTypeId)?.health;
   const healthFraction = typeof maxHealth === "number" && maxHealth > 0 ? health / maxHealth : null;
+  const rememberedAt = (hoveredEntity as any).remembered?.last_seen_at as number | undefined;
 
   return (
     <div
@@ -123,6 +124,7 @@ export function TooltipOverlay() {
         fontSize: 12
       }}
     >
+      {rememberedAt !== undefined && <div><b>Last known</b></div>}
       {ownerPlayerName && <div><b>owner:</b> {ownerPlayerName}</div>}
       <div><b>{entityTypeId || "—"}</b></div>
       <div><b>id:</b> {(hoveredEntity as any).id}</div>

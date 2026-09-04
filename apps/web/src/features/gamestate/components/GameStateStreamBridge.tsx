@@ -7,7 +7,8 @@ import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
-import { dispatchEntityExploded, dispatchGameStateUpdated } from "@/features/gamestate/events";
+import { dispatchBuildCompleted, dispatchEntityDetected, dispatchEntityExploded, dispatchGameStateUpdated } from "@/features/gamestate/events";
+import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -92,7 +93,7 @@ const DEBUG_LOG_GAMESTATE_ENTITIES =
 function isWithinRadiationRange(target: Entity): boolean {
   const targetPos = target.pos;
   if (!targetPos) return false;
-  for (const source of game.world.with("pos", "id")) {
+  for (const source of game.world.with("pos", "id").without("remembered")) {
     if (String(source.id) === String(target.id)) continue;
     const sources = contentManager.getEntityType(source.entity_type_id?.trim() ?? "")?.radiation_sources ?? [];
     const dx = source.pos.x - targetPos.x;
@@ -113,6 +114,7 @@ export default function GameStateStreamBridge() {
   const RESOURCE_LEDGER_POLL_MS = 2000;
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
+  const knownEntityIdsRef = useRef<Set<string>>(new Set());
   const streamIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
   const firstDeltaLoggedRef = useRef<number>(0);
   const mountedAtRef = useRef<number>(Date.now());
@@ -221,14 +223,15 @@ export default function GameStateStreamBridge() {
 
     const applySnapshot = (payload: SnapshotPayload) => {
       // Remove old streamed entities (and destroy any attached sprites)
-      for (const [, ent] of byId) {
+      for (const [id, ent] of byId) {
+        if (ent.remembered) continue;
         try {
           // @ts-ignore - sprite is optional
           ent.sprite?.destroy?.();
         } catch {}
         world.remove(ent);
+        byId.delete(id);
       }
-      byId.clear();
       const collectorStateByEntity = new Map(
         (payload.collector_states ?? []).map((state) => [normalizeId(state.entity_id), state]),
       );
@@ -238,8 +241,21 @@ export default function GameStateStreamBridge() {
 
       // Add new ones
       for (const s of payload.entities) {
+        knownEntityIdsRef.current.add(normalizeId(s.id));
         const collectorState = collectorStateByEntity.get(normalizeId(s.id));
         const combatEffectState = combatEffectStateByEntity.get(normalizeId(s.id));
+        const remembered = byId.get(normalizeId(s.id));
+        if (remembered) {
+          world.removeComponent(remembered, "remembered");
+          if (s.entity_type_id !== undefined) remembered.entity_type_id = s.entity_type_id;
+          if (s.owner_player_id !== undefined) remembered.owner_player_id = s.owner_player_id;
+          if (s.health !== undefined) remembered.health = s.health;
+          if (s.pos) remembered.pos = { x: s.pos.x, y: s.pos.y };
+          if (s.vel) remembered.vel = { x: s.vel.x, y: s.vel.y };
+          if (collectorState) remembered.collector_state = collectorStateFromStream(collectorState);
+          if (combatEffectState) remembered.combat_effect_state = combatEffectState;
+          continue;
+        }
         const ent: Entity = {
           id: s.id,
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
@@ -288,11 +304,17 @@ export default function GameStateStreamBridge() {
     const applyDelta = (payload: DeltaPayload) => {
       let existingEntities = 0;
       let newEntities = 0;
+      const newlyKnown: Entity[] = [];
       // Fog-of-war loss only removes local presentation; it is not a death.
       for (const id of payload.hidden_entity_ids ?? []) {
         const key = normalizeId(id);
         const existing = byId.get(key);
         if (!existing) continue;
+        const fogMemory = contentManager.getEntityType(existing.entity_type_id ?? "")?.fog_memory;
+        if (fogMemory === "retain_last_known") {
+          world.addComponent(existing, "remembered", { last_seen_at: Date.now() });
+          continue;
+        }
         try {
           // @ts-ignore - sprite is optional
           existing.sprite?.destroy?.();
@@ -316,8 +338,11 @@ export default function GameStateStreamBridge() {
       }
       for (const u of payload.updates) {
         const key = normalizeId(u.id);
+        const firstSeen = !knownEntityIdsRef.current.has(key);
         const existing = byId.get(key);
         if (existing) {
+          const reacquired = existing.remembered !== undefined;
+          if (reacquired) world.removeComponent(existing, "remembered");
           if (u.entity_type_id !== undefined) existing.entity_type_id = u.entity_type_id;
           if (u.pos) {
             if (!existing.pos) existing.pos = { x: u.pos.x, y: u.pos.y };
@@ -341,6 +366,7 @@ export default function GameStateStreamBridge() {
             existing.health = u.health;
           }
           applyIntentOverlayToEntity(existing, activeIntentByEntityRef.current.get(key));
+          if (firstSeen) newlyKnown.push(existing);
           existingEntities++;
           // force currently ignored; add when systems need it
         } else {
@@ -357,7 +383,9 @@ export default function GameStateStreamBridge() {
           world.add(ent);
           byId.set(key, ent);
           applyIntentOverlayToEntity(ent, activeIntentByEntityRef.current.get(key));
+          if (firstSeen) newlyKnown.push(ent);
         }
+        knownEntityIdsRef.current.add(key);
       }
       for (const state of payload.collector_state_updates ?? []) {
         const existing = byId.get(normalizeId(state.entity_id));
@@ -366,6 +394,19 @@ export default function GameStateStreamBridge() {
       for (const state of payload.combat_effect_state_updates ?? []) {
         const existing = byId.get(normalizeId(state.entity_id));
         if (existing) existing.combat_effect_state = state;
+      }
+      const playerId = currentPlayerIdRef.current;
+      if (playerId && newlyKnown.length > 0) {
+        const sensorSources = getOwnedSensorSources(
+          game.world.with("pos", "entity_type_id").without("remembered"),
+          playerId,
+          (typeId) => contentManager.getEntityType(typeId)?.sensor?.range,
+        );
+        for (const entity of newlyKnown) {
+          if (entity.owner_player_id !== playerId && entity.pos && isWithinSensorRange(entity.pos, sensorSources)) {
+            dispatchEntityDetected(entity);
+          }
+        }
       }
       log.debug("GameStateStreamBridge:delta:applied", { streamId: streamIdRef.current, existingEntities, newEntities });
       if (DEBUG_LOG_GAMESTATE_ENTITIES && payload.updates.length > 0) {
@@ -434,6 +475,10 @@ export default function GameStateStreamBridge() {
               ? payload.serverTick
               : Number(payload.serverTick ?? 0);
           const intentId = payload.intentId ?? "";
+          const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
+          const isCompletedBuild =
+            state === LIFECYCLE_STATE_FINISHED &&
+            intentQueue.getKindForClientCmd(clientCmdId) === "build";
 
           intentQueue.onLifecycleEvent({
             clientCmdId,
@@ -444,9 +489,13 @@ export default function GameStateStreamBridge() {
             reason: typeof payload.reason === "number" ? payload.reason : Number(payload.reason),
           });
 
-          const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
           const entityKey =
             entityIdFromCmd != null ? String(entityIdFromCmd) : null;
+
+          if (isCompletedBuild && entityKey) {
+            const entity = byId.get(entityKey);
+            if (entity) dispatchBuildCompleted(entity);
+          }
 
           if (entityKey) {
             if (
