@@ -14,7 +14,7 @@ import { intentQueue, type SendIntentParams } from "@/features/intent-queue/inte
 import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from "@/features/pixijs/effects/renderEffects";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
-import { ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
+import { BUILD_COMPLETED_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
 import {
   createGameEntityVisual,
   createGameWorldContainer,
@@ -202,6 +202,7 @@ export default function GameStage() {
           });
         };
         window.addEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
+        window.addEventListener(BUILD_COMPLETED_EVENT, onEntityDetected);
         const renderSonarPings = (nowMs: number) => {
           for (let index = sonarPings.length - 1; index >= 0; index -= 1) {
             const ping = sonarPings[index];
@@ -1183,6 +1184,7 @@ export default function GameStage() {
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
           window.removeEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
+          window.removeEventListener(BUILD_COMPLETED_EVENT, onEntityDetected);
           window.removeEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
           despawnExplosions.destroy();
           fogTexture.destroy(true);

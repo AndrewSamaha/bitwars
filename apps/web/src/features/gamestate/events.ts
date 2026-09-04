@@ -4,6 +4,7 @@ import type { Entity } from "./world";
 export const GAMESTATE_UPDATED_EVENT = "bitwars:gamestate-updated";
 export const ENTITY_EXPLODED_EVENT = "bitwars:entity-exploded";
 export const ENTITY_DETECTED_EVENT = "bitwars:entity-detected";
+export const BUILD_COMPLETED_EVENT = "bitwars:build-completed";
 
 export type GameStateUpdatedDetail = { entityIds?: string[] };
 
@@ -24,4 +25,10 @@ export function dispatchEntityExploded(entity: Entity) {
 export function dispatchEntityDetected(entity: Entity) {
   if (!entity.pos) return;
   window.dispatchEvent(new CustomEvent<Entity>(ENTITY_DETECTED_EVENT, { detail: entity }));
+}
+
+/** Emitted when this client's build intent has completed. */
+export function dispatchBuildCompleted(entity: Entity) {
+  if (!entity.pos) return;
+  window.dispatchEvent(new CustomEvent<Entity>(BUILD_COMPLETED_EVENT, { detail: entity }));
 }

@@ -25,6 +25,15 @@ BitWars. It is deployed with the game at `/audio/ATTRIBUTIONS.md`.
 - Changes: File renamed.
 - Retrieved: 2026-09-03
 
+### Jobs Finished
+
+- Files: `sfx/jobs_finished/jobs-finished-90258.mp3`
+- Artist: Unknown (Pixabay contributor)
+- Source: https://pixabay.com/sound-effects/film-special-effects-finished-90258/
+- License: https://pixabay.com/service/license-summary/
+- Changes: File renamed.
+- Retrieved: 2026-09-03
+
 ### Big Explosion
 
 - Files: `sfx/explosion/DeathFlash.flac`

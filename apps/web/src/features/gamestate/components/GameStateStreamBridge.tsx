@@ -7,7 +7,7 @@ import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
-import { dispatchEntityDetected, dispatchEntityExploded, dispatchGameStateUpdated } from "@/features/gamestate/events";
+import { dispatchBuildCompleted, dispatchEntityDetected, dispatchEntityExploded, dispatchGameStateUpdated } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -475,6 +475,10 @@ export default function GameStateStreamBridge() {
               ? payload.serverTick
               : Number(payload.serverTick ?? 0);
           const intentId = payload.intentId ?? "";
+          const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
+          const isCompletedBuild =
+            state === LIFECYCLE_STATE_FINISHED &&
+            intentQueue.getKindForClientCmd(clientCmdId) === "build";
 
           intentQueue.onLifecycleEvent({
             clientCmdId,
@@ -485,9 +489,13 @@ export default function GameStateStreamBridge() {
             reason: typeof payload.reason === "number" ? payload.reason : Number(payload.reason),
           });
 
-          const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
           const entityKey =
             entityIdFromCmd != null ? String(entityIdFromCmd) : null;
+
+          if (isCompletedBuild && entityKey) {
+            const entity = byId.get(entityKey);
+            if (entity) dispatchBuildCompleted(entity);
+          }
 
           if (entityKey) {
             if (
