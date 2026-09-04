@@ -280,7 +280,7 @@ entity_types:
     health: 60.0
     hull_radius: 10.0
     combat_targetable: true
-    build_code:
+    build_cost:
       minerals: 75.0
       energy: 50
     combat:
