@@ -17,7 +17,9 @@ const RAIDER_TYPE: &str = "raider";
 const STAR_TYPE: &str = "star_yellow";
 const SPAWN_INTERVAL_SECS: u64 = 150;
 const ORBIT_CLEARANCE: f32 = 100.0;
-const MAX_SCRIPT_BYTES: usize = 128 * 1024;
+// The neutral map currently has 400 landmarks; its first world_tick needs room
+// for the read-only context and the script's retained waypoint list.
+const MAX_SCRIPT_BYTES: usize = 512 * 1024;
 const MAX_SCRIPT_HOOKS: usize = 20;
 const INSTRUCTIONS_PER_HOOK: u32 = 1_000;
 
@@ -199,6 +201,7 @@ impl RaiderScript {
         ctx.set("entities", lua_entities_table(&self.lua, entities)?)?;
         self.hook_count.store(0, Ordering::Relaxed);
         world_tick.call::<()>(ctx)?;
+        self.lua.gc_collect()?;
         Ok(())
     }
 
@@ -395,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn raider_script_spawns_orbits_and_targets_players() {
+    fn raider_script_patrols_targets_and_shares_sightings() {
         let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
         let script = RaiderScript::new().unwrap();
         let mut entities = vec![
@@ -404,7 +407,7 @@ mod tests {
         ];
         let commands = script.tick(&mut entities, &content, 1, 60).unwrap();
         assert!(commands.target_by_entity.is_empty());
-        assert!(entities[1].vel.as_ref().unwrap().y.abs() > 0.0);
+        assert!(entities[1].vel.as_ref().unwrap().x < 0.0);
 
         entities.push(entity(3, "worker", "player-1", 1400.0, 0.0));
         let commands = script.tick(&mut entities, &content, 2, 60).unwrap();
@@ -419,6 +422,41 @@ mod tests {
                 .pos
                 .as_ref()
                 .is_some_and(|pos| pos.x == 0.0 && pos.y == 0.0)));
+        assert!(entities[3]
+            .vel
+            .as_ref()
+            .is_some_and(|velocity| velocity.x > 0.0));
+    }
+
+    #[test]
+    fn raider_script_loads_the_full_neutral_map_within_its_memory_limit() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = Vec::new();
+        for id in 1..=100 {
+            entities.push(entity(
+                id,
+                STAR_TYPE,
+                NEUTRAL_OWNER,
+                id as f32 * 1_000.0,
+                0.0,
+            ));
+        }
+        for id in 101..=175 {
+            entities.push(entity(id, "theta", NEUTRAL_OWNER, id as f32 * 1_000.0, 0.0));
+        }
+        for id in 176..=400 {
+            entities.push(entity(
+                id,
+                "minerals",
+                NEUTRAL_OWNER,
+                id as f32 * 1_000.0,
+                0.0,
+            ));
+        }
+        entities.push(entity(401, RAIDER_TYPE, NEUTRAL_OWNER, 0.0, 0.0));
+
+        script.tick(&mut entities, &content, 1, 60).unwrap();
     }
 
     #[test]
