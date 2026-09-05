@@ -7,7 +7,7 @@ use std::sync::{
 };
 
 use anyhow::{Context, Result};
-use mlua::{Error as LuaError, HookTriggers, Lua, Table, VmState};
+use mlua::{Error as LuaError, Function, HookTriggers, Lua, RegistryKey, Table, VmState};
 
 use crate::content::ContentPack;
 use crate::pb::{Entity, Vec2};
@@ -29,10 +29,18 @@ pub struct NpcCommands {
 pub struct RaiderScript {
     lua: Lua,
     hook_count: Arc<AtomicUsize>,
+    /// State owned by the neutral scripting owner, shared by all of its entities.
+    shared: RegistryKey,
+    /// State owned by each neutral entity, keyed by entity ID.
+    private_by_entity: RegistryKey,
 }
 
 impl RaiderScript {
     pub fn new() -> Result<Self> {
+        Self::from_source(include_str!("../scripts/raider.lua"))
+    }
+
+    fn from_source(source: &str) -> Result<Self> {
         let lua = Lua::new(); // safe stdlib only: no filesystem, OS, network, or debug APIs
         lua.set_memory_limit(MAX_SCRIPT_BYTES)?;
         let hook_count = Arc::new(AtomicUsize::new(0));
@@ -49,10 +57,15 @@ impl RaiderScript {
                 }
             },
         );
-        lua.load(include_str!("../scripts/raider.lua"))
+        lua.load(source)
             .exec()
             .context("failed to load raider Lua script")?;
-        Ok(Self { lua, hook_count })
+        Ok(Self {
+            shared: lua.create_registry_value(lua.create_table()?)?,
+            private_by_entity: lua.create_registry_value(lua.create_table()?)?,
+            lua,
+            hook_count,
+        })
     }
 
     pub fn tick(
@@ -97,6 +110,8 @@ impl RaiderScript {
                 ))
             })
             .collect();
+        let world_entities = world_entities(entities);
+        self.call_world_tick(tick, ticks_per_second, &world_entities)?;
 
         let mut commands = NpcCommands {
             scripted_entity_ids: HashSet::new(),
@@ -132,11 +147,12 @@ impl RaiderScript {
                 .collect();
             self.hook_count.store(0, Ordering::Relaxed);
             let result = self.call(
-                position.x,
-                position.y,
+                entity,
                 speed,
                 star.map(|star| (star.1, star.2, star.3 + ORBIT_CLEARANCE)),
                 &nearby_targets,
+                tick,
+                ticks_per_second,
             )?;
             commands.scripted_entity_ids.insert(entity.id);
             if let Some(target_id) = result.target_id {
@@ -147,21 +163,58 @@ impl RaiderScript {
                 velocity.y = result.vy;
             }
         }
+        self.remove_stale_private_state(entities)?;
         Ok(commands)
+    }
+
+    fn call_world_tick(
+        &self,
+        tick: u64,
+        ticks_per_second: u32,
+        entities: &[(u64, String, String, f32, f32, f32)],
+    ) -> Result<()> {
+        let Some(world_tick) = self.lua.globals().get::<Option<Function>>("world_tick")? else {
+            return Ok(());
+        };
+        let ctx = self.lua.create_table()?;
+        ctx.set("owner_id", NEUTRAL_OWNER)?;
+        ctx.set("tick", tick)?;
+        ctx.set("ticks_per_second", ticks_per_second)?;
+        ctx.set("shared", self.lua.registry_value::<Table>(&self.shared)?)?;
+        ctx.set("entities", lua_entities_table(&self.lua, entities)?)?;
+        self.hook_count.store(0, Ordering::Relaxed);
+        world_tick.call::<()>(ctx)?;
+        Ok(())
     }
 
     fn call(
         &self,
-        x: f32,
-        y: f32,
+        entity: &Entity,
         speed: f32,
         star: Option<(f32, f32, f32)>,
         targets: &[(u64, f32, f32)],
+        tick: u64,
+        ticks_per_second: u32,
     ) -> Result<ScriptResult> {
+        let position = entity.pos.as_ref().expect("scripted entity has a position");
         let ctx = self.lua.create_table()?;
-        ctx.set("x", x)?;
-        ctx.set("y", y)?;
+        // Keep these top-level fields while scripts migrate to ctx.self.
+        ctx.set("x", position.x)?;
+        ctx.set("y", position.y)?;
         ctx.set("speed", speed)?;
+        ctx.set("tick", tick)?;
+        ctx.set("ticks_per_second", ticks_per_second)?;
+        let self_table = self.lua.create_table()?;
+        self_table.set("id", entity.id)?;
+        self_table.set("owner_id", entity.owner_player_id.as_str())?;
+        self_table.set("entity_type_id", entity.entity_type_id.as_str())?;
+        self_table.set("x", position.x)?;
+        self_table.set("y", position.y)?;
+        self_table.set("health", entity.health)?;
+        self_table.set("speed", speed)?;
+        ctx.set("self", self_table)?;
+        ctx.set("shared", self.lua.registry_value::<Table>(&self.shared)?)?;
+        ctx.set("private", self.private_state(entity.id)?)?;
         ctx.set("orbit_radius", star.map(|star| star.2).unwrap_or(0.0))?;
         if let Some((star_x, star_y, _)) = star {
             let star_table = self.lua.create_table()?;
@@ -185,6 +238,39 @@ impl RaiderScript {
             vx: result.get("vx").unwrap_or(0.0),
             vy: result.get("vy").unwrap_or(0.0),
         })
+    }
+
+    fn private_state(&self, entity_id: u64) -> Result<Table> {
+        let private_by_entity = self.lua.registry_value::<Table>(&self.private_by_entity)?;
+        if let Some(state) = private_by_entity.get::<Option<Table>>(entity_id)? {
+            return Ok(state);
+        }
+        let state = self.lua.create_table()?;
+        private_by_entity.set(entity_id, state.clone())?;
+        Ok(state)
+    }
+
+    fn remove_stale_private_state(&self, entities: &[Entity]) -> Result<()> {
+        let live_ids: HashSet<u64> = entities
+            .iter()
+            .filter(|entity| {
+                entity.entity_type_id == RAIDER_TYPE
+                    && entity.owner_player_id == NEUTRAL_OWNER
+                    && entity.health > 0.0
+            })
+            .map(|entity| entity.id)
+            .collect();
+        let private_by_entity = self.lua.registry_value::<Table>(&self.private_by_entity)?;
+        let stale_ids: Vec<u64> = private_by_entity
+            .pairs::<u64, Table>()
+            .filter_map(Result::ok)
+            .map(|(id, _)| id)
+            .filter(|id| !live_ids.contains(id))
+            .collect();
+        for id in stale_ids {
+            private_by_entity.set(id, mlua::Value::Nil)?;
+        }
+        Ok(())
     }
 
     fn spawn_raider(
@@ -232,6 +318,47 @@ fn distance_sq(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
     dx * dx + dy * dy
 }
 
+/// Neutral map entities are common knowledge for the neutral scripting owner.
+/// Player-owned entities are deliberately excluded; a raider only receives those in `targets`
+/// when they are within its acquisition range.
+fn world_entities(entities: &[Entity]) -> Vec<(u64, String, String, f32, f32, f32)> {
+    let mut result: Vec<_> = entities
+        .iter()
+        .filter_map(|entity| {
+            let position = entity.pos.as_ref()?;
+            (entity.owner_player_id == NEUTRAL_OWNER || entity.owner_player_id.is_empty())
+                .then_some((
+                    entity.id,
+                    entity.owner_player_id.clone(),
+                    entity.entity_type_id.clone(),
+                    position.x,
+                    position.y,
+                    entity.health,
+                ))
+        })
+        .collect();
+    result.sort_by_key(|entity| entity.0);
+    result
+}
+
+fn lua_entities_table(
+    lua: &Lua,
+    entities: &[(u64, String, String, f32, f32, f32)],
+) -> Result<Table> {
+    let result = lua.create_table()?;
+    for (index, (id, owner_id, entity_type_id, x, y, health)) in entities.iter().enumerate() {
+        let entity = lua.create_table()?;
+        entity.set("id", *id)?;
+        entity.set("owner_id", owner_id.as_str())?;
+        entity.set("entity_type_id", entity_type_id.as_str())?;
+        entity.set("x", *x)?;
+        entity.set("y", *y)?;
+        entity.set("health", *health)?;
+        result.set(index + 1, entity)?;
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +401,39 @@ mod tests {
                 .pos
                 .as_ref()
                 .is_some_and(|pos| pos.x == 0.0 && pos.y == 0.0)));
+    }
+
+    #[test]
+    fn exposes_owner_shared_state_and_entity_private_state() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::from_source(
+            r#"
+                function world_tick(ctx)
+                  assert(ctx.owner_id == "neutral")
+                  assert(ctx.entities[1].id == 1)
+                  assert(ctx.entities[1].entity_type_id == "star_yellow")
+                  ctx.shared.world_ticks = (ctx.shared.world_ticks or 0) + 1
+                end
+
+                function tick(ctx)
+                  assert(ctx.self.id == 2)
+                  assert(ctx.self.owner_id == "neutral")
+                  assert(ctx.self.entity_type_id == "raider")
+                  assert(ctx.tick == ctx.shared.world_ticks)
+                  ctx.private.calls = (ctx.private.calls or 0) + 1
+                  return { vx = ctx.private.calls, vy = 0 }
+                end
+            "#,
+        )
+        .unwrap();
+        let mut entities = vec![
+            entity(1, STAR_TYPE, NEUTRAL_OWNER, 0.0, 0.0),
+            entity(2, RAIDER_TYPE, NEUTRAL_OWNER, 1300.0, 0.0),
+        ];
+
+        script.tick(&mut entities, &content, 1, 60).unwrap();
+        assert_eq!(entities[1].vel.as_ref().unwrap().x, 1.0);
+        script.tick(&mut entities, &content, 2, 60).unwrap();
+        assert_eq!(entities[1].vel.as_ref().unwrap().x, 2.0);
     }
 }
