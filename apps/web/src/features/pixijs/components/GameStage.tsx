@@ -26,6 +26,7 @@ import {
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
 import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog";
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
+import { minimapOffsetToWorld, worldToMinimapOffset } from "@/features/pixijs/utils/minimap";
 import {
   CELL_SIZE,
   SEED,
@@ -436,14 +437,15 @@ export default function GameStage() {
           centerX: number,
           centerY: number,
         ): { px: number; py: number } {
-          const dx = wx - centerX;
-          const dy = wy - centerY;
-          const distance = Math.hypot(dx, dy);
-          const compressedRadius = Math.tanh(distance / MINIMAP_DISTANCE_SCALE);
-          const scale = distance === 0 ? 0 : MINIMAP_RADIUS_PX * compressedRadius / distance;
-          const px = MINIMAP_RADIUS_PX + dx * scale;
-          const py = MINIMAP_RADIUS_PX + dy * scale;
-          return { px, py };
+          const offset = worldToMinimapOffset(
+            wx,
+            wy,
+            centerX,
+            centerY,
+            MINIMAP_RADIUS_PX,
+            MINIMAP_DISTANCE_SCALE,
+          );
+          return { px: MINIMAP_RADIUS_PX + offset.x, py: MINIMAP_RADIUS_PX + offset.y };
         }
 
         function drawProjectedWorldCircle(
@@ -981,8 +983,27 @@ export default function GameStage() {
         };
 
         type SelectionDrag = { startX: number; startY: number; shift: boolean };
+        type MinimapDrag = { worldX: number; worldY: number; moved: boolean };
         let selectionDrag: SelectionDrag | null = null;
+        let minimapDrag: MinimapDrag | null = null;
         const SELECTION_DRAG_THRESHOLD_PX = 4;
+
+        const moveCameraToMinimapPoint = (global: { x: number; y: number }, draggedWorld?: MinimapDrag) => {
+          const point = minimapContainer.toLocal(global);
+          const offset = minimapOffsetToWorld(
+            point.x - MINIMAP_RADIUS_PX,
+            point.y - MINIMAP_RADIUS_PX,
+            MINIMAP_RADIUS_PX,
+            MINIMAP_DISTANCE_SCALE,
+          );
+          const center = worldContainer.toLocal({ x: app.screen.width / 2, y: app.screen.height / 2 });
+          const worldX = draggedWorld ? draggedWorld.worldX - offset.x : center.x + offset.x;
+          const worldY = draggedWorld ? draggedWorld.worldY - offset.y : center.y + offset.y;
+          worldContainer.position.set(
+            app.screen.width / 2 - worldX * worldContainer.scale.x,
+            app.screen.height / 2 - worldY * worldContainer.scale.y,
+          );
+        };
 
         const drawSelectionBox = (startX: number, startY: number, endX: number, endY: number) => {
           const x = Math.min(startX, endX);
@@ -998,16 +1019,25 @@ export default function GameStage() {
         app.stage.on('pointerdown', (ev: any) => {
           try {
             const global = ev.global;
-            // Keep minimap as informational-only; clicks there should not issue move intents.
+            // A minimap drag keeps the grabbed world point beneath the pointer.
+            // This inverts the minimap's non-linear Poincare projection rather
+            // than treating its pixels as a linear world coordinate system.
             const minimapPoint = minimapContainer.toLocal(global);
             if (Math.hypot(
               minimapPoint.x - MINIMAP_RADIUS_PX,
               minimapPoint.y - MINIMAP_RADIUS_PX,
             ) <= MINIMAP_RADIUS_PX) {
-              if (DEBUG_MOVE_INPUT) {
-                console.debug("[MoveInput] ignored: minimap click", { x: global.x, y: global.y });
-              }
-              updateMoveDebug("ignored:minimap", { x: global.x, y: global.y });
+              const center = worldContainer.toLocal({
+                x: app.screen.width / 2,
+                y: app.screen.height / 2,
+              });
+              const offset = minimapOffsetToWorld(
+                minimapPoint.x - MINIMAP_RADIUS_PX,
+                minimapPoint.y - MINIMAP_RADIUS_PX,
+                MINIMAP_RADIUS_PX,
+                MINIMAP_DISTANCE_SCALE,
+              );
+              minimapDrag = { worldX: center.x + offset.x, worldY: center.y + offset.y, moved: false };
               return;
             }
 
@@ -1078,11 +1108,21 @@ export default function GameStage() {
         });
 
         app.stage.on("pointermove", (ev: any) => {
+          if (minimapDrag) {
+            minimapDrag.moved = true;
+            moveCameraToMinimapPoint(ev.global, minimapDrag);
+            return;
+          }
           if (!selectionDrag) return;
           drawSelectionBox(selectionDrag.startX, selectionDrag.startY, ev.global.x, ev.global.y);
         });
 
-        app.stage.on("pointerup", (ev: any) => {
+        const onPointerUp = (ev: any) => {
+          if (minimapDrag) {
+            moveCameraToMinimapPoint(ev.global, minimapDrag.moved ? minimapDrag : undefined);
+            minimapDrag = null;
+            return;
+          }
           const drag = selectionDrag;
           if (!drag) return;
           selectionDrag = null;
@@ -1112,7 +1152,9 @@ export default function GameStage() {
           }
           if (drag.shift) addSelection(selectedIds);
           else setSelection(selectedIds);
-        });
+        };
+        app.stage.on("pointerup", onPointerUp);
+        app.stage.on("pointerupoutside", onPointerUp);
 
         app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
