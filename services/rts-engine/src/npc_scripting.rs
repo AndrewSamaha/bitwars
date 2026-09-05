@@ -26,6 +26,15 @@ pub struct NpcCommands {
     pub target_by_entity: HashMap<u64, u64>,
 }
 
+struct ScriptTarget {
+    id: u64,
+    owner_id: String,
+    entity_type_id: String,
+    x: f32,
+    y: f32,
+    health: f32,
+}
+
 pub struct RaiderScript {
     lua: Lua,
     hook_count: Arc<AtomicUsize>,
@@ -77,7 +86,7 @@ impl RaiderScript {
     ) -> Result<NpcCommands> {
         self.spawn_raider(entities, content, tick, ticks_per_second);
 
-        let player_targets: Vec<(u64, f32, f32)> = entities
+        let player_targets: Vec<ScriptTarget> = entities
             .iter()
             .filter_map(|entity| {
                 let pos = entity.pos.as_ref()?;
@@ -87,7 +96,14 @@ impl RaiderScript {
                     && content
                         .get(&entity.entity_type_id)
                         .is_some_and(|def| def.combat_targetable))
-                .then_some((entity.id, pos.x, pos.y))
+                .then_some(ScriptTarget {
+                    id: entity.id,
+                    owner_id: entity.owner_player_id.clone(),
+                    entity_type_id: entity.entity_type_id.clone(),
+                    x: pos.x,
+                    y: pos.y,
+                    health: entity.health,
+                })
             })
             .collect();
         let stars: Vec<(u64, f32, f32, f32)> = entities
@@ -139,9 +155,8 @@ impl RaiderScript {
             });
             let nearby_targets: Vec<_> = player_targets
                 .iter()
-                .copied()
-                .filter(|(_, target_x, target_y)| {
-                    distance_sq(position.x, position.y, *target_x, *target_y)
+                .filter(|target| {
+                    distance_sq(position.x, position.y, target.x, target.y)
                         <= acquisition_range * acquisition_range
                 })
                 .collect();
@@ -192,7 +207,7 @@ impl RaiderScript {
         entity: &Entity,
         speed: f32,
         star: Option<(f32, f32, f32)>,
-        targets: &[(u64, f32, f32)],
+        targets: &[&ScriptTarget],
         tick: u64,
         ticks_per_second: u32,
     ) -> Result<ScriptResult> {
@@ -223,11 +238,14 @@ impl RaiderScript {
             ctx.set("star", star_table)?;
         }
         let target_table = self.lua.create_table()?;
-        for (index, (id, target_x, target_y)) in targets.iter().enumerate() {
+        for (index, target_data) in targets.iter().enumerate() {
             let target = self.lua.create_table()?;
-            target.set("id", *id)?;
-            target.set("x", *target_x)?;
-            target.set("y", *target_y)?;
+            target.set("id", target_data.id)?;
+            target.set("owner_id", target_data.owner_id.as_str())?;
+            target.set("entity_type_id", target_data.entity_type_id.as_str())?;
+            target.set("x", target_data.x)?;
+            target.set("y", target_data.y)?;
+            target.set("health", target_data.health)?;
             target_table.set(index + 1, target)?;
         }
         ctx.set("targets", target_table)?;
@@ -435,5 +453,31 @@ mod tests {
         assert_eq!(entities[1].vel.as_ref().unwrap().x, 1.0);
         script.tick(&mut entities, &content, 2, 60).unwrap();
         assert_eq!(entities[1].vel.as_ref().unwrap().x, 2.0);
+    }
+
+    #[test]
+    fn exposes_target_owner_type_and_health() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::from_source(
+            r#"
+                function tick(ctx)
+                  local target = ctx.targets[1]
+                  assert(target.id == 3)
+                  assert(target.owner_id == "player-1")
+                  assert(target.entity_type_id == "worker")
+                  assert(target.health == 100)
+                  return { target_id = target.id }
+                end
+            "#,
+        )
+        .unwrap();
+        let mut entities = vec![
+            entity(1, STAR_TYPE, NEUTRAL_OWNER, 0.0, 0.0),
+            entity(2, RAIDER_TYPE, NEUTRAL_OWNER, 1300.0, 0.0),
+            entity(3, "worker", "player-1", 1400.0, 0.0),
+        ];
+
+        let commands = script.tick(&mut entities, &content, 1, 60).unwrap();
+        assert_eq!(commands.target_by_entity.get(&2), Some(&3));
     }
 }
