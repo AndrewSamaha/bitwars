@@ -82,6 +82,7 @@ Configuration is loaded from the root `.env` file. The `dev` and `fe:run` script
 | `MAX_BATCH_MS` | `5` | Maximum ms spent processing intents per tick (0 = unlimited) |
 | `AXIOM_TOKEN` | *(none)* | Axiom API token for telemetry (optional) |
 | `AXIOM_DATASET` | *(none)* | Axiom dataset name for telemetry (optional) |
+| `AXIOM_ORG_ID` | *(none)* | Required when `AXIOM_TOKEN` is a personal access token |
 | `NEXT_PUBLIC_DEBUG_MOVE_INPUT` | `0` | Web-only debug flag. Set to `1` to enable move-input observability (console logs + small on-screen badge in `GameStage`). |
 
 ### Move Click Detection (Web)

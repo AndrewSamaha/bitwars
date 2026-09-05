@@ -321,6 +321,11 @@ entity_types:
           damage: 2.0
           cooldown_ticks: 51
           priority: 0
+    sensor:
+      range: 500.0
+      cost_per_minute:
+        energy: 2.5
+
 
   raider:
     fog_memory: forget_when_hidden

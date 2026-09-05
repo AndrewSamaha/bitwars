@@ -18,7 +18,7 @@ use crate::io::redis::{
     CollectorUiState, CombatEffectUiState, GameplayEntityRef, GameplayEvent, IntentPoint,
     RedisClient,
 };
-use crate::io::telemetry::Telemetry;
+use crate::io::telemetry::{summarize_tick_durations, Telemetry};
 use crate::npc_scripting::RaiderScript;
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
@@ -28,6 +28,7 @@ use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
 pub const ENGINE_PROTOCOL_MAJOR: u32 = 7;
+const TICK_TIMING_WINDOW_TICKS: usize = 600;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
 const COLLECTOR_ACTIVITY_IDLE: &str = "idle";
@@ -2408,13 +2409,19 @@ impl Engine {
 
     pub async fn run(&mut self) -> anyhow::Result<()> {
         let dt = 1.0 / self.cfg.tps as f32;
+        let tick_budget = Duration::from_secs_f64(1.0 / self.cfg.tps as f64);
         let mut ticker = interval(Duration::from_micros(
             (1_000_000.0 / self.cfg.tps as f64) as u64,
         ));
         let snapshot_interval = (self.cfg.tps as u64) * self.cfg.snapshot_every_secs;
+        let mut tick_durations = self
+            .telemetry
+            .as_ref()
+            .map(|_| Vec::with_capacity(TICK_TIMING_WINDOW_TICKS));
 
         loop {
             ticker.tick().await;
+            let tick_started = tick_durations.as_ref().map(|_| Instant::now());
 
             // M6: Process pending joins (spawn on join)
             while let Ok(Some(player_id)) = self.redis.pop_next_pending_join().await {
@@ -2557,6 +2564,33 @@ impl Engine {
             self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
             self.prev_combat_effect_ui_state_by_entity =
                 self.combat_effect_ui_state_by_entity.clone();
+
+            if let (Some(tick_started), Some(tick_durations)) = (tick_started, tick_durations.as_mut()) {
+                tick_durations.push(tick_started.elapsed());
+                if tick_durations.len() == TICK_TIMING_WINDOW_TICKS {
+                    let summary = summarize_tick_durations(tick_durations, tick_budget)
+                        .expect("tick timing window is non-empty");
+                    tick_durations.clear();
+                    let telemetry = self.telemetry.as_ref().expect("telemetry enabled").clone();
+                    let game_id = self.cfg.game_id.clone();
+                    let server_tick = self.state.tick;
+                    let entity_count = self.state.entities.len();
+                    tokio::spawn(async move {
+                        if let Err(error) = telemetry
+                            .publish_tick_timing(
+                                &game_id,
+                                server_tick,
+                                entity_count,
+                                tick_budget,
+                                summary,
+                            )
+                            .await
+                        {
+                            warn!(?error, "failed to publish tick timing telemetry");
+                        }
+                    });
+                }
+            }
         }
     }
 

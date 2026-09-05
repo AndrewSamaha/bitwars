@@ -6,12 +6,41 @@ use reqwest::Client;
 use serde_json::json;
 use tracing::warn;
 
+#[derive(Debug, PartialEq)]
+pub struct TickTimingSummary {
+    pub samples: usize,
+    pub p50_ms: f64,
+    pub p95_ms: f64,
+    pub max_ms: f64,
+    pub over_budget_samples: usize,
+}
+
+pub fn summarize_tick_durations(samples: &[Duration], budget: Duration) -> Option<TickTimingSummary> {
+    if samples.is_empty() {
+        return None;
+    }
+
+    let mut millis: Vec<f64> = samples.iter().map(|sample| sample.as_secs_f64() * 1_000.0).collect();
+    millis.sort_by(f64::total_cmp);
+    let percentile = |percent: usize| {
+        millis[((millis.len() * percent + 99) / 100).saturating_sub(1)]
+    };
+    Some(TickTimingSummary {
+        samples: millis.len(),
+        p50_ms: percentile(50),
+        p95_ms: percentile(95),
+        max_ms: *millis.last().expect("non-empty samples"),
+        over_budget_samples: samples.iter().filter(|sample| **sample > budget).count(),
+    })
+}
+
 #[derive(Clone)]
 pub struct Telemetry {
     client: Client,
     ingest_url: String,
     token: String,
     dataset: String,
+    org_id: Option<String>,
     service_name: String,
 }
 
@@ -41,6 +70,9 @@ impl Telemetry {
             .ok()
             .filter(|v| !v.trim().is_empty())
             .unwrap_or_else(|| "rts-engine".to_string());
+        let org_id = std::env::var("AXIOM_ORG_ID")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
 
         let client = Client::builder()
             .timeout(Duration::from_secs(5))
@@ -55,6 +87,7 @@ impl Telemetry {
             ingest_url,
             token,
             dataset,
+            org_id,
             service_name,
         }))
     }
@@ -93,14 +126,46 @@ impl Telemetry {
         self.send(record).await
     }
 
+    pub async fn publish_tick_timing(
+        &self,
+        game_id: &str,
+        server_tick: u64,
+        entity_count: usize,
+        tick_budget: Duration,
+        summary: TickTimingSummary,
+    ) -> Result<()> {
+        let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        let record = json!({
+            "timestamp": timestamp,
+            "event_type": "engine_tick_timing",
+            "service": self.service_name,
+            "dataset": self.dataset,
+            "game_id": game_id,
+            "server_tick": server_tick,
+            "entity_count": entity_count,
+            "samples": summary.samples,
+            "tick_budget_ms": tick_budget.as_secs_f64() * 1_000.0,
+            "tick_p50_ms": summary.p50_ms,
+            "tick_p95_ms": summary.p95_ms,
+            "tick_max_ms": summary.max_ms,
+            "over_budget_samples": summary.over_budget_samples,
+        });
+
+        self.send(record).await
+    }
+
     async fn send(&self, record: serde_json::Value) -> Result<()> {
         let body = serde_json::to_vec(&[record])?;
 
-        let response = self
+        let mut request = self
             .client
             .post(&self.ingest_url)
             .bearer_auth(&self.token)
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/json");
+        if let Some(org_id) = &self.org_id {
+            request = request.header("X-AXIOM-ORG-ID", org_id);
+        }
+        let response = request
             .body(body)
             .send()
             .await
@@ -113,5 +178,23 @@ impl Telemetry {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summarizes_tick_durations() {
+        let samples = [1, 2, 3, 4, 5]
+            .map(Duration::from_millis);
+        let summary = summarize_tick_durations(&samples, Duration::from_millis(3)).unwrap();
+
+        assert_eq!(summary.samples, 5);
+        assert_eq!(summary.p50_ms, 3.0);
+        assert_eq!(summary.p95_ms, 5.0);
+        assert_eq!(summary.max_ms, 5.0);
+        assert_eq!(summary.over_budget_samples, 2);
     }
 }
