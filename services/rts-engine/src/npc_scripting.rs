@@ -127,7 +127,7 @@ impl RaiderScript {
                 ))
             })
             .collect();
-        let world_entities = world_entities(entities);
+        let world_entities = world_entities(entities, content);
         self.call_world_tick(tick, ticks_per_second, &world_entities)?;
 
         let mut commands = NpcCommands {
@@ -187,7 +187,7 @@ impl RaiderScript {
         &self,
         tick: u64,
         ticks_per_second: u32,
-        entities: &[(u64, String, String, f32, f32, f32)],
+        entities: &[(u64, String, String, f32, f32, f32, f32)],
     ) -> Result<()> {
         let Some(world_tick) = self.lua.globals().get::<Option<Function>>("world_tick")? else {
             return Ok(());
@@ -341,7 +341,10 @@ fn distance_sq(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
 /// Universe entities are common knowledge for the raider scripting owner.
 /// Player-owned entities are deliberately excluded; a raider only receives those in `targets`
 /// when they are within its acquisition range.
-fn world_entities(entities: &[Entity]) -> Vec<(u64, String, String, f32, f32, f32)> {
+fn world_entities(
+    entities: &[Entity],
+    content: &ContentPack,
+) -> Vec<(u64, String, String, f32, f32, f32, f32)> {
     let mut result: Vec<_> = entities
         .iter()
         .filter_map(|entity| {
@@ -354,6 +357,16 @@ fn world_entities(entities: &[Entity]) -> Vec<(u64, String, String, f32, f32, f3
                     position.x,
                     position.y,
                     entity.health,
+                    content
+                        .get(&entity.entity_type_id)
+                        .map(|definition| {
+                            definition
+                                .radiation_sources
+                                .iter()
+                                .map(|source| source.max_effective_distance.max(0.0))
+                                .fold(0.0, f32::max)
+                        })
+                        .unwrap_or(0.0),
                 ))
         })
         .collect();
@@ -363,10 +376,12 @@ fn world_entities(entities: &[Entity]) -> Vec<(u64, String, String, f32, f32, f3
 
 fn lua_entities_table(
     lua: &Lua,
-    entities: &[(u64, String, String, f32, f32, f32)],
+    entities: &[(u64, String, String, f32, f32, f32, f32)],
 ) -> Result<Table> {
     let result = lua.create_table()?;
-    for (index, (id, owner_id, entity_type_id, x, y, health)) in entities.iter().enumerate() {
+    for (index, (id, owner_id, entity_type_id, x, y, health, radiation_radius)) in
+        entities.iter().enumerate()
+    {
         let entity = lua.create_table()?;
         entity.set("id", *id)?;
         entity.set("owner_id", owner_id.as_str())?;
@@ -374,6 +389,7 @@ fn lua_entities_table(
         entity.set("x", *x)?;
         entity.set("y", *y)?;
         entity.set("health", *health)?;
+        entity.set("radiation_radius", *radiation_radius)?;
         result.set(index + 1, entity)?;
     }
     Ok(result)
@@ -402,13 +418,13 @@ mod tests {
         let script = RaiderScript::new().unwrap();
         let mut entities = vec![
             entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
-            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1300.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1600.0, 0.0),
         ];
         let commands = script.tick(&mut entities, &content, 1, 60).unwrap();
         assert!(commands.target_by_entity.is_empty());
         assert!(entities[1].vel.as_ref().unwrap().x < 0.0);
 
-        entities.push(entity(3, "worker", "player-1", 1400.0, 0.0));
+        entities.push(entity(3, "worker", "player-1", 1800.0, 0.0));
         let commands = script.tick(&mut entities, &content, 2, 60).unwrap();
         assert_eq!(commands.target_by_entity.get(&2), Some(&3));
 
@@ -425,6 +441,52 @@ mod tests {
             .vel
             .as_ref()
             .is_some_and(|velocity| velocity.x > 0.0));
+    }
+
+    #[test]
+    fn raider_script_escapes_theta_radiation() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = vec![
+            entity(1, "theta", UNIVERSE_OWNER, 0.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1_100.0, 0.0),
+        ];
+
+        script.tick(&mut entities, &content, 1, 60).unwrap();
+
+        assert!(entities[1].vel.as_ref().unwrap().x > 0.0);
+    }
+
+    #[test]
+    fn raider_script_stops_at_a_safe_waypoint_perimeter() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = vec![
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1_550.0, 0.0),
+        ];
+
+        script.tick(&mut entities, &content, 1, 60).unwrap();
+
+        assert_eq!(entities[1].vel, Some(Vec2 { x: 0.0, y: 0.0 }));
+    }
+
+    #[test]
+    fn raider_script_detours_around_an_intervening_star() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = vec![
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
+            // 1550 * 0.95 was the stable chord-orbit radius observed in Redis.
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1_472.5, 0.0),
+            entity(3, "theta", UNIVERSE_OWNER, -4_000.0, 0.0),
+        ];
+
+        script.tick(&mut entities, &content, 1, 60).unwrap();
+
+        let velocity = entities[1].vel.as_ref().unwrap();
+        assert!(velocity.x > 10.0, "detour must leave the chord-orbit radius");
+        assert_ne!(velocity.y, 0.0);
     }
 
     #[test]
@@ -467,6 +529,7 @@ mod tests {
                   assert(ctx.owner_id == "raiders")
                   assert(ctx.entities[1].id == 1)
                   assert(ctx.entities[1].entity_type_id == "star_yellow")
+                  assert(ctx.entities[1].radiation_radius == 1200)
                   ctx.shared.world_ticks = (ctx.shared.world_ticks or 0) + 1
                 end
 
