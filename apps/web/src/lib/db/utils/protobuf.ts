@@ -1,4 +1,5 @@
 import { type Delta } from "@bitwars/shared/gen/delta_pb";
+import { type Entity } from "@bitwars/shared/gen/entity_pb";
 import { type Snapshot } from "@bitwars/shared/gen/snapshot_pb";
 
 // Helpers to convert protobuf-es messages into compact, client-friendly JSON
@@ -41,6 +42,19 @@ export const mapDeltaToJson = (d: Delta) => ({
   })),
 });
 
+export const mapEntityToJson = (e: Entity) => {
+  const eAny = e as { entityTypeId?: string; ownerPlayerId?: string; health?: number };
+  return {
+    id: biToNumOrStr(e.id),
+    ...(eAny.entityTypeId ? { entity_type_id: eAny.entityTypeId } : {}),
+    ...(e.pos ? { pos: { x: e.pos.x, y: e.pos.y } } : {}),
+    ...(e.vel ? { vel: { x: e.vel.x, y: e.vel.y } } : {}),
+    ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
+    ...(eAny.ownerPlayerId !== undefined ? { owner_player_id: eAny.ownerPlayerId } : {}),
+    ...(eAny.health !== undefined ? { health: eAny.health } : {}),
+  };
+};
+
 export const mapSnapshotToJson = (s: Snapshot) => {
   const player_ledgers = (s.playerLedgers ?? []).map((pl) => ({
     player_id: pl.playerId ?? "",
@@ -52,18 +66,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
   return {
     type: "snapshot" as const,
     tick: biToNumOrStr(s.tick),
-    entities: (s.entities ?? []).map((e) => {
-      const eAny = e as { entityTypeId?: string; ownerPlayerId?: string; health?: number };
-      return {
-        id: biToNumOrStr(e.id),
-        ...(eAny.entityTypeId ? { entity_type_id: eAny.entityTypeId } : {}),
-        ...(e.pos ? { pos: { x: e.pos.x, y: e.pos.y } } : {}),
-        ...(e.vel ? { vel: { x: e.vel.x, y: e.vel.y } } : {}),
-        ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
-        ...(eAny.ownerPlayerId !== undefined ? { owner_player_id: eAny.ownerPlayerId } : {}),
-        ...(eAny.health !== undefined ? { health: eAny.health } : {}),
-      };
-    }),
+    entities: (s.entities ?? []).map(mapEntityToJson),
     player_ledgers,
     collector_states: (s.collectorStates ?? []).map((state) => ({
       entity_id: biToNumOrStr(state.entityId),

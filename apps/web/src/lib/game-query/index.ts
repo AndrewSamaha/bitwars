@@ -25,6 +25,13 @@ export function getGameId(): string {
   return getEnv("GAME_ID", DEFAULT_GAME_ID);
 }
 
+/** Temporary development gate for external game-query endpoints. */
+export function assertGameQueryAccess(): void {
+  if (["1", "true"].includes(getEnv("GAME_QUERY_REQUIRE_AUTH", "false").toLowerCase())) {
+    throw new Error("Game-query M2M authentication is required but not implemented");
+  }
+}
+
 export function gameQueryKeys(gameId = getGameId()) {
   const match = `rts:match:${gameId}`;
   return {

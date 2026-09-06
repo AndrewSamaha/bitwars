@@ -4,7 +4,7 @@ const mockedRedis = vi.hoisted(() => ({ mget: vi.fn(), set: vi.fn() }));
 vi.mock("@/lib/db/connection", () => ({ redis: mockedRedis }));
 vi.mock("@/lib/db/utils/redis-streams", () => ({ xRangeWithBuffers: vi.fn() }));
 
-import { gameQueryKeys, getScriptDebugState, isGameplayEventCursor, isScriptOwnerId, setScriptDebugEnabled } from "@/lib/game-query";
+import { assertGameQueryAccess, gameQueryKeys, getScriptDebugState, isGameplayEventCursor, isScriptOwnerId, setScriptDebugEnabled } from "@/lib/game-query";
 
 afterEach(() => vi.clearAllMocks());
 
@@ -26,4 +26,10 @@ it("keeps the most recent Lua snapshot readable after capture is disabled", asyn
   expect(mockedRedis.set).toHaveBeenCalledWith(
     "rts:match:match-7:script_debug_enabled:raiders", "0", "EX", 3600,
   );
+});
+
+it("blocks external queries when the M2M-auth gate is enabled", () => {
+  process.env.GAME_QUERY_REQUIRE_AUTH = "true";
+  expect(assertGameQueryAccess).toThrow("M2M authentication is required");
+  process.env.GAME_QUERY_REQUIRE_AUTH = "false";
 });
