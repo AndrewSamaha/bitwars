@@ -93,8 +93,9 @@ impl RaiderScript {
         content: &ContentPack,
         tick: u64,
         ticks_per_second: u32,
+        max_raiders: usize,
     ) -> Result<NpcCommands> {
-        self.spawn_raider(entities, content, tick, ticks_per_second);
+        self.spawn_raider(entities, content, tick, ticks_per_second, max_raiders);
 
         let player_targets: Vec<ScriptTarget> = entities
             .iter()
@@ -307,9 +308,15 @@ impl RaiderScript {
         content: &ContentPack,
         tick: u64,
         ticks_per_second: u32,
+        max_raiders: usize,
     ) {
         let interval = SPAWN_INTERVAL_SECS.saturating_mul(u64::from(ticks_per_second.max(1)));
-        if tick == 0 || tick % interval != 0 || content.get(RAIDER_TYPE).is_none() {
+        if tick == 0 || tick % interval != 0 || content.get(RAIDER_TYPE).is_none()
+            || entities.iter().filter(|entity| {
+                entity.entity_type_id == RAIDER_TYPE
+                    && entity.owner_player_id == RAIDERS_OWNER
+                    && entity.health > 0.0
+            }).count() >= max_raiders {
             return;
         }
         let id = entities
@@ -428,16 +435,16 @@ mod tests {
             entity(1, STAR_TYPE, UNIVERSE_OWNER, -4_000.0, 0.0),
             entity(2, RAIDER_TYPE, RAIDERS_OWNER, -2_400.0, 0.0),
         ];
-        let commands = script.tick(&mut entities, &content, 1, 60).unwrap();
+        let commands = script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
         assert!(commands.target_by_entity.is_empty());
         assert!(entities[1].vel.as_ref().unwrap().x < 0.0);
 
         entities.push(entity(3, "worker", "player-1", -2_200.0, 0.0));
-        let commands = script.tick(&mut entities, &content, 2, 60).unwrap();
+        let commands = script.tick(&mut entities, &content, 2, 60, usize::MAX).unwrap();
         assert_eq!(commands.target_by_entity.get(&2), Some(&3));
 
         script
-            .tick(&mut entities, &content, SPAWN_INTERVAL_SECS * 60, 60)
+            .tick(&mut entities, &content, SPAWN_INTERVAL_SECS * 60, 60, usize::MAX)
             .unwrap();
         assert!(entities.iter().any(|entity| entity.id == 4
             && entity.entity_type_id == RAIDER_TYPE
@@ -452,6 +459,19 @@ mod tests {
     }
 
     #[test]
+    fn raider_spawn_respects_configured_limit() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = (1..=150)
+            .map(|id| entity(id, RAIDER_TYPE, RAIDERS_OWNER, 0.0, 0.0))
+            .collect();
+
+        script.spawn_raider(&mut entities, &content, SPAWN_INTERVAL_SECS * 60, 60, 150);
+
+        assert_eq!(entities.len(), 150);
+    }
+
+    #[test]
     fn raider_script_escapes_theta_radiation() {
         let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
         let script = RaiderScript::new().unwrap();
@@ -460,7 +480,7 @@ mod tests {
             entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1_100.0, 0.0),
         ];
 
-        script.tick(&mut entities, &content, 1, 60).unwrap();
+        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
 
         assert!(entities[1].vel.as_ref().unwrap().x > 0.0);
     }
@@ -474,7 +494,7 @@ mod tests {
             entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1_550.0, 0.0),
         ];
 
-        script.tick(&mut entities, &content, 1, 60).unwrap();
+        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
 
         assert_eq!(entities[1].vel, Some(Vec2 { x: 0.0, y: 0.0 }));
     }
@@ -490,7 +510,7 @@ mod tests {
             entity(3, "theta", UNIVERSE_OWNER, -4_000.0, 0.0),
         ];
 
-        script.tick(&mut entities, &content, 1, 60).unwrap();
+        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
 
         let velocity = entities[1].vel.as_ref().unwrap();
         assert!(
@@ -516,7 +536,7 @@ mod tests {
         let mut reversals = 0;
         let mut previous_velocity: Option<Vec2> = None;
         for tick in 1..=1_800 {
-            script.tick(&mut entities, &content, tick, 60).unwrap();
+            script.tick(&mut entities, &content, tick, 60, usize::MAX).unwrap();
             let velocity = entities[3].vel.clone().unwrap();
             if previous_velocity.as_ref().is_some_and(|previous| {
                 previous.x * velocity.x + previous.y * velocity.y < -1_000.0
@@ -575,8 +595,8 @@ mod tests {
             ));
         }
 
-        script.tick(&mut entities, &content, 1, 60).unwrap();
-        script.tick(&mut entities, &content, 2, 60).unwrap();
+        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
+        script.tick(&mut entities, &content, 2, 60, usize::MAX).unwrap();
     }
 
     #[test]
@@ -608,9 +628,9 @@ mod tests {
             entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1300.0, 0.0),
         ];
 
-        script.tick(&mut entities, &content, 1, 60).unwrap();
+        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
         assert_eq!(entities[1].vel.as_ref().unwrap().x, 1.0);
-        script.tick(&mut entities, &content, 2, 60).unwrap();
+        script.tick(&mut entities, &content, 2, 60, usize::MAX).unwrap();
         assert_eq!(entities[1].vel.as_ref().unwrap().x, 2.0);
     }
 
@@ -636,7 +656,7 @@ mod tests {
             entity(3, "worker", "player-1", 1400.0, 0.0),
         ];
 
-        let commands = script.tick(&mut entities, &content, 1, 60).unwrap();
+        let commands = script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
         assert_eq!(commands.target_by_entity.get(&2), Some(&3));
     }
 }

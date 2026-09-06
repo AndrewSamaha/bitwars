@@ -79,10 +79,17 @@ pub struct SpawnConfig {
     /// M7: Starting resources granted to each player on spawn (resource_type_id → amount).
     #[serde(default)]
     pub starting_resources: StartingResources,
+    /// Maximum number of living raiders. Defaults to unlimited for existing configs.
+    #[serde(default = "default_max_raiders")]
+    pub max_raiders: usize,
 }
 
 fn default_max_entity_spawn_distance() -> f32 {
     25.0
+}
+
+fn default_max_raiders() -> usize {
+    usize::MAX
 }
 
 impl SpawnConfig {

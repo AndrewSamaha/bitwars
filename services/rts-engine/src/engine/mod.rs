@@ -1659,6 +1659,7 @@ impl Engine {
             content,
             self.state.tick,
             self.cfg.tps,
+            self.spawn_config.max_raiders,
         ) {
             Ok(commands) => commands,
             Err(error) => {

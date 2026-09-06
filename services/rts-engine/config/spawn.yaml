@@ -11,6 +11,7 @@
 
 min_entity_spawn_distance: 200
 max_entity_spawn_distance: 300
+max_raiders: 150
 
 # Pool of loadouts; one is picked at random per player on join
 loadouts:

@@ -4,7 +4,7 @@ use serde_json::{json, Value as Json};
 use std::collections::HashSet;
 
 pub fn snapshot(owner: &str, tick: u64, shared: Table, private: Table) -> Json {
-    let mut budget = 4096;
+    let mut budget = 32_768;
     let mut truncated = false;
     let mut seen = HashSet::new();
     let shared = encode(Value::Table(shared), 0, &mut budget, &mut truncated, &mut seen);
