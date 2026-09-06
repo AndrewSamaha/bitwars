@@ -772,6 +772,29 @@ fn unix_time_ms() -> i64 {
 }
 
 impl Engine {
+    async fn publish_script_debug(&mut self) {
+        if self.state.tick % u64::from(self.cfg.tps.max(1)) != 0 { return; }
+        let result = async {
+            let owner = crate::spawn_config::RAIDERS_OWNER;
+            if self.redis.script_debug_enabled(owner).await? {
+                let mut snapshot = self.raider_script.debug_snapshot(self.state.tick)?;
+                snapshot["game_id"] = serde_json::json!(self.cfg.game_id);
+                let owned: Vec<_> = self.state.entities.iter()
+                    .filter(|entity| entity.owner_player_id == owner).take(1025).collect();
+                if owned.len() > 1024 { snapshot["truncated"] = serde_json::json!(true); }
+                snapshot["entities"] = serde_json::json!(owned.iter().take(1024).map(|entity| {
+                    serde_json::json!({"id": entity.id.to_string(),
+                        "entity_type_id": entity.entity_type_id, "health": entity.health,
+                        "position": entity.pos.as_ref().map(|p| [p.x, p.y]),
+                        "velocity": entity.vel.as_ref().map(|v| [v.x, v.y])})
+                }).collect::<Vec<_>>());
+                self.redis.publish_script_debug(owner, &snapshot).await?;
+            }
+            anyhow::Ok(())
+        }.await;
+        if let Err(error) = result { warn!(?error, "script debug snapshot failed"); }
+    }
+
     pub async fn new(cfg: GameConfig) -> anyhow::Result<Self> {
         let mut redis = RedisClient::connect(&cfg.redis_url, cfg.game_id.clone()).await?;
         let telemetry = Telemetry::from_env()?;
@@ -2396,6 +2419,7 @@ impl Engine {
         self.emit_radiation_destructions(&radiation_victims).await;
         self.cancel_destroyed_intents(&radiation_dead_entity_ids)
             .await;
+        self.publish_script_debug().await;
         self.state.tick += 1;
 
         let delta = compute_delta(
@@ -2546,6 +2570,7 @@ impl Engine {
             self.emit_radiation_destructions(&radiation_victims).await;
             self.cancel_destroyed_intents(&radiation_dead_entity_ids)
                 .await;
+            self.publish_script_debug().await;
             self.state.tick += 1;
 
             // Delta

@@ -92,6 +92,31 @@ async function resolveSuTarget(input: string): Promise<{ id: string; name: strin
 
 const commands: TerminalCommand[] = [
   {
+    name: "debug",
+    description: "Lua capture: debug <on|off|state> [owner id] (defaults to current owner)",
+    requiresAuth: true,
+    run: async (args, context) => {
+      const [action, explicitOwner] = args;
+      if (!["on", "off", "state"].includes(action) || args.length > 2) {
+        return { output: "usage: debug <on|off|state> [owner id]" };
+      }
+      const owner = explicitOwner ?? context.effectivePlayerId;
+      if (!owner) return { output: "debug: no current owner" };
+      const response = await fetch(`/api/v2/script-debug?owner=${encodeURIComponent(owner)}`, {
+        cache: "no-store",
+        ...(action === "state" ? {} : {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: action === "on" }),
+        }),
+      });
+      if (!response.ok) throw new Error("debug: unable to access Lua debug settings");
+      const data = await response.json();
+      return { output: action === "state" ? JSON.stringify(data, null, 2)
+        : `Lua state capture ${action} for ${owner}.${action === "on" ? " Expires in one hour; use debug state to inspect. Only active scripting owners publish snapshots." : ""}` };
+    },
+  },
+  {
     name: "help",
     description: "List available commands",
     run: () => ({ output: formatHelp() }),

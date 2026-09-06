@@ -119,6 +119,20 @@ pub struct RedisClient {
 }
 
 impl RedisClient {
+    pub async fn script_debug_enabled(&mut self, owner: &str) -> anyhow::Result<bool> {
+        let value: Option<String> = self.conn.get(format!(
+            "rts:match:{}:script_debug_enabled:{}", self.game_id, owner)).await?;
+        Ok(value.as_deref() == Some("1"))
+    }
+
+    pub async fn publish_script_debug(&mut self, owner: &str, snapshot: &serde_json::Value) -> anyhow::Result<()> {
+        let data = serde_json::to_string(snapshot)?;
+        anyhow::ensure!(data.len() <= 2 * 1024 * 1024, "debug snapshot exceeds byte limit");
+        let _: () = self.conn.set_ex(format!(
+            "rts:match:{}:script_debug:{}", self.game_id, owner), data, 30).await?;
+        Ok(())
+    }
+
     fn intents_stream(&self) -> String {
         format!("rts:match:{}:intents", self.game_id)
     }

@@ -47,6 +47,14 @@ pub struct RaiderScript {
 }
 
 impl RaiderScript {
+    pub fn debug_snapshot(&self, tick: u64) -> Result<serde_json::Value> {
+        Ok(crate::script_debug::snapshot(
+            RAIDERS_OWNER, tick,
+            self.lua.registry_value::<Table>(&self.shared)?,
+            self.lua.registry_value::<Table>(&self.private_by_entity)?,
+        ))
+    }
+
     pub fn new() -> Result<Self> {
         Self::from_source(include_str!("../scripts/raider.lua"))
     }
