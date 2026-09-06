@@ -19,8 +19,8 @@ const SPAWN_INTERVAL_SECS: u64 = 150;
 const ORBIT_CLEARANCE: f32 = 100.0;
 // The universe map currently has 400 landmarks; its first world_tick needs room
 // for the read-only context and the script's retained waypoint list.
-const MAX_SCRIPT_BYTES: usize = 512 * 1024;
-const MAX_SCRIPT_HOOKS: usize = 20;
+const MAX_SCRIPT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_SCRIPT_HOOKS: usize = 50;
 const INSTRUCTIONS_PER_HOOK: u32 = 1_000;
 
 pub struct NpcCommands {
@@ -425,14 +425,14 @@ mod tests {
         let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
         let script = RaiderScript::new().unwrap();
         let mut entities = vec![
-            entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
-            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1600.0, 0.0),
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, -4_000.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, -2_400.0, 0.0),
         ];
         let commands = script.tick(&mut entities, &content, 1, 60).unwrap();
         assert!(commands.target_by_entity.is_empty());
         assert!(entities[1].vel.as_ref().unwrap().x < 0.0);
 
-        entities.push(entity(3, "worker", "player-1", 1800.0, 0.0));
+        entities.push(entity(3, "worker", "player-1", -2_200.0, 0.0));
         let commands = script.tick(&mut entities, &content, 2, 60).unwrap();
         assert_eq!(commands.target_by_entity.get(&2), Some(&3));
 
@@ -448,7 +448,7 @@ mod tests {
         assert!(entities[3]
             .vel
             .as_ref()
-            .is_some_and(|velocity| velocity.x > 0.0));
+            .is_some_and(|velocity| velocity.x < 0.0));
     }
 
     #[test]
@@ -480,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn raider_script_detours_around_an_intervening_star() {
+    fn raider_script_leaves_a_star_radially_instead_of_orbiting() {
         let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
         let script = RaiderScript::new().unwrap();
         let mut entities = vec![
@@ -493,8 +493,44 @@ mod tests {
         script.tick(&mut entities, &content, 1, 60).unwrap();
 
         let velocity = entities[1].vel.as_ref().unwrap();
-        assert!(velocity.x > 10.0, "detour must leave the chord-orbit radius");
-        assert_ne!(velocity.y, 0.0);
+        assert!(
+            velocity.x > 10.0,
+            "raider must move outward to its observation point"
+        );
+        assert_eq!(velocity.y, 0.0);
+    }
+
+    #[test]
+    fn raider_script_makes_progress_around_overlapping_star_hazards() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = vec![
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
+            entity(2, STAR_TYPE, UNIVERSE_OWNER, 2_595.0, 0.0),
+            // This raider claims star 2 first, forcing raider 4 to approach
+            // star 1 from the overlapping side where the old orbit got stuck.
+            entity(3, RAIDER_TYPE, RAIDERS_OWNER, 2_595.0, 2_000.0),
+            entity(4, RAIDER_TYPE, RAIDERS_OWNER, 4_000.0, 0.0),
+        ];
+        let start = entities[3].pos.clone().unwrap();
+        let mut reversals = 0;
+        let mut previous_velocity: Option<Vec2> = None;
+        for tick in 1..=1_800 {
+            script.tick(&mut entities, &content, tick, 60).unwrap();
+            let velocity = entities[3].vel.clone().unwrap();
+            if previous_velocity.as_ref().is_some_and(|previous| {
+                previous.x * velocity.x + previous.y * velocity.y < -1_000.0
+            }) {
+                reversals += 1;
+            }
+            let position = entities[3].pos.as_mut().unwrap();
+            position.x += velocity.x / 60.0;
+            position.y += velocity.y / 60.0;
+            previous_velocity = Some(velocity);
+        }
+        let end = entities[3].pos.as_ref().unwrap();
+        assert!(distance_sq(start.x, start.y, end.x, end.y) > 250_000.0);
+        assert!(reversals <= 2, "raider oscillated {reversals} times");
     }
 
     #[test]
@@ -512,7 +548,13 @@ mod tests {
             ));
         }
         for id in 101..=175 {
-            entities.push(entity(id, "theta", UNIVERSE_OWNER, id as f32 * 1_000.0, 0.0));
+            entities.push(entity(
+                id,
+                "theta",
+                UNIVERSE_OWNER,
+                id as f32 * 1_000.0,
+                0.0,
+            ));
         }
         for id in 176..=400 {
             entities.push(entity(
@@ -523,9 +565,18 @@ mod tests {
                 0.0,
             ));
         }
-        entities.push(entity(401, RAIDER_TYPE, RAIDERS_OWNER, 0.0, 0.0));
+        for id in 401..=656 {
+            entities.push(entity(
+                id,
+                RAIDER_TYPE,
+                RAIDERS_OWNER,
+                id as f32 * 10.0,
+                5_000.0,
+            ));
+        }
 
         script.tick(&mut entities, &content, 1, 60).unwrap();
+        script.tick(&mut entities, &content, 2, 60).unwrap();
     }
 
     #[test]
