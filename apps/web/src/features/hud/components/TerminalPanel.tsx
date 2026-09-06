@@ -139,7 +139,10 @@ export default function TerminalPanel() {
                 className="flex-1 ml-2 -mt-2 bg-transparent border-none p-0 text-white font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
                 placeholder=""
                 autoComplete="off"
-                disabled={commandRunning || status === "logging-out" || status === "logging-in"}
+                readOnly={commandRunning || status === "logging-out" || status === "logging-in"}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") e.currentTarget.blur();
+                }}
               />
             </form>
           </div>
