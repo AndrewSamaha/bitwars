@@ -106,7 +106,7 @@ export function resolveParticleFlowEffects(
   if (entityTypeId === SOLAR_COLLECTOR_TYPE && activity === "proximity_collecting") {
     const source = findNearestResourceSource(world, "energy", pos.x, pos.y);
     return source ? [{
-      key: "solar-collection-flow", kind: "particle_flow", sourceWorldPos: source,
+      key: `solar-collection-flow:${entity.id}`, kind: "particle_flow", sourceWorldPos: source,
       targetWorldPos: pos, color: SOLAR_COLLECTION_COLOR, glowColor: SOLAR_COLLECTION_GLOW_COLOR,
       coreColor: SOLAR_COLLECTION_CORE_COLOR, sizeMultiplier: SOLAR_COLLECTION_SIZE_MULTIPLIER,
       showTargetHalo: true,
@@ -120,7 +120,7 @@ export function resolveParticleFlowEffects(
   ) {
     const source = findNearestResourceSource(world, "minerals", pos.x, pos.y);
     return source ? [{
-      key: "mineral-collection-flow", kind: "particle_flow", sourceWorldPos: source,
+      key: `mineral-collection-flow:${entity.id}`, kind: "particle_flow", sourceWorldPos: source,
       targetWorldPos: pos, color: MINERAL_COLLECTION_COLOR, glowColor: MINERAL_COLLECTION_GLOW_COLOR,
       coreColor: MINERAL_COLLECTION_CORE_COLOR, sizeMultiplier: MINERAL_COLLECTION_SIZE_MULTIPLIER,
       showTargetHalo: false,
