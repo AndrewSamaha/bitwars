@@ -521,6 +521,29 @@ mod tests {
     }
 
     #[test]
+    fn raider_script_rejects_a_reached_detour_that_replans_in_place() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = vec![
+            entity(17, STAR_TYPE, UNIVERSE_OWNER, 8_402.205, 81_710.5),
+            entity(100, STAR_TYPE, UNIVERSE_OWNER, 10_654.443, 80_420.54),
+            entity(658, RAIDER_TYPE, RAIDERS_OWNER, 9_831.565, 78_334.41),
+        ];
+        let start = entities[2].pos.clone().unwrap();
+
+        for tick in 1..=600 {
+            script.tick(&mut entities, &content, tick, 60, usize::MAX).unwrap();
+            let velocity = entities[2].vel.clone().unwrap();
+            let position = entities[2].pos.as_mut().unwrap();
+            position.x += velocity.x / 60.0;
+            position.y += velocity.y / 60.0;
+        }
+
+        let end = entities[2].pos.as_ref().unwrap();
+        assert!(distance_sq(start.x, start.y, end.x, end.y) > 250_000.0);
+    }
+
+    #[test]
     fn raider_script_makes_progress_around_overlapping_star_hazards() {
         let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
         let script = RaiderScript::new().unwrap();

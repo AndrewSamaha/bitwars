@@ -239,7 +239,8 @@ local function clear_navigation(private)
   private.navigation_y = nil
   private.navigation_goal_x = nil
   private.navigation_goal_y = nil
-  private.progress_distance = nil
+  private.progress_x = nil
+  private.progress_y = nil
   private.progress_tick = nil
   private.stuck_checks = 0
 end
@@ -440,16 +441,26 @@ local function plan_detour(ctx, blocker)
     dx, dy, distance, distance_sq_from_center = math.cos(angle), math.sin(angle), 1, 1
   end
   local direction = ctx.private.detour_direction or (ctx.self.id % 2 == 0 and 1 or -1)
+  local waypoint_x, waypoint_y
   if distance <= radius then
     local outward = radius + ROUTE_MARGIN - distance
     local tangent = math.min(500, radius * 0.3)
-    return ctx.self.x + dx / distance * outward - dy / distance * tangent * direction,
+    waypoint_x = ctx.self.x + dx / distance * outward - dy / distance * tangent * direction
+    waypoint_y =
       ctx.self.y + dy / distance * outward + dx / distance * tangent * direction
+  else
+    local scale = radius * radius / distance_sq_from_center
+    local offset = radius * math.sqrt(distance_sq_from_center - radius * radius)
+      / distance_sq_from_center * direction
+    waypoint_x, waypoint_y = cx + dx * scale - dy * offset, cy + dy * scale + dx * offset
   end
-  local scale = radius * radius / distance_sq_from_center
-  local offset = radius * math.sqrt(distance_sq_from_center - radius * radius)
-    / distance_sq_from_center * direction
-  return cx + dx * scale - dy * offset, cy + dy * scale + dx * offset
+  if distance_sq(ctx.self.x, ctx.self.y, waypoint_x, waypoint_y)
+      <= ARRIVAL_RADIUS * ARRIVAL_RADIUS then
+    local step = ARRIVAL_RADIUS * 2
+    waypoint_x = ctx.self.x - dy / distance * step * direction
+    waypoint_y = ctx.self.y + dx / distance * step * direction
+  end
+  return waypoint_x, waypoint_y
 end
 
 local function navigate(ctx, x, y)
@@ -461,36 +472,50 @@ local function navigate(ctx, x, y)
     private.navigation_goal_x, private.navigation_goal_y = x, y
   end
 
-  if private.navigation_x
-      and distance_sq(ctx.self.x, ctx.self.y, private.navigation_x, private.navigation_y)
-        <= ARRIVAL_RADIUS * ARRIVAL_RADIUS then
-    private.navigation_x, private.navigation_y = nil, nil
-    private.progress_distance, private.progress_tick = nil, nil
-  end
-  if not private.navigation_x then
-    local blocker = segment_blocker(ctx, x, y)
-    if blocker then
-      private.navigation_x, private.navigation_y = plan_detour(ctx, blocker)
-    end
-  end
-
-  local target_x = private.navigation_x or x
-  local target_y = private.navigation_y or y
-  local distance = math.sqrt(distance_sq(ctx.self.x, ctx.self.y, target_x, target_y))
   if not private.progress_tick then
-    private.progress_tick, private.progress_distance = ctx.tick, distance
+    private.progress_tick, private.progress_x, private.progress_y = ctx.tick, ctx.self.x, ctx.self.y
   elseif ctx.tick - private.progress_tick >= STUCK_CHECK_SECS * ctx.ticks_per_second then
-    if private.progress_distance - distance < STUCK_PROGRESS then
+    if distance_sq(private.progress_x, private.progress_y, ctx.self.x, ctx.self.y)
+        < STUCK_PROGRESS * STUCK_PROGRESS then
       private.stuck_checks = (private.stuck_checks or 0) + 1
       private.navigation_x, private.navigation_y = nil, nil
       private.detour_direction = -(private.detour_direction or 1)
-      if private.stuck_checks >= MAX_STUCK_CHECKS then private.navigation_failed = true end
+      if private.stuck_checks >= MAX_STUCK_CHECKS then
+        private.navigation_failed = true
+        return { vx = 0, vy = 0 }
+      end
     else
       private.stuck_checks = 0
     end
-    private.progress_tick, private.progress_distance = ctx.tick, distance
+    private.progress_tick, private.progress_x, private.progress_y = ctx.tick, ctx.self.x, ctx.self.y
   end
-  return move_toward(ctx, target_x, target_y)
+
+  local blocked = false
+  for _ = 1, 2 do
+    if private.navigation_x then
+      if distance_sq(ctx.self.x, ctx.self.y, private.navigation_x, private.navigation_y)
+          > ARRIVAL_RADIUS * ARRIVAL_RADIUS then break end
+      private.navigation_x, private.navigation_y = nil, nil
+    end
+
+    local blocker = segment_blocker(ctx, x, y)
+    if not blocker then
+      blocked = false
+      break
+    end
+    blocked = true
+    private.navigation_x, private.navigation_y = plan_detour(ctx, blocker)
+    if distance_sq(ctx.self.x, ctx.self.y, private.navigation_x, private.navigation_y)
+        > ARRIVAL_RADIUS * ARRIVAL_RADIUS then break end
+    private.navigation_x, private.navigation_y = nil, nil
+    private.detour_direction = -(private.detour_direction or 1)
+  end
+
+  if blocked and not private.navigation_x then
+    private.navigation_failed = true
+    return { vx = 0, vy = 0 }
+  end
+  return move_toward(ctx, private.navigation_x or x, private.navigation_y or y)
 end
 
 local function inside_hazard(ctx, extra_margin)
