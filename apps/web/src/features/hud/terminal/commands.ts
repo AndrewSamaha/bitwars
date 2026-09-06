@@ -1,10 +1,16 @@
 import { game } from "@/features/gamestate/world";
 import type { SessionStatus } from "@/features/users/components/identity/SessionContext";
 
+const NPC_OWNER_ID = "neutral";
+
 export type TerminalCommandContext = {
-  myPlayerId: string | null;
+  realPlayerId: string | null;
+  effectivePlayerId: string | null;
+  actingAsId: string | null;
   sessionStatus: SessionStatus;
   logout: () => Promise<string>;
+  su: (playerId: string) => void;
+  exitSu: () => void;
 };
 
 export type TerminalCommandResult = {
@@ -46,6 +52,38 @@ function listOwnedEntities(myPlayerId: string | null): string {
   ].join("\n");
 }
 
+async function listPlayers(): Promise<string> {
+  const response = await fetch("/api/players/getActive", { cache: "no-store" });
+  if (!response.ok) throw new Error("who: unable to list players");
+  const players = await response.json() as Array<{ id: string; name: string }>;
+
+  const unitsByPlayer = new Map<string, number>();
+  for (const entity of game.world.with("owner_player_id")) {
+    const ownerId = entity.owner_player_id;
+    if (ownerId) unitsByPlayer.set(ownerId, (unitsByPlayer.get(ownerId) ?? 0) + 1);
+  }
+
+  players.push({ id: NPC_OWNER_ID, name: "NPCs" });
+  const nameWidth = Math.max("player".length, ...players.map((player) => player.name.length));
+  return [
+    `${"player".padEnd(nameWidth)}  units`,
+    ...players
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((player) => `${player.name.padEnd(nameWidth)}  ${unitsByPlayer.get(player.id) ?? 0}`),
+  ].join("\n");
+}
+
+async function resolveSuTarget(input: string): Promise<{ id: string; name: string } | null> {
+  if (input.toLowerCase() === "npc" || input.toLowerCase() === NPC_OWNER_ID) {
+    return { id: NPC_OWNER_ID, name: "NPCs" };
+  }
+  const response = await fetch("/api/players/getActive", { cache: "no-store" });
+  if (!response.ok) throw new Error("su: unable to list players");
+  const players = await response.json() as Array<{ id: string; name: string }>;
+  const target = input.toLowerCase();
+  return players.find((player) => player.id === input || player.name.toLowerCase() === target) ?? null;
+}
+
 const commands: TerminalCommand[] = [
   {
     name: "help",
@@ -56,11 +94,41 @@ const commands: TerminalCommand[] = [
     name: "ls",
     description: "List your units",
     requiresAuth: true,
-    run: (_args, context) => ({ output: listOwnedEntities(context.myPlayerId) }),
+    run: (_args, context) => ({ output: listOwnedEntities(context.effectivePlayerId) }),
+  },
+  {
+    name: "who",
+    description: "List active players and their units",
+    requiresAuth: true,
+    run: async () => ({ output: await listPlayers() }),
+  },
+  {
+    name: "su",
+    description: "View and control an active player or NPCs",
+    requiresAuth: true,
+    run: async (args, context) => {
+      const input = args.join(" ").trim();
+      if (!input) return { output: "usage: su <player name, id, or npc>" };
+      const target = await resolveSuTarget(input);
+      if (!target) return { output: `su: ${input}: player not found` };
+      context.su(target.id);
+      return { output: `Now acting as ${target.name}. Use exit to return.` };
+    },
+  },
+  {
+    name: "exit",
+    description: "Return from su, or log out",
+    requiresAuth: true,
+    run: async (_args, context) => {
+      if (context.actingAsId) {
+        context.exitSu();
+        return { output: "Returned to your session." };
+      }
+      return { output: await context.logout(), sessionEnded: true };
+    },
   },
   {
     name: "logout",
-    aliases: ["exit"],
     description: "End the current session",
     requiresAuth: true,
     run: async (_args, context) => ({ output: await context.logout(), sessionEnded: true }),
@@ -94,7 +162,7 @@ export async function executeTerminalCommand(
   const [name = "", ...args] = input.trim().split(/\s+/);
   const command = commandsByName.get(name.toLowerCase());
   if (!command) return { output: `${name}: command not found` };
-  if (command.requiresAuth && !context.myPlayerId) {
+  if (command.requiresAuth && !context.realPlayerId) {
     return { output: `${command.name}: authentication required` };
   }
   if (command.requiresAuth && context.sessionStatus !== "active") {

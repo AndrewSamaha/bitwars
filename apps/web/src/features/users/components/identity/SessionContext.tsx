@@ -8,8 +8,13 @@ export type SessionStatus = "logged-out" | "logging-in" | "active" | "logging-ou
 
 type SessionContextValue = {
   status: SessionStatus;
+  /** Owner whose world and controls are currently being viewed. */
+  effectivePlayerId: string | null;
+  actingAsId: string | null;
   login: (name: string) => Promise<string>;
   logout: (onStarted?: () => void) => Promise<string>;
+  su: (playerId: string) => void;
+  exitSu: () => void;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -17,6 +22,8 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const { player, setPlayer } = usePlayer();
   const [status, setStatus] = useState<SessionStatus>(player ? "active" : "logged-out");
+  const [actingAsId, setActingAsId] = useState<string | null>(null);
+  const effectivePlayerId = actingAsId ?? player?.id ?? null;
 
   const login = useCallback(async (name: string) => {
     const trimmedName = name.trim();
@@ -36,6 +43,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       if (!parsed.success) throw new Error("Login returned an invalid player.");
 
       setPlayer(parsed.data);
+      setActingAsId(null);
       setStatus("active");
       return `Welcome, ${parsed.data.name}.`;
     } catch (error) {
@@ -61,11 +69,17 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
 
     setPlayer(null);
+    setActingAsId(null);
     setStatus("logged-out");
     return "Logged out.";
   }, [player, setPlayer]);
 
-  const value = useMemo(() => ({ status, login, logout }), [status, login, logout]);
+  const su = useCallback((playerId: string) => setActingAsId(playerId), []);
+  const exitSu = useCallback(() => setActingAsId(null), []);
+  const value = useMemo(
+    () => ({ status, effectivePlayerId, actingAsId, login, logout, su, exitSu }),
+    [status, effectivePlayerId, actingAsId, login, logout, su, exitSu],
+  );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

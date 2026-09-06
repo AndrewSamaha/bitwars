@@ -22,6 +22,7 @@ export const GET = withAxiom(async (req: Request) => {
   const sinceParam = url.searchParams.get("since");
   const lastEventId = req.headers.get("last-event-id");
   const sid = url.searchParams.get("sid") || undefined;
+  const actingAsId = url.searchParams.get("as")?.trim() || undefined;
 
   const GAME_ID = getEnv("GAME_ID", DEFAULT_GAME_ID);
 
@@ -60,7 +61,7 @@ export const GET = withAxiom(async (req: Request) => {
       const contentDefsKey = `rts:match:${GAME_ID}:content_defs`;
       const contentDefs = await redis.get(contentDefsKey);
       const entityTypes = contentDefs ? JSON.parse(contentDefs).entity_types ?? {} : {};
-      const visibility = new VisibilityFilter(playerId ?? "", entityTypes);
+      const visibility = new VisibilityFilter(actingAsId ?? playerId ?? "", entityTypes);
       let lastId: string | undefined;
 
       // Visibility state is connection-local, so every connection starts from
@@ -85,7 +86,7 @@ export const GET = withAxiom(async (req: Request) => {
       // The snapshot/catch-up cursor is durable. Enqueue the new player's join
       // only after it is established, so the spawn is guaranteed to be a delta
       // after this cursor (and is readable even if XREAD starts a moment later).
-      if (playerId) {
+      if (playerId && !actingAsId) {
         const joinRequestedKey = `rts:match:${GAME_ID}:join_requested`;
         const pendingJoinsKey = `rts:match:${GAME_ID}:pending_joins`;
         const added = await redis.sadd(joinRequestedKey, playerId);

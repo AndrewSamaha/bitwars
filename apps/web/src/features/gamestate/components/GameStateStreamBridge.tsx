@@ -7,6 +7,7 @@ import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
+import { useSession } from "@/features/users/components/identity/SessionContext";
 import { dispatchBuildCompleted, dispatchEntityDetected, dispatchEntityExploded, dispatchGameStateUpdated } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
@@ -111,6 +112,7 @@ export default function GameStateStreamBridge() {
   const log = useLogger();
   const hud = useHUD();
   const { player } = usePlayer();
+  const { effectivePlayerId, actingAsId } = useSession();
   const RESOURCE_LEDGER_POLL_MS = 2000;
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
@@ -126,12 +128,12 @@ export default function GameStateStreamBridge() {
 
   // M7: Single source for "my" player id and resources from /me — set ref and apply resource_ledger to HUD when player loads.
   useEffect(() => {
-    currentPlayerIdRef.current = player?.id ?? null;
-    if (player?.resource_ledger && Object.keys(player.resource_ledger).length > 0) {
+    currentPlayerIdRef.current = effectivePlayerId;
+    if (!actingAsId && player?.resource_ledger && Object.keys(player.resource_ledger).length > 0) {
       console.log("[GameStateStreamBridge] setResources from /me", player.resource_ledger);
       hud.actions.setResources(player.resource_ledger);
     }
-  }, [player?.id, player?.resource_ledger, hud.actions]);
+  }, [effectivePlayerId, actingAsId, player?.resource_ledger, hud.actions]);
 
   // M8: Live deltas do not include player_ledgers, so poll /me for authoritative
   // resource totals and keep the HUD in sync during active collection.
@@ -143,7 +145,7 @@ export default function GameStateStreamBridge() {
     const syncResourcesFromMe = async () => {
       // Never start a second /me request while Redis is slow or unavailable.
       // setInterval otherwise produces an unbounded queue of identical calls.
-      if (!currentPlayerIdRef.current || requestInFlight) return;
+      if (actingAsId || !currentPlayerIdRef.current || requestInFlight) return;
       requestInFlight = true;
       try {
         const res = await fetch("/api/players/me", {
@@ -172,14 +174,16 @@ export default function GameStateStreamBridge() {
       mounted = false;
       if (timer !== undefined) window.clearInterval(timer);
     };
-  }, [hud.actions, RESOURCE_LEDGER_POLL_MS]);
+  }, [actingAsId, hud.actions, RESOURCE_LEDGER_POLL_MS]);
 
   useEffect(() => {
     const byId = byIdRef.current;
     const world = game.world;
 
     // No server boot delay needed now that we gate rendering until snapshot is applied
-    const streamUrl = `/api/v2/gamestate/stream?sid=${encodeURIComponent(streamIdRef.current)}`;
+    const streamParams = new URLSearchParams({ sid: streamIdRef.current });
+    if (actingAsId) streamParams.set("as", actingAsId);
+    const streamUrl = `/api/v2/gamestate/stream?${streamParams}`;
     const es = new EventSource(streamUrl);
     log.info("GameStateStreamBridge:es:create", { streamId: streamIdRef.current, url: streamUrl });
 
@@ -558,7 +562,7 @@ export default function GameStateStreamBridge() {
       // with the server's tracking state so we don't duplicate or skip intents.
       intentQueue.reconcileWithServer().then(async (handshake) => {
         if (handshake) {
-          if (handshake.player_id) currentPlayerIdRef.current = handshake.player_id; // fallback if player not yet from /me
+          if (!effectivePlayerId && handshake.player_id) currentPlayerIdRef.current = handshake.player_id;
           log.info("GameStateStreamBridge:reconnect:ok", {
             streamId: streamIdRef.current,
             serverTick: handshake.server_tick,
@@ -644,13 +648,15 @@ export default function GameStateStreamBridge() {
         world.remove(ent);
       }
       byId.clear();
+      knownEntityIdsRef.current.clear();
+      activeIntentByEntityRef.current.clear();
       // Reset readiness so a subsequent mount waits for the next snapshot
       if (game.ready) {
         game.ready = false;
         log.info("GameStateStreamBridge:world:not-ready", { streamId: streamIdRef.current });
       }
     };
-  }, []);
+  }, [actingAsId, effectivePlayerId]);
 
   // This component does not render anything; it just wires data into the ECS.
   return null;

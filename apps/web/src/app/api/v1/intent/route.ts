@@ -94,13 +94,17 @@ export async function POST(req: NextRequest) {
     const { auth, res } = await requireAuthOr401();
     if (res) return res;
 
-    const playerId = auth?.playerId as string | undefined;
-    if (!playerId) {
+    const authenticatedPlayerId = auth?.playerId as string | undefined;
+    if (!authenticatedPlayerId) {
       return NextResponse.json({ error: "missing player context" }, { status: 401 });
     }
-    if (await getPlayerSessionState(playerId) === "logging-out") {
+    if (await getPlayerSessionState(authenticatedPlayerId) === "logging-out") {
       return NextResponse.json({ error: "logout in progress" }, { status: 409 });
     }
+    // Temporary unrestricted `su` support. Authorization must validate this
+    // override before it is enabled outside development.
+    const actingAsId = typeof body?.as_player_id === "string" ? body.as_player_id.trim() : "";
+    const playerId = actingAsId || authenticatedPlayerId;
 
     const gameId = process.env.GAME_ID || "demo-001";
     const stream = `rts:match:${gameId}:intents`;

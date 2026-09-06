@@ -7,7 +7,7 @@ import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
 import { FpsOverlay } from "@/features/hud/components/FpsOverlay";
 import { useHUD } from "@/features/hud/components/HUDContext";
-import { usePlayer } from "@/features/users/components/identity/PlayerContext";
+import { useSession } from "@/features/users/components/identity/SessionContext";
 import { createHoverIndicator, drawBuildArc, drawHealthArc } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
@@ -74,7 +74,7 @@ export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState<boolean>(game.ready);
   const [moveDebug, setMoveDebug] = useState<string>("idle");
-  const { player } = usePlayer();
+  const { effectivePlayerId } = useSession();
   const {
     actions: { setHovered, setApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction, setTerminalOpen },
     selectors,
@@ -85,7 +85,7 @@ export default function GameStage() {
   useEffect(() => { latestSelectorsRef.current = selectors; }, [selectors]);
   // M6: Current player id for ownership gating and visuals (ref so initWorld closure sees latest)
   const myPlayerIdRef = useRef<string | null>(null);
-  myPlayerIdRef.current = player?.id ?? null;
+  myPlayerIdRef.current = effectivePlayerId;
   const recenterRequestedRef = useRef<boolean>(true);
   // M5.1: Pan keys currently held (KeyW, KeyA, ...); ticker reads this and applies pan
   const panKeysRef = useRef<Set<string>>(new Set());
@@ -129,7 +129,7 @@ export default function GameStage() {
       await fetch('/api/v1/intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, as_player_id: myPlayerIdRef.current }),
       });
     });
 
