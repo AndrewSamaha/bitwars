@@ -129,7 +129,7 @@ impl RedisClient {
         let data = serde_json::to_string(snapshot)?;
         anyhow::ensure!(data.len() <= 2 * 1024 * 1024, "debug snapshot exceeds byte limit");
         let _: () = self.conn.set_ex(format!(
-            "rts:match:{}:script_debug:{}", self.game_id, owner), data, 30).await?;
+            "rts:match:{}:script_debug:{}", self.game_id, owner), data, 900).await?;
         Ok(())
     }
 
