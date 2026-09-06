@@ -18,7 +18,7 @@ pub struct Entity {
     pub vel: ::core::option::Option<Vec2>,
     #[prost(message, optional, tag = "5")]
     pub force: ::core::option::Option<Vec2>,
-    /// M6: empty = unowned/legacy, "neutral" = neutral, else player id
+    /// M6: empty = unowned/legacy, else player or registered system owner
     #[prost(string, tag = "6")]
     pub owner_player_id: ::prost::alloc::string::String,
     /// current health; max health is defined by content

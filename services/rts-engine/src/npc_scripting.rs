@@ -1,4 +1,4 @@
-//! Sandboxed Lua behavior for the first neutral NPC: the raider.
+//! Sandboxed Lua behavior for the raider NPC faction.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{
@@ -11,13 +11,13 @@ use mlua::{Error as LuaError, Function, HookTriggers, Lua, RegistryKey, Table, V
 
 use crate::content::ContentPack;
 use crate::pb::{Entity, Vec2};
-use crate::spawn_config::NEUTRAL_OWNER;
+use crate::spawn_config::{is_player_owner, RAIDERS_OWNER, UNIVERSE_OWNER};
 
 const RAIDER_TYPE: &str = "raider";
 const STAR_TYPE: &str = "star_yellow";
 const SPAWN_INTERVAL_SECS: u64 = 150;
 const ORBIT_CLEARANCE: f32 = 100.0;
-// The neutral map currently has 400 landmarks; its first world_tick needs room
+// The universe map currently has 400 landmarks; its first world_tick needs room
 // for the read-only context and the script's retained waypoint list.
 const MAX_SCRIPT_BYTES: usize = 512 * 1024;
 const MAX_SCRIPT_HOOKS: usize = 20;
@@ -40,9 +40,9 @@ struct ScriptTarget {
 pub struct RaiderScript {
     lua: Lua,
     hook_count: Arc<AtomicUsize>,
-    /// State owned by the neutral scripting owner, shared by all of its entities.
+    /// State owned by the raider scripting owner, shared by all of its entities.
     shared: RegistryKey,
-    /// State owned by each neutral entity, keyed by entity ID.
+    /// State owned by each raider, keyed by entity ID.
     private_by_entity: RegistryKey,
 }
 
@@ -92,8 +92,7 @@ impl RaiderScript {
             .iter()
             .filter_map(|entity| {
                 let pos = entity.pos.as_ref()?;
-                (entity.owner_player_id != NEUTRAL_OWNER
-                    && !entity.owner_player_id.is_empty()
+                (is_player_owner(&entity.owner_player_id)
                     && entity.health > 0.0
                     && content
                         .get(&entity.entity_type_id)
@@ -137,7 +136,7 @@ impl RaiderScript {
         };
         for entity in entities.iter_mut().filter(|entity| {
             entity.entity_type_id == RAIDER_TYPE
-                && entity.owner_player_id == NEUTRAL_OWNER
+                && entity.owner_player_id == RAIDERS_OWNER
                 && entity.health > 0.0
         }) {
             let Some(position) = entity.pos.as_ref() else {
@@ -194,7 +193,7 @@ impl RaiderScript {
             return Ok(());
         };
         let ctx = self.lua.create_table()?;
-        ctx.set("owner_id", NEUTRAL_OWNER)?;
+        ctx.set("owner_id", RAIDERS_OWNER)?;
         ctx.set("tick", tick)?;
         ctx.set("ticks_per_second", ticks_per_second)?;
         ctx.set("shared", self.lua.registry_value::<Table>(&self.shared)?)?;
@@ -276,7 +275,7 @@ impl RaiderScript {
             .iter()
             .filter(|entity| {
                 entity.entity_type_id == RAIDER_TYPE
-                    && entity.owner_player_id == NEUTRAL_OWNER
+                    && entity.owner_player_id == RAIDERS_OWNER
                     && entity.health > 0.0
             })
             .map(|entity| entity.id)
@@ -321,7 +320,7 @@ impl RaiderScript {
             pos: Some(Vec2 { x: 0.0, y: 0.0 }),
             vel: Some(Vec2 { x: 0.0, y: 0.0 }),
             force: Some(Vec2 { x: 0.0, y: 0.0 }),
-            owner_player_id: NEUTRAL_OWNER.into(),
+            owner_player_id: RAIDERS_OWNER.into(),
             health,
         });
     }
@@ -339,7 +338,7 @@ fn distance_sq(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
     dx * dx + dy * dy
 }
 
-/// Neutral map entities are common knowledge for the neutral scripting owner.
+/// Universe entities are common knowledge for the raider scripting owner.
 /// Player-owned entities are deliberately excluded; a raider only receives those in `targets`
 /// when they are within its acquisition range.
 fn world_entities(entities: &[Entity]) -> Vec<(u64, String, String, f32, f32, f32)> {
@@ -347,7 +346,7 @@ fn world_entities(entities: &[Entity]) -> Vec<(u64, String, String, f32, f32, f3
         .iter()
         .filter_map(|entity| {
             let position = entity.pos.as_ref()?;
-            (entity.owner_player_id == NEUTRAL_OWNER || entity.owner_player_id.is_empty())
+            (entity.owner_player_id == UNIVERSE_OWNER || entity.owner_player_id.is_empty())
                 .then_some((
                     entity.id,
                     entity.owner_player_id.clone(),
@@ -402,8 +401,8 @@ mod tests {
         let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
         let script = RaiderScript::new().unwrap();
         let mut entities = vec![
-            entity(1, STAR_TYPE, NEUTRAL_OWNER, 0.0, 0.0),
-            entity(2, RAIDER_TYPE, NEUTRAL_OWNER, 1300.0, 0.0),
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1300.0, 0.0),
         ];
         let commands = script.tick(&mut entities, &content, 1, 60).unwrap();
         assert!(commands.target_by_entity.is_empty());
@@ -437,24 +436,24 @@ mod tests {
             entities.push(entity(
                 id,
                 STAR_TYPE,
-                NEUTRAL_OWNER,
+                UNIVERSE_OWNER,
                 id as f32 * 1_000.0,
                 0.0,
             ));
         }
         for id in 101..=175 {
-            entities.push(entity(id, "theta", NEUTRAL_OWNER, id as f32 * 1_000.0, 0.0));
+            entities.push(entity(id, "theta", UNIVERSE_OWNER, id as f32 * 1_000.0, 0.0));
         }
         for id in 176..=400 {
             entities.push(entity(
                 id,
                 "minerals",
-                NEUTRAL_OWNER,
+                UNIVERSE_OWNER,
                 id as f32 * 1_000.0,
                 0.0,
             ));
         }
-        entities.push(entity(401, RAIDER_TYPE, NEUTRAL_OWNER, 0.0, 0.0));
+        entities.push(entity(401, RAIDER_TYPE, RAIDERS_OWNER, 0.0, 0.0));
 
         script.tick(&mut entities, &content, 1, 60).unwrap();
     }
@@ -465,7 +464,7 @@ mod tests {
         let script = RaiderScript::from_source(
             r#"
                 function world_tick(ctx)
-                  assert(ctx.owner_id == "neutral")
+                  assert(ctx.owner_id == "raiders")
                   assert(ctx.entities[1].id == 1)
                   assert(ctx.entities[1].entity_type_id == "star_yellow")
                   ctx.shared.world_ticks = (ctx.shared.world_ticks or 0) + 1
@@ -473,7 +472,7 @@ mod tests {
 
                 function tick(ctx)
                   assert(ctx.self.id == 2)
-                  assert(ctx.self.owner_id == "neutral")
+                  assert(ctx.self.owner_id == "raiders")
                   assert(ctx.self.entity_type_id == "raider")
                   assert(ctx.tick == ctx.shared.world_ticks)
                   ctx.private.calls = (ctx.private.calls or 0) + 1
@@ -483,8 +482,8 @@ mod tests {
         )
         .unwrap();
         let mut entities = vec![
-            entity(1, STAR_TYPE, NEUTRAL_OWNER, 0.0, 0.0),
-            entity(2, RAIDER_TYPE, NEUTRAL_OWNER, 1300.0, 0.0),
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1300.0, 0.0),
         ];
 
         script.tick(&mut entities, &content, 1, 60).unwrap();
@@ -510,8 +509,8 @@ mod tests {
         )
         .unwrap();
         let mut entities = vec![
-            entity(1, STAR_TYPE, NEUTRAL_OWNER, 0.0, 0.0),
-            entity(2, RAIDER_TYPE, NEUTRAL_OWNER, 1300.0, 0.0),
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1300.0, 0.0),
             entity(3, "worker", "player-1", 1400.0, 0.0),
         ];
 

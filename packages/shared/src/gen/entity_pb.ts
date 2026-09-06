@@ -44,7 +44,7 @@ export type Entity = Message<"bitwars.Entity"> & {
   force?: Vec2;
 
   /**
-   * M6: empty = unowned/legacy, "neutral" = neutral, else player id
+   * M6: empty = unowned/legacy, else player or registered system owner
    *
    * @generated from field: string owner_player_id = 6;
    */

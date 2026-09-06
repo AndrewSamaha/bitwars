@@ -11,8 +11,17 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-/// Owner id for server/neutral entities (not owned by any player).
-pub const NEUTRAL_OWNER: &str = "neutral";
+/// Server-controlled owners. Add new NPC factions here.
+pub const UNIVERSE_OWNER: &str = "universe";
+pub const RAIDERS_OWNER: &str = "raiders";
+
+pub fn is_system_owner(owner: &str) -> bool {
+    matches!(owner, UNIVERSE_OWNER | RAIDERS_OWNER)
+}
+
+pub fn is_player_owner(owner: &str) -> bool {
+    !owner.is_empty() && !is_system_owner(owner)
+}
 
 /// Describes entities to spawn near each player's spawn (server-owned).
 #[derive(Clone, Debug, Deserialize)]
@@ -89,5 +98,18 @@ impl SpawnConfig {
     /// Returns true if this config is usable for on-join spawning (at least one loadout).
     pub fn is_valid(&self) -> bool {
         !self.loadouts.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn separates_players_from_registered_system_owners() {
+        assert!(is_system_owner(UNIVERSE_OWNER));
+        assert!(is_system_owner(RAIDERS_OWNER));
+        assert!(is_player_owner("player-1"));
+        assert!(!is_player_owner(UNIVERSE_OWNER));
     }
 }

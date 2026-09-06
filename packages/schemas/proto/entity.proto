@@ -9,6 +9,6 @@ message Entity {
   Vec2   pos              = 3;
   Vec2   vel              = 4;
   Vec2   force            = 5;
-  string owner_player_id  = 6;  // M6: empty = unowned/legacy, "neutral" = neutral, else player id
+  string owner_player_id  = 6;  // M6: empty = unowned/legacy, else player or registered system owner
   float  health           = 7;  // current health; max health is defined by content
 }

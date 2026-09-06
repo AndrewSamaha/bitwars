@@ -22,8 +22,7 @@ use crate::io::telemetry::{summarize_tick_durations, Telemetry};
 use crate::npc_scripting::RaiderScript;
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
-use crate::spawn_config::SpawnConfig;
-use crate::spawn_config::NEUTRAL_OWNER;
+use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
 use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
@@ -318,7 +317,7 @@ mod radiation_tests {
             pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
             vel: None,
             force: None,
-            owner_player_id: NEUTRAL_OWNER.to_string(),
+            owner_player_id: UNIVERSE_OWNER.to_string(),
             health: 100.0,
         };
         let collector_safe = pb::Entity {
@@ -377,7 +376,7 @@ mod radiation_tests {
                     pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                     vel: None,
                     force: None,
-                    owner_player_id: NEUTRAL_OWNER.to_string(),
+                    owner_player_id: UNIVERSE_OWNER.to_string(),
                     health: 100.0,
                 },
                 pb::Entity {
@@ -386,7 +385,7 @@ mod radiation_tests {
                     pos: Some(pb::Vec2 { x: 60.0, y: 0.0 }),
                     vel: None,
                     force: None,
-                    owner_player_id: NEUTRAL_OWNER.to_string(),
+                    owner_player_id: UNIVERSE_OWNER.to_string(),
                     health: 100.0,
                 },
                 pb::Entity {
@@ -707,11 +706,46 @@ fn should_publish_delta(delta: &pb::Delta) -> bool {
 fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<String> {
     let mut recipients = Vec::new();
     for owner in [victim_owner, attacker_owner] {
-        if !owner.is_empty() && owner != NEUTRAL_OWNER && !recipients.iter().any(|id| id == owner) {
+        if is_player_owner(owner) && !recipients.iter().any(|id| id == owner) {
             recipients.push(owner.to_string());
         }
     }
     recipients
+}
+
+fn migrate_legacy_neutral_owners(entities: &mut [pb::Entity]) {
+    for entity in entities.iter_mut().filter(|entity| entity.owner_player_id == "neutral") {
+        entity.owner_player_id = if entity.entity_type_id == "raider" {
+            crate::spawn_config::RAIDERS_OWNER
+        } else {
+            UNIVERSE_OWNER
+        }
+        .to_string();
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+
+    #[test]
+    fn restore_migrates_legacy_system_owners() {
+        let mut entities = vec![
+            pb::Entity {
+                entity_type_id: "raider".into(),
+                owner_player_id: "neutral".into(),
+                ..Default::default()
+            },
+            pb::Entity {
+                entity_type_id: "star_yellow".into(),
+                owner_player_id: "neutral".into(),
+                ..Default::default()
+            },
+        ];
+        migrate_legacy_neutral_owners(&mut entities);
+        assert_eq!(entities[0].owner_player_id, crate::spawn_config::RAIDERS_OWNER);
+        assert_eq!(entities[1].owner_player_id, UNIVERSE_OWNER);
+    }
 }
 
 fn gameplay_entity_ref(entity: &pb::Entity) -> GameplayEntityRef {
@@ -770,7 +804,7 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((state, boundary)) = redis.read_latest_snapshot().await? {
+            if let Some((mut state, boundary)) = redis.read_latest_snapshot().await? {
                 info!(
                     tick = state.tick,
                     boundary = %boundary,
@@ -804,17 +838,14 @@ impl Engine {
                 // after the snapshot are replayed during the first ticks.
                 let last_intent_id = boundary.clone();
 
-                // M6: Restore joined_players from entities (distinct owner_player_id != neutral)
+                migrate_legacy_neutral_owners(&mut state.entities);
+                // Restore joined players from player-owned entities only.
                 let joined_players: HashSet<String> = state
                     .entities
                     .iter()
                     .filter_map(|e| {
                         let o = e.owner_player_id.as_str();
-                        if o.is_empty() || o == NEUTRAL_OWNER {
-                            None
-                        } else {
-                            Some(o.to_string())
-                        }
+                        is_player_owner(o).then(|| o.to_string())
                     })
                     .collect();
                 let spawn_config_restore = load_spawn_config_or_exit(&cfg);
@@ -1131,9 +1162,7 @@ impl Engine {
 
         let mut totals: HashMap<(String, String), f32> = HashMap::new();
         for entity in &self.state.entities {
-            if entity.owner_player_id.is_empty()
-                || entity.owner_player_id == NEUTRAL_OWNER
-                || entity.health <= 0.0
+            if !is_player_owner(&entity.owner_player_id) || entity.health <= 0.0
             {
                 continue;
             }
@@ -1397,7 +1426,7 @@ impl Engine {
         let mut refineries = Vec::new();
         for e in &self.state.entities {
             let owner = e.owner_player_id.as_str();
-            if owner.is_empty() || owner == NEUTRAL_OWNER {
+            if !is_player_owner(owner) {
                 continue;
             }
             let Some(pos) = e.pos.as_ref() else {
@@ -1429,7 +1458,7 @@ impl Engine {
         let mut collectors = Vec::new();
         for e in &self.state.entities {
             let owner = e.owner_player_id.as_str();
-            if owner.is_empty() || owner == NEUTRAL_OWNER {
+            if !is_player_owner(owner) {
                 continue;
             }
             let Some(pos) = e.pos.as_ref() else {

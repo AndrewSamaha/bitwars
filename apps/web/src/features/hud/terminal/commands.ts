@@ -1,7 +1,10 @@
 import { game } from "@/features/gamestate/world";
 import type { SessionStatus } from "@/features/users/components/identity/SessionContext";
 
-const NPC_OWNER_ID = "neutral";
+const SYSTEM_OWNERS = [
+  { id: "raiders", name: "Raiders" },
+  { id: "universe", name: "Universe" },
+];
 
 export type TerminalCommandContext = {
   realPlayerId: string | null;
@@ -63,7 +66,7 @@ async function listPlayers(): Promise<string> {
     if (ownerId) unitsByPlayer.set(ownerId, (unitsByPlayer.get(ownerId) ?? 0) + 1);
   }
 
-  players.push({ id: NPC_OWNER_ID, name: "NPCs" });
+  players.push(...SYSTEM_OWNERS);
   const nameWidth = Math.max("player".length, ...players.map((player) => player.name.length));
   return [
     `${"player".padEnd(nameWidth)}  units`,
@@ -74,8 +77,11 @@ async function listPlayers(): Promise<string> {
 }
 
 async function resolveSuTarget(input: string): Promise<{ id: string; name: string } | null> {
-  if (input.toLowerCase() === "npc" || input.toLowerCase() === NPC_OWNER_ID) {
-    return { id: NPC_OWNER_ID, name: "NPCs" };
+  const systemOwner = SYSTEM_OWNERS.find((owner) =>
+    owner.id === (input.toLowerCase() === "npc" ? "raiders" : input.toLowerCase()),
+  );
+  if (systemOwner) {
+    return systemOwner;
   }
   const response = await fetch("/api/players/getActive", { cache: "no-store" });
   if (!response.ok) throw new Error("su: unable to list players");
@@ -104,11 +110,11 @@ const commands: TerminalCommand[] = [
   },
   {
     name: "su",
-    description: "View and control an active player or NPCs",
+    description: "View and control an active player or NPC faction",
     requiresAuth: true,
     run: async (args, context) => {
       const input = args.join(" ").trim();
-      if (!input) return { output: "usage: su <player name, id, or npc>" };
+      if (!input) return { output: "usage: su <player name, id, raiders, universe, or npc>" };
       const target = await resolveSuTarget(input);
       if (!target) return { output: `su: ${input}: player not found` };
       context.su(target.id);

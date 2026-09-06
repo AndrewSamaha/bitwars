@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::content::{AttackDef, AttackType, ContentPack, NearEnemyStrategy};
 use crate::pb::{Entity, Vec2};
-use crate::spawn_config::NEUTRAL_OWNER;
+use crate::spawn_config::{is_system_owner, RAIDERS_OWNER};
 
 #[derive(Default)]
 pub struct CombatSystem {
@@ -178,7 +178,7 @@ impl CombatSystem {
             let Some(target) = target else {
                 // Neutrals have no player-issued movement to preserve. Player
                 // units resume their current intent after hostiles leave range.
-                if attacker.owner_player_id == NEUTRAL_OWNER
+                if is_system_owner(&attacker.owner_player_id)
                     && !scripted_entity_ids.contains(&attacker.id)
                 {
                     zero_velocity(attacker);
@@ -448,7 +448,7 @@ mod tests {
     fn pursues_to_weapon_range_then_fires_on_tick_cadence() {
         let pack = content();
         let mut entities = vec![
-            entity(1, "raider", NEUTRAL_OWNER, 0.0, 20.0),
+            entity(1, "raider", RAIDERS_OWNER, 0.0, 20.0),
             entity(2, "worker", "player", 20.0, 12.0),
         ];
         let mut combat = CombatSystem::default();
@@ -489,7 +489,7 @@ mod tests {
     fn target_ties_are_resolved_by_entity_id() {
         let pack = content();
         let mut entities = vec![
-            entity(1, "raider", NEUTRAL_OWNER, 0.0, 20.0),
+            entity(1, "raider", RAIDERS_OWNER, 0.0, 20.0),
             entity(8, "worker", "player-b", 5.0, 20.0),
             entity(3, "worker", "player-a", -5.0, 20.0),
         ];
@@ -505,7 +505,7 @@ mod tests {
         let mut entities = vec![
             entity(1, "raider", "player-a", 0.0, 20.0),
             entity(2, "worker", "player-a", 5.0, 20.0),
-            entity(3, "worker", NEUTRAL_OWNER, 8.0, 20.0),
+            entity(3, "worker", RAIDERS_OWNER, 8.0, 20.0),
             entity(4, "worker", "player-b", 9.0, 20.0),
         ];
 
@@ -552,7 +552,7 @@ mod tests {
         raider.combat = None;
         let mut entities = vec![
             entity(1, "worker", "player", 0.0, 20.0),
-            entity(2, "raider", NEUTRAL_OWNER, 9.0, 20.0),
+            entity(2, "raider", RAIDERS_OWNER, 9.0, 20.0),
         ];
 
         let outcome = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
@@ -568,7 +568,7 @@ mod tests {
     fn records_victim_and_attacker_for_a_combat_destruction() {
         let pack = content();
         let mut entities = vec![
-            entity(1, "raider", NEUTRAL_OWNER, 0.0, 20.0),
+            entity(1, "raider", RAIDERS_OWNER, 0.0, 20.0),
             entity(2, "worker", "player", 5.0, 5.0),
         ];
 
@@ -591,7 +591,7 @@ mod tests {
         pack.entity_types.insert("planet_blue".to_string(), planet);
         let mut entities = vec![
             entity(1, "raider", "player-a", 0.0, 20.0),
-            entity(2, "planet_blue", NEUTRAL_OWNER, 20.0, 100.0),
+            entity(2, "planet_blue", RAIDERS_OWNER, 20.0, 100.0),
         ];
 
         let result = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
@@ -613,7 +613,7 @@ mod tests {
             .on_near_enemy_strategy = NearEnemyStrategy::Stay;
         let mut entities = vec![
             entity(1, "raider", "player-a", 0.0, 20.0),
-            entity(2, "worker", NEUTRAL_OWNER, 20.0, 20.0),
+            entity(2, "worker", RAIDERS_OWNER, 20.0, 20.0),
         ];
 
         let result = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
@@ -635,7 +635,7 @@ mod tests {
             .on_near_enemy_strategy = NearEnemyStrategy::Flee;
         let mut entities = vec![
             entity(1, "raider", "player-a", 0.0, 20.0),
-            entity(2, "worker", NEUTRAL_OWNER, 5.0, 20.0),
+            entity(2, "worker", RAIDERS_OWNER, 5.0, 20.0),
         ];
 
         let result = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
@@ -649,7 +649,7 @@ mod tests {
         let pack = content();
         let mut entities = vec![
             entity(1, "raider", "player-a", 0.0, 20.0),
-            entity(2, "worker", NEUTRAL_OWNER, 5.0, 20.0),
+            entity(2, "worker", RAIDERS_OWNER, 5.0, 20.0),
         ];
         let commanded = HashSet::from([1]);
 

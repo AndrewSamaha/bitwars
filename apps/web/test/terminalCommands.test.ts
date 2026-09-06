@@ -15,7 +15,8 @@ describe("who", () => {
       game.world.add({ id: 1, owner_player_id: "player-a" }),
       game.world.add({ id: 2, owner_player_id: "player-a" }),
       game.world.add({ id: 3, owner_player_id: "player-b" }),
-      game.world.add({ id: 4, owner_player_id: "neutral" }),
+      game.world.add({ id: 4, owner_player_id: "raiders" }),
+      game.world.add({ id: 5, owner_player_id: "universe" }),
     );
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
@@ -35,10 +36,10 @@ describe("who", () => {
       exitSu: () => {},
     });
 
-    expect(result.output).toBe("player  units\nAlpha   2\nBeta    1\nNPCs    1");
+    expect(result.output).toBe("player    units\nAlpha     2\nBeta      1\nRaiders   1\nUniverse  1");
   });
 
-  it("switches to NPCs and exits the su session without logging out", async () => {
+  it("switches to raiders and exits the su session without logging out", async () => {
     const su = vi.fn();
     const exitSu = vi.fn();
     const logout = vi.fn().mockResolvedValue("Logged out.");
@@ -53,10 +54,10 @@ describe("who", () => {
     };
 
     const suResult = await executeTerminalCommand("su npc", context);
-    expect(su).toHaveBeenCalledWith("neutral");
-    expect(suResult.output).toBe("Now acting as NPCs. Use exit to return.");
+    expect(su).toHaveBeenCalledWith("raiders");
+    expect(suResult.output).toBe("Now acting as Raiders. Use exit to return.");
 
-    const exitResult = await executeTerminalCommand("exit", { ...context, actingAsId: "neutral" });
+    const exitResult = await executeTerminalCommand("exit", { ...context, actingAsId: "raiders" });
     expect(exitSu).toHaveBeenCalledOnce();
     expect(logout).not.toHaveBeenCalled();
     expect(exitResult.output).toBe("Returned to your session.");

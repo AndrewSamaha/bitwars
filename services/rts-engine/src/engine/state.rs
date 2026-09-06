@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::pb::{Entity, Vec2};
 use crate::content::ContentPack;
-use crate::spawn_config::{Loadout, NeutralNearSpawn, SpawnConfig, NEUTRAL_OWNER};
+use crate::spawn_config::{is_system_owner, Loadout, NeutralNearSpawn, SpawnConfig, UNIVERSE_OWNER};
 
 const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
 const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
@@ -122,7 +122,7 @@ fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &Conte
         pos: Some(Vec2 { x, y }),
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
-        owner_player_id: NEUTRAL_OWNER.to_string(),
+        owner_player_id: UNIVERSE_OWNER.to_string(),
         health: content.get(entity_type_id).map(|def| def.health.max(0.0)).unwrap_or(0.0),
     }
 }
@@ -207,7 +207,7 @@ pub fn on_player_spawn(
                 pos: Some(Vec2 { x, y }),
                 vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(Vec2 { x: 0.0, y: 0.0 }),
-                owner_player_id: NEUTRAL_OWNER.to_string(),
+                owner_player_id: UNIVERSE_OWNER.to_string(),
                 health: content
                     .get(&neutral.entity_type_id)
                     .map(|def| def.health.max(0.0))
@@ -252,7 +252,7 @@ fn sample_radiation_source_spawn_position(
     for _ in 0..MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS {
         let (x, y) = sample_position_in_annulus(spawn_x, spawn_y, min_distance, max_distance, rng);
         let is_clear = entities.iter().all(|entity| {
-            if entity.owner_player_id == NEUTRAL_OWNER {
+            if is_system_owner(&entity.owner_player_id) {
                 return true;
             }
             entity

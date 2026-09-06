@@ -862,8 +862,8 @@ export default function GameStage() {
             const myId = myPlayerIdRef.current;
             const ownerId = (e as any).owner_player_id;
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
-            const isNeutral = ownerId === "neutral";
-            const baseTint = remembered ? REMEMBERED_TINT : isOwned || isNeutral ? CLEAN_COLOR : NON_OWNED_TINT;
+            const isSystemOwner = ownerId === "universe" || ownerId === "raiders";
+            const baseTint = remembered ? REMEMBERED_TINT : isOwned || isSystemOwner ? CLEAN_COLOR : NON_OWNED_TINT;
             const health = Number((e as Entity).health);
             const maxHealth = contentManager.getEntityType(typeId)?.health;
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
@@ -873,7 +873,7 @@ export default function GameStage() {
             const isBuilding = String((e as any).active_intent_kind).toLowerCase() === "build";
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if (((e as any).hover || isSelected) && !suppressHover) {
-              if (primary) (primary as any).tint = isOwned || isNeutral ? SELECTED_COLOR : NON_OWNED_TINT;
+              if (primary) (primary as any).tint = isOwned || isSystemOwner ? SELECTED_COLOR : NON_OWNED_TINT;
               // Ensure a selection indicator exists after the sprite (only for owned units).
               let hoverIndicator = container.children.find((c) => c.label === 'hoverIndicator') as Graphics | undefined;
               if (isOwned && !hoverIndicator) {

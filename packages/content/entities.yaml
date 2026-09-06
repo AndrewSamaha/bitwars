@@ -345,3 +345,9 @@ entity_types:
           damage: 8.0
           cooldown_ticks: 100
           priority: 0
+    sensor:
+      range: 500.0
+      cost_per_minute:
+        energy: 2.5
+
+
