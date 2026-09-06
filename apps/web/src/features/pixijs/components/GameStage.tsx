@@ -783,26 +783,8 @@ export default function GameStage() {
                   if (sel.selectedAction === "Move") {
                     return;
                   }
-                  const live = findLiveEntityById(id);
-                  if (!live) {
-                    ev.stopPropagation();
-                    return;
-                  }
-                  // M6: Only select entities owned by the current player
-                  const myId = myPlayerIdRef.current;
-                  const ownerId = (live as any).owner_player_id;
-                  const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
-                  if (isOwned) {
-                    const originalEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
-                    if (originalEvent?.shiftKey) {
-                      if (sel.isSelected(id)) removeSelection([id]);
-                      else addSelection([id]);
-                    } else {
-                      setSelection([id]);
-                    }
-                  }
-                  // In non-move mode, entity clicks should not fall through to stage deselect.
-                  ev.stopPropagation();
+                  const originalEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
+                  entityPress = { id, shift: !!originalEvent?.shiftKey };
                 });
               renderById.set(id, visual);
             }
@@ -982,9 +964,13 @@ export default function GameStage() {
           }
         };
 
-        type SelectionDrag = { startX: number; startY: number; shift: boolean };
+        type SelectionDrag = { startX: number; startY: number; shift: boolean; moveMode: boolean; ctrl: boolean };
+        type CameraDrag = { startX: number; startY: number; cameraX: number; cameraY: number; moved: boolean };
+        type EntityPress = { id: string; shift: boolean };
         type MinimapDrag = { worldX: number; worldY: number; moved: boolean };
         let selectionDrag: SelectionDrag | null = null;
+        let cameraDrag: CameraDrag | null = null;
+        let entityPress: EntityPress | null = null;
         let minimapDrag: MinimapDrag | null = null;
         const SELECTION_DRAG_THRESHOLD_PX = 4;
 
@@ -1015,7 +1001,45 @@ export default function GameStage() {
           selectionBoxGraphics.rect(x, y, width, height).stroke({ width: 1, color: 0x88_cc_ff, alpha: 0.9 });
         };
 
-        // Stage click — delegates Move commands or starts a ground-selection drag.
+        const selectPressedEntity = (press: EntityPress) => {
+          const live = findLiveEntityById(press.id);
+          const ownerId = (live as any)?.owner_player_id;
+          if (!live || myPlayerIdRef.current == null || ownerId !== myPlayerIdRef.current) return;
+          if (press.shift) {
+            if (latestSelectorsRef.current.isSelected(press.id)) removeSelection([press.id]);
+            else addSelection([press.id]);
+          } else {
+            setSelection([press.id]);
+          }
+        };
+
+        const dispatchMove = (global: { x: number; y: number }, shift: boolean, ctrl: boolean) => {
+          const sel = latestSelectorsRef.current;
+          if (!sel.hasSelection) {
+            if (DEBUG_MOVE_INPUT) console.debug("[MoveInput] ignored: no selection");
+            updateMoveDebug("ignored:no_selection");
+            return;
+          }
+          const local = worldContainer.toLocal(global);
+          const target = { x: Number(local.x), y: Number(local.y) };
+          const targets = spreadMoveTargets(target, sel.selectedEntities.map((id) => {
+            const entityTypeId = findLiveEntityById(id)?.entity_type_id ?? "";
+            return contentManager.getEntityType(entityTypeId)?.hull_radius ?? 0;
+          }));
+
+          for (const [index, id] of sel.selectedEntities.entries()) {
+            const entityIdNum = Number(id);
+            if (!Number.isFinite(entityIdNum)) continue;
+            intentQueue.handleMoveCommand(entityIdNum, targets[index]!, { shift, ctrl });
+          }
+          if (DEBUG_MOVE_INPUT) {
+            console.debug("[MoveInput] dispatched", { entityIds: sel.selectedEntities, x: target.x, y: target.y, shift, ctrl });
+          }
+          updateMoveDebug("dispatched", { entityIds: sel.selectedEntities, x: target.x, y: target.y, shift, ctrl });
+          if (!shift && !ctrl) setSelectedAction(null);
+        };
+
+        // Stage click — selects, moves, or starts a camera/selection drag.
         app.stage.on('pointerdown', (ev: any) => {
           try {
             const global = ev.global;
@@ -1043,64 +1067,20 @@ export default function GameStage() {
 
             const sel = latestSelectorsRef.current;
             const origEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
-            // Outside Move mode, defer selection changes until pointerup so a
-            // click can become a box drag without first clearing the selection.
-            if (sel.selectedAction !== 'Move') {
-              selectionDrag = { startX: global.x, startY: global.y, shift: !!origEvent?.shiftKey };
-              return;
-            }
-            if (!sel.hasSelection) {
-              if (DEBUG_MOVE_INPUT) {
-                console.debug("[MoveInput] ignored: no selection");
-              }
-              updateMoveDebug("ignored:no_selection");
-              return;
-            }
-            // Compute world position from global
-            const local = worldContainer.toLocal(global);
-
-            // Read modifier keys from the original DOM event
             const shift = !!origEvent?.shiftKey;
             const ctrl = !!origEvent?.ctrlKey || !!origEvent?.metaKey;
-
-            const target = { x: Number(local.x), y: Number(local.y) };
-            const targets = spreadMoveTargets(target, sel.selectedEntities.map((id) => {
-              const entityTypeId = findLiveEntityById(id)?.entity_type_id ?? "";
-              return contentManager.getEntityType(entityTypeId)?.hull_radius ?? 0;
-            }));
-
-            // Issue nearby, non-overlapping destinations to every selected unit.
-            for (const [index, id] of sel.selectedEntities.entries()) {
-              const entityIdNum = Number(id);
-              if (!Number.isFinite(entityIdNum)) continue;
-              intentQueue.handleMoveCommand(
-                entityIdNum,
-                targets[index]!,
-                { shift, ctrl },
-              );
+            if (shift) {
+              selectionDrag = {
+                startX: global.x, startY: global.y, shift,
+                moveMode: sel.selectedAction === 'Move', ctrl,
+              };
+              return;
             }
-            if (DEBUG_MOVE_INPUT) {
-              console.debug("[MoveInput] dispatched", {
-                entityIds: sel.selectedEntities,
-                x: Number(local.x),
-                y: Number(local.y),
-                shift,
-                ctrl,
-              });
-            }
-            updateMoveDebug("dispatched", {
-              entityIds: sel.selectedEntities,
-              x: Number(local.x),
-              y: Number(local.y),
-              shift,
-              ctrl,
-            });
-
-            // Only clear action mode on plain click (REPLACE_ACTIVE).
-            // Shift/Ctrl clicks keep Move mode active for chaining waypoints.
-            if (!shift && !ctrl) {
-              setSelectedAction(null);
-            }
+            cameraDrag = {
+              startX: global.x, startY: global.y,
+              cameraX: worldContainer.position.x, cameraY: worldContainer.position.y,
+              moved: false,
+            };
           } catch (e) {
             // best-effort; do not throw in render loop
             console.error('move intent failed', e);
@@ -1113,6 +1093,15 @@ export default function GameStage() {
             moveCameraToMinimapPoint(ev.global, minimapDrag);
             return;
           }
+          if (cameraDrag) {
+            const dx = ev.global.x - cameraDrag.startX;
+            const dy = ev.global.y - cameraDrag.startY;
+            if (Math.abs(dx) >= SELECTION_DRAG_THRESHOLD_PX || Math.abs(dy) >= SELECTION_DRAG_THRESHOLD_PX) {
+              cameraDrag.moved = true;
+            }
+            if (cameraDrag.moved) worldContainer.position.set(cameraDrag.cameraX + dx, cameraDrag.cameraY + dy);
+            return;
+          }
           if (!selectionDrag) return;
           drawSelectionBox(selectionDrag.startX, selectionDrag.startY, ev.global.x, ev.global.y);
         });
@@ -1123,9 +1112,25 @@ export default function GameStage() {
             minimapDrag = null;
             return;
           }
+          const pan = cameraDrag;
+          if (pan) {
+            cameraDrag = null;
+            if (pan.moved) return;
+            const press = entityPress;
+            entityPress = null;
+            if (press) {
+              selectPressedEntity(press);
+              return;
+            }
+            if (latestSelectorsRef.current.selectedAction === 'Move') dispatchMove(ev.global, false, false);
+            else setSelection([]);
+            return;
+          }
           const drag = selectionDrag;
           if (!drag) return;
           selectionDrag = null;
+          const press = entityPress;
+          entityPress = null;
           selectionBoxGraphics.clear();
 
           const endX = ev.global.x;
@@ -1133,6 +1138,11 @@ export default function GameStage() {
           const width = Math.abs(endX - drag.startX);
           const height = Math.abs(endY - drag.startY);
           if (width < SELECTION_DRAG_THRESHOLD_PX && height < SELECTION_DRAG_THRESHOLD_PX) {
+            if (press) {
+              selectPressedEntity(press);
+              return;
+            }
+            if (drag.moveMode) dispatchMove(ev.global, drag.shift, drag.ctrl);
             if (!drag.shift) setSelection([]);
             return;
           }
