@@ -42,3 +42,12 @@ BitWars. It is deployed with the game at `/audio/ATTRIBUTIONS.md`.
 - License: https://creativecommons.org/licenses/by/3.0/
 - Changes: None.
 - Retrieved: 2026-08-29
+
+### Space Laser
+
+- Files: `sfx/laser/laser_01.wav` through `sfx/laser/laser_06.wav`
+- Artist: Daleonfire (Freesound)
+- Source: https://pixabay.com/sound-effects/film-special-effects-space-laser-38082/
+- License: https://pixabay.com/service/license-summary/
+- Changes: Split into six clips and converted to WAV.
+- Retrieved: 2026-09-07

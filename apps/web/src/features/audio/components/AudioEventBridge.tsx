@@ -10,6 +10,7 @@ export default function AudioEventBridge() {
     audio.registerSoundEffect(SoundEffect.EntityExplosion);
     audio.registerSoundEffect(SoundEffect.SonarPing);
     audio.registerSoundEffect(SoundEffect.BuildComplete);
+    audio.registerSoundEffect(SoundEffect.LaserShot);
     const onEntityExploded = () => audio.playSfx(SoundEffect.EntityExplosion);
     let lastSonarAt = Number.NEGATIVE_INFINITY;
     const onEntityDetected = () => {
@@ -19,17 +20,21 @@ export default function AudioEventBridge() {
       audio.playSfx(SoundEffect.SonarPing);
     };
     const onBuildCompleted = () => audio.playSfx(SoundEffect.BuildComplete);
+    const onLaserShot = () => audio.playSfx(SoundEffect.LaserShot);
 
     window.addEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
     window.addEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
     window.addEventListener(BUILD_COMPLETED_EVENT, onBuildCompleted);
+    window.addEventListener("bitwars:laser-shot", onLaserShot);
     return () => {
       window.removeEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
       window.removeEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
       window.removeEventListener(BUILD_COMPLETED_EVENT, onBuildCompleted);
+      window.removeEventListener("bitwars:laser-shot", onLaserShot);
       audio.unregisterSfx(SoundEffect.EntityExplosion);
       audio.unregisterSfx(SoundEffect.SonarPing);
       audio.unregisterSfx(SoundEffect.BuildComplete);
+      audio.unregisterSfx(SoundEffect.LaserShot);
     };
   }, []);
 

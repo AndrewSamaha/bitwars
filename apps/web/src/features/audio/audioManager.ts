@@ -14,24 +14,30 @@ export enum SoundEffect {
   EntityExplosion = "entity-explosion",
   SonarPing = "sonar-ping",
   BuildComplete = "build-complete",
+  LaserShot = "laser-shot",
 }
 
 const backgroundMusicSources: Record<BackgroundMusicState, AudioSource> = {
   [BackgroundMusicState.Exploration]: "/audio/music/exploration_theme.ogg",
 };
 
-const soundEffectDefinitions: Record<SoundEffect, { source: AudioSource; options: SfxOptions }> = {
+const soundEffectDefinitions: Record<SoundEffect, { sources: AudioSource[]; options: SfxOptions }> = {
   [SoundEffect.EntityExplosion]: {
-    source: "/audio/sfx/explosion/DeathFlash.flac",
+    sources: ["/audio/sfx/explosion/DeathFlash.flac"],
     options: { volume: 0.7, pool: 8 },
   },
   [SoundEffect.SonarPing]: {
-    source: "/audio/sfx/sonar_ping/sonarping-38269.mp3",
+    sources: ["/audio/sfx/sonar_ping/sonarping-38269.mp3"],
     options: { volume: 0.65, pool: 2 },
   },
   [SoundEffect.BuildComplete]: {
-    source: "/audio/sfx/jobs_finished/jobs-finished-90258.mp3",
+    sources: ["/audio/sfx/jobs_finished/jobs-finished-90258.mp3"],
     options: { volume: 0.7, pool: 4 },
+  },
+  [SoundEffect.LaserShot]: {
+    sources: [1, 2, 3, 4, 5, 6].map((number) =>
+      `/audio/sfx/laser/laser_${String(number).padStart(2, "0")}.wav`),
+    options: { volume: 0.65, pool: 6 },
   },
 };
 
@@ -50,7 +56,7 @@ type SfxOptions = {
 };
 
 type RegisteredSfx = {
-  sound: Howl;
+  sounds: Howl[];
   sourceVolume: number;
 };
 
@@ -120,8 +126,8 @@ class AudioManager {
 
   setSfxVolume(volume: number): void {
     this.sfxVolume = clampVolume(volume);
-    for (const { sound, sourceVolume } of this.effects.values()) {
-      sound.volume(sourceVolume * this.sfxVolume);
+    for (const { sounds, sourceVolume } of this.effects.values()) {
+      for (const sound of sounds) sound.volume(sourceVolume * this.sfxVolume);
     }
   }
 
@@ -177,33 +183,43 @@ class AudioManager {
   }
 
   registerSfx(name: string, source: AudioSource, { volume = 1, pool = 5 }: SfxOptions = {}): void {
+    this.registerSfxSources(name, [source], { volume, pool });
+  }
+
+  private registerSfxSources(
+    name: string,
+    sources: AudioSource[],
+    { volume = 1, pool = 5 }: SfxOptions = {},
+  ): void {
     this.unregisterSfx(name);
     const sourceVolume = clampVolume(volume);
-    const sound = new Howl({
-      src: source,
-      preload: true,
-      pool,
-      volume: sourceVolume * this.sfxVolume,
+    this.effects.set(name, {
+      sourceVolume,
+      sounds: sources.map((source) => new Howl({
+        src: source,
+        preload: true,
+        pool,
+        volume: sourceVolume * this.sfxVolume,
+      })),
     });
-
-    this.effects.set(name, { sound, sourceVolume });
   }
 
   /** Registers one of the sound effects declared by the game's audio catalog. */
   registerSoundEffect(effect: SoundEffect): void {
-    const { source, options } = soundEffectDefinitions[effect];
-    this.registerSfx(effect, source, options);
+    const { sources, options } = soundEffectDefinitions[effect];
+    this.registerSfxSources(effect, sources, options);
   }
 
   unregisterSfx(name: string): void {
     const effect = this.effects.get(name);
-    effect?.sound.unload();
+    for (const sound of effect?.sounds ?? []) sound.unload();
     this.effects.delete(name);
   }
 
   /** Plays one overlapping instance of a previously registered effect. */
   playSfx(name: string): number | undefined {
-    return this.effects.get(name)?.sound.play();
+    const sounds = this.effects.get(name)?.sounds;
+    return sounds?.[Math.floor(Math.random() * sounds.length)]?.play();
   }
 
   dispose(): void {
