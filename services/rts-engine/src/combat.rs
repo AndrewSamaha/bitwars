@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::content::{AttackDef, AttackType, ContentPack, NearEnemyStrategy};
 use crate::pb::{Entity, Vec2};
+use crate::spatial::SpatialIndex;
 use crate::spawn_config::{is_system_owner, RAIDERS_OWNER};
 
 #[derive(Default)]
@@ -106,6 +107,7 @@ impl CombatSystem {
             };
         }
 
+        let scripted_target_ids: HashSet<_> = scripted_targets.values().copied().collect();
         let targets: Vec<Target> = entities
             .iter()
             .filter_map(|entity| {
@@ -113,10 +115,7 @@ impl CombatSystem {
                 let combat_targetable = content
                     .get(&entity.entity_type_id)
                     .is_some_and(|definition| definition.combat_targetable);
-                ((combat_targetable
-                    || scripted_targets
-                        .values()
-                        .any(|target_id| *target_id == entity.id))
+                ((combat_targetable || scripted_target_ids.contains(&entity.id))
                     && !entity.owner_player_id.is_empty()
                     && entity.health > 0.0)
                     .then(|| Target {
@@ -132,6 +131,15 @@ impl CombatSystem {
                     })
             })
             .collect();
+        let target_by_id: HashMap<_, _> = targets
+            .iter()
+            .enumerate()
+            .map(|(index, target)| (target.id, index))
+            .collect();
+        let mut target_grid = SpatialIndex::new();
+        for (index, target) in targets.iter().enumerate() {
+            target_grid.insert(index, target.x, target.y);
+        }
 
         let mut damage_by_target: HashMap<u64, DamageContribution> = HashMap::new();
         let mut laser_shots = Vec::new();
@@ -157,12 +165,15 @@ impl CombatSystem {
             };
             let acquisition_sq = profile.acquisition_range.max(0.0).powi(2);
             let target = if scripted_entity_ids.contains(&attacker.id) {
-                scripted_targets.get(&attacker.id).and_then(|target_id| {
-                    targets.iter().find(|candidate| candidate.id == *target_id)
-                })
+                scripted_targets
+                    .get(&attacker.id)
+                    .and_then(|target_id| target_by_id.get(target_id))
+                    .map(|index| &targets[*index])
             } else {
-                targets
-                    .iter()
+                target_grid
+                    .within(pos.x, pos.y, profile.acquisition_range.max(0.0))
+                    .into_iter()
+                    .map(|index| &targets[index])
                     .filter_map(|candidate| {
                         if !candidate.combat_targetable
                             || candidate.id == attacker.id

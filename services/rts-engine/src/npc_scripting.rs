@@ -11,6 +11,7 @@ use mlua::{Error as LuaError, Function, HookTriggers, Lua, RegistryKey, Table, V
 
 use crate::content::ContentPack;
 use crate::pb::{Entity, Vec2};
+use crate::spatial::SpatialIndex;
 use crate::spawn_config::{is_player_owner, RAIDERS_OWNER, UNIVERSE_OWNER};
 
 const RAIDER_TYPE: &str = "raider";
@@ -23,6 +24,7 @@ const MAX_SCRIPT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SCRIPT_HOOKS: usize = 50;
 const INSTRUCTIONS_PER_HOOK: u32 = 1_000;
 
+#[derive(Default)]
 pub struct NpcCommands {
     pub scripted_entity_ids: HashSet<u64>,
     pub target_by_entity: HashMap<u64, u64>,
@@ -117,6 +119,10 @@ impl RaiderScript {
                 )
             })
             .collect();
+        let mut player_target_grid = SpatialIndex::new();
+        for (index, target) in player_targets.iter().enumerate() {
+            player_target_grid.insert(index, target.x, target.y);
+        }
         let stars: Vec<(u64, f32, f32, f32)> = entities
             .iter()
             .filter_map(|entity| {
@@ -158,14 +164,17 @@ impl RaiderScript {
                 .and_then(|def| def.combat.as_ref())
                 .map(|combat| combat.acquisition_range.max(0.0))
                 .unwrap_or(0.0);
+            // ponytail: landmarks stay linear until raider_ai telemetry shows they dominate.
             let star = stars.iter().min_by(|a, b| {
                 distance_sq(position.x, position.y, a.1, a.2)
                     .partial_cmp(&distance_sq(position.x, position.y, b.1, b.2))
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| a.0.cmp(&b.0))
             });
-            let nearby_targets: Vec<_> = player_targets
-                .iter()
+            let nearby_targets: Vec<_> = player_target_grid
+                .within(position.x, position.y, acquisition_range)
+                .into_iter()
+                .map(|index| &player_targets[index])
                 .filter(|target| {
                     distance_sq(position.x, position.y, target.x, target.y)
                         <= acquisition_range * acquisition_range

@@ -126,16 +126,17 @@ impl Telemetry {
         self.send(record).await
     }
 
-    pub async fn publish_tick_timing(
+    pub async fn publish_tick_timings(
         &self,
         game_id: &str,
         server_tick: u64,
         entity_count: usize,
         tick_budget: Duration,
         summary: TickTimingSummary,
+        phase_summaries: Vec<(&'static str, TickTimingSummary)>,
     ) -> Result<()> {
         let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let record = json!({
+        let mut records = vec![json!({
             "timestamp": timestamp,
             "event_type": "engine_tick_timing",
             "service": self.service_name,
@@ -149,13 +150,32 @@ impl Telemetry {
             "tick_p95_ms": summary.p95_ms,
             "tick_max_ms": summary.max_ms,
             "over_budget_samples": summary.over_budget_samples,
-        });
+        })];
 
-        self.send(record).await
+        records.extend(phase_summaries.into_iter().map(|(phase, summary)| json!({
+            "timestamp": timestamp,
+            "event_type": "engine_tick_phase_timing",
+            "service": self.service_name,
+            "dataset": self.dataset,
+            "game_id": game_id,
+            "server_tick": server_tick,
+            "entity_count": entity_count,
+            "phase": phase,
+            "samples": summary.samples,
+            "p50_ms": summary.p50_ms,
+            "p95_ms": summary.p95_ms,
+            "max_ms": summary.max_ms,
+        })));
+
+        self.send_many(records).await
     }
 
     async fn send(&self, record: serde_json::Value) -> Result<()> {
-        let body = serde_json::to_vec(&[record])?;
+        self.send_many(vec![record]).await
+    }
+
+    async fn send_many(&self, records: Vec<serde_json::Value>) -> Result<()> {
+        let body = serde_json::to_vec(&records)?;
 
         let mut request = self
             .client

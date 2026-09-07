@@ -19,10 +19,11 @@ use crate::io::redis::{
     RedisClient,
 };
 use crate::io::telemetry::{summarize_tick_durations, Telemetry};
-use crate::npc_scripting::RaiderScript;
+use crate::npc_scripting::{NpcCommands, RaiderScript};
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
 use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
+use crate::spatial::SpatialIndex;
 use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
@@ -187,6 +188,20 @@ struct RadiationSourceSnapshot {
     max_effective_distance: f32,
     full_damage_distance: f32,
     damage_per_second: f32,
+}
+
+fn record_tick_phase(
+    samples: Option<&mut HashMap<&'static str, Vec<Duration>>>,
+    phase: &'static str,
+    started: &mut Option<Instant>,
+) {
+    if let (Some(samples), Some(phase_started)) = (samples, started.as_mut()) {
+        samples
+            .entry(phase)
+            .or_default()
+            .push(phase_started.elapsed());
+        *phase_started = Instant::now();
+    }
 }
 
 fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {
@@ -450,6 +465,33 @@ mod radiation_tests {
             worker_damage > 24.0,
             "expected stacked damage, got {worker_damage}"
         );
+    }
+
+    #[test]
+    fn radiation_grid_finds_sources_across_cell_boundaries() {
+        let content = make_content();
+        let state = GameState {
+            tick: 0,
+            entities: vec![
+                pb::Entity {
+                    id: 1,
+                    entity_type_id: "star_yellow".to_string(),
+                    pos: Some(pb::Vec2 { x: 950.0, y: 0.0 }),
+                    health: 100.0,
+                    ..Default::default()
+                },
+                pb::Entity {
+                    id: 2,
+                    entity_type_id: "worker".to_string(),
+                    pos: Some(pb::Vec2 { x: 1_050.0, y: 0.0 }),
+                    health: 100.0,
+                    ..Default::default()
+                },
+            ],
+            ledger: HashMap::new(),
+        };
+
+        assert!(Engine::compute_radiation_damage(&state, &content)[&2] > 0.0);
     }
 
     #[test]
@@ -1674,6 +1716,16 @@ impl Engine {
                 .then_with(|| a.radiation_type.cmp(&b.radiation_type))
         });
 
+        let mut sources_by_cell = SpatialIndex::new();
+        for (source_index, source) in sources.iter().enumerate() {
+            sources_by_cell.insert_area(
+                source_index,
+                source.x,
+                source.y,
+                source.max_effective_distance,
+            );
+        }
+
         for entity in &state.entities {
             if entity.health <= 0.0 {
                 continue;
@@ -1684,12 +1736,16 @@ impl Engine {
             let Some(entity_type) = content.get(&entity.entity_type_id) else {
                 continue;
             };
-            let total = sources
-                .iter()
+            let total = sources_by_cell
+                .at(pos.x, pos.y)
+                .map(|index| &sources[index])
                 .filter(|source| source.entity_id != entity.id)
                 .map(|source| {
-                    let actual_distance =
-                        Self::distance_sq(pos.x, pos.y, source.x, source.y).sqrt();
+                    let distance_sq = Self::distance_sq(pos.x, pos.y, source.x, source.y);
+                    if distance_sq > source.max_effective_distance.powi(2) {
+                        return 0.0;
+                    }
+                    let actual_distance = distance_sq.sqrt();
                     Self::radiation_damage_per_second(source, entity_type, actual_distance)
                 })
                 .sum::<f32>();
@@ -1728,10 +1784,33 @@ impl Engine {
         dead_entity_ids
     }
 
+    fn apply_raider_ai(&mut self) -> NpcCommands {
+        let Some(content) = self.content.as_ref() else {
+            return NpcCommands::default();
+        };
+        match self.raider_script.tick(
+            &mut self.state.entities,
+            content,
+            self.state.tick,
+            self.cfg.tps,
+            self.spawn_config.max_raiders,
+        ) {
+            Ok(commands) => commands,
+            Err(error) => {
+                warn!(?error, tick = self.state.tick, "raider Lua script failed");
+                NpcCommands::default()
+            }
+        }
+    }
+
     /// Advance autonomous combat and remove entities killed by it.
     /// Returns killed IDs so the tick loop can cancel any active player intent
     /// and update reconnect tracking before publishing the resulting delta.
-    fn apply_autonomous_combat(&mut self, dt: f32) -> crate::combat::CombatTick {
+    fn apply_autonomous_combat(
+        &mut self,
+        dt: f32,
+        commands: &NpcCommands,
+    ) -> crate::combat::CombatTick {
         let Some(content) = self.content.as_ref() else {
             return crate::combat::CombatTick {
                 dead_entity_ids: Vec::new(),
@@ -1742,22 +1821,6 @@ impl Engine {
         };
         let commanded_entity_ids: HashSet<u64> =
             self.intents.active_intents().keys().copied().collect();
-        let commands = match self.raider_script.tick(
-            &mut self.state.entities,
-            content,
-            self.state.tick,
-            self.cfg.tps,
-            self.spawn_config.max_raiders,
-        ) {
-            Ok(commands) => commands,
-            Err(error) => {
-                warn!(?error, tick = self.state.tick, "raider Lua script failed");
-                crate::npc_scripting::NpcCommands {
-                    scripted_entity_ids: HashSet::new(),
-                    target_by_entity: HashMap::new(),
-                }
-            }
-        };
         let outcome = self.combat.tick_with_scripted_targets(
             &mut self.state.entities,
             content,
@@ -2657,7 +2720,8 @@ impl Engine {
                 warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
             }
         }
-        let combat = self.apply_autonomous_combat(dt);
+        let npc_commands = self.apply_raider_ai();
+        let combat = self.apply_autonomous_combat(dt, &npc_commands);
         self.emit_laser_shots(&combat.laser_shots).await;
         self.emit_combat_destructions(&combat.destructions).await;
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
@@ -2729,10 +2793,15 @@ impl Engine {
             .telemetry
             .as_ref()
             .map(|_| Vec::with_capacity(TICK_TIMING_WINDOW_TICKS));
+        let mut phase_durations = self
+            .telemetry
+            .as_ref()
+            .map(|_| HashMap::<&'static str, Vec<Duration>>::new());
 
         loop {
             ticker.tick().await;
             let tick_started = tick_durations.as_ref().map(|_| Instant::now());
+            let mut phase_started = tick_started;
 
             // M6: Process pending joins (spawn on join)
             while let Ok(Some(player_id)) = self.redis.pop_next_pending_join().await {
@@ -2741,6 +2810,7 @@ impl Engine {
                     warn!(player_id = %player_id, error = ?e, "ensure_spawned failed");
                 }
             }
+            record_tick_phase(phase_durations.as_mut(), "joins", &mut phase_started);
 
             // Phase B: Ingest intents from Redis stream (tick-bounded)
             let batch_start = Instant::now();
@@ -2783,6 +2853,11 @@ impl Engine {
                     self.last_intent_id = entry_id;
                 }
             }
+            record_tick_phase(
+                phase_durations.as_mut(),
+                "intent_ingest",
+                &mut phase_started,
+            );
 
             // M1: No process_pending step. Intents are activated immediately
             // inside handle_envelope via IntentManager::try_activate.
@@ -2808,15 +2883,25 @@ impl Engine {
                     warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
                 }
             }
-            let combat = self.apply_autonomous_combat(dt);
+            record_tick_phase(phase_durations.as_mut(), "movement", &mut phase_started);
+            let npc_commands = self.apply_raider_ai();
+            record_tick_phase(phase_durations.as_mut(), "raider_ai", &mut phase_started);
+            let combat = self.apply_autonomous_combat(dt, &npc_commands);
             self.emit_laser_shots(&combat.laser_shots).await;
             self.emit_combat_destructions(&combat.destructions).await;
             self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
+            record_tick_phase(
+                phase_durations.as_mut(),
+                "combat",
+                &mut phase_started,
+            );
             self.apply_repairs(dt).await;
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
             self.apply_maintenance_costs(dt);
+            record_tick_phase(phase_durations.as_mut(), "economy", &mut phase_started);
             integrate(&self.cfg, &mut self.state, dt);
+            record_tick_phase(phase_durations.as_mut(), "physics", &mut phase_started);
             self.apply_radiation_damage(dt);
             let radiation_victims: Vec<pb::Entity> = self
                 .state
@@ -2829,7 +2914,13 @@ impl Engine {
             self.emit_radiation_destructions(&radiation_victims).await;
             self.cancel_destroyed_intents(&radiation_dead_entity_ids)
                 .await;
+            record_tick_phase(phase_durations.as_mut(), "radiation", &mut phase_started);
             self.publish_script_debug().await;
+            record_tick_phase(
+                phase_durations.as_mut(),
+                "debug_publish",
+                &mut phase_started,
+            );
             self.state.tick += 1;
 
             // Delta
@@ -2849,6 +2940,11 @@ impl Engine {
                     Err(e) => error!(?e, "delta publish failed"),
                 }
             }
+            record_tick_phase(
+                phase_durations.as_mut(),
+                "delta_publish",
+                &mut phase_started,
+            );
             // Periodic snapshot
             if self.state.tick % snapshot_interval == 0 {
                 let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
@@ -2867,6 +2963,11 @@ impl Engine {
                     error!(?e, "snapshot publish failed");
                 }
             }
+            record_tick_phase(
+                phase_durations.as_mut(),
+                "snapshot_publish",
+                &mut phase_started,
+            );
 
             // Log once per second
             if self.state.tick % (self.cfg.tps as u64) == 0 {
@@ -2877,25 +2978,39 @@ impl Engine {
             self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
             self.prev_combat_effect_ui_state_by_entity =
                 self.combat_effect_ui_state_by_entity.clone();
+            record_tick_phase(phase_durations.as_mut(), "state_copy", &mut phase_started);
 
-            if let (Some(tick_started), Some(tick_durations)) = (tick_started, tick_durations.as_mut()) {
+            if let (Some(tick_started), Some(tick_durations)) =
+                (tick_started, tick_durations.as_mut())
+            {
                 tick_durations.push(tick_started.elapsed());
                 if tick_durations.len() == TICK_TIMING_WINDOW_TICKS {
                     let summary = summarize_tick_durations(tick_durations, tick_budget)
                         .expect("tick timing window is non-empty");
                     tick_durations.clear();
+                    let mut phase_summaries: Vec<_> = phase_durations
+                        .as_mut()
+                        .expect("telemetry enabled")
+                        .drain()
+                        .filter_map(|(phase, samples)| {
+                            summarize_tick_durations(&samples, tick_budget)
+                                .map(|summary| (phase, summary))
+                        })
+                        .collect();
+                    phase_summaries.sort_by_key(|(phase, _)| *phase);
                     let telemetry = self.telemetry.as_ref().expect("telemetry enabled").clone();
                     let game_id = self.cfg.game_id.clone();
                     let server_tick = self.state.tick;
                     let entity_count = self.state.entities.len();
                     tokio::spawn(async move {
                         if let Err(error) = telemetry
-                            .publish_tick_timing(
+                            .publish_tick_timings(
                                 &game_id,
                                 server_tick,
                                 entity_count,
                                 tick_budget,
                                 summary,
+                                phase_summaries,
                             )
                             .await
                         {
