@@ -64,12 +64,12 @@ pub struct CollectorState {
     #[prost(float, tag = "6")]
     pub effective_rate_per_second: f32,
 }
-/// Authoritative presentation state for a continuous contact attack.
+/// Authoritative presentation state for a continuous entity interaction.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CombatEffectState {
     #[prost(uint64, tag = "1")]
     pub entity_id: u64,
-    /// "idle" | "dismantling"
+    /// "idle" | "dismantling" | "repairing"
     #[prost(string, tag = "2")]
     pub activity: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
@@ -209,6 +209,22 @@ pub struct CollectIntent {
     #[prost(string, tag = "3")]
     pub player_id: ::prost::alloc::string::String,
 }
+/// Repair intent payload (authoritative server-side).
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RepairIntent {
+    /// repairing entity
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    /// friendly entity to repair
+    #[prost(uint64, tag = "2")]
+    pub target_id: u64,
+    #[deprecated]
+    #[prost(string, tag = "3")]
+    pub client_cmd_id: ::prost::alloc::string::String,
+    #[deprecated]
+    #[prost(string, tag = "4")]
+    pub player_id: ::prost::alloc::string::String,
+}
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntentEnvelope {
@@ -232,7 +248,7 @@ pub struct IntentEnvelope {
     /// defaults to REPLACE_ACTIVE when omitted
     #[prost(enumeration = "IntentPolicy", tag = "7")]
     pub policy: i32,
-    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13")]
+    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14")]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
 /// Nested message and enum types in `IntentEnvelope`.
@@ -247,13 +263,15 @@ pub mod intent_envelope {
         Build(super::BuildIntent),
         #[prost(message, tag = "13")]
         Collect(super::CollectIntent),
+        #[prost(message, tag = "14")]
+        Repair(super::RepairIntent),
     }
 }
 /// Extensible Intent envelope.
 /// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Intent {
-    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5")]
     pub kind: ::core::option::Option<intent::Kind>,
 }
 /// Nested message and enum types in `Intent`.
@@ -268,6 +286,8 @@ pub mod intent {
         Build(super::BuildIntent),
         #[prost(message, tag = "4")]
         Collect(super::CollectIntent),
+        #[prost(message, tag = "5")]
+        Repair(super::RepairIntent),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -369,13 +389,18 @@ pub struct CollectState {
     #[prost(uint64, tag = "1")]
     pub entity_id: u64,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct RepairState {
+    #[prost(uint64, tag = "1")]
+    pub target_id: u64,
+}
 /// Unified per-entity execution container (one active at a time).
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ActionState {
     /// Echo original intent for correlation/observability (optional but useful)
     #[prost(message, optional, tag = "1")]
     pub intent: ::core::option::Option<Intent>,
-    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5")]
+    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6")]
     pub exec: ::core::option::Option<action_state::Exec>,
 }
 /// Nested message and enum types in `ActionState`.
@@ -390,6 +415,8 @@ pub mod action_state {
         Build(super::BuildState),
         #[prost(message, tag = "5")]
         Collect(super::CollectState),
+        #[prost(message, tag = "6")]
+        Repair(super::RepairState),
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

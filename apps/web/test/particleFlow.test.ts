@@ -22,3 +22,20 @@ it.each([
   expect(new Set(effects.map((effect) => effect.key)).size).toBe(2);
   expect(effects.map((effect) => effect.targetWorldPos.x)).toEqual([200, 300]);
 });
+
+it("renders repair activity as a green flow to the target", () => {
+  const target: Entity = { id: 9, entity_type_id: "habitat", pos: { x: 10, y: 20 } };
+  const worker: Entity = {
+    id: 2,
+    entity_type_id: "worker",
+    pos: { x: 0, y: 0 },
+    combat_effect_state: { activity: "repairing", target_id: 9, attack_id: "repair" },
+  };
+  const [effect] = resolveParticleFlowEffects(worker, {
+    entities: () => [worker, target],
+    getEntityType: () => undefined,
+  });
+  expect(effect?.key).toBe("repair-flow:2:9");
+  expect(effect?.color).toBe(0x22_c5_5e);
+  expect(effect?.targetWorldPos).toEqual(target.pos);
+});

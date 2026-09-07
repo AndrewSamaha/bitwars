@@ -117,10 +117,17 @@ export default function GameStage() {
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
-            } : {
+            } : params.kind === "Build" ? {
               type: "Build",
               entity_id: params.entityId,
               blueprint_id: params.blueprintId,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
+            } : {
+              type: "Repair",
+              entity_id: params.entityId,
+              target_id: params.targetId,
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
@@ -650,6 +657,12 @@ export default function GameStage() {
                 }
               }
             }
+          } else if ((ev.key === "r" || ev.key === "R") && !isFocusInEditable()) {
+            const canRepair = sel.hasSelection && sel.selectedEntities.every((id) => {
+              const entityTypeId = findLiveEntityById(id)?.entity_type_id ?? "";
+              return Boolean(contentManager.getEntityType(entityTypeId)?.repair);
+            });
+            if (canRepair) setSelectedAction("Repair");
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
           } else if (ev.code === "Space" && !isFocusInEditable()) {
@@ -1039,6 +1052,27 @@ export default function GameStage() {
           if (!shift && !ctrl) setSelectedAction(null);
         };
 
+        const dispatchRepair = (targetId: string) => {
+          const sel = latestSelectorsRef.current;
+          const target = findLiveEntityById(targetId);
+          const maxHealth = contentManager.getEntityType(target?.entity_type_id ?? "")?.health ?? 0;
+          if (!target || target.owner_player_id !== myPlayerIdRef.current
+            || target.health <= 0 || target.health >= maxHealth) {
+            setSelectedAction(null);
+            return;
+          }
+          for (const id of sel.selectedEntities) {
+            const entityId = Number(id);
+            const targetEntityId = Number(targetId);
+            const entityTypeId = findLiveEntityById(id)?.entity_type_id ?? "";
+            if (id !== targetId && Number.isFinite(entityId) && Number.isFinite(targetEntityId)
+              && contentManager.getEntityType(entityTypeId)?.repair) {
+              intentQueue.handleRepairCommand(entityId, targetEntityId);
+            }
+          }
+          setSelectedAction(null);
+        };
+
         // Stage click — selects, moves, or starts a camera/selection drag.
         app.stage.on('pointerdown', (ev: any) => {
           try {
@@ -1119,10 +1153,15 @@ export default function GameStage() {
             const press = entityPress;
             entityPress = null;
             if (press) {
+              if (latestSelectorsRef.current.selectedAction === "Repair") {
+                dispatchRepair(press.id);
+                return;
+              }
               selectPressedEntity(press);
               return;
             }
             if (latestSelectorsRef.current.selectedAction === 'Move') dispatchMove(ev.global, false, false);
+            else if (latestSelectorsRef.current.selectedAction === "Repair") setSelectedAction(null);
             else setSelection([]);
             return;
           }
@@ -1139,6 +1178,10 @@ export default function GameStage() {
           const height = Math.abs(endY - drag.startY);
           if (width < SELECTION_DRAG_THRESHOLD_PX && height < SELECTION_DRAG_THRESHOLD_PX) {
             if (press) {
+              if (latestSelectorsRef.current.selectedAction === "Repair") {
+                dispatchRepair(press.id);
+                return;
+              }
               selectPressedEntity(press);
               return;
             }

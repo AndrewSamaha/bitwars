@@ -89,6 +89,7 @@ impl IntentManager {
             pb::intent::Kind::Attack(a) => Some(a.entity_id),
             pb::intent::Kind::Build(b) => Some(b.entity_id),
             pb::intent::Kind::Collect(c) => Some(c.entity_id),
+            pb::intent::Kind::Repair(r) => Some(r.entity_id),
         }
     }
 
@@ -295,6 +296,11 @@ fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -
                 };
                 exec = Some(pb::action_state::Exec::Collect(collect_state));
             }
+            pb::intent::Kind::Repair(r) => {
+                exec = Some(pb::action_state::Exec::Repair(pb::RepairState {
+                    target_id: r.target_id,
+                }));
+            }
         }
     } else {
         warn!("intent had no kind; ignoring");
@@ -325,6 +331,7 @@ fn log_start(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u64
         Some(pb::action_state::Exec::Attack(_)) => "Attack",
         Some(pb::action_state::Exec::Build(_)) => "Build",
         Some(pb::action_state::Exec::Collect(_)) => "Collect",
+        Some(pb::action_state::Exec::Repair(_)) => "Repair",
         None => "Unknown",
     };
     trace_start(metadata, kind, entity_id);
@@ -336,6 +343,7 @@ fn log_finish(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u6
         Some(pb::action_state::Exec::Attack(_)) => "Attack",
         Some(pb::action_state::Exec::Build(_)) => "Build",
         Some(pb::action_state::Exec::Collect(_)) => "Collect",
+        Some(pb::action_state::Exec::Repair(_)) => "Repair",
         None => "Unknown",
     };
     info!(
@@ -558,5 +566,26 @@ mod tests {
             manager.active_intents().contains_key(&entity_id),
             "collect intent should stay active until replaced/canceled"
         );
+    }
+
+    #[test]
+    fn repair_intent_preserves_its_target() {
+        let action = make_action_state_from_intent(
+            pb::Intent {
+                kind: Some(pb::intent::Kind::Repair(pb::RepairIntent {
+                    entity_id: 17,
+                    target_id: 42,
+                    client_cmd_id: String::new(),
+                    player_id: String::new(),
+                })),
+            },
+            0.75,
+        );
+        assert!(matches!(
+            action.exec,
+            Some(pb::action_state::Exec::Repair(pb::RepairState {
+                target_id: 42
+            }))
+        ));
     }
 }

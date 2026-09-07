@@ -11,7 +11,7 @@ use uuid::{Uuid, Version};
 
 use crate::combat::CombatSystem;
 use crate::config::GameConfig;
-use crate::content::{CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef};
+use crate::content::{CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef, RepairDef};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::{
@@ -26,7 +26,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
 use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 7;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 8;
 const TICK_TIMING_WINDOW_TICKS: usize = 600;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -109,6 +109,46 @@ fn debit_maintenance_without_debt(
     } else {
         // Any unpaid upkeep is deliberately discarded: maintenance creates no debt.
         fractional.remove(&key);
+    }
+}
+
+fn repair_tick(repair: &RepairDef, dt: f32, missing_health: f32) -> (f32, HashMap<String, f32>) {
+    let desired = repair.cost_per_min.values().sum::<f32>() * repair.efficiency * dt / 60.0;
+    let restored = desired.min(missing_health);
+    if desired <= 0.0 || restored <= 0.0 {
+        return (0.0, HashMap::new());
+    }
+    let scale = restored / desired;
+    let costs = repair
+        .cost_per_min
+        .iter()
+        .map(|(resource, per_minute)| (resource.clone(), per_minute * dt / 60.0 * scale))
+        .collect();
+    (restored, costs)
+}
+
+#[cfg(test)]
+mod repair_tests {
+    use super::*;
+
+    #[test]
+    fn efficiency_converts_each_resource_unit_to_health() {
+        let repair = RepairDef {
+            range: 150.0,
+            cost_per_min: HashMap::from([
+                ("energy".to_string(), 60.0),
+                ("minerals".to_string(), 60.0),
+            ]),
+            efficiency: 1.0,
+        };
+        let (health, costs) = repair_tick(&repair, 1.0, 100.0);
+        assert_eq!(health, 2.0);
+        assert_eq!(costs["energy"], 1.0);
+        assert_eq!(costs["minerals"], 1.0);
+        let (health, costs) = repair_tick(&repair, 1.0, 0.5);
+        assert_eq!(health, 0.5);
+        assert_eq!(costs["energy"], 0.25);
+        assert_eq!(costs["minerals"], 0.25);
     }
 }
 
@@ -213,6 +253,7 @@ mod radiation_tests {
                 combat: None,
                 combat_targetable: false,
                 collector: None,
+                repair: None,
                 resource_node: None,
                 refinery: None,
                 radiation_sources: vec![RadiationSourceDef {
@@ -260,6 +301,7 @@ mod radiation_tests {
                 combat: None,
                 combat_targetable: false,
                 collector: None,
+                repair: None,
                 resource_node: None,
                 refinery: None,
                 radiation_sources: Vec::new(),
@@ -286,6 +328,7 @@ mod radiation_tests {
                 combat: None,
                 combat_targetable: false,
                 collector: None,
+                repair: None,
                 resource_node: None,
                 refinery: None,
                 radiation_sources: Vec::new(),
@@ -497,6 +540,8 @@ pub struct Engine {
     resource_fractional: HashMap<(String, String), f32>,
     /// Fractional resource debits accumulated while construction channels run.
     build_spend_fractional: HashMap<(String, String), f32>,
+    /// Fractional resource debits accumulated while repair channels run.
+    repair_spend_fractional: HashMap<(String, String), f32>,
     /// Fractional upkeep accumulated between whole-unit ledger debits.
     maintenance_spend_fractional: HashMap<(String, String), f32>,
     /// Per-collector runtime telemetry published through authoritative snapshots and deltas.
@@ -898,6 +943,7 @@ impl Engine {
                     carry_by_entity: HashMap::new(),
                     resource_fractional: HashMap::new(),
                     build_spend_fractional: HashMap::new(),
+                    repair_spend_fractional: HashMap::new(),
                     maintenance_spend_fractional: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
                     prev_collector_ui_state_by_entity: HashMap::new(),
@@ -981,6 +1027,7 @@ impl Engine {
             carry_by_entity: HashMap::new(),
             resource_fractional: HashMap::new(),
             build_spend_fractional: HashMap::new(),
+            repair_spend_fractional: HashMap::new(),
             maintenance_spend_fractional: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
             prev_collector_ui_state_by_entity: HashMap::new(),
@@ -1097,6 +1144,7 @@ impl Engine {
             Some(pb::intent::Kind::Attack(a)) => a.entity_id,
             Some(pb::intent::Kind::Build(b)) => b.entity_id,
             Some(pb::intent::Kind::Collect(c)) => c.entity_id,
+            Some(pb::intent::Kind::Repair(r)) => r.entity_id,
             None => return String::new(),
         };
         self.state
@@ -1160,6 +1208,46 @@ impl Engine {
             self.build_spend_fractional.insert(key, remainder);
         } else {
             self.build_spend_fractional.remove(&key);
+        }
+        true
+    }
+
+    /// Atomically charge all resources for one repair tick.
+    fn spend_repair_resources(&mut self, player_id: &str, costs: &HashMap<String, f32>) -> bool {
+        let charges: Vec<_> = costs
+            .iter()
+            .map(|(resource, amount)| {
+                let key = (player_id.to_string(), resource.clone());
+                let total = self
+                    .repair_spend_fractional
+                    .get(&key)
+                    .copied()
+                    .unwrap_or(0.0)
+                    + amount;
+                (resource, key, total.floor() as i64, total.fract())
+            })
+            .collect();
+        if charges.iter().any(|(resource, _, whole, _)| {
+            let available = self.state
+                .ledger
+                .get(player_id)
+                .and_then(|ledger| ledger.get(*resource))
+                .copied()
+                .unwrap_or(0);
+            available <= 0 || available < *whole
+        }) {
+            return false;
+        }
+        let ledger = self.state.ledger.entry(player_id.to_string()).or_default();
+        for (resource, key, whole, remainder) in charges {
+            if whole > 0 {
+                *ledger.entry(resource.clone()).or_insert(0) -= whole;
+            }
+            if remainder > 0.0 {
+                self.repair_spend_fractional.insert(key, remainder);
+            } else {
+                self.repair_spend_fractional.remove(&key);
+            }
         }
         true
     }
@@ -1708,7 +1796,7 @@ impl Engine {
                 continue;
             }
             let previous = self.combat_effect_ui_state_by_entity.get(&entity_id);
-            if previous.is_some_and(|state| state.activity == "idle") {
+            if !previous.is_some_and(|state| state.activity == "dismantling") {
                 continue;
             }
             self.combat_effect_ui_state_by_entity.insert(
@@ -1739,6 +1827,174 @@ impl Engine {
                         attack_id: state.attack_id.clone(),
                         updated_tick: self.state.tick,
                     },
+                );
+            }
+        }
+    }
+
+    /// Move repairers into range, charge their owner, and restore target health.
+    async fn apply_repairs(&mut self, dt: f32) {
+        let Some(content) = self.content.clone() else {
+            return;
+        };
+        let repairs: Vec<(u64, u64)> = self
+            .intents
+            .active_intents()
+            .iter()
+            .filter_map(|(entity_id, active)| match active.action.exec.as_ref() {
+                Some(pb::action_state::Exec::Repair(repair)) => {
+                    Some((*entity_id, repair.target_id))
+                }
+                _ => None,
+            })
+            .collect();
+        let mut finished = Vec::new();
+        let mut active_effects = HashSet::new();
+
+        for (entity_id, target_id) in repairs {
+            let actor = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == entity_id)
+                .cloned();
+            let target = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == target_id)
+                .cloned();
+            let Some((actor, target, ability, max_health)) = actor.and_then(|actor| {
+                let ability = content.get(&actor.entity_type_id)?.repair.clone()?;
+                let target = target?;
+                let max_health = content.get(&target.entity_type_id)?.health;
+                (target.owner_player_id == actor.owner_player_id && target.health > 0.0)
+                    .then_some((actor, target, ability, max_health))
+            }) else {
+                finished.push(entity_id);
+                continue;
+            };
+            if target.health >= max_health {
+                finished.push(entity_id);
+                continue;
+            }
+            let (Some(actor_pos), Some(target_pos)) = (actor.pos.as_ref(), target.pos.as_ref())
+            else {
+                finished.push(entity_id);
+                continue;
+            };
+            if Self::distance_sq(actor_pos.x, actor_pos.y, target_pos.x, target_pos.y)
+                > ability.range * ability.range
+            {
+                if let Some(entity) = self
+                    .state
+                    .entities
+                    .iter_mut()
+                    .find(|entity| entity.id == entity_id)
+                {
+                    Self::drive_velocity_toward(
+                        entity,
+                        content
+                            .get(&actor.entity_type_id)
+                            .map(|d| d.speed)
+                            .unwrap_or(0.0),
+                        target_pos.x,
+                        target_pos.y,
+                        ability.range,
+                    );
+                }
+                continue;
+            }
+            if let Some(entity) = self
+                .state
+                .entities
+                .iter_mut()
+                .find(|entity| entity.id == entity_id)
+            {
+                if let Some(velocity) = entity.vel.as_mut() {
+                    velocity.x = 0.0;
+                    velocity.y = 0.0;
+                }
+            }
+            let (restored_health, costs) = repair_tick(&ability, dt, max_health - target.health);
+            if restored_health <= 0.0 {
+                finished.push(entity_id);
+                continue;
+            }
+            if !self.spend_repair_resources(&actor.owner_player_id, &costs) {
+                continue;
+            }
+            if let Some(entity) = self
+                .state
+                .entities
+                .iter_mut()
+                .find(|entity| entity.id == target_id)
+            {
+                entity.health = (entity.health + restored_health).min(max_health);
+            }
+            active_effects.insert(entity_id);
+            let unchanged = self
+                .combat_effect_ui_state_by_entity
+                .get(&entity_id)
+                .is_some_and(|state| state.activity == "repairing" && state.target_id == target_id);
+            if !unchanged {
+                self.combat_effect_ui_state_by_entity.insert(
+                    entity_id,
+                    CombatEffectUiState {
+                        activity: "repairing".to_string(),
+                        target_id,
+                        attack_id: "repair".to_string(),
+                        updated_tick: self.state.tick,
+                    },
+                );
+            }
+            if target.health + restored_health >= max_health {
+                finished.push(entity_id);
+            }
+        }
+
+        for entity_id in self
+            .combat_effect_ui_state_by_entity
+            .iter()
+            .filter_map(|(entity_id, state)| {
+                (state.activity == "repairing" && !active_effects.contains(entity_id))
+                    .then_some(*entity_id)
+            })
+            .collect::<Vec<_>>()
+        {
+            self.combat_effect_ui_state_by_entity.insert(
+                entity_id,
+                CombatEffectUiState {
+                    activity: "idle".to_string(),
+                    target_id: 0,
+                    attack_id: String::new(),
+                    updated_tick: self.state.tick,
+                },
+            );
+        }
+
+        for entity_id in finished {
+            let Some(metadata) = self.intents.finish(entity_id) else {
+                continue;
+            };
+            if let Err(error) = self.redis.clear_active_intent(entity_id).await {
+                warn!(
+                    ?error,
+                    entity_id, "failed to clear completed repair tracking"
+                );
+            }
+            if let Err(error) = self
+                .emit_lifecycle_event(
+                    &metadata,
+                    pb::LifecycleState::Finished,
+                    pb::LifecycleReason::None,
+                    self.state.tick,
+                )
+                .await
+            {
+                warn!(
+                    ?error,
+                    entity_id, "failed to emit repair FINISHED lifecycle event"
                 );
             }
         }
@@ -2405,6 +2661,7 @@ impl Engine {
         self.emit_laser_shots(&combat.laser_shots).await;
         self.emit_combat_destructions(&combat.destructions).await;
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
+        self.apply_repairs(dt).await;
         self.apply_resource_collection(dt);
         self.advance_builds(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
@@ -2555,6 +2812,7 @@ impl Engine {
             self.emit_laser_shots(&combat.laser_shots).await;
             self.emit_combat_destructions(&combat.destructions).await;
             self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
+            self.apply_repairs(dt).await;
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
             self.apply_maintenance_costs(dt);
@@ -2812,6 +3070,12 @@ impl Engine {
                     kind: Some(pb::intent::Kind::Collect(c)),
                 }
             }
+            Some(intent_envelope::Payload::Repair(r)) => {
+                info!(entity_id = r.entity_id, intent_id = %format_uuid(&intent_id), player = %player_id, target_id = r.target_id, "accept intent=Repair");
+                pb::Intent {
+                    kind: Some(pb::intent::Kind::Repair(r)),
+                }
+            }
             None => {
                 warn!(player_id = %player_id, "envelope missing payload");
                 self.emit_lifecycle_event(
@@ -2831,6 +3095,7 @@ impl Engine {
             Some(pb::intent::Kind::Attack(a)) => a.entity_id,
             Some(pb::intent::Kind::Build(b)) => b.entity_id,
             Some(pb::intent::Kind::Collect(c)) => c.entity_id,
+            Some(pb::intent::Kind::Repair(r)) => r.entity_id,
             None => {
                 self.emit_lifecycle_event(
                     &metadata,
@@ -2924,6 +3189,52 @@ impl Engine {
             }
         }
 
+        if let Some(pb::intent::Kind::Repair(repair)) = payload_intent.kind.as_ref() {
+            let actor = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == entity_id);
+            let target = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == repair.target_id);
+            let (Some(actor), Some(target), Some(content)) = (actor, target, self.content.as_ref())
+            else {
+                return Err(anyhow!("repair actor, target, or content unavailable"));
+            };
+            let Some(ability) = content
+                .get(&actor.entity_type_id)
+                .and_then(|def| def.repair.as_ref())
+            else {
+                return Err(anyhow!("entity cannot repair"));
+            };
+            let max_health = content
+                .get(&target.entity_type_id)
+                .map(|def| def.health)
+                .unwrap_or(0.0);
+            if repair.target_id == entity_id
+                || target.owner_player_id != player_id
+                || target.health <= 0.0
+                || target.health >= max_health
+            {
+                return Err(anyhow!("invalid repair target"));
+            }
+            if !ability.range.is_finite()
+                || ability.range <= 0.0
+                || !ability.efficiency.is_finite()
+                || ability.efficiency <= 0.0
+                || ability.cost_per_min.is_empty()
+                || ability
+                    .cost_per_min
+                    .values()
+                    .any(|cost| !cost.is_finite() || *cost <= 0.0)
+            {
+                return Err(anyhow!("invalid repair ability"));
+            }
+        }
+
         // M4: Look up entity_type_id for per-type stat resolution.
         let entity_type_id = self.resolve_entity_type_id(&payload_intent);
         let (intent_kind, move_target) = match payload_intent.kind.as_ref() {
@@ -2934,6 +3245,7 @@ impl Engine {
             Some(pb::intent::Kind::Attack(_)) => ("attack", None),
             Some(pb::intent::Kind::Build(_)) => ("build", None),
             Some(pb::intent::Kind::Collect(_)) => ("collect", None),
+            Some(pb::intent::Kind::Repair(_)) => ("repair", None),
             None => ("unknown", None),
         };
 
@@ -3011,6 +3323,7 @@ impl Engine {
             Some(pb::intent::Kind::Attack(a)) => intent_envelope::Payload::Attack(a),
             Some(pb::intent::Kind::Build(b)) => intent_envelope::Payload::Build(b),
             Some(pb::intent::Kind::Collect(c)) => intent_envelope::Payload::Collect(c),
+            Some(pb::intent::Kind::Repair(r)) => intent_envelope::Payload::Repair(r),
             None => return Err(anyhow!("legacy intent missing kind")),
         };
 
@@ -3019,6 +3332,7 @@ impl Engine {
             Some(pb::intent::Kind::Attack(a)) => a.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Build(b)) => b.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Collect(c)) => c.client_cmd_id.as_str(),
+            Some(pb::intent::Kind::Repair(r)) => r.client_cmd_id.as_str(),
             None => "",
         };
 
@@ -3039,6 +3353,7 @@ impl Engine {
             Some(pb::intent::Kind::Attack(a)) => a.player_id.clone(),
             Some(pb::intent::Kind::Build(b)) => b.player_id.clone(),
             Some(pb::intent::Kind::Collect(c)) => c.player_id.clone(),
+            Some(pb::intent::Kind::Repair(r)) => r.player_id.clone(),
             None => String::new(),
         };
 

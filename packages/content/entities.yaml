@@ -169,6 +169,12 @@ entity_types:
       transport_rate_per_second: 10.0
       carry_capacity: 120.0
       deposit_entity_types: [processor, habitat]
+    repair:
+      range: 150.0
+      cost_per_min:
+        energy: 60.0
+        minerals: 60.0
+      efficiency: 1.0
     builds:
       - entity_type_id: collector_solar
         spend_rates:
@@ -349,5 +355,3 @@ entity_types:
       range: 500.0
       cost_per_minute:
         energy: 2.5
-
-

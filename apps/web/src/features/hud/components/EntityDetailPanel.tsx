@@ -144,10 +144,14 @@ export default function EntityDetailPanel() {
   const getActionsForEntity = (entityId: string): ActionDef[] => {
     const entityTypeId = idToType.get(entityId) ?? "";
     const canBuild = selectedEntities.length === 1 && (contentManager.getEntityType(entityTypeId)?.builds?.length ?? 0) > 0;
+    const canRepair = selectedEntities.length > 0 && selectedEntities.every((id) =>
+      Boolean(contentManager.getEntityType(idToType.get(id) ?? "")?.repair),
+    );
     return [
       { key: "m", name: "move", enabled: true, value: "Move" },
       { key: "c", name: "collect", enabled: true, value: "Collect" },
       { key: "b", name: "build", enabled: canBuild, value: "Build" },
+      { key: "r", name: "repair", enabled: canRepair, value: "Repair" },
     ];
   };
   // Intersect actions across all selected entities (simple approach: show those enabled for first)
@@ -197,7 +201,7 @@ export default function EntityDetailPanel() {
     };
   }, [firstId, isSelectedEntityBuilding]);
 
-  const onClickAction = (val: "Move" | "Collect" | "Build") => {
+  const onClickAction = (val: "Move" | "Collect" | "Build" | "Repair") => {
     if (val === "Build") {
       setBuildMenuOpen((open) => !open);
       return;
@@ -211,6 +215,10 @@ export default function EntityDetailPanel() {
       }
       return;
     }
+    if (val === "Repair") {
+      actions.setSelectedAction(selectedAction === "Repair" ? null : "Repair");
+      return;
+    }
     // Toggle Move mode selection
     actions.setSelectedAction(selectedAction === "Move" ? null : "Move");
   };
@@ -222,7 +230,7 @@ export default function EntityDetailPanel() {
       : [],
     [selectedEntities.length, selectedType],
   );
-  const buildKeys = "qwertasdfgzxcvb";
+  const buildKeys = "qwetasdfgzxcvb";
   const canAfford = (entityTypeId: string) => {
     const costs = contentManager.getEntityType(entityTypeId)?.build_cost ?? {};
     return Object.entries(costs).every(([resource, cost]) => selectors.getResource(resource) >= cost);
@@ -352,6 +360,8 @@ export default function EntityDetailPanel() {
                       ? selectedAction === "Move"
                       : a.value === "Collect"
                         ? isCollectActiveForSelection
+                        : a.value === "Repair"
+                          ? selectedAction === "Repair"
                         : buildMenuOpen
                   }
                   onClick={(action) => action.enabled !== false && onClickAction(action.value)}

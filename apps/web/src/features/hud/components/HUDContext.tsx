@@ -40,7 +40,7 @@ export type HUDPanels = {
 export type HUDState = {
   selectedEntities: EntityId[];     // ordered array if you care about last-selected
   selectedSet: Set<EntityId>;       // fast membership checks
-  selectedAction: "Move" | null;   // current command mode (M to set Move)
+  selectedAction: "Move" | "Repair" | null;
   resources: Resources;
   panels: HUDPanels;
   // Misc ephemeral HUD data

@@ -52,6 +52,11 @@ export type EntityTypeDef = {
   build_cost?: Record<string, number>;
   /** Per-resource upkeep charged to the owner, in units per minute. */
   maintenance_cost_per_minute?: Record<string, number>;
+  repair?: {
+    range: number;
+    cost_per_min: Record<string, number>;
+    efficiency: number;
+  };
   /** Optional circular sensor available to any entity type. */
   sensor?: {
     cost_per_minute?: Record<string, number>;

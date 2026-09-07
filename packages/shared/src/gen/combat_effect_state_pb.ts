@@ -13,7 +13,7 @@ export const file_combat_effect_state: GenFile = /*@__PURE__*/
   fileDesc("Chljb21iYXRfZWZmZWN0X3N0YXRlLnByb3RvEgdiaXR3YXJzInQKEUNvbWJhdEVmZmVjdFN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIQCghhY3Rpdml0eRgCIAEoCRIRCgl0YXJnZXRfaWQYAyABKAQSEQoJYXR0YWNrX2lkGAQgASgJEhQKDHVwZGF0ZWRfdGljaxgFIAEoBGIGcHJvdG8z");
 
 /**
- * Authoritative presentation state for a continuous contact attack.
+ * Authoritative presentation state for a continuous entity interaction.
  *
  * @generated from message bitwars.CombatEffectState
  */
@@ -24,7 +24,7 @@ export type CombatEffectState = Message<"bitwars.CombatEffectState"> & {
   entityId: bigint;
 
   /**
-   * "idle" | "dismantling"
+   * "idle" | "dismantling" | "repairing"
    *
    * @generated from field: string activity = 2;
    */

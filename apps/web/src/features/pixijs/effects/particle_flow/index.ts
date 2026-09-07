@@ -28,6 +28,9 @@ const DISMANTLE_COLOR = 0xef_44_44;
 const DISMANTLE_GLOW_COLOR = 0xff_8a_65;
 const DISMANTLE_CORE_COLOR = 0xff_d0_c4;
 const DISMANTLE_SIZE_MULTIPLIER = 4;
+const REPAIR_COLOR = 0x22_c5_5e;
+const REPAIR_GLOW_COLOR = 0x86_ef_ac;
+const REPAIR_CORE_COLOR = 0xdc_fc_e7;
 const FALLBACK_ENERGY_SOURCE_TYPES = new Set(["theta", "star_yellow"]);
 const FALLBACK_MINERAL_SOURCE_TYPES = new Set(["minerals"]);
 
@@ -84,19 +87,20 @@ export function resolveParticleFlowEffects(
   // Combat takes precedence over gathering: workers retain their collector
   // telemetry while an autonomous contact attack is active.
   const combatEffect = entity.combat_effect_state;
-  if (combatEffect?.activity === "dismantling") {
+  if (combatEffect?.activity === "dismantling" || combatEffect?.activity === "repairing") {
     const target = Array.from(world.entities()).find(
       (candidate) => String(candidate.id) === String(combatEffect.target_id),
     );
     if (target?.pos) {
+      const repairing = combatEffect.activity === "repairing";
       return [{
-        key: `dismantle-flow:${entity.id}:${target.id}`,
+        key: `${repairing ? "repair" : "dismantle"}-flow:${entity.id}:${target.id}`,
         kind: "particle_flow",
         sourceWorldPos: pos,
         targetWorldPos: target.pos,
-        color: DISMANTLE_COLOR,
-        glowColor: DISMANTLE_GLOW_COLOR,
-        coreColor: DISMANTLE_CORE_COLOR,
+        color: repairing ? REPAIR_COLOR : DISMANTLE_COLOR,
+        glowColor: repairing ? REPAIR_GLOW_COLOR : DISMANTLE_GLOW_COLOR,
+        coreColor: repairing ? REPAIR_CORE_COLOR : DISMANTLE_CORE_COLOR,
         sizeMultiplier: DISMANTLE_SIZE_MULTIPLIER,
         showTargetHalo: false,
       }];

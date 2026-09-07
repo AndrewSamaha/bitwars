@@ -30,7 +30,7 @@ export type QueuedMoveIntent = {
   createdAt: number;
 };
 
-export type ActiveIntentKind = "move" | "collect" | "build" | "unknown";
+export type ActiveIntentKind = "move" | "collect" | "build" | "repair" | "unknown";
 
 export type ActiveIntentInfo = {
   clientCmdId: string;
@@ -72,6 +72,14 @@ export type SendIntentParams =
       kind: "Build";
       entityId: number;
       blueprintId: string;
+      clientCmdId: string;
+      clientSeq: number;
+      policy: IntentPolicyName;
+    }
+  | {
+      kind: "Repair";
+      entityId: number;
+      targetId: number;
       clientCmdId: string;
       clientSeq: number;
       policy: IntentPolicyName;
@@ -119,7 +127,7 @@ class IntentQueueManager {
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
-  private cmdToKind = new Map<string, "move" | "collect" | "build">();
+  private cmdToKind = new Map<string, "move" | "collect" | "build" | "repair">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
@@ -192,6 +200,27 @@ class IntentQueueManager {
   handleCollectCommand(entityId: number, policy: IntentPolicyName = "REPLACE_ACTIVE") {
     const clientCmdId = uuidv7();
     this.sendCollectNow(entityId, clientCmdId, policy);
+  }
+
+  /** Start repairing a selected friendly target immediately. */
+  handleRepairCommand(entityId: number, targetId: number) {
+    const clientCmdId = uuidv7();
+    const state = this.getOrCreate(entityId);
+    state.queue = [];
+    state.active = { clientCmdId, entityId, kind: "repair" };
+    this.clientSeq++;
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.cmdToKind.set(clientCmdId, "repair");
+    this.persist();
+    this.notify();
+    void this.sendCallback?.({
+      kind: "Repair",
+      entityId,
+      targetId,
+      clientCmdId,
+      clientSeq: this.clientSeq,
+      policy: "REPLACE_ACTIVE",
+    });
   }
 
   /** Start a content-defined production action immediately. */
@@ -273,6 +302,8 @@ class IntentQueueManager {
             ? "move"
             : serverActive.intent_kind?.toLowerCase() === "build"
               ? "build"
+            : serverActive.intent_kind?.toLowerCase() === "repair"
+              ? "repair"
             : "unknown";
       const moveTarget = serverActive.move_target;
       const target =
@@ -419,7 +450,7 @@ class IntentQueueManager {
     return typeof v === "number" ? v : null;
   }
 
-  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | null {
+  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "repair" | null {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 
@@ -558,7 +589,7 @@ class IntentQueueManager {
           const active = state.active;
           // Old persisted active intents did not record their kind. Leave them
           // target-less until reconnect reconciliation classifies them.
-          if (active && active.kind !== "move" && active.kind !== "collect") {
+          if (active && !["move", "collect", "build", "repair"].includes(active.kind)) {
             return [entityId, { ...state, active: { ...active, kind: "unknown", target: undefined } }];
           }
           return [entityId, state];

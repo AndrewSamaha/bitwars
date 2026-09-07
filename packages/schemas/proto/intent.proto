@@ -73,6 +73,14 @@ message CollectIntent {
   string player_id     = 3 [deprecated = true];
 }
 
+// Repair intent payload (authoritative server-side).
+message RepairIntent {
+  uint64 entity_id     = 1; // repairing entity
+  uint64 target_id     = 2; // friendly entity to repair
+  string client_cmd_id = 3 [deprecated = true];
+  string player_id     = 4 [deprecated = true];
+}
+
 // Transport envelope that wraps all intent payloads and carries authoritative metadata.
 message IntentEnvelope {
   bytes  client_cmd_id    = 1;  // UUIDv7 (16 bytes), supplied by client
@@ -88,8 +96,9 @@ message IntentEnvelope {
     AttackIntent         attack = 11;
     BuildIntent          build  = 12;
     CollectIntent        collect = 13;
+    RepairIntent         repair = 14;
   }
-  reserved 8, 9, 14, 15;
+  reserved 8, 9, 15;
 }
 
 // Extensible Intent envelope.
@@ -100,6 +109,7 @@ message Intent {
     AttackIntent         attack = 2;
     BuildIntent          build  = 3;
     CollectIntent        collect = 4;
+    RepairIntent         repair = 5;
   }
 }
 
@@ -170,6 +180,10 @@ message CollectState {
   uint64 entity_id = 1;
 }
 
+message RepairState {
+  uint64 target_id = 1;
+}
+
 // Unified per-entity execution container (one active at a time).
 message ActionState {
   // Echo original intent for correlation/observability (optional but useful)
@@ -180,5 +194,6 @@ message ActionState {
     AttackState attack = 3;
     BuildState  build  = 4;
     CollectState collect = 5;
+    RepairState  repair  = 6;
   }
 }

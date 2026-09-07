@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
-import { BuildIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema } from "@bitwars/shared/gen/intent_pb";
+import { BuildIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema } from "@bitwars/shared/gen/intent_pb";
 import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
@@ -110,8 +110,8 @@ export async function POST(req: NextRequest) {
     const stream = `rts:match:${gameId}:intents`;
 
     const t = (body?.type ?? "").toString();
-    if (t !== "Move" && t !== "Collect" && t !== "Build") {
-      return NextResponse.json({ error: "unsupported type; expected Move, Collect, or Build" }, { status: 400 });
+    if (t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Repair") {
+      return NextResponse.json({ error: "unsupported type; expected Move, Collect, Build, or Repair" }, { status: 400 });
     }
 
     const entityIdVal = body?.entity_id;
@@ -127,6 +127,9 @@ export async function POST(req: NextRequest) {
     }
     if (t === "Build" && !String(body?.blueprint_id ?? "").trim()) {
       return NextResponse.json({ error: "missing required field for Build: blueprint_id" }, { status: 400 });
+    }
+    if (t === "Repair" && (!Number.isInteger(Number(body?.target_id)) || Number(body.target_id) <= 0)) {
+      return NextResponse.json({ error: "target_id must be a positive integer for Repair" }, { status: 400 });
     }
 
     if (!validateUuid(clientCmdId) || uuidVersion(clientCmdId) !== 7) {
@@ -176,7 +179,7 @@ export async function POST(req: NextRequest) {
         policy,
         entityId,
       });
-    } else {
+    } else if (t === "Build") {
       const build = create(BuildIntentSchema, {
         entityId,
         blueprintId: String(body.blueprint_id),
@@ -193,6 +196,22 @@ export async function POST(req: NextRequest) {
         protocolVersion: ENGINE_PROTOCOL_MAJOR,
         policy,
         payload: { case: "build", value: build },
+      });
+      bytes = toBinary(IntentEnvelopeSchema, envelope);
+    } else {
+      const repair = create(RepairIntentSchema, {
+        entityId,
+        targetId: BigInt(body.target_id),
+      });
+      const envelope = create(IntentEnvelopeSchema, {
+        clientCmdId: clientCmdBytes,
+        intentId: new Uint8Array(),
+        playerId,
+        clientSeq: BigInt(clientSeqVal),
+        serverTick: 0n,
+        protocolVersion: ENGINE_PROTOCOL_MAJOR,
+        policy,
+        payload: { case: "repair", value: repair },
       });
       bytes = toBinary(IntentEnvelopeSchema, envelope);
     }

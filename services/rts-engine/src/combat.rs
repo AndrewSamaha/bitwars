@@ -416,6 +416,7 @@ mod tests {
             z_index: 0,
             suppress_hover: false,
             collector: None,
+            repair: None,
             resource_node: None,
             refinery: None,
             radiation_sources: Vec::new(),

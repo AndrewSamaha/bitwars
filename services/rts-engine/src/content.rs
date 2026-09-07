@@ -57,6 +57,9 @@ pub struct EntityTypeDef {
     /// M8: Optional collection profile for collector-capable entities.
     #[serde(default)]
     pub collector: Option<CollectorDef>,
+    /// Optional resource-powered repair ability.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repair: Option<RepairDef>,
     /// M8: Optional resource-node profile for collectible source entities.
     #[serde(default)]
     pub resource_node: Option<ResourceNodeDef>,
@@ -163,6 +166,16 @@ pub struct SensorDef {
     pub cost_per_minute: HashMap<String, f32>,
     /// Circular detection radius in world units.
     pub range: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RepairDef {
+    /// Maximum center-to-center repair distance in world units.
+    pub range: f32,
+    /// Resource costs while actively repairing, in units per minute.
+    pub cost_per_min: HashMap<String, f32>,
+    /// Health restored per total resource unit consumed.
+    pub efficiency: f32,
 }
 
 /// M7: Per-resource-type definition for display (name, order) in HUD.
@@ -381,6 +394,7 @@ mod tests {
                 combat: None,
                 combat_targetable: false,
                 collector: None,
+                repair: None,
                 resource_node: None,
                 refinery: None,
                 radiation_sources: Vec::new(),
@@ -407,6 +421,7 @@ mod tests {
                 combat: None,
                 combat_targetable: false,
                 collector: None,
+                repair: None,
                 resource_node: None,
                 refinery: None,
                 radiation_sources: Vec::new(),
@@ -444,6 +459,7 @@ mod tests {
                 combat: None,
                 combat_targetable: false,
                 collector: None,
+                repair: None,
                 resource_node: None,
                 refinery: None,
                 radiation_sources: Vec::new(),
@@ -470,6 +486,7 @@ mod tests {
                 combat: None,
                 combat_targetable: false,
                 collector: None,
+                repair: None,
                 resource_node: None,
                 refinery: None,
                 radiation_sources: Vec::new(),
@@ -498,6 +515,7 @@ mod tests {
                 combat: None,
                 combat_targetable: false,
                 collector: None,
+                repair: None,
                 resource_node: None,
                 refinery: None,
                 radiation_sources: Vec::new(),
@@ -524,6 +542,7 @@ mod tests {
                 combat: None,
                 combat_targetable: false,
                 collector: None,
+                repair: None,
                 resource_node: None,
                 refinery: None,
                 radiation_sources: Vec::new(),
@@ -584,9 +603,20 @@ mod tests {
         let worker = pack.get("worker").unwrap();
         assert_eq!(worker.speed, 90.0);
         assert_eq!(worker.stop_radius, 0.75);
-
         let scout = pack.get("scout").unwrap();
         assert_eq!(scout.speed, 140.0);
+    }
+
+    #[test]
+    fn loads_worker_repair_ability() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml");
+        let pack = ContentPack::load(&path).unwrap();
+        let repair = pack.get("worker").unwrap().repair.as_ref().unwrap();
+        assert_eq!(repair.range, 150.0);
+        assert_eq!(repair.cost_per_min["energy"], 60.0);
+        assert_eq!(repair.cost_per_min["minerals"], 60.0);
+        assert_eq!(repair.efficiency, 1.0);
     }
 
     #[test]
