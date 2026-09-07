@@ -20,7 +20,7 @@ Lua context and command output
 ------------------------------
 `world_tick(ctx)` receives the common universe entities and the owner-wide
 `ctx.shared` table. `tick(ctx)` receives one raider as `ctx.self`, visible
-combat candidates in `ctx.targets`, the same shared table, and that raider's
+player entities in `ctx.targets`, the same shared table, and that raider's
 exclusive `ctx.private` table. A tick returns either `{ target_id = id }` to
 let authoritative combat pursue/attack that entity, or `{ vx, vy }` to set the
 raider's desired velocity.
@@ -34,25 +34,23 @@ host provides this input sorted by entity ID.
       Compact common knowledge for stars, theta, minerals, and planets.
 
   shared.landmarks / shared.landmark_by_id
-      Stars that can receive exploration missions. Stars are the primary
-      search locations because players are likely to collect energy there.
+      Stars and theta that can receive exploration missions.
 
   shared.hazards
       Stars and theta with their damage radius plus a safety margin.
 
   shared.visited[landmark_id]
-      Tick when a raider last completed observation and safely departed.
+      Tick when a raider last completed a sweep and safely departed.
 
   shared.claims[landmark_id]
-      Renewable leases used to spread raiders across different stars. If all
-      stars are already claimed, excess raiders are distributed by entity ID
+      Renewable leases used to spread raiders across different landmarks. If all
+      landmarks are already claimed, excess raiders are distributed by entity ID
       instead of remaining idle.
 
   shared.sightings[player_owner_id]
       The latest known entity, position, and tick for each player, plus the
       leased set of raiders assigned to investigate it. Sightings expire after
-      LAST_SEEN_SECS and each sighting normally attracts at most
-      MAX_HUNTERS_PER_SIGHTING investigators.
+      LAST_SEEN_SECS and redirect the whole faction while fresh.
 
   shared.missions[raider_id]
       A debug-friendly summary of current assignments and transitions.
@@ -67,9 +65,9 @@ Per-raider state machine
 The current mode and its supporting fields live in `ctx.private`, so decisions
 survive across ticks instead of being recomputed from scratch.
 
-  travel -> observe -> depart -> travel
-      Explore a star, wait at a fixed safe observation point, move farther
-      away from it, mark it visited, then request another mission.
+  travel -> sweep -> depart -> travel
+      Approach a star or theta, circle its safe hazard cluster once, move
+      farther away, mark it visited, then request another mission.
 
   pursue -> investigate -> search
       Attack a visible player, travel to that player's last known position if
@@ -82,30 +80,26 @@ player units are at nearly equal distances.
 
 Exploration assignment
 ----------------------
-An idle raider first checks for a fresh player sighting with an available
-hunter slot. Otherwise it selects an unclaimed star using this stable order:
+An idle raider first checks for a fresh player sighting. Otherwise it selects
+an unclaimed star or theta using this stable order:
 
   1. Never visited before previously visited.
   2. Oldest completed visit first.
   3. Shortest distance from this raider.
   4. Lowest landmark ID as the final tie-breaker.
 
-The observation point is fixed when the mission is assigned. Sixteen points
-around the star's safe perimeter are evaluated against nearby hazards, and the
-point with the greatest clearance is retained. This is important when two
-stars are close: the controller never deliberately chooses an observation
-point that lies inside the neighboring star's radiation field. Observation is
-a timed stationary watch rather than a continuously recalculated orbit. After
-the watch, the raider follows a fixed radial departure point before the visit
-is recorded as complete.
+Sixteen fixed waypoints form one complete sweep around the landmark's safe
+hazard cluster. Grouping overlapping hazards keeps every sweep waypoint and
+the chords between them outside radiation. After the sweep, the raider follows
+a fixed radial departure point before the visit is recorded as complete.
 
 Sightings and response
 ----------------------
 Every visible player refreshes that owner's shared sighting. Raiders already
 near the player attack immediately when the direct combat path is safe. Other
-raiders, including newly spawned ones, can claim the fresh sighting and travel
-to its last known position. On arrival they hold a short search before giving
-up, preventing the entire faction from chasing a stale location indefinitely.
+raiders, including those already exploring, abandon their current missions and
+travel to its last known position. On arrival they hold a short search before
+giving up, preventing the faction from chasing a stale location indefinitely.
 
 Navigation and radiation safety
 -------------------------------
@@ -130,7 +124,7 @@ flipping direction every tick inside overlapping radiation fields.
 
 Progress recovery and tuning
 ----------------------------
-Navigation records distance to its active point every STUCK_CHECK_SECS. After
+Navigation records displacement every STUCK_CHECK_SECS. After
 repeated checks without meaningful progress, it discards the detour, flips its
 detour side, and eventually releases the mission for reassignment. Mode names,
 destinations, navigation points, stuck counters, and transition reasons remain
@@ -138,12 +132,11 @@ in private/shared state so Lua debug snapshots explain what each raider is
 trying to do.
 
 The constants immediately below intentionally collect the behavioral tuning
-knobs: sighting lifetime, observation/search durations, lease lifetime,
-arrival tolerance, safety clearances, stuck thresholds, and response size.
+knobs: sighting lifetime, search duration, lease lifetime, arrival tolerance,
+safety clearances, stuck thresholds, and sweep resolution.
 ]]
 
 local LAST_SEEN_SECS = 90
-local OBSERVE_SECS = 8
 local SEARCH_SECS = 6
 local LEASE_SECS = 15
 local ARRIVAL_RADIUS = 30
@@ -154,7 +147,8 @@ local ROUTE_MARGIN = 150
 local STUCK_CHECK_SECS = 5
 local STUCK_PROGRESS = 20
 local MAX_STUCK_CHECKS = 3
-local MAX_HUNTERS_PER_SIGHTING = 8
+local SWEEP_STEPS = 16
+local hazard_cluster
 
 local function distance_sq(ax, ay, bx, by)
   local dx = bx - ax
@@ -192,11 +186,9 @@ function world_tick(ctx)
       }
       table.insert(world, known)
     end
-    if entity.entity_type_id == "star_yellow" then
+    if entity.entity_type_id == "star_yellow" or entity.entity_type_id == "theta" then
       table.insert(landmarks, known)
       landmark_by_id[entity.id] = known
-      table.insert(hazards, known)
-    elseif entity.entity_type_id == "theta" then
       table.insert(hazards, known)
     end
   end
@@ -265,6 +257,12 @@ local function release_mission(ctx)
   private.destination_y = nil
   private.target_entity_id = nil
   private.deadline_tick = nil
+  private.sweep_center_x = nil
+  private.sweep_center_y = nil
+  private.sweep_radius = nil
+  private.sweep_start_angle = nil
+  private.sweep_step = nil
+  private.sweep_direction = nil
   clear_navigation(private)
 end
 
@@ -285,7 +283,7 @@ local function assign_hunt(ctx)
   local best_owner
   local best
   for owner_id, sighting in pairs(ctx.shared.sightings) do
-    if ctx.tick - sighting.tick <= lifetime and count_hunters(ctx, sighting) < MAX_HUNTERS_PER_SIGHTING
+    if ctx.tick - sighting.tick <= lifetime
         and (not best or sighting.tick > best.tick
           or (sighting.tick == best.tick and owner_id < best_owner)) then
       best_owner = owner_id
@@ -294,9 +292,11 @@ local function assign_hunt(ctx)
   end
   if not best then return false end
 
+  local private = ctx.private
+  if private.mission_kind == "hunt" and private.hunt_owner_id == best_owner then return true end
+  if private.mission_kind then release_mission(ctx) end
   best.hunters = best.hunters or {}
   best.hunters[ctx.self.id] = ctx.tick + LEASE_SECS * ctx.ticks_per_second
-  local private = ctx.private
   private.mission_kind = "hunt"
   private.hunt_owner_id = best_owner
   private.destination_x = best.x
@@ -307,33 +307,22 @@ local function assign_hunt(ctx)
   return true
 end
 
-local function observation_point(ctx, landmark)
-  local nearby = {}
-  local observation_radius = landmark.safe_radius + OBSERVATION_CLEARANCE
-  for _, hazard in ipairs(ctx.shared.hazards or {}) do
-    local reach = observation_radius + hazard.safe_radius + OBSERVATION_CLEARANCE
-    if hazard.id ~= landmark.id
-        and distance_sq(landmark.x, landmark.y, hazard.x, hazard.y) < reach * reach then
-      table.insert(nearby, hazard)
-    end
-  end
+local function sweep_point(private, step)
+  local angle = private.sweep_start_angle
+    + private.sweep_direction * step * 2 * math.pi / SWEEP_STEPS
+  return private.sweep_center_x + math.cos(angle) * private.sweep_radius,
+    private.sweep_center_y + math.sin(angle) * private.sweep_radius
+end
 
-  local base_angle = math.atan(ctx.self.y - landmark.y, ctx.self.x - landmark.x)
-  local best_x, best_y, best_clearance
-  for index = 0, 15 do
-    local angle = base_angle + index * math.pi / 8
-    local x = landmark.x + math.cos(angle) * observation_radius
-    local y = landmark.y + math.sin(angle) * observation_radius
-    local clearance = math.huge
-    for _, hazard in ipairs(nearby) do
-      clearance = math.min(clearance,
-        math.sqrt(distance_sq(x, y, hazard.x, hazard.y)) - hazard.safe_radius)
-    end
-    if not best_clearance or clearance > best_clearance then
-      best_x, best_y, best_clearance = x, y, clearance
-    end
-  end
-  return best_x, best_y
+local function prepare_sweep(ctx, landmark)
+  local private = ctx.private
+  private.sweep_center_x, private.sweep_center_y, private.sweep_radius = hazard_cluster(ctx, landmark)
+  private.sweep_radius = private.sweep_radius + OBSERVATION_CLEARANCE
+  private.sweep_start_angle = math.atan(
+    ctx.self.y - private.sweep_center_y, ctx.self.x - private.sweep_center_x)
+  private.sweep_direction = ctx.self.id % 2 == 0 and 1 or -1
+  private.sweep_step = 0
+  return sweep_point(private, 0)
 end
 
 local function assign_explore(ctx)
@@ -358,8 +347,8 @@ local function assign_explore(ctx)
   -- More raiders than landmarks: spread extras deterministically instead of idling.
   best = best or landmarks[(ctx.self.id - 1) % #landmarks + 1]
 
-  local destination_x, destination_y = observation_point(ctx, best)
   local private = ctx.private
+  local destination_x, destination_y = prepare_sweep(ctx, best)
   private.mission_kind = "explore"
   private.mission_target_id = best.id
   private.destination_x = destination_x
@@ -403,7 +392,7 @@ local function segment_blocker(ctx, x, y)
   return blocker
 end
 
-local function hazard_cluster(ctx, blocker)
+hazard_cluster = function(ctx, blocker)
   local cx, cy = blocker.x, blocker.y
   local radius = blocker.safe_radius + ROUTE_MARGIN
   -- Two deterministic passes cover neighboring overlaps without retaining a
@@ -573,10 +562,13 @@ local function nearest_target(ctx)
   local selected
   local selected_distance
   for _, target in ipairs(ctx.targets) do
-    if target.id == ctx.private.target_entity_id then return target end
+    if target.combat_targetable and target.id == ctx.private.target_entity_id then return target end
     local distance = distance_sq(ctx.self.x, ctx.self.y, target.x, target.y)
-    if not selected or distance < selected_distance
-        or (distance == selected_distance and target.id < selected.id) then
+    if not selected
+        or (target.combat_targetable and not selected.combat_targetable)
+        or (target.combat_targetable == selected.combat_targetable
+          and (distance < selected_distance
+            or (distance == selected_distance and target.id < selected.id))) then
       selected, selected_distance = target, distance
     end
   end
@@ -677,15 +669,21 @@ local function run_explore(ctx)
     return nil
   end
 
-  if private.mode == "observe" then
-    if ctx.tick < private.deadline_tick then return { vx = 0, vy = 0 } end
-    local dx = ctx.self.x - landmark.x
-    local dy = ctx.self.y - landmark.y
+  if private.mode == "sweep"
+      and distance_sq(ctx.self.x, ctx.self.y, private.destination_x, private.destination_y)
+        <= ARRIVAL_RADIUS * ARRIVAL_RADIUS then
+    if private.sweep_step < SWEEP_STEPS then
+      private.sweep_step = private.sweep_step + 1
+      private.destination_x, private.destination_y = sweep_point(private, private.sweep_step)
+      return navigate(ctx, private.destination_x, private.destination_y)
+    end
+    local dx = ctx.self.x - private.sweep_center_x
+    local dy = ctx.self.y - private.sweep_center_y
     local distance = math.sqrt(dx * dx + dy * dy)
     if distance == 0 then dx, dy, distance = 1, 0, 1 end
     private.destination_x = ctx.self.x + dx / distance * DEPART_DISTANCE
     private.destination_y = ctx.self.y + dy / distance * DEPART_DISTANCE
-    set_mode(ctx, "depart", "observation complete")
+    set_mode(ctx, "depart", "360-degree sweep complete")
   end
 
   if private.mode == "depart" then
@@ -700,9 +698,9 @@ local function run_explore(ctx)
 
   if distance_sq(ctx.self.x, ctx.self.y, private.destination_x, private.destination_y)
       <= ARRIVAL_RADIUS * ARRIVAL_RADIUS then
-    private.deadline_tick = ctx.tick + OBSERVE_SECS * ctx.ticks_per_second
-    set_mode(ctx, "observe", "observation point reached")
-    return { vx = 0, vy = 0 }
+    private.sweep_step = 1
+    private.destination_x, private.destination_y = sweep_point(private, private.sweep_step)
+    set_mode(ctx, "sweep", "360-degree sweep started")
   end
   return navigate(ctx, private.destination_x, private.destination_y)
 end
@@ -714,6 +712,11 @@ function tick(ctx)
 
   local target = nearest_target(ctx)
   if target then return pursue(ctx, target) end
+
+  if assign_hunt(ctx) then
+    local command = run_hunt(ctx)
+    if command then return command end
+  end
 
   if ctx.private.navigation_failed then
     release_mission(ctx)

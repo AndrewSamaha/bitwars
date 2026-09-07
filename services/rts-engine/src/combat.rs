@@ -110,14 +110,19 @@ impl CombatSystem {
             .iter()
             .filter_map(|entity| {
                 let pos = entity.pos.as_ref()?;
-                (content
+                let combat_targetable = content
                     .get(&entity.entity_type_id)
-                    .is_some_and(|definition| definition.combat_targetable)
+                    .is_some_and(|definition| definition.combat_targetable);
+                ((combat_targetable
+                    || scripted_targets
+                        .values()
+                        .any(|target_id| *target_id == entity.id))
                     && !entity.owner_player_id.is_empty()
                     && entity.health > 0.0)
                     .then(|| Target {
                         id: entity.id,
                         owner_player_id: entity.owner_player_id.clone(),
+                        combat_targetable,
                         x: pos.x,
                         y: pos.y,
                         hull_radius: content
@@ -159,7 +164,8 @@ impl CombatSystem {
                 targets
                     .iter()
                     .filter_map(|candidate| {
-                        if candidate.id == attacker.id
+                        if !candidate.combat_targetable
+                            || candidate.id == attacker.id
                             || candidate.owner_player_id == attacker.owner_player_id
                         {
                             return None;
@@ -332,6 +338,7 @@ impl CombatSystem {
 struct Target {
     id: u64,
     owner_player_id: String,
+    combat_targetable: bool,
     x: f32,
     y: f32,
     hull_radius: f32,
@@ -599,6 +606,32 @@ mod tests {
         assert!(result.laser_shots.is_empty());
         assert_eq!(entities[1].health, 100.0);
         assert_eq!(entities[0].vel, Some(Vec2 { x: 0.0, y: 0.0 }));
+    }
+
+    #[test]
+    fn scripted_target_can_override_autonomous_targetability() {
+        let mut pack = content();
+        pack.entity_types
+            .get_mut("worker")
+            .unwrap()
+            .combat_targetable = false;
+        let mut entities = vec![
+            entity(1, "raider", RAIDERS_OWNER, 0.0, 20.0),
+            entity(2, "worker", "player", 5.0, 20.0),
+        ];
+
+        let result = CombatSystem::default().tick_with_scripted_targets(
+            &mut entities,
+            &pack,
+            0,
+            1.0,
+            &HashSet::new(),
+            &HashMap::from([(1, 2)]),
+            &HashSet::from([1]),
+        );
+
+        assert_eq!(entities[1].health, 14.0);
+        assert_eq!(result.laser_shots[0].target_id, 2);
     }
 
     #[test]

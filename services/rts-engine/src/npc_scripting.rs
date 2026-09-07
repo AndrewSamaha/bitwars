@@ -32,6 +32,7 @@ struct ScriptTarget {
     id: u64,
     owner_id: String,
     entity_type_id: String,
+    combat_targetable: bool,
     x: f32,
     y: f32,
     health: f32,
@@ -101,19 +102,19 @@ impl RaiderScript {
             .iter()
             .filter_map(|entity| {
                 let pos = entity.pos.as_ref()?;
-                (is_player_owner(&entity.owner_player_id)
-                    && entity.health > 0.0
-                    && content
-                        .get(&entity.entity_type_id)
-                        .is_some_and(|def| def.combat_targetable))
-                .then_some(ScriptTarget {
-                    id: entity.id,
-                    owner_id: entity.owner_player_id.clone(),
-                    entity_type_id: entity.entity_type_id.clone(),
-                    x: pos.x,
-                    y: pos.y,
-                    health: entity.health,
-                })
+                (is_player_owner(&entity.owner_player_id) && entity.health > 0.0).then_some(
+                    ScriptTarget {
+                        id: entity.id,
+                        owner_id: entity.owner_player_id.clone(),
+                        entity_type_id: entity.entity_type_id.clone(),
+                        combat_targetable: content
+                            .get(&entity.entity_type_id)
+                            .is_some_and(|def| def.combat_targetable),
+                        x: pos.x,
+                        y: pos.y,
+                        health: entity.health,
+                    },
+                )
             })
             .collect();
         let stars: Vec<(u64, f32, f32, f32)> = entities
@@ -254,6 +255,7 @@ impl RaiderScript {
             target.set("id", target_data.id)?;
             target.set("owner_id", target_data.owner_id.as_str())?;
             target.set("entity_type_id", target_data.entity_type_id.as_str())?;
+            target.set("combat_targetable", target_data.combat_targetable)?;
             target.set("x", target_data.x)?;
             target.set("y", target_data.y)?;
             target.set("health", target_data.health)?;
@@ -437,7 +439,7 @@ mod tests {
         ];
         let commands = script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
         assert!(commands.target_by_entity.is_empty());
-        assert!(entities[1].vel.as_ref().unwrap().x < 0.0);
+        assert!(entities[1].vel.as_ref().unwrap().x > 0.0);
 
         entities.push(entity(3, "worker", "player-1", -2_200.0, 0.0));
         let commands = script.tick(&mut entities, &content, 2, 60, usize::MAX).unwrap();
@@ -456,6 +458,53 @@ mod tests {
             .vel
             .as_ref()
             .is_some_and(|velocity| velocity.x < 0.0));
+    }
+
+    #[test]
+    fn fresh_sighting_redirects_every_raider() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = vec![
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 2_000.0, 0.0),
+            entity(3, RAIDER_TYPE, RAIDERS_OWNER, 6_000.0, 0.0),
+        ];
+        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
+
+        entities.push(entity(4, "worker", "player-1", 2_100.0, 0.0));
+        let commands = script
+            .tick(&mut entities, &content, 2, 60, usize::MAX)
+            .unwrap();
+
+        assert_eq!(commands.target_by_entity.get(&2), Some(&4));
+        assert!(entities[2].vel.as_ref().unwrap().x < 0.0);
+        assert_eq!(
+            script
+                .private_state(3)
+                .unwrap()
+                .get::<String>("mode")
+                .unwrap(),
+            "investigate"
+        );
+    }
+
+    #[test]
+    fn raiders_see_non_targetable_entities_but_prefer_targetable_ones() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = vec![
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, -4_000.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 0.0, 0.0),
+            entity(3, "defense_pilon", "player-1", 100.0, 0.0),
+            entity(4, "worker", "player-1", 200.0, 0.0),
+        ];
+
+        let commands = script.tick(&mut entities, &content, 1, 60, 1).unwrap();
+        assert_eq!(commands.target_by_entity.get(&2), Some(&4));
+
+        entities.retain(|entity| entity.id != 4);
+        let commands = script.tick(&mut entities, &content, 2, 60, 1).unwrap();
+        assert_eq!(commands.target_by_entity.get(&2), Some(&3));
     }
 
     #[test]
@@ -486,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn raider_script_stops_at_a_safe_waypoint_perimeter() {
+    fn raider_script_moves_out_to_its_sweep_perimeter() {
         let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
         let script = RaiderScript::new().unwrap();
         let mut entities = vec![
@@ -496,28 +545,53 @@ mod tests {
 
         script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
 
-        assert_eq!(entities[1].vel, Some(Vec2 { x: 0.0, y: 0.0 }));
+        assert!(entities[1].vel.as_ref().unwrap().x > 0.0);
     }
 
     #[test]
-    fn raider_script_leaves_a_star_radially_instead_of_orbiting() {
+    fn raider_script_sweeps_all_the_way_around_theta() {
         let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
         let script = RaiderScript::new().unwrap();
         let mut entities = vec![
-            entity(1, STAR_TYPE, UNIVERSE_OWNER, 0.0, 0.0),
-            // 1550 * 0.95 was the stable chord-orbit radius observed in Redis.
-            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1_472.5, 0.0),
-            entity(3, "theta", UNIVERSE_OWNER, -4_000.0, 0.0),
+            entity(1, "theta", UNIVERSE_OWNER, 0.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1_700.0, 0.0),
         ];
 
-        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
+        let mut completed = false;
+        for tick in 1..=800 {
+            script.tick(&mut entities, &content, tick, 4, 1).unwrap();
+            let velocity = entities[1].vel.clone().unwrap();
+            let position = entities[1].pos.as_mut().unwrap();
+            position.x += velocity.x / 4.0;
+            position.y += velocity.y / 4.0;
+            if script
+                .private_state(2)
+                .unwrap()
+                .get::<String>("mode")
+                .unwrap()
+                == "depart"
+            {
+                completed = true;
+                break;
+            }
+        }
 
-        let velocity = entities[1].vel.as_ref().unwrap();
+        let state = script.private_state(2).unwrap();
         assert!(
-            velocity.x > 10.0,
-            "raider must move outward to its observation point"
+            completed,
+            "raider did not complete its theta sweep: mode={:?}, step={:?}, pos={:?}",
+            state.get::<Option<String>>("mode").unwrap(),
+            state.get::<Option<u32>>("sweep_step").unwrap(),
+            entities[1].pos
         );
-        assert_eq!(velocity.y, 0.0);
+        assert_eq!(
+            script
+                .private_state(2)
+                .unwrap()
+                .get::<u32>("sweep_step")
+                .unwrap(),
+            16
+        );
     }
 
     #[test]
@@ -667,6 +741,7 @@ mod tests {
                   assert(target.id == 3)
                   assert(target.owner_id == "player-1")
                   assert(target.entity_type_id == "worker")
+                  assert(target.combat_targetable)
                   assert(target.health == 100)
                   return { target_id = target.id }
                 end
