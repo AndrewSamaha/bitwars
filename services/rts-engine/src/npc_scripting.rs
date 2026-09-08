@@ -52,7 +52,8 @@ pub struct RaiderScript {
 impl RaiderScript {
     pub fn debug_snapshot(&self, tick: u64) -> Result<serde_json::Value> {
         Ok(crate::script_debug::snapshot(
-            RAIDERS_OWNER, tick,
+            RAIDERS_OWNER,
+            tick,
             self.lua.registry_value::<Table>(&self.shared)?,
             self.lua.registry_value::<Table>(&self.private_by_entity)?,
         ))
@@ -98,6 +99,21 @@ impl RaiderScript {
         ticks_per_second: u32,
         max_raiders: usize,
     ) -> Result<NpcCommands> {
+        self.tick_with_spatial_index(entities, content, tick, ticks_per_second, max_raiders, true)
+    }
+
+    /// Runs a raider tick using either the spatial-indexed target lookup or
+    /// the original linear scan. The latter is retained for controlled
+    /// production comparisons through the raider-AI spatial-index settings.
+    pub fn tick_with_spatial_index(
+        &self,
+        entities: &mut Vec<Entity>,
+        content: &ContentPack,
+        tick: u64,
+        ticks_per_second: u32,
+        max_raiders: usize,
+        spatial_index_enabled: bool,
+    ) -> Result<NpcCommands> {
         self.spawn_raider(entities, content, tick, ticks_per_second, max_raiders);
 
         let player_targets: Vec<ScriptTarget> = entities
@@ -119,10 +135,13 @@ impl RaiderScript {
                 )
             })
             .collect();
-        let mut player_target_grid = SpatialIndex::new();
-        for (index, target) in player_targets.iter().enumerate() {
-            player_target_grid.insert(index, target.x, target.y);
-        }
+        let player_target_grid = spatial_index_enabled.then(|| {
+            let mut grid = SpatialIndex::new();
+            for (index, target) in player_targets.iter().enumerate() {
+                grid.insert(index, target.x, target.y);
+            }
+            grid
+        });
         let stars: Vec<(u64, f32, f32, f32)> = entities
             .iter()
             .filter_map(|entity| {
@@ -171,8 +190,11 @@ impl RaiderScript {
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| a.0.cmp(&b.0))
             });
-            let nearby_targets: Vec<_> = player_target_grid
-                .within(position.x, position.y, acquisition_range)
+            let candidate_indexes = player_target_grid
+                .as_ref()
+                .map(|grid| grid.within(position.x, position.y, acquisition_range))
+                .unwrap_or_else(|| (0..player_targets.len()).collect());
+            let nearby_targets: Vec<_> = candidate_indexes
                 .into_iter()
                 .map(|index| &player_targets[index])
                 .filter(|target| {
@@ -322,12 +344,19 @@ impl RaiderScript {
         max_raiders: usize,
     ) {
         let interval = SPAWN_INTERVAL_SECS.saturating_mul(u64::from(ticks_per_second.max(1)));
-        if tick == 0 || tick % interval != 0 || content.get(RAIDER_TYPE).is_none()
-            || entities.iter().filter(|entity| {
-                entity.entity_type_id == RAIDER_TYPE
-                    && entity.owner_player_id == RAIDERS_OWNER
-                    && entity.health > 0.0
-            }).count() >= max_raiders {
+        if tick == 0
+            || tick % interval != 0
+            || content.get(RAIDER_TYPE).is_none()
+            || entities
+                .iter()
+                .filter(|entity| {
+                    entity.entity_type_id == RAIDER_TYPE
+                        && entity.owner_player_id == RAIDERS_OWNER
+                        && entity.health > 0.0
+                })
+                .count()
+                >= max_raiders
+        {
             return;
         }
         let id = entities
@@ -446,16 +475,26 @@ mod tests {
             entity(1, STAR_TYPE, UNIVERSE_OWNER, -4_000.0, 0.0),
             entity(2, RAIDER_TYPE, RAIDERS_OWNER, -2_400.0, 0.0),
         ];
-        let commands = script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
+        let commands = script
+            .tick(&mut entities, &content, 1, 60, usize::MAX)
+            .unwrap();
         assert!(commands.target_by_entity.is_empty());
         assert!(entities[1].vel.as_ref().unwrap().x > 0.0);
 
         entities.push(entity(3, "worker", "player-1", -2_200.0, 0.0));
-        let commands = script.tick(&mut entities, &content, 2, 60, usize::MAX).unwrap();
+        let commands = script
+            .tick(&mut entities, &content, 2, 60, usize::MAX)
+            .unwrap();
         assert_eq!(commands.target_by_entity.get(&2), Some(&3));
 
         script
-            .tick(&mut entities, &content, SPAWN_INTERVAL_SECS * 60, 60, usize::MAX)
+            .tick(
+                &mut entities,
+                &content,
+                SPAWN_INTERVAL_SECS * 60,
+                60,
+                usize::MAX,
+            )
             .unwrap();
         assert!(entities.iter().any(|entity| entity.id == 4
             && entity.entity_type_id == RAIDER_TYPE
@@ -478,7 +517,9 @@ mod tests {
             entity(2, RAIDER_TYPE, RAIDERS_OWNER, 2_000.0, 0.0),
             entity(3, RAIDER_TYPE, RAIDERS_OWNER, 6_000.0, 0.0),
         ];
-        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
+        script
+            .tick(&mut entities, &content, 1, 60, usize::MAX)
+            .unwrap();
 
         entities.push(entity(4, "worker", "player-1", 2_100.0, 0.0));
         let commands = script
@@ -517,6 +558,33 @@ mod tests {
     }
 
     #[test]
+    fn spatial_index_and_linear_target_scans_issue_the_same_commands() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let mut indexed_entities = vec![
+            entity(1, STAR_TYPE, UNIVERSE_OWNER, -4_000.0, 0.0),
+            entity(2, RAIDER_TYPE, RAIDERS_OWNER, 0.0, 0.0),
+            entity(3, RAIDER_TYPE, RAIDERS_OWNER, 2_000.0, 0.0),
+            entity(4, "worker", "player-1", 100.0, 0.0),
+            entity(5, "defense_pilon", "player-1", 150.0, 0.0),
+            entity(6, "worker", "player-2", 2_100.0, 0.0),
+            entity(7, "worker", "player-3", 4_000.0, 0.0),
+        ];
+        let mut linear_entities = indexed_entities.clone();
+        let indexed_script = RaiderScript::new().unwrap();
+        let linear_script = RaiderScript::new().unwrap();
+
+        let indexed = indexed_script
+            .tick_with_spatial_index(&mut indexed_entities, &content, 1, 60, usize::MAX, true)
+            .unwrap();
+        let linear = linear_script
+            .tick_with_spatial_index(&mut linear_entities, &content, 1, 60, usize::MAX, false)
+            .unwrap();
+
+        assert_eq!(indexed.target_by_entity, linear.target_by_entity);
+        assert_eq!(indexed_entities, linear_entities);
+    }
+
+    #[test]
     fn raider_spawn_respects_configured_limit() {
         let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
         let script = RaiderScript::new().unwrap();
@@ -538,7 +606,9 @@ mod tests {
             entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1_100.0, 0.0),
         ];
 
-        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
+        script
+            .tick(&mut entities, &content, 1, 60, usize::MAX)
+            .unwrap();
 
         assert!(entities[1].vel.as_ref().unwrap().x > 0.0);
     }
@@ -552,7 +622,9 @@ mod tests {
             entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1_550.0, 0.0),
         ];
 
-        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
+        script
+            .tick(&mut entities, &content, 1, 60, usize::MAX)
+            .unwrap();
 
         assert!(entities[1].vel.as_ref().unwrap().x > 0.0);
     }
@@ -615,7 +687,9 @@ mod tests {
         let start = entities[2].pos.clone().unwrap();
 
         for tick in 1..=600 {
-            script.tick(&mut entities, &content, tick, 60, usize::MAX).unwrap();
+            script
+                .tick(&mut entities, &content, tick, 60, usize::MAX)
+                .unwrap();
             let velocity = entities[2].vel.clone().unwrap();
             let position = entities[2].pos.as_mut().unwrap();
             position.x += velocity.x / 60.0;
@@ -642,7 +716,9 @@ mod tests {
         let mut reversals = 0;
         let mut previous_velocity: Option<Vec2> = None;
         for tick in 1..=1_800 {
-            script.tick(&mut entities, &content, tick, 60, usize::MAX).unwrap();
+            script
+                .tick(&mut entities, &content, tick, 60, usize::MAX)
+                .unwrap();
             let velocity = entities[3].vel.clone().unwrap();
             if previous_velocity.as_ref().is_some_and(|previous| {
                 previous.x * velocity.x + previous.y * velocity.y < -1_000.0
@@ -701,8 +777,12 @@ mod tests {
             ));
         }
 
-        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
-        script.tick(&mut entities, &content, 2, 60, usize::MAX).unwrap();
+        script
+            .tick(&mut entities, &content, 1, 60, usize::MAX)
+            .unwrap();
+        script
+            .tick(&mut entities, &content, 2, 60, usize::MAX)
+            .unwrap();
     }
 
     #[test]
@@ -734,9 +814,13 @@ mod tests {
             entity(2, RAIDER_TYPE, RAIDERS_OWNER, 1300.0, 0.0),
         ];
 
-        script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
+        script
+            .tick(&mut entities, &content, 1, 60, usize::MAX)
+            .unwrap();
         assert_eq!(entities[1].vel.as_ref().unwrap().x, 1.0);
-        script.tick(&mut entities, &content, 2, 60, usize::MAX).unwrap();
+        script
+            .tick(&mut entities, &content, 2, 60, usize::MAX)
+            .unwrap();
         assert_eq!(entities[1].vel.as_ref().unwrap().x, 2.0);
     }
 
@@ -763,7 +847,9 @@ mod tests {
             entity(3, "worker", "player-1", 1400.0, 0.0),
         ];
 
-        let commands = script.tick(&mut entities, &content, 1, 60, usize::MAX).unwrap();
+        let commands = script
+            .tick(&mut entities, &content, 1, 60, usize::MAX)
+            .unwrap();
         assert_eq!(commands.target_by_entity.get(&2), Some(&3));
     }
 }

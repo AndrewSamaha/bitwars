@@ -15,16 +15,21 @@ pub struct TickTimingSummary {
     pub over_budget_samples: usize,
 }
 
-pub fn summarize_tick_durations(samples: &[Duration], budget: Duration) -> Option<TickTimingSummary> {
+pub fn summarize_tick_durations(
+    samples: &[Duration],
+    budget: Duration,
+) -> Option<TickTimingSummary> {
     if samples.is_empty() {
         return None;
     }
 
-    let mut millis: Vec<f64> = samples.iter().map(|sample| sample.as_secs_f64() * 1_000.0).collect();
+    let mut millis: Vec<f64> = samples
+        .iter()
+        .map(|sample| sample.as_secs_f64() * 1_000.0)
+        .collect();
     millis.sort_by(f64::total_cmp);
-    let percentile = |percent: usize| {
-        millis[((millis.len() * percent + 99) / 100).saturating_sub(1)]
-    };
+    let percentile =
+        |percent: usize| millis[((millis.len() * percent + 99) / 100).saturating_sub(1)];
     Some(TickTimingSummary {
         samples: millis.len(),
         p50_ms: percentile(50),
@@ -131,6 +136,7 @@ impl Telemetry {
         game_id: &str,
         server_tick: u64,
         entity_count: usize,
+        raider_ai_spatial_index_enabled: bool,
         tick_budget: Duration,
         summary: TickTimingSummary,
         phase_summaries: Vec<(&'static str, TickTimingSummary)>,
@@ -144,6 +150,7 @@ impl Telemetry {
             "game_id": game_id,
             "server_tick": server_tick,
             "entity_count": entity_count,
+            "raider_ai_spatial_index_enabled": raider_ai_spatial_index_enabled,
             "samples": summary.samples,
             "tick_budget_ms": tick_budget.as_secs_f64() * 1_000.0,
             "tick_p50_ms": summary.p50_ms,
@@ -152,20 +159,23 @@ impl Telemetry {
             "over_budget_samples": summary.over_budget_samples,
         })];
 
-        records.extend(phase_summaries.into_iter().map(|(phase, summary)| json!({
-            "timestamp": timestamp,
-            "event_type": "engine_tick_phase_timing",
-            "service": self.service_name,
-            "dataset": self.dataset,
-            "game_id": game_id,
-            "server_tick": server_tick,
-            "entity_count": entity_count,
-            "phase": phase,
-            "samples": summary.samples,
-            "p50_ms": summary.p50_ms,
-            "p95_ms": summary.p95_ms,
-            "max_ms": summary.max_ms,
-        })));
+        records.extend(phase_summaries.into_iter().map(|(phase, summary)| {
+            json!({
+                "timestamp": timestamp,
+                "event_type": "engine_tick_phase_timing",
+                "service": self.service_name,
+                "dataset": self.dataset,
+                "game_id": game_id,
+                "server_tick": server_tick,
+                "entity_count": entity_count,
+                "raider_ai_spatial_index_enabled": raider_ai_spatial_index_enabled,
+                "phase": phase,
+                "samples": summary.samples,
+                "p50_ms": summary.p50_ms,
+                "p95_ms": summary.p95_ms,
+                "max_ms": summary.max_ms,
+            })
+        }));
 
         self.send_many(records).await
     }
@@ -207,8 +217,7 @@ mod tests {
 
     #[test]
     fn summarizes_tick_durations() {
-        let samples = [1, 2, 3, 4, 5]
-            .map(Duration::from_millis);
+        let samples = [1, 2, 3, 4, 5].map(Duration::from_millis);
         let summary = summarize_tick_durations(&samples, Duration::from_millis(3)).unwrap();
 
         assert_eq!(summary.samples, 5);

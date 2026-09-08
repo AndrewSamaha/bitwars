@@ -37,6 +37,7 @@ export function gameQueryKeys(gameId = getGameId()) {
   return {
     gameplayEvents: `${match}:gameplay_events`,
     snapshot: `snapshot:${gameId}`,
+    pendingRaiderSpawns: `${match}:pending_raider_spawns`,
     scriptDebug: (ownerId: string) => `${match}:script_debug:${ownerId}`,
     scriptDebugEnabled: (ownerId: string) => `${match}:script_debug_enabled:${ownerId}`,
   };
@@ -105,5 +106,10 @@ export async function getScriptDebugState(ownerId: string, gameId = getGameId())
 }
 
 export async function setScriptDebugEnabled(ownerId: string, enabled: boolean, gameId = getGameId()) {
-  await redis.set(gameQueryKeys(gameId).scriptDebugEnabled(ownerId), enabled ? "1" : "0", "EX", 3600);
+    await redis.set(gameQueryKeys(gameId).scriptDebugEnabled(ownerId), enabled ? "1" : "0", "EX", 3600);
+}
+
+/** Enqueue an explicit development request; the engine creates the entities on its next tick. */
+export async function enqueueRaiderSpawn(count: number, gameId = getGameId()) {
+  await redis.rpush(gameQueryKeys(gameId).pendingRaiderSpawns, String(count));
 }

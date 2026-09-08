@@ -1,3 +1,25 @@
+pub const RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS: u64 = 600;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RaiderAiSpatialIndexMode {
+    #[default]
+    Enabled,
+    Disabled,
+    Alternating,
+}
+
+impl RaiderAiSpatialIndexMode {
+    pub fn enabled_at(self, tick: u64) -> bool {
+        match self {
+            Self::Enabled => true,
+            Self::Disabled => false,
+            // Start with the indexed implementation and switch modes only at
+            // telemetry-window boundaries so each Axiom summary is pure.
+            Self::Alternating => (tick / RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS) % 2 == 0,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct GameConfig {
     pub game_id: String,
@@ -16,6 +38,9 @@ pub struct GameConfig {
     pub max_cmds_per_tick: u32,
     /// M1: Maximum milliseconds spent processing intents per tick (0 = unlimited).
     pub max_batch_ms: u64,
+    /// Chooses the player-target lookup used by raider AI. Alternating mode
+    /// changes implementation every telemetry window for controlled A/B runs.
+    pub raider_ai_spatial_index_mode: RaiderAiSpatialIndexMode,
     /// When true, attempt to restore game state from the latest Redis snapshot
     /// on startup instead of generating a fresh world. When false (default),
     /// flush all Redis streams for this game and start clean.
@@ -51,6 +76,7 @@ impl Default for GameConfig {
             default_entity_speed: 90.0,
             max_cmds_per_tick: 64,
             max_batch_ms: 5,
+            raider_ai_spatial_index_mode: RaiderAiSpatialIndexMode::Enabled,
             restore_gamestate: false,
             tracking_ttl_secs: 3600, // 1 hour
             content_pack_path: String::new(),
@@ -78,6 +104,24 @@ impl GameConfig {
                 cfg.max_batch_ms = n;
             }
         }
+        if let Ok(v) = std::env::var("RAIDER_AI_SPATIAL_INDEX_ENABLED") {
+            // Preserve the original boolean toggle while accepting `alternate`
+            // from early experiment configuration. `..._MODE` below remains the
+            // canonical setting and overrides this value when present.
+            cfg.raider_ai_spatial_index_mode = match v.trim().to_lowercase().as_str() {
+                "alternate" | "alternating" => RaiderAiSpatialIndexMode::Alternating,
+                "0" | "false" | "no" | "off" => RaiderAiSpatialIndexMode::Disabled,
+                _ => RaiderAiSpatialIndexMode::Enabled,
+            };
+        }
+        if let Ok(v) = std::env::var("RAIDER_AI_SPATIAL_INDEX_MODE") {
+            cfg.raider_ai_spatial_index_mode = match v.trim().to_lowercase().as_str() {
+                "on" | "true" | "enabled" => RaiderAiSpatialIndexMode::Enabled,
+                "off" | "false" | "disabled" => RaiderAiSpatialIndexMode::Disabled,
+                "alternate" | "alternating" => RaiderAiSpatialIndexMode::Alternating,
+                _ => cfg.raider_ai_spatial_index_mode,
+            };
+        }
         if let Ok(v) = std::env::var("RESTORE_GAMESTATE_ON_RESTART") {
             cfg.restore_gamestate = matches!(v.to_lowercase().as_str(), "1" | "true" | "yes");
         }
@@ -93,5 +137,38 @@ impl GameConfig {
             cfg.spawn_config_path = v;
         }
         cfg
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alternating_spatial_index_mode_changes_only_on_telemetry_boundaries() {
+        assert!(RaiderAiSpatialIndexMode::Alternating.enabled_at(0));
+        assert!(RaiderAiSpatialIndexMode::Alternating
+            .enabled_at(RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS - 1));
+        assert!(!RaiderAiSpatialIndexMode::Alternating
+            .enabled_at(RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS));
+        assert!(!RaiderAiSpatialIndexMode::Alternating
+            .enabled_at(RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS * 2 - 1));
+        assert!(RaiderAiSpatialIndexMode::Alternating
+            .enabled_at(RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS * 2));
+    }
+
+    #[test]
+    fn legacy_spatial_index_env_accepts_alternate() {
+        // Keep the spelling used by the initial experiment configuration
+        // working while callers migrate to RAIDER_AI_SPATIAL_INDEX_MODE.
+        std::env::set_var("RAIDER_AI_SPATIAL_INDEX_ENABLED", "alternate");
+        std::env::remove_var("RAIDER_AI_SPATIAL_INDEX_MODE");
+
+        assert_eq!(
+            GameConfig::from_env().raider_ai_spatial_index_mode,
+            RaiderAiSpatialIndexMode::Alternating
+        );
+
+        std::env::remove_var("RAIDER_AI_SPATIAL_INDEX_ENABLED");
     }
 }

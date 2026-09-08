@@ -187,6 +187,12 @@ impl RedisClient {
         format!("rts:match:{}:pending_joins", self.game_id)
     }
 
+    /// Development-only requests to spawn NPC raiders. The web terminal writes
+    /// a count and the authoritative engine consumes it on its next tick.
+    fn pending_raider_spawns_key(&self) -> String {
+        format!("rts:match:{}:pending_raider_spawns", self.game_id)
+    }
+
     /// M6: Set of player_ids for which backend has already enqueued a join (avoid duplicate push).
     fn join_requested_key(&self) -> String {
         format!("rts:match:{}:join_requested", self.game_id)
@@ -487,6 +493,7 @@ impl RedisClient {
             self.player_seq_key(),
             self.active_intents_key(),
             self.pending_joins_key(),
+            self.pending_raider_spawns_key(),
             self.join_requested_key(),
             self.legacy_collector_state_key(),
         ];
@@ -837,5 +844,22 @@ impl RedisClient {
         let key = self.pending_joins_key();
         let val: Option<String> = self.conn.lpop(&key, None).await?;
         Ok(val)
+    }
+
+    /// Pop one terminal-requested raider spawn count. Invalid queue values are
+    /// discarded rather than reaching the simulation loop.
+    pub async fn pop_next_pending_raider_spawn(&mut self) -> anyhow::Result<Option<usize>> {
+        let key = self.pending_raider_spawns_key();
+        let value: Option<String> = self.conn.lpop(&key, None).await?;
+        match value {
+            Some(value) => match value.parse::<usize>().ok().filter(|count| *count > 0) {
+                Some(count) => Ok(Some(count)),
+                None => {
+                    warn!(value, "discarding invalid pending raider spawn request");
+                    Ok(None)
+                }
+            },
+            None => Ok(None),
+        }
     }
 }

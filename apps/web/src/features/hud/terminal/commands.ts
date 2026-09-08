@@ -117,6 +117,32 @@ const commands: TerminalCommand[] = [
     },
   },
   {
+    name: "spawn-raiders",
+    description: "Spawn NPC raiders: spawn-raiders <count> (requires su npc)",
+    requiresAuth: true,
+    run: async (args, context) => {
+      if (context.actingAsId !== "raiders") {
+        return { output: "spawn-raiders: use `su npc` first" };
+      }
+      if (args.length !== 1 || !/^\d+$/.test(args[0])) {
+        return { output: "usage: spawn-raiders <count>" };
+      }
+      const count = Number(args[0]);
+      const response = await fetch("/api/v2/spawn-raiders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        return { output: `spawn-raiders: ${data?.error ?? "request failed"}` };
+      }
+      return {
+        output: `Queued ${data.queued} raider${data.queued === 1 ? "" : "s"}; the engine will spawn them on its next tick.`,
+      };
+    },
+  },
+  {
     name: "help",
     description: "List available commands",
     run: () => ({ output: formatHelp() }),

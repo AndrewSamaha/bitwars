@@ -11,7 +11,9 @@ use uuid::{Uuid, Version};
 
 use crate::combat::CombatSystem;
 use crate::config::GameConfig;
-use crate::content::{CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef, RepairDef};
+use crate::content::{
+    CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef, RepairDef,
+};
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::{
@@ -22,8 +24,8 @@ use crate::io::telemetry::{summarize_tick_durations, Telemetry};
 use crate::npc_scripting::{NpcCommands, RaiderScript};
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
-use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
 use crate::spatial::SpatialIndex;
+use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
 use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
@@ -191,12 +193,15 @@ struct RadiationSourceSnapshot {
 }
 
 fn record_tick_phase(
-    samples: Option<&mut HashMap<&'static str, Vec<Duration>>>,
+    samples: Option<&mut HashMap<bool, HashMap<&'static str, Vec<Duration>>>>,
+    raider_ai_spatial_index_enabled: bool,
     phase: &'static str,
     started: &mut Option<Instant>,
 ) {
     if let (Some(samples), Some(phase_started)) = (samples, started.as_mut()) {
         samples
+            .entry(raider_ai_spatial_index_enabled)
+            .or_default()
             .entry(phase)
             .or_default()
             .push(phase_started.elapsed());
@@ -801,7 +806,10 @@ fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<St
 }
 
 fn migrate_legacy_neutral_owners(entities: &mut [pb::Entity]) {
-    for entity in entities.iter_mut().filter(|entity| entity.owner_player_id == "neutral") {
+    for entity in entities
+        .iter_mut()
+        .filter(|entity| entity.owner_player_id == "neutral")
+    {
         entity.owner_player_id = if entity.entity_type_id == "raider" {
             crate::spawn_config::RAIDERS_OWNER
         } else {
@@ -830,7 +838,10 @@ mod ownership_tests {
             },
         ];
         migrate_legacy_neutral_owners(&mut entities);
-        assert_eq!(entities[0].owner_player_id, crate::spawn_config::RAIDERS_OWNER);
+        assert_eq!(
+            entities[0].owner_player_id,
+            crate::spawn_config::RAIDERS_OWNER
+        );
         assert_eq!(entities[1].owner_player_id, UNIVERSE_OWNER);
     }
 }
@@ -860,26 +871,42 @@ fn unix_time_ms() -> i64 {
 
 impl Engine {
     async fn publish_script_debug(&mut self) {
-        if self.state.tick % u64::from(self.cfg.tps.max(1)) != 0 { return; }
+        if self.state.tick % u64::from(self.cfg.tps.max(1)) != 0 {
+            return;
+        }
         let result = async {
             let owner = crate::spawn_config::RAIDERS_OWNER;
             if self.redis.script_debug_enabled(owner).await? {
                 let mut snapshot = self.raider_script.debug_snapshot(self.state.tick)?;
                 snapshot["game_id"] = serde_json::json!(self.cfg.game_id);
-                let owned: Vec<_> = self.state.entities.iter()
-                    .filter(|entity| entity.owner_player_id == owner).take(1025).collect();
-                if owned.len() > 1024 { snapshot["truncated"] = serde_json::json!(true); }
-                snapshot["entities"] = serde_json::json!(owned.iter().take(1024).map(|entity| {
-                    serde_json::json!({"id": entity.id.to_string(),
+                let owned: Vec<_> = self
+                    .state
+                    .entities
+                    .iter()
+                    .filter(|entity| entity.owner_player_id == owner)
+                    .take(1025)
+                    .collect();
+                if owned.len() > 1024 {
+                    snapshot["truncated"] = serde_json::json!(true);
+                }
+                snapshot["entities"] = serde_json::json!(owned
+                    .iter()
+                    .take(1024)
+                    .map(|entity| {
+                        serde_json::json!({"id": entity.id.to_string(),
                         "entity_type_id": entity.entity_type_id, "health": entity.health,
                         "position": entity.pos.as_ref().map(|p| [p.x, p.y]),
                         "velocity": entity.vel.as_ref().map(|v| [v.x, v.y])})
-                }).collect::<Vec<_>>());
+                    })
+                    .collect::<Vec<_>>());
                 self.redis.publish_script_debug(owner, &snapshot).await?;
             }
             anyhow::Ok(())
-        }.await;
-        if let Err(error) = result { warn!(?error, "script debug snapshot failed"); }
+        }
+        .await;
+        if let Err(error) = result {
+            warn!(?error, "script debug snapshot failed");
+        }
     }
 
     pub async fn new(cfg: GameConfig) -> anyhow::Result<Self> {
@@ -1179,6 +1206,85 @@ impl Engine {
         Ok(())
     }
 
+    fn spawn_raiders_at_random_map_locations(&mut self, requested: usize) -> usize {
+        const MAX_TERMINAL_RAIDER_SPAWN: usize = 1_000;
+        let Some(content) = self.content.as_ref() else {
+            warn!("skipping terminal raider spawn: no content pack loaded");
+            return 0;
+        };
+        let Some(definition) = content.get("raider") else {
+            warn!("skipping terminal raider spawn: raider type is missing from content");
+            return 0;
+        };
+
+        // This is an explicit diagnostic command, so it intentionally bypasses
+        // the regular AI's `max_raiders` limit. The API and this guard keep an
+        // accidental request bounded.
+        let count = requested.min(MAX_TERMINAL_RAIDER_SPAWN);
+
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        for entity in &self.state.entities {
+            let Some(position) = entity.pos.as_ref() else {
+                continue;
+            };
+            if !position.x.is_finite() || !position.y.is_finite() {
+                continue;
+            }
+            min_x = min_x.min(position.x);
+            max_x = max_x.max(position.x);
+            min_y = min_y.min(position.y);
+            max_y = max_y.max(position.y);
+        }
+        if !min_x.is_finite() {
+            min_x = -50_000.0;
+            max_x = 50_000.0;
+            min_y = -50_000.0;
+            max_y = 50_000.0;
+        }
+        let padding = (max_x - min_x)
+            .max(max_y - min_y)
+            .max(10_000.0)
+            * 0.05;
+        let (min_x, max_x) = (min_x - padding, max_x + padding);
+        let (min_y, max_y) = (min_y - padding, max_y + padding);
+
+        let next_id = self
+            .state
+            .entities
+            .iter()
+            .map(|entity| entity.id)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        let health = definition.health.max(0.0);
+        let mut rng = rand::thread_rng();
+        for offset in 0..count {
+            self.state.entities.push(pb::Entity {
+                id: next_id.saturating_add(offset as u64),
+                entity_type_id: "raider".to_string(),
+                pos: Some(pb::Vec2 {
+                    x: rng.gen_range(min_x..=max_x),
+                    y: rng.gen_range(min_y..=max_y),
+                }),
+                vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                owner_player_id: crate::spawn_config::RAIDERS_OWNER.to_string(),
+                health,
+            });
+        }
+        info!(requested, spawned = count, min_x, max_x, min_y, max_y, "spawned terminal raiders at random map locations");
+        count
+    }
+
+    async fn process_pending_raider_spawns(&mut self) {
+        while let Ok(Some(count)) = self.redis.pop_next_pending_raider_spawn().await {
+            self.spawn_raiders_at_random_map_locations(count);
+        }
+    }
+
     /// M4: Resolve entity_type_id for the target entity of an intent.
     fn resolve_entity_type_id(&self, intent: &pb::Intent) -> String {
         let entity_id = match intent.kind.as_ref() {
@@ -1270,7 +1376,8 @@ impl Engine {
             })
             .collect();
         if charges.iter().any(|(resource, _, whole, _)| {
-            let available = self.state
+            let available = self
+                .state
                 .ledger
                 .get(player_id)
                 .and_then(|ledger| ledger.get(*resource))
@@ -1315,8 +1422,7 @@ impl Engine {
 
         let mut totals: HashMap<(String, String), f32> = HashMap::new();
         for entity in &self.state.entities {
-            if !is_player_owner(&entity.owner_player_id) || entity.health <= 0.0
-            {
+            if !is_player_owner(&entity.owner_player_id) || entity.health <= 0.0 {
                 continue;
             }
             let Some(def) = content.get(&entity.entity_type_id) else {
@@ -1788,12 +1894,15 @@ impl Engine {
         let Some(content) = self.content.as_ref() else {
             return NpcCommands::default();
         };
-        match self.raider_script.tick(
+        match self.raider_script.tick_with_spatial_index(
             &mut self.state.entities,
             content,
             self.state.tick,
             self.cfg.tps,
             self.spawn_config.max_raiders,
+            self.cfg
+                .raider_ai_spatial_index_mode
+                .enabled_at(self.state.tick),
         ) {
             Ok(commands) => commands,
             Err(error) => {
@@ -2664,6 +2773,7 @@ impl Engine {
                 warn!(player_id = %player_id, error = ?e, "ensure_spawned failed");
             }
         }
+        self.process_pending_raider_spawns().await;
 
         let batch_start = Instant::now();
         let mut cmds_this_tick: u32 = 0;
@@ -2792,14 +2902,18 @@ impl Engine {
         let mut tick_durations = self
             .telemetry
             .as_ref()
-            .map(|_| Vec::with_capacity(TICK_TIMING_WINDOW_TICKS));
+            .map(|_| HashMap::<bool, Vec<Duration>>::new());
         let mut phase_durations = self
             .telemetry
             .as_ref()
-            .map(|_| HashMap::<&'static str, Vec<Duration>>::new());
+            .map(|_| HashMap::<bool, HashMap<&'static str, Vec<Duration>>>::new());
 
         loop {
             ticker.tick().await;
+            let raider_ai_spatial_index_enabled = self
+                .cfg
+                .raider_ai_spatial_index_mode
+                .enabled_at(self.state.tick);
             let tick_started = tick_durations.as_ref().map(|_| Instant::now());
             let mut phase_started = tick_started;
 
@@ -2810,7 +2924,13 @@ impl Engine {
                     warn!(player_id = %player_id, error = ?e, "ensure_spawned failed");
                 }
             }
-            record_tick_phase(phase_durations.as_mut(), "joins", &mut phase_started);
+            self.process_pending_raider_spawns().await;
+            record_tick_phase(
+                phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
+                "joins",
+                &mut phase_started,
+            );
 
             // Phase B: Ingest intents from Redis stream (tick-bounded)
             let batch_start = Instant::now();
@@ -2855,6 +2975,7 @@ impl Engine {
             }
             record_tick_phase(
                 phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
                 "intent_ingest",
                 &mut phase_started,
             );
@@ -2883,15 +3004,26 @@ impl Engine {
                     warn!(error = ?err, intent_id = %format_uuid(&metadata.intent_id), "failed to emit FINISHED lifecycle event");
                 }
             }
-            record_tick_phase(phase_durations.as_mut(), "movement", &mut phase_started);
+            record_tick_phase(
+                phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
+                "movement",
+                &mut phase_started,
+            );
             let npc_commands = self.apply_raider_ai();
-            record_tick_phase(phase_durations.as_mut(), "raider_ai", &mut phase_started);
+            record_tick_phase(
+                phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
+                "raider_ai",
+                &mut phase_started,
+            );
             let combat = self.apply_autonomous_combat(dt, &npc_commands);
             self.emit_laser_shots(&combat.laser_shots).await;
             self.emit_combat_destructions(&combat.destructions).await;
             self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
             record_tick_phase(
                 phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
                 "combat",
                 &mut phase_started,
             );
@@ -2899,9 +3031,19 @@ impl Engine {
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
             self.apply_maintenance_costs(dt);
-            record_tick_phase(phase_durations.as_mut(), "economy", &mut phase_started);
+            record_tick_phase(
+                phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
+                "economy",
+                &mut phase_started,
+            );
             integrate(&self.cfg, &mut self.state, dt);
-            record_tick_phase(phase_durations.as_mut(), "physics", &mut phase_started);
+            record_tick_phase(
+                phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
+                "physics",
+                &mut phase_started,
+            );
             self.apply_radiation_damage(dt);
             let radiation_victims: Vec<pb::Entity> = self
                 .state
@@ -2914,10 +3056,16 @@ impl Engine {
             self.emit_radiation_destructions(&radiation_victims).await;
             self.cancel_destroyed_intents(&radiation_dead_entity_ids)
                 .await;
-            record_tick_phase(phase_durations.as_mut(), "radiation", &mut phase_started);
+            record_tick_phase(
+                phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
+                "radiation",
+                &mut phase_started,
+            );
             self.publish_script_debug().await;
             record_tick_phase(
                 phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
                 "debug_publish",
                 &mut phase_started,
             );
@@ -2942,6 +3090,7 @@ impl Engine {
             }
             record_tick_phase(
                 phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
                 "delta_publish",
                 &mut phase_started,
             );
@@ -2965,6 +3114,7 @@ impl Engine {
             }
             record_tick_phase(
                 phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
                 "snapshot_publish",
                 &mut phase_started,
             );
@@ -2978,19 +3128,36 @@ impl Engine {
             self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
             self.prev_combat_effect_ui_state_by_entity =
                 self.combat_effect_ui_state_by_entity.clone();
-            record_tick_phase(phase_durations.as_mut(), "state_copy", &mut phase_started);
+            record_tick_phase(
+                phase_durations.as_mut(),
+                raider_ai_spatial_index_enabled,
+                "state_copy",
+                &mut phase_started,
+            );
 
             if let (Some(tick_started), Some(tick_durations)) =
                 (tick_started, tick_durations.as_mut())
             {
-                tick_durations.push(tick_started.elapsed());
-                if tick_durations.len() == TICK_TIMING_WINDOW_TICKS {
-                    let summary = summarize_tick_durations(tick_durations, tick_budget)
+                let reaches_experiment_boundary = self.cfg.raider_ai_spatial_index_mode
+                    == crate::config::RaiderAiSpatialIndexMode::Alternating
+                    && self
+                        .cfg
+                        .raider_ai_spatial_index_mode
+                        .enabled_at(self.state.tick)
+                        != raider_ai_spatial_index_enabled;
+                let samples = tick_durations
+                    .entry(raider_ai_spatial_index_enabled)
+                    .or_insert_with(|| Vec::with_capacity(TICK_TIMING_WINDOW_TICKS));
+                samples.push(tick_started.elapsed());
+                if samples.len() == TICK_TIMING_WINDOW_TICKS || reaches_experiment_boundary {
+                    let summary = summarize_tick_durations(samples, tick_budget)
                         .expect("tick timing window is non-empty");
-                    tick_durations.clear();
+                    samples.clear();
                     let mut phase_summaries: Vec<_> = phase_durations
                         .as_mut()
                         .expect("telemetry enabled")
+                        .entry(raider_ai_spatial_index_enabled)
+                        .or_default()
                         .drain()
                         .filter_map(|(phase, samples)| {
                             summarize_tick_durations(&samples, tick_budget)
@@ -3008,6 +3175,7 @@ impl Engine {
                                 &game_id,
                                 server_tick,
                                 entity_count,
+                                raider_ai_spatial_index_enabled,
                                 tick_budget,
                                 summary,
                                 phase_summaries,

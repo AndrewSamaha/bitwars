@@ -62,4 +62,30 @@ describe("who", () => {
     expect(logout).not.toHaveBeenCalled();
     expect(exitResult.output).toBe("Returned to your session.");
   });
+
+  it("queues raiders only while acting as the NPC faction", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ queued: 12 }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    const context = {
+      realPlayerId: "player-a",
+      effectivePlayerId: "raiders",
+      actingAsId: "raiders",
+      sessionStatus: "active" as const,
+      logout: async () => "",
+      su: () => {},
+      exitSu: () => {},
+    };
+
+    const result = await executeTerminalCommand("spawn-raiders 12", context);
+
+    expect(fetch).toHaveBeenCalledWith("/api/v2/spawn-raiders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ count: 12 }),
+    });
+    expect(result.output).toBe("Queued 12 raiders; the engine will spawn them on its next tick.");
+  });
 });

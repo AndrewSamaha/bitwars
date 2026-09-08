@@ -80,6 +80,8 @@ Configuration is loaded from the root `.env` file. The `dev` and `fe:run` script
 | `RESTORE_GAMESTATE_ON_RESTART` | `false` | When `true`, the engine restores world state from the latest Redis snapshot on startup and replays only post-snapshot intents. When `false` (default), all game Redis streams are flushed and a fresh world is generated — no replay of old intents. Set to `true` for crash recovery; leave `false` during development. |
 | `MAX_CMDS_PER_TICK` | `64` | Maximum intents ingested per engine tick (backpressure) |
 | `MAX_BATCH_MS` | `5` | Maximum ms spent processing intents per tick (0 = unlimited) |
+| `RAIDER_AI_SPATIAL_INDEX_MODE` | `on` | `on`, `off`, or `alternate`. `alternate` uses deterministic 600-tick on/off blocks and emits separate Axiom timing summaries for each mode. |
+| `RAIDER_AI_SPATIAL_INDEX_ENABLED` | `true` | Legacy on/off toggle; use `RAIDER_AI_SPATIAL_INDEX_MODE` for new experiments. |
 | `AXIOM_TOKEN` | *(none)* | Axiom API token for telemetry (optional) |
 | `AXIOM_DATASET` | *(none)* | Axiom dataset name for telemetry (optional) |
 | `AXIOM_ORG_ID` | *(none)* | Required when `AXIOM_TOKEN` is a personal access token |
