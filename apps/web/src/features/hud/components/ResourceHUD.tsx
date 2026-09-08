@@ -81,9 +81,9 @@ export function ResourceHUD() {
             const change = trends[k]?.average ?? 0;
             const trend =
               change > 0
-                ? `, up ${formatChange(change)} per update`
+                ? `, up ${formatChange(change)}`
                 : change < 0
-                  ? `, down ${formatChange(change)} per update`
+                  ? `, down ${formatChange(change)}`
                   : "";
             return `${labelFor(k)} ${Number(resources[k] ?? 0)}${trend}`;
           })
@@ -117,23 +117,27 @@ export function ResourceHUD() {
           const samples = trend?.changes.length ?? 0;
           const ChangeIcon = change > 0 ? ArrowUp : ArrowDown;
           return (
-            <span key={key} className="flex items-center gap-1.5">
-              <span className="text-white/80">{labelFor(key)}</span>
+            <span key={key} className="flex items-center gap-0">
+              <span className="text-white/80 pr-2">{labelFor(key)}</span>
               <span className="font-medium tabular-nums">
                 {Number(resources[key] ?? 0)}
               </span>
-              {change !== 0 && (
-                <span
-                  className={`pointer-events-auto ${change > 0 ? "text-emerald-400" : "text-red-400"}`}
-                  title={`Average ${change > 0 ? "+" : "-"}${formatChange(change)} per update over the last ${samples} update${samples === 1 ? "" : "s"}`}
-                >
-                  <ChangeIcon
-                    aria-hidden="true"
-                    className="size-3.5"
-                    strokeWidth={2.5}
-                  />
-                </span>
-              )}
+              <span
+                className={`inline-flex size-3.5 shrink-0 items-center justify-center pointer-events-auto ${
+                  change === 0
+                    ? "invisible"
+                    : change > 0
+                      ? "text-emerald-400"
+                      : "text-red-400"
+                }`}
+                title={`Average ${change > 0 ? "+" : "-"}${formatChange(change)} per update over the last ${samples} update${samples === 1 ? "" : "s"}`}
+              >
+                <ChangeIcon
+                  aria-hidden="true"
+                  className="size-3.5"
+                  strokeWidth={2.5}
+                />
+              </span>
             </span>
           );
         })}

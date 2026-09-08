@@ -38,6 +38,14 @@
       "@axiomhq/js": "1.3.1",
       "@axiomhq/nextjs": "0.1.4",
       "@axiomhq/react": "0.1.4"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@bufbuild/buf",
+      "@tailwindcss/oxide",
+      "core-js-pure",
+      "esbuild",
+      "protobufjs",
+      "sharp"
+    ]
   }
 }
