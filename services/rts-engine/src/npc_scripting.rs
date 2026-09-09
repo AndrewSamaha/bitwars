@@ -1,10 +1,12 @@
 //! Sandboxed Lua behavior for the raider NPC faction.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use mlua::{Error as LuaError, Function, HookTriggers, Lua, RegistryKey, Table, VmState};
@@ -28,6 +30,9 @@ const INSTRUCTIONS_PER_HOOK: u32 = 1_000;
 pub struct NpcCommands {
     pub scripted_entity_ids: HashSet<u64>,
     pub target_by_entity: HashMap<u64, u64>,
+    /// Sub-phases within the overall `raider_ai` engine phase. These are
+    /// collected into the existing tick telemetry summaries by the engine.
+    pub phase_durations: Vec<(&'static str, Duration)>,
 }
 
 struct ScriptTarget {
@@ -47,6 +52,10 @@ pub struct RaiderScript {
     shared: RegistryKey,
     /// State owned by each raider, keyed by entity ID.
     private_by_entity: RegistryKey,
+    /// The bundled raider `world_tick` initializes only static celestial-world
+    /// state. This cache is brittle by design: invalidate it if world entities
+    /// can change at runtime or if a script needs `world_tick` every tick.
+    world_tick_initialized: Cell<bool>,
 }
 
 impl RaiderScript {
@@ -86,6 +95,7 @@ impl RaiderScript {
         Ok(Self {
             shared: lua.create_registry_value(lua.create_table()?)?,
             private_by_entity: lua.create_registry_value(lua.create_table()?)?,
+            world_tick_initialized: Cell::new(false),
             lua,
             hook_count,
         })
@@ -116,6 +126,7 @@ impl RaiderScript {
     ) -> Result<NpcCommands> {
         self.spawn_raider(entities, content, tick, ticks_per_second, max_raiders);
 
+        let phase_started = Instant::now();
         let player_targets: Vec<ScriptTarget> = entities
             .iter()
             .filter_map(|entity| {
@@ -135,6 +146,10 @@ impl RaiderScript {
                 )
             })
             .collect();
+        let mut phase_durations =
+            vec![("raider_ai_player_target_snapshot", phase_started.elapsed())];
+
+        let phase_started = Instant::now();
         let player_target_grid = spatial_index_enabled.then(|| {
             let mut grid = SpatialIndex::new();
             for (index, target) in player_targets.iter().enumerate() {
@@ -142,6 +157,9 @@ impl RaiderScript {
             }
             grid
         });
+        phase_durations.push(("raider_ai_player_target_grid", phase_started.elapsed()));
+
+        let phase_started = Instant::now();
         let stars: Vec<(u64, f32, f32, f32)> = entities
             .iter()
             .filter_map(|entity| {
@@ -162,12 +180,29 @@ impl RaiderScript {
                 ))
             })
             .collect();
-        let world_entities = world_entities(entities, content);
-        self.call_world_tick(tick, ticks_per_second, &world_entities)?;
+        phase_durations.push(("raider_ai_star_snapshot", phase_started.elapsed()));
 
+        if !self.world_tick_initialized.get() {
+            let phase_started = Instant::now();
+            let world_entities = world_entities(entities, content);
+            phase_durations.push(("raider_ai_world_snapshot", phase_started.elapsed()));
+
+            let phase_started = Instant::now();
+            self.call_world_tick(tick, ticks_per_second, &world_entities)?;
+            self.world_tick_initialized.set(true);
+            phase_durations.push(("raider_ai_world_tick", phase_started.elapsed()));
+        } else {
+            // Retain zero-cost samples so Axiom includes every tick and shows
+            // that the static world setup remains cached.
+            phase_durations.push(("raider_ai_world_snapshot", Duration::ZERO));
+            phase_durations.push(("raider_ai_world_tick", Duration::ZERO));
+        }
+
+        let phase_started = Instant::now();
         let mut commands = NpcCommands {
             scripted_entity_ids: HashSet::new(),
             target_by_entity: HashMap::new(),
+            phase_durations: Vec::new(),
         };
         for entity in entities.iter_mut().filter(|entity| {
             entity.entity_type_id == RAIDER_TYPE
@@ -220,7 +255,12 @@ impl RaiderScript {
                 velocity.y = result.vy;
             }
         }
+        phase_durations.push(("raider_ai_decisions", phase_started.elapsed()));
+
+        let phase_started = Instant::now();
         self.remove_stale_private_state(entities)?;
+        phase_durations.push(("raider_ai_private_state_cleanup", phase_started.elapsed()));
+        commands.phase_durations = phase_durations;
         Ok(commands)
     }
 

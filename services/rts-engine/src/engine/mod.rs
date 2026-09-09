@@ -209,6 +209,22 @@ fn record_tick_phase(
     }
 }
 
+fn record_tick_phase_duration(
+    samples: Option<&mut HashMap<bool, HashMap<&'static str, Vec<Duration>>>>,
+    raider_ai_spatial_index_enabled: bool,
+    phase: &'static str,
+    duration: Duration,
+) {
+    if let Some(samples) = samples {
+        samples
+            .entry(raider_ai_spatial_index_enabled)
+            .or_default()
+            .entry(phase)
+            .or_default()
+            .push(duration);
+    }
+}
+
 fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {
     if bytes.len() != 16 {
         bail!("{field} must be 16 bytes (UUIDv7)");
@@ -1244,10 +1260,7 @@ impl Engine {
             min_y = -50_000.0;
             max_y = 50_000.0;
         }
-        let padding = (max_x - min_x)
-            .max(max_y - min_y)
-            .max(10_000.0)
-            * 0.05;
+        let padding = (max_x - min_x).max(max_y - min_y).max(10_000.0) * 0.05;
         let (min_x, max_x) = (min_x - padding, max_x + padding);
         let (min_y, max_y) = (min_y - padding, max_y + padding);
 
@@ -1275,7 +1288,15 @@ impl Engine {
                 health,
             });
         }
-        info!(requested, spawned = count, min_x, max_x, min_y, max_y, "spawned terminal raiders at random map locations");
+        info!(
+            requested,
+            spawned = count,
+            min_x,
+            max_x,
+            min_y,
+            max_y,
+            "spawned terminal raiders at random map locations"
+        );
         count
     }
 
@@ -3011,6 +3032,14 @@ impl Engine {
                 &mut phase_started,
             );
             let npc_commands = self.apply_raider_ai();
+            for (phase, duration) in &npc_commands.phase_durations {
+                record_tick_phase_duration(
+                    phase_durations.as_mut(),
+                    raider_ai_spatial_index_enabled,
+                    phase,
+                    *duration,
+                );
+            }
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
