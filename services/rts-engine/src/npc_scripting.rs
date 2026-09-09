@@ -1,6 +1,6 @@
 //! Sandboxed Lua behavior for the raider NPC faction.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -25,6 +25,9 @@ const ORBIT_CLEARANCE: f32 = 100.0;
 const MAX_SCRIPT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SCRIPT_HOOKS: usize = 50;
 const INSTRUCTIONS_PER_HOOK: u32 = 1_000;
+/// Maximum wall-clock time spent making individual raider decisions per tick.
+/// Snapshotting shared inputs and cleanup are deliberately outside this budget.
+const RAIDER_AI_DECISION_BUDGET: Duration = Duration::from_micros(500);
 
 #[derive(Default)]
 pub struct NpcCommands {
@@ -33,6 +36,10 @@ pub struct NpcCommands {
     /// Sub-phases within the overall `raider_ai` engine phase. These are
     /// collected into the existing tick telemetry summaries by the engine.
     pub phase_durations: Vec<(&'static str, Duration)>,
+    /// Raiders whose Lua behavior ran during this tick.
+    pub processed_raiders: usize,
+    /// Live raiders retained for a later round-robin turn.
+    pub deferred_raiders: usize,
 }
 
 struct ScriptTarget {
@@ -56,6 +63,13 @@ pub struct RaiderScript {
     /// state. This cache is brittle by design: invalidate it if world entities
     /// can change at runtime or if a script needs `world_tick` every tick.
     world_tick_initialized: Cell<bool>,
+    /// Last raider ID processed by the time-budgeted decision loop. IDs are
+    /// used instead of entity-vector indexes because entities may be inserted
+    /// or removed between ticks.
+    last_processed_raider_id: Cell<Option<u64>>,
+    /// A deferred raider retains its last Lua-selected target until its next
+    /// scheduled decision, just as it already retains its velocity on Entity.
+    target_by_raider: RefCell<HashMap<u64, u64>>,
 }
 
 impl RaiderScript {
@@ -96,6 +110,8 @@ impl RaiderScript {
             shared: lua.create_registry_value(lua.create_table()?)?,
             private_by_entity: lua.create_registry_value(lua.create_table()?)?,
             world_tick_initialized: Cell::new(false),
+            last_processed_raider_id: Cell::new(None),
+            target_by_raider: RefCell::new(HashMap::new()),
             lua,
             hook_count,
         })
@@ -203,12 +219,41 @@ impl RaiderScript {
             scripted_entity_ids: HashSet::new(),
             target_by_entity: HashMap::new(),
             phase_durations: Vec::new(),
+            processed_raiders: 0,
+            deferred_raiders: 0,
         };
-        for entity in entities.iter_mut().filter(|entity| {
-            entity.entity_type_id == RAIDER_TYPE
-                && entity.owner_player_id == RAIDERS_OWNER
-                && entity.health > 0.0
-        }) {
+        let mut raider_indexes: Vec<_> = entities
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entity)| {
+                (entity.entity_type_id == RAIDER_TYPE
+                    && entity.owner_player_id == RAIDERS_OWNER
+                    && entity.health > 0.0
+                    && entity.pos.is_some())
+                .then_some((entity.id, index))
+            })
+            .collect();
+        raider_indexes.sort_unstable_by_key(|(id, _)| *id);
+        commands.scripted_entity_ids = raider_indexes.iter().map(|(id, _)| *id).collect();
+        self.target_by_raider
+            .borrow_mut()
+            .retain(|id, _| commands.scripted_entity_ids.contains(id));
+
+        let first_raider = self
+            .last_processed_raider_id
+            .get()
+            .and_then(|last_id| raider_indexes.iter().position(|(id, _)| *id > last_id))
+            .unwrap_or(0);
+        let decision_started = Instant::now();
+        for offset in 0..raider_indexes.len() {
+            // Always process the first raider so a sub-microsecond clock read
+            // cannot indefinitely defer the entire population.
+            if offset > 0 && decision_started.elapsed() >= RAIDER_AI_DECISION_BUDGET {
+                break;
+            }
+            let (entity_id, entity_index) =
+                raider_indexes[(first_raider + offset) % raider_indexes.len()];
+            let entity = &mut entities[entity_index];
             let Some(position) = entity.pos.as_ref() else {
                 continue;
             };
@@ -246,15 +291,21 @@ impl RaiderScript {
                 tick,
                 ticks_per_second,
             )?;
-            commands.scripted_entity_ids.insert(entity.id);
             if let Some(target_id) = result.target_id {
-                commands.target_by_entity.insert(entity.id, target_id);
+                self.target_by_raider
+                    .borrow_mut()
+                    .insert(entity.id, target_id);
             } else {
+                self.target_by_raider.borrow_mut().remove(&entity.id);
                 let velocity = entity.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
                 velocity.x = result.vx;
                 velocity.y = result.vy;
             }
+            self.last_processed_raider_id.set(Some(entity_id));
+            commands.processed_raiders += 1;
         }
+        commands.deferred_raiders = raider_indexes.len() - commands.processed_raiders;
+        commands.target_by_entity = self.target_by_raider.borrow().clone();
         phase_durations.push(("raider_ai_decisions", phase_started.elapsed()));
 
         let phase_started = Instant::now();
@@ -842,7 +893,8 @@ mod tests {
                   assert(ctx.self.id == 2)
                   assert(ctx.self.owner_id == "raiders")
                   assert(ctx.self.entity_type_id == "raider")
-                  assert(ctx.tick == ctx.shared.world_ticks)
+                  -- world_tick initializes the shared static world once.
+                  assert(ctx.shared.world_ticks == 1)
                   ctx.private.calls = (ctx.private.calls or 0) + 1
                   return { vx = ctx.private.calls, vy = 0 }
                 end

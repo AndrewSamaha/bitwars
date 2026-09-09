@@ -225,6 +225,16 @@ fn record_tick_phase_duration(
     }
 }
 
+fn count_percentiles(samples: &mut [usize]) -> (f64, f64) {
+    if samples.is_empty() {
+        return (0.0, 0.0);
+    }
+    samples.sort_unstable();
+    let percentile =
+        |percent: usize| samples[((samples.len() * percent + 99) / 100).saturating_sub(1)] as f64;
+    (percentile(50), percentile(95))
+}
+
 fn ensure_uuid_v7(bytes: &[u8], field: &str) -> Result<()> {
     if bytes.len() != 16 {
         bail!("{field} must be 16 bytes (UUIDv7)");
@@ -2928,6 +2938,10 @@ impl Engine {
             .telemetry
             .as_ref()
             .map(|_| HashMap::<bool, HashMap<&'static str, Vec<Duration>>>::new());
+        let mut raider_ai_work_counts = self
+            .telemetry
+            .as_ref()
+            .map(|_| HashMap::<bool, Vec<(usize, usize)>>::new());
 
         loop {
             ticker.tick().await;
@@ -3032,6 +3046,15 @@ impl Engine {
                 &mut phase_started,
             );
             let npc_commands = self.apply_raider_ai();
+            if let Some(work_counts) = raider_ai_work_counts.as_mut() {
+                work_counts
+                    .entry(raider_ai_spatial_index_enabled)
+                    .or_default()
+                    .push((
+                        npc_commands.processed_raiders,
+                        npc_commands.deferred_raiders,
+                    ));
+            }
             for (phase, duration) in &npc_commands.phase_durations {
                 record_tick_phase_duration(
                     phase_durations.as_mut(),
@@ -3194,6 +3217,22 @@ impl Engine {
                         })
                         .collect();
                     phase_summaries.sort_by_key(|(phase, _)| *phase);
+                    let work_counts = raider_ai_work_counts
+                        .as_mut()
+                        .expect("telemetry enabled")
+                        .entry(raider_ai_spatial_index_enabled)
+                        .or_default();
+                    let mut processed: Vec<_> = work_counts
+                        .iter()
+                        .map(|(processed, _)| *processed)
+                        .collect();
+                    let mut deferred: Vec<_> =
+                        work_counts.iter().map(|(_, deferred)| *deferred).collect();
+                    let (raider_ai_processed_p50, raider_ai_processed_p95) =
+                        count_percentiles(&mut processed);
+                    let (raider_ai_deferred_p50, raider_ai_deferred_p95) =
+                        count_percentiles(&mut deferred);
+                    work_counts.clear();
                     let telemetry = self.telemetry.as_ref().expect("telemetry enabled").clone();
                     let game_id = self.cfg.game_id.clone();
                     let server_tick = self.state.tick;
@@ -3205,6 +3244,10 @@ impl Engine {
                                 server_tick,
                                 entity_count,
                                 raider_ai_spatial_index_enabled,
+                                raider_ai_processed_p50,
+                                raider_ai_processed_p95,
+                                raider_ai_deferred_p50,
+                                raider_ai_deferred_p95,
                                 tick_budget,
                                 summary,
                                 phase_summaries,
