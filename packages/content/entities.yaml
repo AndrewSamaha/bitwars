@@ -67,7 +67,7 @@ entity_types:
       collection_mode: transport
       min_effective_distance: 20.0
       max_effective_distance: 50.0
-  
+
   star_yellow:
     fog_memory: retain_last_known
     speed: 0.0
@@ -130,11 +130,10 @@ entity_types:
         distance_offset: 90.0
         damage_multiplier: 0.10
     collector:
-      collects: [energy]
+      collects: [ energy ]
       proximity_rate_per_second: 12.0
       transport_rate_per_second: 0.0
       carry_capacity: 0.0
-
 
   worker:
     fog_memory: forget_when_hidden
@@ -165,10 +164,10 @@ entity_types:
       energy: 1.0
       food: 2.0
     collector:
-      collects: [minerals, food]
+      collects: [ minerals, food ]
       transport_rate_per_second: 10.0
       carry_capacity: 120.0
-      deposit_entity_types: [processor, habitat]
+      deposit_entity_types: [ processor, habitat ]
     repair:
       range: 150.0
       cost_per_min:
@@ -197,7 +196,6 @@ entity_types:
           minerals: 1.2
           energy: 1.2
 
-
   habitat:
     fog_memory: forget_when_hidden
     speed: 60.0
@@ -207,7 +205,7 @@ entity_types:
     hull_radius: 18.0
     combat_targetable: true
     refinery:
-      accepts: [food,minerals]
+      accepts: [ food, minerals ]
     build_cost:
       minerals: 1000.0
       energy: 1000.0
@@ -223,7 +221,7 @@ entity_types:
           minerals: 0.8
           energy: 0.8
     collector:
-      collects: [energy]
+      collects: [ energy ]
       proximity_rate_per_second: 5.0
       transport_rate_per_second: 0.0
       carry_capacity: 0.0
@@ -247,7 +245,7 @@ entity_types:
       energy: 5.0
       food: 5.0
     refinery:
-      accepts: [minerals]
+      accepts: [ minerals ]
 
   factory:
     fog_memory: forget_when_hidden
@@ -304,7 +302,6 @@ entity_types:
       cost_per_minute:
         energy: 2.5
 
-
   defense_pilon:
     fog_memory: forget_when_hidden
     build_cost:
@@ -331,7 +328,8 @@ entity_types:
       range: 500.0
       cost_per_minute:
         energy: 2.5
-
+    builds:
+      - entity_type_id: defense_pilon_child
 
   raider:
     fog_memory: forget_when_hidden
@@ -353,5 +351,31 @@ entity_types:
           priority: 0
     sensor:
       range: 500.0
+      cost_per_minute:
+        energy: 2.5
+  defense_pilon_child:
+    fog_memory: forget_when_hidden
+    build_cost:
+      minerals: 100
+      energy: 50
+    maintenance_cost_per_minute:
+      energy: 200
+    speed: 5
+    stop_radius: 0.5
+    mass: 1
+    health: 500
+    hull_radius: 15
+    combat:
+      acquisition_range: 500
+      on_near_enemy_strategy: stay
+      attacks:
+        - id: laser
+          type: laser
+          range: 500
+          damage: 2
+          cooldown_ticks: 51
+          priority: 0
+    sensor:
+      range: 500
       cost_per_minute:
         energy: 2.5

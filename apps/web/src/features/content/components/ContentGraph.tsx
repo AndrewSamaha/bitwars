@@ -112,13 +112,15 @@ export default function ContentGraph() {
     };
   }, [entities, links]);
 
-  function createChild(parentId: string) {
+  async function createChild(parentId: string) {
     const parent = entities.find((entity) => entity.id === parentId);
     if (!parent) return;
     let childId = `${parent.id}_child`;
     for (let index = 2; entities.some((entity) => entity.id === childId); index += 1) childId = `${parent.id}_child_${index}`;
     const presentFields = new Set([...parent.definition.matchAll(/^([a-z_]+):/gm)].map((match) => match[1]));
     const definition = `${parent.definition.trimEnd()}\n${ENTITY_FIELDS.filter((field) => !presentFields.has(field)).map((field) => `${field}: null`).join("\n")}`.trim();
+    const response = await fetch("/api/content/entities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentId, childId, definition }) });
+    if (!response.ok) return;
     setEntities((current) => current.flatMap((entity) => entity.id === parentId
       ? [{ ...entity, builds: [...entity.builds, childId], definition: addBuild(entity.definition, childId) }, { id: childId, builds: [...parent.builds], definition }]
       : [entity]));
