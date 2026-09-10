@@ -10,23 +10,35 @@ import {
   type Simulation,
   type SimulationNodeDatum,
 } from "d3-force";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-type Entity = (typeof ENTITY_CONTENT)[number];
+type Entity = { id: string; builds: readonly string[]; definition: string };
 type Point = { x: number; y: number };
 type GraphNode = SimulationNodeDatum & { id: string; entity: Entity };
 type GraphLink = { source: string; target: string };
 
-const LINKS: GraphLink[] = ENTITY_CONTENT.flatMap((entity) =>
-  entity.builds.map((target) => ({ source: entity.id, target })),
-);
-const LINK_IDS = new Set(LINKS.map(({ source, target }) => `${source}:${target}`));
+const INITIAL_ENTITIES: Entity[] = ENTITY_CONTENT.map((entity) => ({ ...entity }));
+const ENTITY_FIELDS = [...new Set(INITIAL_ENTITIES.flatMap((entity) =>
+  [...entity.definition.matchAll(/^([a-z_]+):/gm)].map((match) => match[1]),
+))];
 
-function initialPositions(): Record<string, Point> {
-  return Object.fromEntries(ENTITY_CONTENT.map((entity, index) => [entity.id, {
+function linksFor(entities: readonly Entity[]): GraphLink[] {
+  return entities.flatMap((entity) =>
+  entity.builds.map((target) => ({ source: entity.id, target })),
+  );
+}
+
+function initialPositions(entities: readonly Entity[]): Record<string, Point> {
+  return Object.fromEntries(entities.map((entity, index) => [entity.id, {
     x: 120 + (index % 6) * 140,
     y: 100 + Math.floor(index / 6) * 150,
   }]));
+}
+
+function addBuild(definition: string, childId: string) {
+  const buildBlock = /^builds:\n(?:(?: {2,}.*|\s*)\n)*/m;
+  if (!buildBlock.test(definition)) return `${definition.trimEnd()}\nbuilds:\n  - entity_type_id: ${childId}\n`;
+  return definition.replace(buildBlock, (block) => `${block.trimEnd()}\n  - entity_type_id: ${childId}\n`);
 }
 
 function builderOutwardForce(links: readonly GraphLink[]) {
@@ -51,11 +63,15 @@ function builderOutwardForce(links: readonly GraphLink[]) {
 }
 
 export default function ContentGraph() {
-  const [selectedId, setSelectedId] = useState<string>(ENTITY_CONTENT[0]?.id ?? "");
-  const [positions, setPositions] = useState<Record<string, Point>>(initialPositions);
+  const [entities, setEntities] = useState<Entity[]>(INITIAL_ENTITIES);
+  const [selectedId, setSelectedId] = useState<string>(INITIAL_ENTITIES[0]?.id ?? "");
+  const [positions, setPositions] = useState<Record<string, Point>>(() => initialPositions(INITIAL_ENTITIES));
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const graphRef = useRef<HTMLDivElement>(null);
   const simulationRef = useRef<Simulation<GraphNode, undefined> | null>(null);
-  const selected = ENTITY_CONTENT.find((entity) => entity.id === selectedId) ?? ENTITY_CONTENT[0];
+  const links = useMemo(() => linksFor(entities), [entities]);
+  const linkIds = useMemo(() => new Set(links.map(({ source, target }) => `${source}:${target}`)), [links]);
+  const selected = entities.find((entity) => entity.id === selectedId) ?? entities[0];
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -66,17 +82,17 @@ export default function ContentGraph() {
       simulation?.stop();
       const width = Math.max(graph.clientWidth, 832);
       const height = graph.clientHeight;
-      const nodes: GraphNode[] = ENTITY_CONTENT.map((entity, index) => ({
+      const nodes: GraphNode[] = entities.map((entity, index) => ({
         id: entity.id,
         entity,
         x: width / 2 + (index % 4 - 1.5) * 120,
         y: height / 2 + (Math.floor(index / 4) - 1) * 120,
       }));
       simulation = forceSimulation(nodes)
-        .force("link", forceLink<GraphNode, GraphLink>(LINKS.map((link) => ({ ...link }))).id((node) => node.id).distance(155).strength(0.9))
+        .force("link", forceLink<GraphNode, GraphLink>(links.map((link) => ({ ...link }))).id((node) => node.id).distance(155).strength(0.9))
         .force("charge", forceManyBody().strength(-520))
         .force("collide", forceCollide<GraphNode>(72))
-        .force("builder-outward", builderOutwardForce(LINKS))
+        .force("builder-outward", builderOutwardForce(links))
         .force("center", forceCenter(width / 2, height / 2));
       simulationRef.current = simulation;
       simulation.on("tick", () => setPositions(Object.fromEntries(nodes.map((node) => [node.id, {
@@ -93,7 +109,21 @@ export default function ContentGraph() {
       simulation?.stop();
       simulationRef.current = null;
     };
-  }, []);
+  }, [entities, links]);
+
+  function createChild(parentId: string) {
+    const parent = entities.find((entity) => entity.id === parentId);
+    if (!parent) return;
+    let childId = `${parent.id}_child`;
+    for (let index = 2; entities.some((entity) => entity.id === childId); index += 1) childId = `${parent.id}_child_${index}`;
+    const presentFields = new Set([...parent.definition.matchAll(/^([a-z_]+):/gm)].map((match) => match[1]));
+    const definition = `${parent.definition.trimEnd()}\n${ENTITY_FIELDS.filter((field) => !presentFields.has(field)).map((field) => `${field}: null`).join("\n")}`.trim();
+    setEntities((current) => current.flatMap((entity) => entity.id === parentId
+      ? [{ ...entity, builds: [...entity.builds, childId], definition: addBuild(entity.definition, childId) }, { id: childId, builds: [...parent.builds], definition }]
+      : [entity]));
+    setSelectedId(childId);
+    setMenu(null);
+  }
 
   function moveNode(id: string, event: React.PointerEvent<HTMLButtonElement>) {
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
@@ -136,11 +166,11 @@ export default function ContentGraph() {
                   <path d="M0,0 L0,6 L6,3 z" fill="#c084fc" />
                 </marker>
               </defs>
-              {LINKS.map(({ source, target }) => {
+              {links.map(({ source, target }) => {
                 const from = positions[source];
                 const to = positions[target];
                 if (!from || !to) return null;
-                const reciprocal = LINK_IDS.has(`${target}:${source}`);
+                const reciprocal = linkIds.has(`${target}:${source}`);
                 const reverse = reciprocal && source > target;
                 if (!reciprocal) {
                   return <line key={`${source}-${target}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#22d3ee" strokeOpacity=".6" strokeWidth="2" markerEnd="url(#build-arrow)" />;
@@ -154,13 +184,19 @@ export default function ContentGraph() {
                 return <path d={`M ${from.x} ${from.y} Q ${controlX} ${controlY} ${to.x} ${to.y}`} fill="none" key={`${source}-${target}`} markerEnd={`url(#${reverse ? "reverse-build-arrow" : "build-arrow"})`} stroke={reverse ? "#c084fc" : "#22d3ee"} strokeOpacity=".8" strokeWidth="2" />;
               })}
             </svg>
-            {ENTITY_CONTENT.map((entity) => {
+            {entities.map((entity) => {
               const position = positions[entity.id];
               return (
                 <button
                   className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"}`}
                   key={entity.id}
                   onClick={() => setSelectedId(entity.id)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    const bounds = graphRef.current?.getBoundingClientRect();
+                    if (!bounds) return;
+                    setMenu({ id: entity.id, x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+                  }}
                   onPointerDown={(event) => {
                     event.currentTarget.setPointerCapture(event.pointerId);
                     moveNode(entity.id, event);
@@ -176,6 +212,9 @@ export default function ContentGraph() {
                 </button>
               );
             })}
+            {menu && <div className="absolute z-20 w-36 rounded-md border border-slate-600 bg-slate-900 p-1 shadow-xl" style={{ left: menu.x, top: menu.y }}>
+              <button className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-800" onClick={() => createChild(menu.id)} type="button">Create child</button>
+            </div>}
           </div>
         </div>
       </section>

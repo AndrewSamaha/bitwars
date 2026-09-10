@@ -20,7 +20,7 @@ function extractEntityTypes(yamlContent) {
 
   const finishCurrent = () => {
     if (!current) return;
-    const definition = current.lines.join("\n").trim();
+    const definition = current.lines.map((line) => line.startsWith("    ") ? line.slice(4) : line).join("\n").trim();
     types.push({
       id: current.id,
       builds: [...definition.matchAll(/^\s*-\s+entity_type_id:\s*([^\s#]+)/gm)].map((match) => match[1]),

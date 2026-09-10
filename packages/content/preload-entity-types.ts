@@ -10,27 +10,27 @@ export const ENTITY_CONTENT = [
   {
     "id": "theta",
     "builds": [],
-    "definition": "fog_memory: retain_last_known\n    speed: 0.0\n    z_index: -10\n    suppress_hover: true\n    stop_radius: 0.75\n    mass: 500.0\n    health: 100.0\n    visibility_range: 4000.0\n    visual_scale: 2.0\n    radiation_sources:\n      - radiation_type: theta\n        min_effective_distance_border_color:\n        min_effective_distance_fill_color: \"#882cd6\"\n        full_damage_distance_border_color:\n        full_damage_distance_fill_color: \"#a753ef\"\n        max_effective_distance_border_color:\n        max_effective_distance_fill_color: \"#c384f8\"\n        min_effective_distance: 0.0\n        full_damage_distance: 700.0\n        max_effective_distance: 1200.0\n        damage_per_second: 6.0\n    resource_node:\n      resource_type: energy\n      collection_mode: proximity\n      min_effective_distance: 350.0\n      max_effective_distance: 1600.0"
+    "definition": "fog_memory: retain_last_known\nspeed: 0.0\nz_index: -10\nsuppress_hover: true\nstop_radius: 0.75\nmass: 500.0\nhealth: 100.0\nvisibility_range: 4000.0\nvisual_scale: 2.0\nradiation_sources:\n  - radiation_type: theta\n    min_effective_distance_border_color:\n    min_effective_distance_fill_color: \"#882cd6\"\n    full_damage_distance_border_color:\n    full_damage_distance_fill_color: \"#a753ef\"\n    max_effective_distance_border_color:\n    max_effective_distance_fill_color: \"#c384f8\"\n    min_effective_distance: 0.0\n    full_damage_distance: 700.0\n    max_effective_distance: 1200.0\n    damage_per_second: 6.0\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 350.0\n  max_effective_distance: 1600.0"
   },
   {
     "id": "planet_blue",
     "builds": [],
-    "definition": "fog_memory: retain_last_known\n    speed: 0.0\n    z_index: -2\n    suppress_hover: true\n    stop_radius: 1\n    mass: 500.0\n    health: 100.0\n    visual_scale: 4.0\n    resource_node:\n      resource_type: food\n      collection_mode: transport\n      min_effective_distance: 20.0\n      max_effective_distance: 50.0"
+    "definition": "fog_memory: retain_last_known\nspeed: 0.0\nz_index: -2\nsuppress_hover: true\nstop_radius: 1\nmass: 500.0\nhealth: 100.0\nvisual_scale: 4.0\nresource_node:\n  resource_type: food\n  collection_mode: transport\n  min_effective_distance: 20.0\n  max_effective_distance: 50.0"
   },
   {
     "id": "star_yellow",
     "builds": [],
-    "definition": "fog_memory: retain_last_known\n    speed: 0.0\n    visibility_range: 40000.0\n    z_index: -10\n    suppress_hover: true\n    stop_radius: 1\n    mass: 500.0\n    health: 100.0\n    visual_scale: 15.0\n    radiation_sources:\n      - radiation_type: stellar_heat\n        min_effective_distance_border_color:\n        min_effective_distance_fill_color: \"#ef4444\"\n        full_damage_distance_border_color:\n        full_damage_distance_fill_color: \"#f97316\"\n        max_effective_distance_border_color:\n        max_effective_distance_fill_color: \"#facc15\"\n        min_effective_distance: 0.0\n        full_damage_distance: 900.0\n        max_effective_distance: 1200.0\n        damage_per_second: 2.0\n    resource_node:\n      resource_type: energy\n      collection_mode: proximity\n      min_effective_distance: 10.0\n      max_effective_distance: 1500.0"
+    "definition": "fog_memory: retain_last_known\nspeed: 0.0\nvisibility_range: 40000.0\nz_index: -10\nsuppress_hover: true\nstop_radius: 1\nmass: 500.0\nhealth: 100.0\nvisual_scale: 15.0\nradiation_sources:\n  - radiation_type: stellar_heat\n    min_effective_distance_border_color:\n    min_effective_distance_fill_color: \"#ef4444\"\n    full_damage_distance_border_color:\n    full_damage_distance_fill_color: \"#f97316\"\n    max_effective_distance_border_color:\n    max_effective_distance_fill_color: \"#facc15\"\n    min_effective_distance: 0.0\n    full_damage_distance: 900.0\n    max_effective_distance: 1200.0\n    damage_per_second: 2.0\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 10.0\n  max_effective_distance: 1500.0"
   },
   {
     "id": "minerals",
     "builds": [],
-    "definition": "fog_memory: retain_last_known\n    speed: 0.0\n    z_index: -1\n    stop_radius: 1\n    mass: 500.0\n    health: 100.0\n    visibility_range: 1000.0\n    resource_node:\n      resource_type: minerals\n      collection_mode: transport\n      min_effective_distance: 20.0\n      max_effective_distance: 50.0"
+    "definition": "fog_memory: retain_last_known\nspeed: 0.0\nz_index: -1\nstop_radius: 1\nmass: 500.0\nhealth: 100.0\nvisibility_range: 1000.0\nresource_node:\n  resource_type: minerals\n  collection_mode: transport\n  min_effective_distance: 20.0\n  max_effective_distance: 50.0"
   },
   {
     "id": "collector_solar",
     "builds": [],
-    "definition": "fog_memory: forget_when_hidden\n    speed: 20.0\n    stop_radius: 1\n    mass: 500.0\n    health: 100.0\n    hull_radius: 12.0\n    combat_targetable: true\n    sensor:\n      range: 400.0\n      cost_per_minute:\n        energy: 0.1\n    build_cost:\n      minerals: 100.0\n      energy: 50.0\n    radiation_shielding:\n      stellar_heat:\n        distance_offset: 90.0\n        damage_multiplier: 0.10\n    collector:\n      collects: [energy]\n      proximity_rate_per_second: 12.0\n      transport_rate_per_second: 0.0\n      carry_capacity: 0.0"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 20.0\nstop_radius: 1\nmass: 500.0\nhealth: 100.0\nhull_radius: 12.0\ncombat_targetable: true\nsensor:\n  range: 400.0\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100.0\n  energy: 50.0\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90.0\n    damage_multiplier: 0.10\ncollector:\n  collects: [energy]\n  proximity_rate_per_second: 12.0\n  transport_rate_per_second: 0.0\n  carry_capacity: 0.0"
   },
   {
     "id": "worker",
@@ -41,19 +41,19 @@ export const ENTITY_CONTENT = [
       "factory",
       "processor"
     ],
-    "definition": "fog_memory: forget_when_hidden\n    speed: 90.0\n    stop_radius: 0.75\n    mass: 1.0\n    health: 200.0\n    hull_radius: 50.0\n    combat_targetable: true\n    sensor:\n      range: 400.0\n      cost_per_minute:\n        energy: 0.1\n    combat:\n      acquisition_range: 250.0\n      on_near_enemy_strategy: approach\n      attacks:\n        - id: dismantle\n          type: dismantle\n          damage: 4.0\n          cooldown_ticks: 60\n          priority: 100\n          contact_tolerance: 2.0\n    build_cost:\n      minerals: 50.0\n      energy: 50.0\n    maintenance_cost_per_minute:\n      energy: 1.0\n      food: 2.0\n    collector:\n      collects: [minerals, food]\n      transport_rate_per_second: 10.0\n      carry_capacity: 120.0\n      deposit_entity_types: [processor, habitat]\n    repair:\n      range: 150.0\n      cost_per_min:\n        energy: 60.0\n        minerals: 60.0\n      efficiency: 1.0\n    builds:\n      - entity_type_id: collector_solar\n        spend_rates:\n          minerals: 1.2\n          energy: 1.2\n      - entity_type_id: habitat\n        spend_rates:\n          minerals: 1.2\n          energy: 1.2\n      - entity_type_id: defense_pilon\n        spend_rates:\n          minerals: 1.2\n          energy: 1.2\n      - entity_type_id: factory\n        spend_rates:\n          minerals: 1.2\n          energy: 1.2\n      - entity_type_id: processor\n        spend_rates:\n          minerals: 1.2\n          energy: 1.2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 90.0\nstop_radius: 0.75\nmass: 1.0\nhealth: 200.0\nhull_radius: 50.0\ncombat_targetable: true\nsensor:\n  range: 400.0\n  cost_per_minute:\n    energy: 0.1\ncombat:\n  acquisition_range: 250.0\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: dismantle\n      type: dismantle\n      damage: 4.0\n      cooldown_ticks: 60\n      priority: 100\n      contact_tolerance: 2.0\nbuild_cost:\n  minerals: 50.0\n  energy: 50.0\nmaintenance_cost_per_minute:\n  energy: 1.0\n  food: 2.0\ncollector:\n  collects: [minerals, food]\n  transport_rate_per_second: 10.0\n  carry_capacity: 120.0\n  deposit_entity_types: [processor, habitat]\nrepair:\n  range: 150.0\n  cost_per_min:\n    energy: 60.0\n    minerals: 60.0\n  efficiency: 1.0\nbuilds:\n  - entity_type_id: collector_solar\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: defense_pilon\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: factory\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: processor\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2"
   },
   {
     "id": "habitat",
     "builds": [
       "worker"
     ],
-    "definition": "fog_memory: forget_when_hidden\n    speed: 60.0\n    stop_radius: 0.5\n    mass: 4.0\n    health: 400.0\n    hull_radius: 18.0\n    combat_targetable: true\n    refinery:\n      accepts: [food,minerals]\n    build_cost:\n      minerals: 1000.0\n      energy: 1000.0\n    maintenance_cost_per_minute:\n      food: 60.0\n    sensor:\n      range: 4000.0\n      cost_per_minute:\n        energy: 5.0\n    builds:\n      - entity_type_id: worker\n        spend_rates:\n          minerals: 0.8\n          energy: 0.8\n    collector:\n      collects: [energy]\n      proximity_rate_per_second: 5.0\n      transport_rate_per_second: 0.0\n      carry_capacity: 0.0"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60.0\nstop_radius: 0.5\nmass: 4.0\nhealth: 400.0\nhull_radius: 18.0\ncombat_targetable: true\nrefinery:\n  accepts: [food,minerals]\nbuild_cost:\n  minerals: 1000.0\n  energy: 1000.0\nmaintenance_cost_per_minute:\n  food: 60.0\nsensor:\n  range: 4000.0\n  cost_per_minute:\n    energy: 5.0\nbuilds:\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 0.8\n      energy: 0.8\ncollector:\n  collects: [energy]\n  proximity_rate_per_second: 5.0\n  transport_rate_per_second: 0.0\n  carry_capacity: 0.0"
   },
   {
     "id": "processor",
     "builds": [],
-    "definition": "fog_memory: forget_when_hidden\n    speed: 60.0\n    stop_radius: 0.5\n    mass: 7.0\n    health: 150.0\n    hull_radius: 16.0\n    build_cost:\n      minerals: 100.0\n      energy: 100.0\n    sensor:\n      range: 400.0\n      cost_per_minute:\n        energy: 0.1\n    combat_targetable: true\n    maintenance_cost_per_minute:\n      energy: 5.0\n      food: 5.0\n    refinery:\n      accepts: [minerals]"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60.0\nstop_radius: 0.5\nmass: 7.0\nhealth: 150.0\nhull_radius: 16.0\nbuild_cost:\n  minerals: 100.0\n  energy: 100.0\nsensor:\n  range: 400.0\n  cost_per_minute:\n    energy: 0.1\ncombat_targetable: true\nmaintenance_cost_per_minute:\n  energy: 5.0\n  food: 5.0\nrefinery:\n  accepts: [minerals]"
   },
   {
     "id": "factory",
@@ -62,21 +62,21 @@ export const ENTITY_CONTENT = [
       "processor",
       "habitat"
     ],
-    "definition": "fog_memory: forget_when_hidden\n    speed: 60.0\n    stop_radius: 0.5\n    mass: 7.0\n    health: 150.0\n    hull_radius: 16.0\n    combat_targetable: true\n    build_cost:\n      minerals: 600.0\n      energy: 600.0\n    sensor:\n      range: 400.0\n      cost_per_minute:\n        energy: 0.1\n    builds:\n      - entity_type_id: scout\n        spend_rates:\n          minerals: 1.0\n          energy: 1.0\n      - entity_type_id: processor\n        spend_rates:\n          minerals: 1.0\n          energy: 1.0\n      - entity_type_id: habitat\n        spend_rates:\n          minerals: 2.2\n          energy: 2.2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60.0\nstop_radius: 0.5\nmass: 7.0\nhealth: 150.0\nhull_radius: 16.0\ncombat_targetable: true\nbuild_cost:\n  minerals: 600.0\n  energy: 600.0\nsensor:\n  range: 400.0\n  cost_per_minute:\n    energy: 0.1\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1.0\n      energy: 1.0\n  - entity_type_id: processor\n    spend_rates:\n      minerals: 1.0\n      energy: 1.0\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2"
   },
   {
     "id": "scout",
     "builds": [],
-    "definition": "fog_memory: forget_when_hidden\n    speed: 500.0\n    stop_radius: 0.5\n    mass: 0.6\n    health: 60.0\n    hull_radius: 10.0\n    combat_targetable: true\n    build_cost:\n      minerals: 75.0\n      energy: 50\n    combat:\n      acquisition_range: 450.0\n      on_near_enemy_strategy: approach\n      attacks:\n        - id: laser\n          type: laser\n          range: 120.0\n          damage: 2.0\n          cooldown_ticks: 75\n          priority: 0\n    sensor:\n      range: 5000.0\n      cost_per_minute:\n        energy: 2.5"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 500.0\nstop_radius: 0.5\nmass: 0.6\nhealth: 60.0\nhull_radius: 10.0\ncombat_targetable: true\nbuild_cost:\n  minerals: 75.0\n  energy: 50\ncombat:\n  acquisition_range: 450.0\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 120.0\n      damage: 2.0\n      cooldown_ticks: 75\n      priority: 0\nsensor:\n  range: 5000.0\n  cost_per_minute:\n    energy: 2.5"
   },
   {
     "id": "defense_pilon",
     "builds": [],
-    "definition": "fog_memory: forget_when_hidden\n    build_cost:\n      minerals: 100.0\n      energy: 50.0\n    maintenance_cost_per_minute:\n      energy: 200.0\n    speed: 5.0\n    stop_radius: 0.5\n    mass: 1.0\n    health: 500.0\n    hull_radius: 15.0\n    combat:\n      acquisition_range: 500.0\n      on_near_enemy_strategy: stay\n      attacks:\n        - id: laser\n          type: laser\n          range: 500.0\n          damage: 2.0\n          cooldown_ticks: 51\n          priority: 0\n    sensor:\n      range: 500.0\n      cost_per_minute:\n        energy: 2.5"
+    "definition": "fog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 100.0\n  energy: 50.0\nmaintenance_cost_per_minute:\n  energy: 200.0\nspeed: 5.0\nstop_radius: 0.5\nmass: 1.0\nhealth: 500.0\nhull_radius: 15.0\ncombat:\n  acquisition_range: 500.0\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500.0\n      damage: 2.0\n      cooldown_ticks: 51\n      priority: 0\nsensor:\n  range: 500.0\n  cost_per_minute:\n    energy: 2.5"
   },
   {
     "id": "raider",
     "builds": [],
-    "definition": "fog_memory: forget_when_hidden\n    speed: 80.0\n    stop_radius: 0.5\n    mass: 0.8\n    health: 80.0\n    hull_radius: 50.0\n    combat_targetable: true\n    combat:\n      acquisition_range: 1200.0\n      on_near_enemy_strategy: approach\n      attacks:\n        - id: laser\n          type: laser\n          range: 180.0\n          damage: 8.0\n          cooldown_ticks: 100\n          priority: 0\n    sensor:\n      range: 500.0\n      cost_per_minute:\n        energy: 2.5"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 80.0\nstop_radius: 0.5\nmass: 0.8\nhealth: 80.0\nhull_radius: 50.0\ncombat_targetable: true\ncombat:\n  acquisition_range: 1200.0\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 180.0\n      damage: 8.0\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 500.0\n  cost_per_minute:\n    energy: 2.5"
   }
 ] as const;
