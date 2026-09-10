@@ -1,6 +1,7 @@
 "use client";
 
 import { ENTITY_CONTENT } from "@bitwars/content";
+import YamlEditor from "@/features/content/components/YamlEditor";
 import {
   forceCenter,
   forceCollide,
@@ -219,14 +220,16 @@ export default function ContentGraph() {
         </div>
       </section>
 
-      <aside className="w-96 shrink-0 border-l border-slate-700 bg-slate-900 p-6">
+      <aside className="w-[42rem] shrink-0 border-l border-slate-700 bg-slate-900 p-6">
         {selected && <>
           <div className="flex items-center gap-3 border-b border-slate-700 pb-5">
             <img alt="" className="size-14 object-contain" src={`/assets/${selected.id}/idle.png`} />
             <div><p className="text-sm text-slate-400">Entity definition</p><h2 className="text-xl font-semibold">{selected.id}</h2></div>
           </div>
           <p className="mt-5 text-sm font-medium text-slate-300">Fields</p>
-          <pre className="mt-3 max-h-[calc(100vh-13rem)] overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-300">{selected.definition || "No fields defined."}</pre>
+          <div className="mt-3 overflow-hidden rounded-lg border border-slate-700">
+            <YamlEditor id={selected.id} onChange={(definition) => setEntities((current) => current.map((entity) => entity.id === selected.id ? { ...entity, definition } : entity))} value={selected.definition} />
+          </div>
         </>}
       </aside>
     </main>

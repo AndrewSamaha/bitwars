@@ -10,6 +10,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use schemars::JsonSchema;
 
 /// A loaded content pack with entity and resource type definitions and a content hash.
 #[derive(Clone, Debug)]
@@ -22,7 +23,7 @@ pub struct ContentPack {
 }
 
 /// Per-entity-type definition loaded from the content YAML.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct EntityTypeDef {
     /// Client behavior when this entity leaves sensor coverage.
     pub fog_memory: FogMemory,
@@ -89,7 +90,7 @@ pub struct EntityTypeDef {
     pub builds: Vec<BuildOptionDef>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FogMemory {
     RetainLastKnown,
@@ -101,7 +102,7 @@ pub enum FogMemory {
 ///
 /// Timings are ticks, rather than seconds, so a combat replay is a pure
 /// function of the content version and tick stream.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CombatDef {
     /// Maximum distance at which this unit acquires a hostile target.
     pub acquisition_range: f32,
@@ -112,7 +113,7 @@ pub struct CombatDef {
     pub attacks: Vec<AttackDef>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AttackDef {
     pub id: String,
     #[serde(rename = "type")]
@@ -129,7 +130,7 @@ pub struct AttackDef {
     pub contact_tolerance: f32,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AttackType {
     Laser,
@@ -137,7 +138,7 @@ pub enum AttackType {
 }
 
 /// Autonomous movement response to a nearby hostile entity.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NearEnemyStrategy {
     /// Move into weapon range, then fire. This preserves existing NPC behavior.
@@ -150,7 +151,7 @@ pub enum NearEnemyStrategy {
 }
 
 /// One content-defined production option available to a builder.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct BuildOptionDef {
     pub entity_type_id: String,
     /// Resource conversion rates. A missing required resource defaults to 1/s.
@@ -159,7 +160,7 @@ pub struct BuildOptionDef {
 }
 
 /// Content-defined sensor available to any entity type.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SensorDef {
     /// Per-resource operating cost, in units per minute.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -168,7 +169,7 @@ pub struct SensorDef {
     pub range: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RepairDef {
     /// Maximum center-to-center repair distance in world units.
     pub range: f32,
@@ -203,7 +204,7 @@ fn is_false(value: &bool) -> bool {
 }
 
 /// M8: Collection mode for a resource source.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionMode {
     Transport,
@@ -211,7 +212,7 @@ pub enum CollectionMode {
 }
 
 /// M8: Collector capabilities and rates.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CollectorDef {
     /// Resource type ids this collector can gather.
     #[serde(default)]
@@ -232,7 +233,7 @@ pub struct CollectorDef {
 }
 
 /// M8: Resource source profile for entity types that can be gathered from.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ResourceNodeDef {
     pub resource_type: String,
     pub collection_mode: CollectionMode,
@@ -243,7 +244,7 @@ pub struct ResourceNodeDef {
 }
 
 /// M8: Refinery/processor profile.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RefineryDef {
     /// Resource type ids this structure accepts for deposit.
     #[serde(default)]
@@ -251,7 +252,7 @@ pub struct RefineryDef {
 }
 
 /// Environmental radiation emitted by an entity type.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RadiationSourceDef {
     pub radiation_type: String,
     /// Hex color for the min-effective-distance range outline.
@@ -283,7 +284,7 @@ pub struct RadiationSourceDef {
 }
 
 /// Per-radiation-type shielding profile for an entity type.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RadiationShieldingDef {
     /// Acts like extra standoff distance for hazard evaluation.
     #[serde(default)]
