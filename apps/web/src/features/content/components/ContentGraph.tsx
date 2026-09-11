@@ -71,6 +71,7 @@ export default function ContentGraph() {
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [assetVersion, setAssetVersion] = useState(0);
   const [draftDefinition, setDraftDefinition] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const graphRef = useRef<HTMLDivElement>(null);
   const assetInputRef = useRef<HTMLInputElement>(null);
@@ -174,11 +175,15 @@ export default function ContentGraph() {
   }
 
   async function saveDraft() {
-    if (!selected || draftDefinition === null) return;
-    const response = await savingFetch(`/api/content/entities/${selected.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ definition: draftDefinition }) });
+    if (!selected || (draftDefinition === null && draftName === null)) return;
+    const definition = draftDefinition ?? selected.definition;
+    const newId = draftName ?? selected.id;
+    const response = await savingFetch(`/api/content/entities/${selected.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ definition, newId }) });
     if (!response.ok) return;
-    setEntities((current) => current.map((entity) => entity.id === selected.id ? { ...entity, definition: draftDefinition } : entity));
+    setEntities((current) => current.map((entity) => ({ ...entity, id: entity.id === selected.id ? newId : entity.id, builds: entity.builds.map((id) => id === selected.id ? newId : id), definition: entity.id === selected.id ? definition : entity.definition })));
+    setSelectedId(newId);
     setDraftDefinition(null);
+    setDraftName(null);
   }
 
   return (
@@ -228,7 +233,7 @@ export default function ContentGraph() {
                 <button
                   className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"}`}
                   key={entity.id}
-                  onClick={() => { setSelectedId(entity.id); setDraftDefinition(null); }}
+                  onClick={() => { setSelectedId(entity.id); setDraftDefinition(null); setDraftName(null); }}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     const bounds = graphRef.current?.getBoundingClientRect();
@@ -265,13 +270,13 @@ export default function ContentGraph() {
               <Pencil className="absolute -right-1 -bottom-1 size-5 rounded-full bg-cyan-400 p-1 text-slate-950" />
             </button>
             <input accept="image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadAsset(file); event.target.value = ""; }} ref={assetInputRef} type="file" />
-            <div><p className="text-sm text-slate-400">Entity definition</p><h2 className="text-xl font-semibold">{selected.id}</h2></div>
+            <div><p className="text-sm text-slate-400">Entity definition</p><input className="w-full bg-transparent text-xl font-semibold outline-none" onChange={(event) => setDraftName(event.target.value)} value={draftName ?? selected.id} /></div>
           </div>
           <div className="mt-5 flex items-center justify-between">
             <p className="text-sm font-medium text-slate-300">Fields</p>
-            {draftDefinition !== null && draftDefinition !== selected.definition && <div className="flex gap-2">
+            {(draftDefinition !== null && draftDefinition !== selected.definition || draftName !== null && draftName !== selected.id) && <div className="flex gap-2">
               <button className="rounded bg-cyan-400 px-3 py-1 text-sm font-medium text-slate-950" onClick={saveDraft} type="button">Save</button>
-              <button className="rounded border border-slate-600 px-3 py-1 text-sm" onClick={() => setDraftDefinition(null)} type="button">Cancel</button>
+              <button className="rounded border border-slate-600 px-3 py-1 text-sm" onClick={() => { setDraftDefinition(null); setDraftName(null); }} type="button">Cancel</button>
             </div>}
           </div>
           <div className="mt-3 overflow-hidden rounded-lg border border-slate-700">
