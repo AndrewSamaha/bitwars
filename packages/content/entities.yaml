@@ -115,6 +115,8 @@ entity_types:
       proximity_rate_per_second: 12
       transport_rate_per_second: 0
       carry_capacity: 0
+    builds:
+      - entity_type_id: collector_solar_v2
   worker:
     fog_memory: forget_when_hidden
     speed: 90
@@ -175,17 +177,14 @@ entity_types:
         spend_rates:
           minerals: 1.2
           energy: 1.2
-      - entity_type_id: processor
-        spend_rates:
-          minerals: 1.2
-          energy: 1.2
   habitat:
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
     mass: 4
     health: 400
-    hull_radius: 18
+    hull_radius: 50
+    visual_scale: 2
     combat_targetable: true
     refinery:
       accepts:
@@ -218,6 +217,7 @@ entity_types:
     mass: 7
     health: 150
     hull_radius: 16
+    visual_scale: 1.5
     build_cost:
       minerals: 100
       energy: 100
@@ -240,6 +240,7 @@ entity_types:
     health: 150
     hull_radius: 16
     combat_targetable: true
+    visual_scale: 2
     build_cost:
       minerals: 600
       energy: 600
@@ -287,12 +288,13 @@ entity_types:
         energy: 2.5
   raider:
     fog_memory: forget_when_hidden
-    speed: 80
+    speed: 110
     stop_radius: 0.5
     mass: 0.8
-    health: 80
+    health: 40
     hull_radius: 50
     combat_targetable: true
+    visual_scale: 0.75
     combat:
       acquisition_range: 1200
       on_near_enemy_strategy: approach
@@ -360,4 +362,30 @@ entity_types:
       cost_per_minute:
         energy: 2.5
     builds:
-      - entity_type_id: defense_pilon_child
+      - entity_type_id: defense_pylon_v2
+  collector_solar_v2:
+    fog_memory: forget_when_hidden
+    speed: 20
+    stop_radius: 1
+    mass: 500
+    health: 100
+    hull_radius: 12
+    combat_targetable: true
+    visual_scale: 1.25
+    sensor:
+      range: 400
+      cost_per_minute:
+        energy: 0.1
+    build_cost:
+      minerals: 100
+      energy: 50
+    radiation_shielding:
+      stellar_heat:
+        distance_offset: 90
+        damage_multiplier: 0.1
+    collector:
+      collects:
+        - energy
+      proximity_rate_per_second: 15
+      transport_rate_per_second: 0
+      carry_capacity: 0

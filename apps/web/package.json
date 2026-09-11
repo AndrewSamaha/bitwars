@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:no-turbo": "next dev",
-    "dev:turbo": "next dev --turbopack",
+    "dev": "pnpm --filter @bitwars/content build && next dev",
+    "dev:no-turbo": "pnpm --filter @bitwars/content build && next dev",
+    "dev:turbo": "pnpm --filter @bitwars/content build && next dev --turbopack",
     "storybook": "storybook dev -p 6006",
     "storybook:build": "storybook build",
     "build": "next build --turbopack",
