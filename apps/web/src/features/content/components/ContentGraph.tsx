@@ -79,6 +79,12 @@ export default function ContentGraph() {
   const linkIds = useMemo(() => new Set(links.map(({ source, target }) => `${source}:${target}`)), [links]);
   const selected = entities.find((entity) => entity.id === selectedId) ?? entities[0];
 
+  useEffect(() => {
+    fetch("/api/content/entities").then((response) => response.ok ? response.json() : null).then((data) => {
+      if (data?.entities?.length) setEntities(data.entities);
+    }).catch(() => {});
+  }, []);
+
   async function savingFetch(input: RequestInfo | URL, init?: RequestInit) {
     setSaving(true);
     try { return await fetch(input, init); } finally { setSaving(false); }

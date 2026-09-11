@@ -371,11 +371,11 @@ entity_types:
       attacks:
         - id: laser
           type: laser
-          range: 550
+          range: 500
           damage: 3
-          cooldown_ticks: 66
+          cooldown_ticks: 67
           priority: 0
     sensor:
-      range: 550
+      range: 500
       cost_per_minute:
-        energy: 2.75
+        energy: 2.5
