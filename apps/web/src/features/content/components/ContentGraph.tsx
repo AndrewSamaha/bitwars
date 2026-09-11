@@ -2,6 +2,7 @@
 
 import { ENTITY_CONTENT } from "@bitwars/content";
 import YamlEditor from "@/features/content/components/YamlEditor";
+import { Pencil } from "lucide-react";
 import {
   forceCenter,
   forceCollide,
@@ -68,11 +69,20 @@ export default function ContentGraph() {
   const [selectedId, setSelectedId] = useState<string>(INITIAL_ENTITIES[0]?.id ?? "");
   const [positions, setPositions] = useState<Record<string, Point>>(() => initialPositions(INITIAL_ENTITIES));
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [assetVersion, setAssetVersion] = useState(0);
+  const [draftDefinition, setDraftDefinition] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const graphRef = useRef<HTMLDivElement>(null);
+  const assetInputRef = useRef<HTMLInputElement>(null);
   const simulationRef = useRef<Simulation<GraphNode, undefined> | null>(null);
   const links = useMemo(() => linksFor(entities), [entities]);
   const linkIds = useMemo(() => new Set(links.map(({ source, target }) => `${source}:${target}`)), [links]);
   const selected = entities.find((entity) => entity.id === selectedId) ?? entities[0];
+
+  async function savingFetch(input: RequestInfo | URL, init?: RequestInit) {
+    setSaving(true);
+    try { return await fetch(input, init); } finally { setSaving(false); }
+  }
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -119,7 +129,7 @@ export default function ContentGraph() {
     for (let index = 2; entities.some((entity) => entity.id === childId); index += 1) childId = `${parent.id}_child_${index}`;
     const presentFields = new Set([...parent.definition.matchAll(/^([a-z_]+):/gm)].map((match) => match[1]));
     const definition = `${parent.definition.trimEnd()}\n${ENTITY_FIELDS.filter((field) => !presentFields.has(field)).map((field) => `${field}: null`).join("\n")}`.trim();
-    const response = await fetch("/api/content/entities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentId, childId, definition }) });
+    const response = await savingFetch("/api/content/entities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentId, childId, definition }) });
     if (!response.ok) return;
     setEntities((current) => current.flatMap((entity) => entity.id === parentId
       ? [{ ...entity, builds: [...entity.builds, childId], definition: addBuild(entity.definition, childId) }, { id: childId, builds: [...parent.builds], definition }]
@@ -149,8 +159,27 @@ export default function ContentGraph() {
     simulationRef.current?.alphaTarget(0);
   }
 
+  async function uploadAsset(file: File) {
+    if (!selected) return;
+    const body = new FormData();
+    body.set("file", file);
+    const response = await savingFetch(`/api/content/entities/${selected.id}/asset`, { method: "POST", body });
+    if (response.ok) setAssetVersion(Date.now());
+  }
+
+  async function saveDraft() {
+    if (!selected || draftDefinition === null) return;
+    const response = await savingFetch(`/api/content/entities/${selected.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ definition: draftDefinition }) });
+    if (!response.ok) return;
+    setEntities((current) => current.map((entity) => entity.id === selected.id ? { ...entity, definition: draftDefinition } : entity));
+    setDraftDefinition(null);
+  }
+
   return (
     <main className="flex min-h-screen bg-slate-950 text-slate-100">
+      {saving && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 backdrop-blur-sm">
+        <div className="rounded-lg border border-cyan-400/40 bg-slate-900 px-5 py-3 text-sm text-cyan-300">Saving…</div>
+      </div>}
       <section className="min-w-0 flex-1 p-6 lg:p-10">
         <header className="mb-8">
           <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars content</p>
@@ -193,7 +222,7 @@ export default function ContentGraph() {
                 <button
                   className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"}`}
                   key={entity.id}
-                  onClick={() => setSelectedId(entity.id)}
+                  onClick={() => { setSelectedId(entity.id); setDraftDefinition(null); }}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     const bounds = graphRef.current?.getBoundingClientRect();
@@ -209,7 +238,7 @@ export default function ContentGraph() {
                   style={{ left: position?.x, top: position?.y }}
                   type="button"
                 >
-                  <img alt="" className="pointer-events-none mb-1 size-12 select-none object-contain" draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png`} />
+                  <img alt="" className="pointer-events-none mb-1 size-12 select-none object-contain" draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} />
                   <span className="pointer-events-none text-sm font-medium">{entity.id}</span>
                   <span className="pointer-events-none mt-1 text-xs text-slate-400">{entity.builds.length ? `Builds ${entity.builds.length}` : "No builds"}</span>
                 </button>
@@ -225,12 +254,22 @@ export default function ContentGraph() {
       <aside className="w-[42rem] shrink-0 border-l border-slate-700 bg-slate-900 p-6">
         {selected && <>
           <div className="flex items-center gap-3 border-b border-slate-700 pb-5">
-            <img alt="" className="size-14 object-contain" src={`/assets/${selected.id}/idle.png`} />
+            <button className="relative" onClick={() => assetInputRef.current?.click()} type="button">
+              <img alt="" className="size-14 object-contain" src={`/assets/${selected.id}/idle.png?v=${assetVersion}`} />
+              <Pencil className="absolute -right-1 -bottom-1 size-5 rounded-full bg-cyan-400 p-1 text-slate-950" />
+            </button>
+            <input accept="image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadAsset(file); event.target.value = ""; }} ref={assetInputRef} type="file" />
             <div><p className="text-sm text-slate-400">Entity definition</p><h2 className="text-xl font-semibold">{selected.id}</h2></div>
           </div>
-          <p className="mt-5 text-sm font-medium text-slate-300">Fields</p>
+          <div className="mt-5 flex items-center justify-between">
+            <p className="text-sm font-medium text-slate-300">Fields</p>
+            {draftDefinition !== null && draftDefinition !== selected.definition && <div className="flex gap-2">
+              <button className="rounded bg-cyan-400 px-3 py-1 text-sm font-medium text-slate-950" onClick={saveDraft} type="button">Save</button>
+              <button className="rounded border border-slate-600 px-3 py-1 text-sm" onClick={() => setDraftDefinition(null)} type="button">Cancel</button>
+            </div>}
+          </div>
           <div className="mt-3 overflow-hidden rounded-lg border border-slate-700">
-            <YamlEditor id={selected.id} onChange={(definition) => setEntities((current) => current.map((entity) => entity.id === selected.id ? { ...entity, definition } : entity))} value={selected.definition} />
+            <YamlEditor id={selected.id} onChange={setDraftDefinition} value={draftDefinition ?? selected.definition} />
           </div>
         </>}
       </aside>
