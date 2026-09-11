@@ -105,7 +105,7 @@ export function resolveParticleFlowEffects(
     }
   }
 
-  const collectionEffect = world.getEntityType(entityTypeId)?.collection_effect;
+  const collectionEffect = world.getEntityType(entityTypeId)?.collector?.vfx;
   if (collectionEffect === "solar_proximity" && activity === "proximity_collecting") {
     const source = findNearestResourceSource(world, "energy", pos.x, pos.y);
     return source ? [{

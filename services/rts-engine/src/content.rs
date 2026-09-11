@@ -88,9 +88,6 @@ pub struct EntityTypeDef {
     /// Units this entity type can produce.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub builds: Vec<BuildOptionDef>,
-    /// Client presentation profile for collection particle effects.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub collection_effect: Option<CollectionEffect>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -221,6 +218,9 @@ pub enum CollectionMode {
 /// M8: Collector capabilities and rates.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CollectorDef {
+    /// Client presentation profile for collection particle effects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vfx: Option<CollectionEffect>,
     /// Resource type ids this collector can gather.
     #[serde(default)]
     pub collects: Vec<String>,

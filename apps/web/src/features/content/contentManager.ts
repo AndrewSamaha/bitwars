@@ -69,7 +69,9 @@ export type EntityTypeDef = {
     entity_type_id: string;
     spend_rates?: Record<string, number>;
   }>;
-  collection_effect?: "solar_proximity" | "mineral_transport";
+  collector?: {
+    vfx?: "solar_proximity" | "mineral_transport";
+  };
   radiation_sources?: Array<{
     radiation_type: string;
     min_effective_distance_border_color?: string;

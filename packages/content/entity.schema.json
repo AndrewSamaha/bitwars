@@ -19,17 +19,6 @@
         "$ref": "#/$defs/BuildOptionDef"
       }
     },
-    "collection_effect": {
-      "description": "Client presentation profile for collection particle effects.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/CollectionEffect"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "collector": {
       "description": "M8: Optional collection profile for collector-capable entities.",
       "anyOf": [
@@ -308,6 +297,17 @@
           "type": "number",
           "format": "float",
           "default": 8.0
+        },
+        "vfx": {
+          "description": "Client presentation profile for collection particle effects.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CollectionEffect"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
