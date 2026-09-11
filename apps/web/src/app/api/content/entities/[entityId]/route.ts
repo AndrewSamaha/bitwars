@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { parseDocument, stringify } from "yaml";
@@ -11,6 +11,10 @@ function omitNulls(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(omitNulls).filter((item) => item !== null);
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null).map(([key, item]) => [key, omitNulls(item)]));
   return value;
+}
+
+async function exists(path: string) {
+  return access(path).then(() => true).catch(() => false);
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ entityId: string }> }) {
@@ -26,6 +30,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ enti
   content.entity_types[newId] = omitNulls(entity.toJS());
   if (newId !== entityId) delete content.entity_types[entityId];
   const spawn = parseDocument(await readFile(spawnPath, "utf8"));
+  if (newId !== entityId) {
+    const assetPaths = ["../../packages/content/assets", "public/assets"].map((root) => ({
+      from: path.resolve(process.cwd(), root, entityId),
+      to: path.resolve(process.cwd(), root, newId),
+    }));
+    for (const { from, to } of assetPaths) {
+      if (await exists(from) && await exists(to)) return NextResponse.json({ error: "Target asset path already exists" }, { status: 409 });
+    }
+    for (const { from, to } of assetPaths) {
+      if (await exists(from)) {
+        await rename(from, to);
+      }
+    }
+  }
   await Promise.all([writeFile(contentPath, stringify(content)), writeFile(spawnPath, stringify(replace(spawn.toJS())))]);
   return NextResponse.json({ ok: true, id: newId });
 }
