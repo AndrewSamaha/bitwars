@@ -88,7 +88,14 @@ pub struct EntityTypeDef {
     /// Units this entity type can produce.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub builds: Vec<BuildOptionDef>,
+    /// Client presentation profile for collection particle effects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collection_effect: Option<CollectionEffect>,
 }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionEffect { SolarProximity, MineralTransport }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

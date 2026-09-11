@@ -14,12 +14,10 @@ export type ParticleFlowEffect = {
   showTargetHalo?: boolean;
 };
 
-const SOLAR_COLLECTOR_TYPE = "collector_solar";
 const SOLAR_COLLECTION_COLOR = 0xf4_d3_5e;
 const SOLAR_COLLECTION_GLOW_COLOR = 0xff_f2_b2;
 const SOLAR_COLLECTION_CORE_COLOR = 0xff_fb_db;
 const SOLAR_COLLECTION_SIZE_MULTIPLIER = 3;
-const MINERAL_COLLECTOR_TYPE = "worker";
 const MINERAL_COLLECTION_COLOR = 0x6f_c8_ff;
 const MINERAL_COLLECTION_GLOW_COLOR = 0xb9_e7_ff;
 const MINERAL_COLLECTION_CORE_COLOR = 0xe7_f7_ff;
@@ -107,7 +105,8 @@ export function resolveParticleFlowEffects(
     }
   }
 
-  if (entityTypeId === SOLAR_COLLECTOR_TYPE && activity === "proximity_collecting") {
+  const collectionEffect = world.getEntityType(entityTypeId)?.collection_effect;
+  if (collectionEffect === "solar_proximity" && activity === "proximity_collecting") {
     const source = findNearestResourceSource(world, "energy", pos.x, pos.y);
     return source ? [{
       key: `solar-collection-flow:${entity.id}`, kind: "particle_flow", sourceWorldPos: source,
@@ -118,7 +117,7 @@ export function resolveParticleFlowEffects(
   }
 
   if (
-    entityTypeId === MINERAL_COLLECTOR_TYPE &&
+    collectionEffect === "mineral_transport" &&
     activity === "gathering" &&
     entity.collector_state?.resource_type === "minerals"
   ) {

@@ -32,7 +32,7 @@ export const ENTITY_CONTENT = [
     "builds": [
       "collector_solar_v2"
     ],
-    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  collects:\n    - energy\n  proximity_rate_per_second: 12\n  transport_rate_per_second: 0\n  carry_capacity: 0\nbuilds:\n  - entity_type_id: collector_solar_v2"
+    "definition": "collection_effect: solar_proximity\nfog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  collects:\n    - energy\n  proximity_rate_per_second: 12\n  transport_rate_per_second: 0\n  carry_capacity: 0\nbuilds:\n  - entity_type_id: collector_solar_v2"
   },
   {
     "id": "worker",
@@ -42,7 +42,7 @@ export const ENTITY_CONTENT = [
       "defense_pylon",
       "factory"
     ],
-    "definition": "fog_memory: forget_when_hidden\nspeed: 90\nstop_radius: 0.75\nmass: 1\nhealth: 200\nhull_radius: 50\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat:\n  acquisition_range: 250\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: dismantle\n      type: dismantle\n      damage: 4\n      cooldown_ticks: 60\n      priority: 100\n      contact_tolerance: 2\nbuild_cost:\n  minerals: 50\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  food: 2\ncollector:\n  collects:\n    - minerals\n    - food\n  transport_rate_per_second: 10\n  carry_capacity: 120\n  deposit_entity_types:\n    - processor\n    - habitat\nrepair:\n  range: 150\n  cost_per_min:\n    energy: 60\n    minerals: 60\n  efficiency: 1\nbuilds:\n  - entity_type_id: collector_solar\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: factory\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2"
+    "definition": "collection_effect: mineral_transport\nfog_memory: forget_when_hidden\nspeed: 90\nstop_radius: 0.75\nmass: 1\nhealth: 200\nhull_radius: 50\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat:\n  acquisition_range: 250\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: dismantle\n      type: dismantle\n      damage: 4\n      cooldown_ticks: 60\n      priority: 100\n      contact_tolerance: 2\nbuild_cost:\n  minerals: 50\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  food: 2\ncollector:\n  collects:\n    - minerals\n    - food\n  transport_rate_per_second: 10\n  carry_capacity: 120\n  deposit_entity_types:\n    - processor\n    - habitat\nrepair:\n  range: 150\n  cost_per_min:\n    energy: 60\n    minerals: 60\n  efficiency: 1\nbuilds:\n  - entity_type_id: collector_solar\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: factory\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2"
   },
   {
     "id": "habitat",
@@ -90,6 +90,6 @@ export const ENTITY_CONTENT = [
   {
     "id": "collector_solar_v2",
     "builds": [],
-    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\ncombat_targetable: true\nvisual_scale: 1.25\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  collects:\n    - energy\n  proximity_rate_per_second: 15\n  transport_rate_per_second: 0\n  carry_capacity: 0"
+    "definition": "collection_effect: solar_proximity\nfog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\ncombat_targetable: true\nvisual_scale: 1.25\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  collects:\n    - energy\n  proximity_rate_per_second: 15\n  transport_rate_per_second: 0\n  carry_capacity: 0"
   }
 ] as const;

@@ -19,6 +19,17 @@
         "$ref": "#/$defs/BuildOptionDef"
       }
     },
+    "collection_effect": {
+      "description": "Client presentation profile for collection particle effects.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CollectionEffect"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "collector": {
       "description": "M8: Optional collection profile for collector-capable entities.",
       "anyOf": [
@@ -243,6 +254,13 @@
       },
       "required": [
         "entity_type_id"
+      ]
+    },
+    "CollectionEffect": {
+      "type": "string",
+      "enum": [
+        "solar_proximity",
+        "mineral_transport"
       ]
     },
     "CollectionMode": {

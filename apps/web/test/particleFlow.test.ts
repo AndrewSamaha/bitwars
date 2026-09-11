@@ -7,7 +7,7 @@ it.each([
   ["worker", "gathering", "minerals", "minerals"],
 ])("keeps simultaneous %s flows distinct in the world overlay", (type, activity, resource, sourceType) => {
   const source: Entity = { id: 1, entity_type_id: sourceType, pos: { x: 0, y: 0 } };
-  const world = { entities: () => [source], getEntityType: () => undefined };
+  const world = { entities: () => [source], getEntityType: (id: string) => id === "collector_solar" ? { collection_effect: "solar_proximity" as const } : id === "worker" ? { collection_effect: "mineral_transport" as const } : undefined };
   const collectors: Entity[] = [2, 3].map((id) => ({
     id,
     entity_type_id: type,

@@ -91,6 +91,7 @@ entity_types:
       min_effective_distance: 20
       max_effective_distance: 50
   collector_solar:
+    collection_effect: solar_proximity
     fog_memory: forget_when_hidden
     speed: 20
     stop_radius: 1
@@ -118,6 +119,7 @@ entity_types:
     builds:
       - entity_type_id: collector_solar_v2
   worker:
+    collection_effect: mineral_transport
     fog_memory: forget_when_hidden
     speed: 90
     stop_radius: 0.75
@@ -364,6 +366,7 @@ entity_types:
     builds:
       - entity_type_id: defense_pylon_v2
   collector_solar_v2:
+    collection_effect: solar_proximity
     fog_memory: forget_when_hidden
     speed: 20
     stop_radius: 1
