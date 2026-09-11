@@ -151,8 +151,8 @@ entity_types:
       collects:
         - minerals
         - food
-      transport_rate_per_second: 10
-      carry_capacity: 120
+      transport_rate_per_second: 8
+      carry_capacity: 100
       deposit_entity_types:
         - processor
         - habitat
