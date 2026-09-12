@@ -272,6 +272,10 @@ entity_types:
         spend_rates:
           minerals: 2
           energy: 2
+      - entity_type_id: defense_pylon
+        spend_rates:
+          minerals: 2
+          energy: 2
   scout:
     fog_memory: forget_when_hidden
     speed: 500
