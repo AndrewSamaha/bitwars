@@ -97,6 +97,7 @@ entity_types:
     mass: 500
     health: 100
     hull_radius: 12
+    visual_scale: 0.9
     combat_targetable: true
     sensor:
       range: 400
@@ -288,6 +289,8 @@ entity_types:
       range: 5000
       cost_per_minute:
         energy: 2.5
+    builds:
+      - entity_type_id: fighter_v1
   raider:
     fog_memory: forget_when_hidden
     speed: 110
@@ -337,6 +340,8 @@ entity_types:
       range: 500
       cost_per_minute:
         energy: 2.5
+    builds:
+      - entity_type_id: defense_pylon_v3
   defense_pylon:
     fog_memory: forget_when_hidden
     build_cost:
@@ -392,3 +397,55 @@ entity_types:
       proximity_rate_per_second: 15
       transport_rate_per_second: 0
       carry_capacity: 0
+  defense_pylon_v3:
+    fog_memory: forget_when_hidden
+    build_cost:
+      minerals: 100
+      energy: 50
+    maintenance_cost_per_minute:
+      energy: 200
+    speed: 5
+    stop_radius: 0.5
+    mass: 1
+    health: 500
+    hull_radius: 15
+    combat:
+      acquisition_range: 500
+      on_near_enemy_strategy: stay
+      attacks:
+        - id: laser
+          type: laser
+          range: 700
+          damage: 10
+          cooldown_ticks: 120
+          priority: 0
+    sensor:
+      range: 700
+      cost_per_minute:
+        energy: 2.5
+  fighter_v1:
+    fog_memory: forget_when_hidden
+    speed: 400
+    stop_radius: 0.5
+    mass: 0.6
+    health: 60
+    hull_radius: 10
+    combat_targetable: true
+    build_cost:
+      minerals: 75
+      energy: 50
+    combat:
+      acquisition_range: 450
+      on_near_enemy_strategy: approach
+      attacks:
+        - id: laser
+          type: laser
+          range: 120
+          damage: 2
+          cooldown_ticks: 75
+          priority: 0
+    sensor:
+      range: 2000
+      cost_per_minute:
+        energy: 2.5
+    visual_scale: 1
