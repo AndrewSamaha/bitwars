@@ -1,0 +1,578 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EntityTypeDef",
+  "description": "Per-entity-type definition loaded from the content YAML.",
+  "type": "object",
+  "properties": {
+    "build_cost": {
+      "description": "Resources required to create one instance of this entity type.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "format": "float"
+      }
+    },
+    "builds": {
+      "description": "Units this entity type can produce.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/BuildOptionDef"
+      }
+    },
+    "collector": {
+      "description": "M8: Optional collection profile for collector-capable entities.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CollectorDef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "combat": {
+      "description": "Optional autonomous-combat profile. When present, the server acquires\nnearby hostile entities and drives the unit according to its strategy.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CombatDef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "combat_targetable": {
+      "description": "Whether autonomous combat may select this entity type as a target.\nDefaults to false so scenery and resource entities are safe by default.",
+      "type": "boolean"
+    },
+    "fog_memory": {
+      "description": "Client behavior when this entity leaves sensor coverage.",
+      "$ref": "#/$defs/FogMemory"
+    },
+    "health": {
+      "type": "number",
+      "format": "float"
+    },
+    "hull_radius": {
+      "description": "Physical hull radius used by contact attacks. This is deliberately\nseparate from visual scale and movement-order stop radius.",
+      "type": "number",
+      "format": "float",
+      "default": 0.0
+    },
+    "maintenance_cost_per_minute": {
+      "description": "Per-resource upkeep charged to the entity owner, in units per minute.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "format": "float"
+      }
+    },
+    "mass": {
+      "type": "number",
+      "format": "float"
+    },
+    "radiation_shielding": {
+      "description": "Per-radiation-type shielding modifiers for this entity type.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/RadiationShieldingDef"
+      },
+      "default": {}
+    },
+    "radiation_sources": {
+      "description": "Environmental hazard emitters attached to this entity type.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RadiationSourceDef"
+      }
+    },
+    "refinery": {
+      "description": "M8: Optional refinery/processor profile for transport deposits.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RefineryDef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "repair": {
+      "description": "Optional resource-powered repair ability.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RepairDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "resource_node": {
+      "description": "M8: Optional resource-node profile for collectible source entities.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResourceNodeDef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "sensor": {
+      "description": "Optional area sensor. Its operating costs are charged continuously.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SensorDef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "speed": {
+      "type": "number",
+      "format": "float"
+    },
+    "stop_radius": {
+      "type": "number",
+      "format": "float"
+    },
+    "suppress_hover": {
+      "description": "Whether the client should suppress hover UI for this entity type.",
+      "type": "boolean"
+    },
+    "upgrades": {
+      "description": "Entity types this entity may transform into through an upgrade channel.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/UpgradeOptionDef"
+      }
+    },
+    "visibility_range": {
+      "description": "Target-side detection range used to extend a player's sensor coverage.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "float"
+    },
+    "visual_scale": {
+      "description": "Client-only multiplier for the entity's rendered size.",
+      "type": "number",
+      "format": "float"
+    },
+    "z_index": {
+      "description": "Draw order within the world layer. Higher values render in front.",
+      "type": "integer",
+      "format": "int32"
+    }
+  },
+  "required": [
+    "fog_memory",
+    "speed",
+    "stop_radius",
+    "mass",
+    "health"
+  ],
+  "$defs": {
+    "AttackDef": {
+      "type": "object",
+      "properties": {
+        "contact_tolerance": {
+          "description": "Extra slack beyond two touching hulls for a dismantle attack.",
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "cooldown_ticks": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "damage": {
+          "type": "number",
+          "format": "float"
+        },
+        "id": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "integer",
+          "format": "int32",
+          "default": 0
+        },
+        "range": {
+          "description": "Maximum center-to-center range for a ranged weapon.",
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "type": {
+          "$ref": "#/$defs/AttackType"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "damage",
+        "cooldown_ticks"
+      ]
+    },
+    "AttackType": {
+      "type": "string",
+      "enum": [
+        "laser",
+        "dismantle"
+      ]
+    },
+    "BuildOptionDef": {
+      "description": "One content-defined production option available to a builder.",
+      "type": "object",
+      "properties": {
+        "entity_type_id": {
+          "type": "string"
+        },
+        "spend_rates": {
+          "description": "Resource conversion rates. A missing required resource defaults to 1/s.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "float"
+          },
+          "default": {}
+        }
+      },
+      "required": [
+        "entity_type_id"
+      ]
+    },
+    "CollectionEffect": {
+      "type": "string",
+      "enum": [
+        "solar_proximity",
+        "mineral_transport"
+      ]
+    },
+    "CollectionMode": {
+      "description": "M8: Collection mode for a resource source.",
+      "type": "string",
+      "enum": [
+        "transport",
+        "proximity"
+      ]
+    },
+    "CollectorDef": {
+      "description": "M8: Collector capabilities and rates.",
+      "type": "object",
+      "properties": {
+        "carry_capacity": {
+          "description": "Max carried amount for transport mode before deposit run.",
+          "type": "number",
+          "format": "float",
+          "default": 100.0
+        },
+        "collects": {
+          "description": "Resource type ids this collector can gather.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "deposit_entity_types": {
+          "description": "Optional allowed refinery entity type ids for transport deposits.\nEmpty means any refinery that accepts the resource.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "proximity_rate_per_second": {
+          "description": "Units/second gathered in proximity mode while in effective band.",
+          "type": "number",
+          "format": "float",
+          "default": 6.0
+        },
+        "transport_rate_per_second": {
+          "description": "Units/second gathered in transport mode while in gather band.",
+          "type": "number",
+          "format": "float",
+          "default": 8.0
+        },
+        "vfx": {
+          "description": "Client presentation profile for collection particle effects.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CollectionEffect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "CombatDef": {
+      "description": "Data needed for server-authoritative autonomous combat.\n\nTimings are ticks, rather than seconds, so a combat replay is a pure\nfunction of the content version and tick stream.",
+      "type": "object",
+      "properties": {
+        "acquisition_range": {
+          "description": "Maximum distance at which this unit acquires a hostile target.",
+          "type": "number",
+          "format": "float"
+        },
+        "attacks": {
+          "description": "Weapons available to this entity. Their stable IDs also key cooldowns.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AttackDef"
+          }
+        },
+        "on_near_enemy_strategy": {
+          "description": "How this unit responds after acquiring a nearby hostile.",
+          "$ref": "#/$defs/NearEnemyStrategy",
+          "default": "approach"
+        }
+      },
+      "required": [
+        "acquisition_range",
+        "attacks"
+      ]
+    },
+    "FogMemory": {
+      "type": "string",
+      "enum": [
+        "retain_last_known",
+        "forget_when_hidden"
+      ]
+    },
+    "NearEnemyStrategy": {
+      "description": "Autonomous movement response to a nearby hostile entity.",
+      "oneOf": [
+        {
+          "description": "Move into weapon range, then fire. This preserves existing NPC behavior.",
+          "type": "string",
+          "const": "approach"
+        },
+        {
+          "description": "Move directly away from the nearest hostile without firing.",
+          "type": "string",
+          "const": "flee"
+        },
+        {
+          "description": "Do not move; fire only if the hostile is already in weapon range.",
+          "type": "string",
+          "const": "stay"
+        }
+      ]
+    },
+    "RadiationShieldingDef": {
+      "description": "Per-radiation-type shielding profile for an entity type.",
+      "type": "object",
+      "properties": {
+        "damage_multiplier": {
+          "description": "Multiplies incoming damage after distance adjustment.",
+          "type": "number",
+          "format": "float",
+          "default": 1.0
+        },
+        "distance_offset": {
+          "description": "Acts like extra standoff distance for hazard evaluation.",
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        }
+      }
+    },
+    "RadiationSourceDef": {
+      "description": "Environmental radiation emitted by an entity type.",
+      "type": "object",
+      "properties": {
+        "damage_per_second": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "full_damage_distance": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "full_damage_distance_border_color": {
+          "description": "Hex color for the full-damage-distance range outline.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "full_damage_distance_fill_color": {
+          "description": "Hex color for the full-damage-distance range fill.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_effective_distance": {
+          "type": "number",
+          "format": "float",
+          "default": 120.0
+        },
+        "max_effective_distance_border_color": {
+          "description": "Hex color for the max-effective-distance range outline.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_effective_distance_fill_color": {
+          "description": "Hex color for the max-effective-distance range fill.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "min_effective_distance": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "min_effective_distance_border_color": {
+          "description": "Hex color for the min-effective-distance range outline.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "min_effective_distance_fill_color": {
+          "description": "Hex color for the min-effective-distance range fill.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "radiation_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "radiation_type"
+      ]
+    },
+    "RefineryDef": {
+      "description": "M8: Refinery/processor profile.",
+      "type": "object",
+      "properties": {
+        "accepts": {
+          "description": "Resource type ids this structure accepts for deposit.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "RepairDef": {
+      "type": "object",
+      "properties": {
+        "cost_per_min": {
+          "description": "Resource costs while actively repairing, in units per minute.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "efficiency": {
+          "description": "Health restored per total resource unit consumed.",
+          "type": "number",
+          "format": "float"
+        },
+        "range": {
+          "description": "Maximum center-to-center repair distance in world units.",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "range",
+        "cost_per_min",
+        "efficiency"
+      ]
+    },
+    "ResourceNodeDef": {
+      "description": "M8: Resource source profile for entity types that can be gathered from.",
+      "type": "object",
+      "properties": {
+        "collection_mode": {
+          "$ref": "#/$defs/CollectionMode"
+        },
+        "max_effective_distance": {
+          "type": "number",
+          "format": "float",
+          "default": 120.0
+        },
+        "min_effective_distance": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "resource_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_type",
+        "collection_mode"
+      ]
+    },
+    "SensorDef": {
+      "description": "Content-defined sensor available to any entity type.",
+      "type": "object",
+      "properties": {
+        "cost_per_minute": {
+          "description": "Per-resource operating cost, in units per minute.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "float"
+          }
+        },
+        "range": {
+          "description": "Circular detection radius in world units.",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "required": [
+        "range"
+      ]
+    },
+    "UpgradeOptionDef": {
+      "description": "One content-defined in-place transformation available to an entity.\n\nThe target type's `build_cost` supplies the resource cost. A missing\nrequired resource rate defaults to 1/s, matching production builds.",
+      "type": "object",
+      "properties": {
+        "entity_type_id": {
+          "type": "string"
+        },
+        "spend_rates": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "float"
+          },
+          "default": {}
+        }
+      },
+      "required": [
+        "entity_type_id"
+      ]
+    }
+  }
+}

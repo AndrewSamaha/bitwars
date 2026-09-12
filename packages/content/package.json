@@ -3,11 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "node scripts/generate-preload-entity-types.js"
+    "build": "node scripts/generate-preload-entity-types.js && cargo run --quiet --manifest-path ../../services/rts-engine/Cargo.toml --bin generate_content_schema -- entity.schema.json"
   },
   "exports": {
     ".": "./preload-entity-types.ts",
-    "./preload-entity-types": "./preload-entity-types.ts"
+    "./preload-entity-types": "./preload-entity-types.ts",
+    "./entity.schema.json": "./entity.schema.json"
   },
   "main": "./preload-entity-types.ts"
 }

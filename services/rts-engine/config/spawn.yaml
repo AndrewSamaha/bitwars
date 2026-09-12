@@ -1,48 +1,32 @@
-# Active spawn config: spawn on join + random loadout.
-# Set SPAWN_CONFIG_PATH to this file. No player entities spawn at match start;
-# when a player joins (first stream connect), the engine picks a procedural
-# spawn location and one loadout chosen at random from the loadouts list.
-#
-# global_neutral_fields: neutral entity fields generated once at world creation.
-# Each field has its own origin and standard deviation so types can be tuned independently.
-# min_entity_spawn_distance / max_entity_spawn_distance: controls spacing between newly spawned player-owned units.
-# loadouts: list of loadout options; each player gets one chosen at random.
-# neutrals_near_spawn: optional server-owned entities near each player's spawn.
-
 min_entity_spawn_distance: 200
 max_entity_spawn_distance: 300
 max_raiders: 150
-
-# Pool of loadouts; one is picked at random per player on join
 loadouts:
   - worker: 1
     collector_solar: 1
     habitat: 1
     scout: 1
     processor: 1
-
-# One-time global neutral fields. These are intentionally not recreated when
-# individual players join.
 global_neutral_fields:
   - type: star_yellow
     count: 100
-    origin: [0, 0]
+    origin:
+      - 0
+      - 0
     standard_deviation: 50000
   - type: theta
     count: 75
-    origin: [0, 0]
+    origin:
+      - 0
+      - 0
     standard_deviation: 50000
   - type: minerals
     count: 225
-    origin: [0, 0]
+    origin:
+      - 0
+      - 0
     standard_deviation: 50000
-
-# Optional: neutrals near each spawn (owner = "neutral")
 neutrals_near_spawn: []
-
-
-
-# M7: Starting resources granted to each player on spawn (resource_type_id → amount)
 starting_resources:
   food: 500
   minerals: 200

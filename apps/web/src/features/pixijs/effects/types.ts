@@ -11,5 +11,6 @@ export type RenderEffectsWorld = {
   getEntityType: (entityTypeId: string) => {
     resource_node?: { resource_type?: string };
     radiation_sources?: Array<{ max_effective_distance?: number }>;
+    collector?: { vfx?: "solar_proximity" | "mineral_transport" };
   } | undefined;
 };

@@ -5,10 +5,11 @@
 //! The YAML format is for human authoring only — all derived artifacts (hash,
 //! API responses, client bundles) use JSON.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A loaded content pack with entity and resource type definitions and a content hash.
@@ -22,7 +23,7 @@ pub struct ContentPack {
 }
 
 /// Per-entity-type definition loaded from the content YAML.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct EntityTypeDef {
     /// Client behavior when this entity leaves sensor coverage.
     pub fog_memory: FogMemory,
@@ -87,9 +88,19 @@ pub struct EntityTypeDef {
     /// Units this entity type can produce.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub builds: Vec<BuildOptionDef>,
+    /// Entity types this entity may transform into through an upgrade channel.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub upgrades: Vec<UpgradeOptionDef>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionEffect {
+    SolarProximity,
+    MineralTransport,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FogMemory {
     RetainLastKnown,
@@ -101,7 +112,7 @@ pub enum FogMemory {
 ///
 /// Timings are ticks, rather than seconds, so a combat replay is a pure
 /// function of the content version and tick stream.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CombatDef {
     /// Maximum distance at which this unit acquires a hostile target.
     pub acquisition_range: f32,
@@ -112,7 +123,7 @@ pub struct CombatDef {
     pub attacks: Vec<AttackDef>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AttackDef {
     pub id: String,
     #[serde(rename = "type")]
@@ -129,7 +140,7 @@ pub struct AttackDef {
     pub contact_tolerance: f32,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AttackType {
     Laser,
@@ -137,7 +148,7 @@ pub enum AttackType {
 }
 
 /// Autonomous movement response to a nearby hostile entity.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NearEnemyStrategy {
     /// Move into weapon range, then fire. This preserves existing NPC behavior.
@@ -150,7 +161,7 @@ pub enum NearEnemyStrategy {
 }
 
 /// One content-defined production option available to a builder.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct BuildOptionDef {
     pub entity_type_id: String,
     /// Resource conversion rates. A missing required resource defaults to 1/s.
@@ -158,8 +169,19 @@ pub struct BuildOptionDef {
     pub spend_rates: HashMap<String, f32>,
 }
 
+/// One content-defined in-place transformation available to an entity.
+///
+/// The target type's `build_cost` supplies the resource cost. A missing
+/// required resource rate defaults to 1/s, matching production builds.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct UpgradeOptionDef {
+    pub entity_type_id: String,
+    #[serde(default)]
+    pub spend_rates: HashMap<String, f32>,
+}
+
 /// Content-defined sensor available to any entity type.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SensorDef {
     /// Per-resource operating cost, in units per minute.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -168,7 +190,7 @@ pub struct SensorDef {
     pub range: f32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RepairDef {
     /// Maximum center-to-center repair distance in world units.
     pub range: f32,
@@ -203,7 +225,7 @@ fn is_false(value: &bool) -> bool {
 }
 
 /// M8: Collection mode for a resource source.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionMode {
     Transport,
@@ -211,8 +233,11 @@ pub enum CollectionMode {
 }
 
 /// M8: Collector capabilities and rates.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CollectorDef {
+    /// Client presentation profile for collection particle effects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vfx: Option<CollectionEffect>,
     /// Resource type ids this collector can gather.
     #[serde(default)]
     pub collects: Vec<String>,
@@ -232,7 +257,7 @@ pub struct CollectorDef {
 }
 
 /// M8: Resource source profile for entity types that can be gathered from.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ResourceNodeDef {
     pub resource_type: String,
     pub collection_mode: CollectionMode,
@@ -243,7 +268,7 @@ pub struct ResourceNodeDef {
 }
 
 /// M8: Refinery/processor profile.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RefineryDef {
     /// Resource type ids this structure accepts for deposit.
     #[serde(default)]
@@ -251,7 +276,7 @@ pub struct RefineryDef {
 }
 
 /// Environmental radiation emitted by an entity type.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RadiationSourceDef {
     pub radiation_type: String,
     /// Hex color for the min-effective-distance range outline.
@@ -283,7 +308,7 @@ pub struct RadiationSourceDef {
 }
 
 /// Per-radiation-type shielding profile for an entity type.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RadiationShieldingDef {
     /// Acts like extra standoff distance for hazard evaluation.
     #[serde(default)]
@@ -329,6 +354,8 @@ impl ContentPack {
         let file: ContentFile = serde_yaml::from_str(&raw)
             .with_context(|| format!("failed to parse content pack YAML: {}", path.display()))?;
 
+        validate_upgrades(&file.entity_types)?;
+
         let content_hash = canonical_hash(&file.entity_types, &file.resource_types)?;
 
         Ok(Self {
@@ -356,6 +383,67 @@ impl ContentPack {
     pub fn get_resource_type(&self, resource_type_id: &str) -> Option<&ResourceTypeDef> {
         self.resource_types.get(resource_type_id)
     }
+}
+
+/// Verify that upgrades form a one-way, content-valid progression graph.
+fn validate_upgrades(entity_types: &HashMap<String, EntityTypeDef>) -> Result<()> {
+    for (source_id, source) in entity_types {
+        let mut targets = HashSet::new();
+        for option in &source.upgrades {
+            if option.entity_type_id == *source_id {
+                anyhow::bail!("entity type {source_id} cannot upgrade to itself");
+            }
+            if !entity_types.contains_key(&option.entity_type_id) {
+                anyhow::bail!(
+                    "entity type {source_id} upgrades to unknown type {}",
+                    option.entity_type_id
+                );
+            }
+            if !targets.insert(&option.entity_type_id) {
+                anyhow::bail!(
+                    "entity type {source_id} declares duplicate upgrade target {}",
+                    option.entity_type_id
+                );
+            }
+            if option
+                .spend_rates
+                .values()
+                .any(|rate| !rate.is_finite() || *rate <= 0.0)
+            {
+                anyhow::bail!("entity type {source_id} has an invalid upgrade spend rate");
+            }
+        }
+    }
+
+    fn visit(
+        id: &str,
+        entity_types: &HashMap<String, EntityTypeDef>,
+        visiting: &mut HashSet<String>,
+        visited: &mut HashSet<String>,
+    ) -> Result<()> {
+        if visited.contains(id) {
+            return Ok(());
+        }
+        if !visiting.insert(id.to_string()) {
+            anyhow::bail!("upgrade graph contains a cycle at entity type {id}");
+        }
+        let source = entity_types
+            .get(id)
+            .expect("upgrade targets are validated before cycle detection");
+        for option in &source.upgrades {
+            visit(&option.entity_type_id, entity_types, visiting, visited)?;
+        }
+        visiting.remove(id);
+        visited.insert(id.to_string());
+        Ok(())
+    }
+
+    let mut visiting = HashSet::new();
+    let mut visited = HashSet::new();
+    for id in entity_types.keys() {
+        visit(id, entity_types, &mut visiting, &mut visited)?;
+    }
+    Ok(())
 }
 
 /// Compute a deterministic hash from entity and resource type definitions.
@@ -407,6 +495,7 @@ mod tests {
                 sensor: None,
                 visibility_range: None,
                 builds: Vec::new(),
+                upgrades: Vec::new(),
             },
         );
         types.insert(
@@ -434,6 +523,7 @@ mod tests {
                 sensor: None,
                 visibility_range: None,
                 builds: Vec::new(),
+                upgrades: Vec::new(),
             },
         );
 
@@ -472,6 +562,7 @@ mod tests {
                 sensor: None,
                 visibility_range: None,
                 builds: Vec::new(),
+                upgrades: Vec::new(),
             },
         );
         types_a.insert(
@@ -499,6 +590,7 @@ mod tests {
                 sensor: None,
                 visibility_range: None,
                 builds: Vec::new(),
+                upgrades: Vec::new(),
             },
         );
 
@@ -528,6 +620,7 @@ mod tests {
                 sensor: None,
                 visibility_range: None,
                 builds: Vec::new(),
+                upgrades: Vec::new(),
             },
         );
         types_b.insert(
@@ -555,6 +648,7 @@ mod tests {
                 sensor: None,
                 visibility_range: None,
                 builds: Vec::new(),
+                upgrades: Vec::new(),
             },
         );
 

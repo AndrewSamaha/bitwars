@@ -124,6 +124,13 @@ export default function GameStage() {
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
+            } : params.kind === "Upgrade" ? {
+              type: "Upgrade",
+              entity_id: params.entityId,
+              target_entity_type_id: params.targetEntityTypeId,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
             } : {
               type: "Repair",
               entity_id: params.entityId,
@@ -280,6 +287,7 @@ export default function GameStage() {
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
           for (const entity of game.world.with("pos", "entity_type_id").without("remembered")) {
+            if (String((entity as any).active_intent_kind).toLowerCase() === "upgrade") continue;
             const sources = contentManager.getEntityType(entity.entity_type_id ?? "")?.radiation_sources;
             drawRadiationRanges(radiationRangeGraphics, sources, entity.pos.x, entity.pos.y);
           }
@@ -480,7 +488,8 @@ export default function GameStage() {
 
         const sensorSources = () => {
           return getOwnedSensorSources(
-            game.world.with("pos", "entity_type_id").without("remembered"),
+            Array.from(game.world.with("pos", "entity_type_id").without("remembered"))
+              .filter((entity) => String((entity as any).active_intent_kind).toLowerCase() !== "upgrade"),
             myPlayerIdRef.current,
             (typeId) => contentManager.getEntityType(typeId)?.sensor?.range,
           );
@@ -618,7 +627,7 @@ export default function GameStage() {
         const refreshBuildProgress = (nowMs: number) => {
           if (buildProgressRequestInFlight || nowMs - lastBuildProgressPollAt < BUILD_PROGRESS_POLL_MS) return;
           const entityIds = Array.from(game.world.with("id"))
-            .filter((entity) => String((entity as any).active_intent_kind).toLowerCase() === "build")
+            .filter((entity) => ["build", "upgrade"].includes(String((entity as any).active_intent_kind).toLowerCase()))
             .map((entity) => String((entity as any).id));
           if (entityIds.length === 0) {
             buildProgressByEntity.clear();
@@ -865,7 +874,7 @@ export default function GameStage() {
             const isSelected = latestSelectorsRef.current.isSelected(id);
             const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildProgress = buildProgressByEntity.get(String((e as any).id));
-            const isBuilding = String((e as any).active_intent_kind).toLowerCase() === "build";
+            const isBuilding = ["build", "upgrade"].includes(String((e as any).active_intent_kind).toLowerCase());
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if (((e as any).hover || isSelected) && !suppressHover) {
               if (primary) (primary as any).tint = isOwned || isSystemOwner ? SELECTED_COLOR : NON_OWNED_TINT;
