@@ -264,6 +264,14 @@ entity_types:
         spend_rates:
           minerals: 2.2
           energy: 2.2
+      - entity_type_id: fighter_v1
+        spend_rates:
+          minerals: 2.2
+          energy: 2.2
+      - entity_type_id: worker
+        spend_rates:
+          minerals: 2
+          energy: 2
   scout:
     fog_memory: forget_when_hidden
     speed: 500
@@ -289,8 +297,6 @@ entity_types:
       range: 5000
       cost_per_minute:
         energy: 2.5
-    builds:
-      - entity_type_id: fighter_v1
   raider:
     fog_memory: forget_when_hidden
     speed: 110
@@ -440,8 +446,8 @@ entity_types:
       attacks:
         - id: laser
           type: laser
-          range: 120
-          damage: 2
+          range: 300
+          damage: 4
           cooldown_ticks: 75
           priority: 0
     sensor:

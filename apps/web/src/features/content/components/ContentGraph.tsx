@@ -20,6 +20,9 @@ type GraphNode = SimulationNodeDatum & { id: string; entity: Entity };
 type GraphLink = { source: string; target: string };
 
 const INITIAL_ENTITIES: Entity[] = ENTITY_CONTENT.map((entity) => ({ ...entity }));
+const DEFAULT_ZOOM = 0.85;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 1.4;
 const ENTITY_FIELDS = [...new Set(INITIAL_ENTITIES.flatMap((entity) =>
   [...entity.definition.matchAll(/^([a-z_]+):/gm)].map((match) => match[1]),
 ))];
@@ -73,9 +76,11 @@ export default function ContentGraph() {
   const [draftDefinition, setDraftDefinition] = useState<string | null>(null);
   const [draftName, setDraftName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const graphRef = useRef<HTMLDivElement>(null);
   const assetInputRef = useRef<HTMLInputElement>(null);
   const simulationRef = useRef<Simulation<GraphNode, undefined> | null>(null);
+  const layoutSizeRef = useRef<Point | null>(null);
   const links = useMemo(() => linksFor(entities), [entities]);
   const linkIds = useMemo(() => new Set(links.map(({ source, target }) => `${source}:${target}`)), [links]);
   const selected = entities.find((entity) => entity.id === selectedId) ?? entities[0];
@@ -84,6 +89,42 @@ export default function ContentGraph() {
     fetch("/api/content/entities").then((response) => response.ok ? response.json() : null).then((data) => {
       if (data?.entities?.length) setEntities(data.entities);
     }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const graph = graphRef.current;
+    const simulation = simulationRef.current;
+    const previousSize = layoutSizeRef.current;
+    if (!graph || !simulation || !previousSize) return;
+
+    const width = Math.max(graph.clientWidth, 832) / zoom;
+    const height = graph.clientHeight / zoom;
+    const dx = (width - previousSize.x) / 2;
+    const dy = (height - previousSize.y) / 2;
+    const nodes = simulation.nodes();
+    for (const node of nodes) {
+      node.x = (node.x ?? previousSize.x / 2) + dx;
+      node.y = (node.y ?? previousSize.y / 2) + dy;
+      if (node.fx !== null && node.fx !== undefined) node.fx += dx;
+      if (node.fy !== null && node.fy !== undefined) node.fy += dy;
+    }
+    simulation.force("center", forceCenter(width / 2, height / 2));
+    layoutSizeRef.current = { x: width, y: height };
+    setPositions(Object.fromEntries(nodes.map((node) => [node.id, {
+      x: Math.min(width - 64, Math.max(64, node.x ?? 64)),
+      y: Math.min(height - 64, Math.max(64, node.y ?? 64)),
+    }])));
+  }, [zoom]);
+
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      setZoom((current) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current * Math.exp(-event.deltaY * 0.001))));
+    };
+    graph.addEventListener("wheel", onWheel, { passive: false });
+    return () => graph.removeEventListener("wheel", onWheel);
   }, []);
 
   async function savingFetch(input: RequestInfo | URL, init?: RequestInit) {
@@ -98,8 +139,9 @@ export default function ContentGraph() {
     let simulation: Simulation<GraphNode, undefined> | null = null;
     const layout = () => {
       simulation?.stop();
-      const width = Math.max(graph.clientWidth, 832);
-      const height = graph.clientHeight;
+      const width = Math.max(graph.clientWidth, 832) / zoom;
+      const height = graph.clientHeight / zoom;
+      layoutSizeRef.current = { x: width, y: height };
       const nodes: GraphNode[] = entities.map((entity, index) => ({
         id: entity.id,
         entity,
@@ -114,8 +156,8 @@ export default function ContentGraph() {
         .force("center", forceCenter(width / 2, height / 2));
       simulationRef.current = simulation;
       simulation.on("tick", () => setPositions(Object.fromEntries(nodes.map((node) => [node.id, {
-        x: Math.min(width - 64, Math.max(64, node.x ?? 64)),
-        y: Math.min(height - 64, Math.max(64, node.y ?? 64)),
+        x: Math.min((layoutSizeRef.current?.x ?? width) - 64, Math.max(64, node.x ?? 64)),
+        y: Math.min((layoutSizeRef.current?.y ?? height) - 64, Math.max(64, node.y ?? 64)),
       }]))));
     };
 
@@ -151,8 +193,8 @@ export default function ContentGraph() {
     if (!bounds) return;
     const node = simulationRef.current?.nodes().find((candidate) => candidate.id === id);
     if (!node) return;
-    node.fx = event.clientX - bounds.left;
-    node.fy = event.clientY - bounds.top;
+    node.fx = (event.clientX - bounds.left) / zoom;
+    node.fy = (event.clientY - bounds.top) / zoom;
     simulationRef.current?.alphaTarget(0.25).restart();
   }
 
@@ -195,11 +237,12 @@ export default function ContentGraph() {
         <header className="mb-8">
           <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars content</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">Entity build graph</h1>
-          <p className="mt-2 text-slate-400">Drag sprites to arrange the force graph. Arrows show build relationships.</p>
+          <p className="mt-2 text-slate-400">Drag sprites to arrange the force graph. Scroll to zoom. Arrows show build relationships.</p>
         </header>
 
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
           <div ref={graphRef} className="relative h-[42rem] min-w-[52rem] overflow-hidden rounded-lg bg-slate-950/50">
+            <div className="absolute top-0 left-0" style={{ width: `${100 / zoom}%`, height: `${100 / zoom}%`, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full overflow-visible">
               <defs>
                 <marker id="build-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
@@ -238,7 +281,11 @@ export default function ContentGraph() {
                     event.preventDefault();
                     const bounds = graphRef.current?.getBoundingClientRect();
                     if (!bounds) return;
-                    setMenu({ id: entity.id, x: event.clientX - bounds.left, y: event.clientY - bounds.top });
+                    setMenu({
+                      id: entity.id,
+                      x: (event.clientX - bounds.left) / zoom,
+                      y: (event.clientY - bounds.top) / zoom,
+                    });
                   }}
                   onPointerDown={(event) => {
                     event.currentTarget.setPointerCapture(event.pointerId);
@@ -258,6 +305,7 @@ export default function ContentGraph() {
             {menu && <div className="absolute z-20 w-36 rounded-md border border-slate-600 bg-slate-900 p-1 shadow-xl" style={{ left: menu.x, top: menu.y }}>
               <button className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-800" onClick={() => createChild(menu.id)} type="button">Create child</button>
             </div>}
+            </div>
           </div>
         </div>
       </section>
