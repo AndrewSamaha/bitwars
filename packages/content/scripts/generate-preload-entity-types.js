@@ -21,9 +21,14 @@ function extractEntityTypes(yamlContent) {
   const finishCurrent = () => {
     if (!current) return;
     const definition = current.lines.map((line) => line.startsWith("    ") ? line.slice(4) : line).join("\n").trim();
+    const referencesFor = (field) => {
+      const block = definition.match(new RegExp(`^${field}:\\n((?: {2,}.*|\\s*)\\n)*`, "m"));
+      return block ? [...block[0].matchAll(/^\s*-\s+entity_type_id:\s*([^\s#]+)/gm)].map((match) => match[1]) : [];
+    };
     types.push({
       id: current.id,
-      builds: [...definition.matchAll(/^\s*-\s+entity_type_id:\s*([^\s#]+)/gm)].map((match) => match[1]),
+      builds: referencesFor("builds"),
+      upgrades: referencesFor("upgrades"),
       definition,
     });
     current = undefined;
@@ -60,10 +65,10 @@ function main() {
     throw new Error("No entity_types found in entities.yaml");
   }
   const knownIds = new Set(types.map(({ id }) => id));
-  for (const { id, builds } of types) {
-    for (const targetId of builds) {
+  for (const { id, builds, upgrades } of types) {
+    for (const targetId of [...builds, ...upgrades]) {
       if (!knownIds.has(targetId)) {
-        throw new Error(`${id} builds unknown entity type ${targetId}`);
+        throw new Error(`${id} references unknown entity type ${targetId}`);
       }
     }
   }

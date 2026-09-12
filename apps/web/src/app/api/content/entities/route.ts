@@ -18,6 +18,7 @@ export async function GET() {
   return NextResponse.json({ entities: Object.entries(entityTypes).map(([id, definition]: [string, any]) => ({
     id,
     builds: definition.builds?.map((build: { entity_type_id: string }) => build.entity_type_id) ?? [],
+    upgrades: definition.upgrades?.map((upgrade: { entity_type_id: string }) => upgrade.entity_type_id) ?? [],
     definition: stringify(definition).trim(),
   })) });
 }

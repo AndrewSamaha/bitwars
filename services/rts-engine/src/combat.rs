@@ -437,6 +437,7 @@ mod tests {
             sensor: None,
             visibility_range: None,
             builds: Vec::new(),
+            upgrades: Vec::new(),
         };
         let mut worker = raider.clone();
         worker.combat = None;

@@ -117,7 +117,7 @@ entity_types:
       proximity_rate_per_second: 12
       transport_rate_per_second: 0
       carry_capacity: 0
-    builds:
+    upgrades:
       - entity_type_id: collector_solar_v2
   worker:
     fog_memory: forget_when_hidden
@@ -346,7 +346,7 @@ entity_types:
       range: 500
       cost_per_minute:
         energy: 2.5
-    builds:
+    upgrades:
       - entity_type_id: defense_pylon_v3
   defense_pylon:
     fog_memory: forget_when_hidden
@@ -374,7 +374,7 @@ entity_types:
       range: 500
       cost_per_minute:
         energy: 2.5
-    builds:
+    upgrades:
       - entity_type_id: defense_pylon_v2
   collector_solar_v2:
     fog_memory: forget_when_hidden

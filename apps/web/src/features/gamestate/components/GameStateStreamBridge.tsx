@@ -480,9 +480,9 @@ export default function GameStateStreamBridge() {
               : Number(payload.serverTick ?? 0);
           const intentId = payload.intentId ?? "";
           const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
-          const isCompletedBuild =
+          const isCompletedConstruction =
             state === LIFECYCLE_STATE_FINISHED &&
-            intentQueue.getKindForClientCmd(clientCmdId) === "build";
+            ["build", "upgrade"].includes(intentQueue.getKindForClientCmd(clientCmdId) ?? "");
 
           intentQueue.onLifecycleEvent({
             clientCmdId,
@@ -496,7 +496,7 @@ export default function GameStateStreamBridge() {
           const entityKey =
             entityIdFromCmd != null ? String(entityIdFromCmd) : null;
 
-          if (isCompletedBuild && entityKey) {
+          if (isCompletedConstruction && entityKey) {
             const entity = byId.get(entityKey);
             if (entity) dispatchBuildCompleted(entity);
           }

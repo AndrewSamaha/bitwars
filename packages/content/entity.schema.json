@@ -147,6 +147,13 @@
       "description": "Whether the client should suppress hover UI for this entity type.",
       "type": "boolean"
     },
+    "upgrades": {
+      "description": "Entity types this entity may transform into through an upgrade channel.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/UpgradeOptionDef"
+      }
+    },
     "visibility_range": {
       "description": "Target-side detection range used to extend a player's sensor coverage.",
       "type": [
@@ -545,6 +552,26 @@
       },
       "required": [
         "range"
+      ]
+    },
+    "UpgradeOptionDef": {
+      "description": "One content-defined in-place transformation available to an entity.\n\nThe target type's `build_cost` supplies the resource cost. A missing\nrequired resource rate defaults to 1/s, matching production builds.",
+      "type": "object",
+      "properties": {
+        "entity_type_id": {
+          "type": "string"
+        },
+        "spend_rates": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "float"
+          },
+          "default": {}
+        }
+      },
+      "required": [
+        "entity_type_id"
       ]
     }
   }

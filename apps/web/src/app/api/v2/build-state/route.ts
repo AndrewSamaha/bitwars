@@ -34,7 +34,7 @@ export async function GET(request: Request) {
         const entityId = Number(entry?.entity_id);
         if (
           entry?.player_id !== playerId ||
-          entry?.intent_kind !== "build" ||
+        !["build", "upgrade"].includes(entry?.intent_kind) ||
           !requestedIds.has(entityId) ||
           typeof entry?.blueprint_id !== "string"
         ) continue;

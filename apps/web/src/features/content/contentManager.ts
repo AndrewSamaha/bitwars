@@ -69,6 +69,11 @@ export type EntityTypeDef = {
     entity_type_id: string;
     spend_rates?: Record<string, number>;
   }>;
+  /** Content-defined in-place transformations offered by this entity type. */
+  upgrades?: Array<{
+    entity_type_id: string;
+    spend_rates?: Record<string, number>;
+  }>;
   collector?: {
     vfx?: "solar_proximity" | "mineral_transport";
   };

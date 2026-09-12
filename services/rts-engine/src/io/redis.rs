@@ -36,7 +36,7 @@ pub struct EntityActiveIntent {
     /// Optional move target summary for reconnect/UI.
     #[serde(default)]
     pub move_target: Option<IntentPoint>,
-    /// Build-only UI summary, updated by the authoritative construction tick.
+    /// Construction target for build/upgrade UI, updated authoritatively.
     #[serde(default)]
     pub blueprint_id: Option<String>,
     #[serde(default)]
@@ -120,16 +120,34 @@ pub struct RedisClient {
 
 impl RedisClient {
     pub async fn script_debug_enabled(&mut self, owner: &str) -> anyhow::Result<bool> {
-        let value: Option<String> = self.conn.get(format!(
-            "rts:match:{}:script_debug_enabled:{}", self.game_id, owner)).await?;
+        let value: Option<String> = self
+            .conn
+            .get(format!(
+                "rts:match:{}:script_debug_enabled:{}",
+                self.game_id, owner
+            ))
+            .await?;
         Ok(value.as_deref() == Some("1"))
     }
 
-    pub async fn publish_script_debug(&mut self, owner: &str, snapshot: &serde_json::Value) -> anyhow::Result<()> {
+    pub async fn publish_script_debug(
+        &mut self,
+        owner: &str,
+        snapshot: &serde_json::Value,
+    ) -> anyhow::Result<()> {
         let data = serde_json::to_string(snapshot)?;
-        anyhow::ensure!(data.len() <= 2 * 1024 * 1024, "debug snapshot exceeds byte limit");
-        let _: () = self.conn.set_ex(format!(
-            "rts:match:{}:script_debug:{}", self.game_id, owner), data, 900).await?;
+        anyhow::ensure!(
+            data.len() <= 2 * 1024 * 1024,
+            "debug snapshot exceeds byte limit"
+        );
+        let _: () = self
+            .conn
+            .set_ex(
+                format!("rts:match:{}:script_debug:{}", self.game_id, owner),
+                data,
+                900,
+            )
+            .await?;
         Ok(())
     }
 
@@ -708,11 +726,12 @@ impl RedisClient {
         Ok(())
     }
 
-    /// Update the reconnect/UI summary for an in-progress build.
-    pub async fn update_build_progress(
+    /// Update the reconnect/UI summary for an in-progress construction channel.
+    pub async fn update_construction_progress(
         &mut self,
         entity_id: u64,
-        blueprint_id: &str,
+        intent_kind: &str,
+        target_entity_type_id: &str,
         progress: f32,
     ) -> anyhow::Result<()> {
         let key = self.active_intents_key();
@@ -721,7 +740,8 @@ impl RedisClient {
             return Ok(());
         };
         let mut entry: EntityActiveIntent = serde_json::from_str(&json)?;
-        entry.blueprint_id = Some(blueprint_id.to_string());
+        entry.intent_kind = intent_kind.to_string();
+        entry.blueprint_id = Some(target_entity_type_id.to_string());
         entry.progress = Some(progress.clamp(0.0, 1.0));
         let json = serde_json::to_string(&entry)?;
         let _: () = self.conn.hset(&key, &field, json).await?;

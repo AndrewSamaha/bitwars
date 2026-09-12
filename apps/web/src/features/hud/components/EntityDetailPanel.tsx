@@ -29,6 +29,7 @@ export default function EntityDetailPanel() {
   const selectedIdsKey = selectedEntities.join(",");
   const [, forceRerender] = useState(0);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
+  const [upgradeMenuOpen, setUpgradeMenuOpen] = useState(false);
   const [buildStateById, setBuildStateById] = useState<BuildStateById>({});
 
   // The ECS changes when the authoritative game stream applies a snapshot or
@@ -61,6 +62,7 @@ export default function EntityDetailPanel() {
 
   useEffect(() => {
     setBuildMenuOpen(false);
+    setUpgradeMenuOpen(false);
   }, [selectedIdsKey]);
 
   // Position the detail panel so it never overlaps the TerminalPanel
@@ -143,7 +145,13 @@ export default function EntityDetailPanel() {
   // Dynamic actions for a given entity.
   const getActionsForEntity = (entityId: string): ActionDef[] => {
     const entityTypeId = idToType.get(entityId) ?? "";
-    const canBuild = selectedEntities.length === 1 && (contentManager.getEntityType(entityTypeId)?.builds?.length ?? 0) > 0;
+    const entityDef = contentManager.getEntityType(entityTypeId);
+    const canBuild = selectedEntities.length === 1 && (entityDef?.builds?.length ?? 0) > 0;
+    const health = idToHealth.get(entityId);
+    const canUpgrade = selectedEntities.length === 1
+      && (entityDef?.upgrades?.length ?? 0) > 0
+      && typeof health === "number"
+      && health >= (entityDef?.health ?? Infinity);
     const canRepair = selectedEntities.length > 0 && selectedEntities.every((id) =>
       Boolean(contentManager.getEntityType(idToType.get(id) ?? "")?.repair),
     );
@@ -151,6 +159,7 @@ export default function EntityDetailPanel() {
       { key: "m", name: "move", enabled: true, value: "Move" },
       { key: "c", name: "collect", enabled: true, value: "Collect" },
       { key: "b", name: "build", enabled: canBuild, value: "Build" },
+      { key: "u", name: "upgrade", enabled: canUpgrade, value: "Upgrade" },
       { key: "r", name: "repair", enabled: canRepair, value: "Repair" },
     ];
   };
@@ -162,7 +171,7 @@ export default function EntityDetailPanel() {
     return (ai?.kind ?? "").toLowerCase() === "collect";
   });
   const isSelectedEntityBuilding = selectedEntities.length === 1 &&
-    (idToActiveIntent.get(firstId)?.kind ?? "").toLowerCase() === "build";
+    ["build", "upgrade"].includes((idToActiveIntent.get(firstId)?.kind ?? "").toLowerCase());
 
   useEffect(() => {
     if (!isSelectedEntityBuilding) {
@@ -201,9 +210,15 @@ export default function EntityDetailPanel() {
     };
   }, [firstId, isSelectedEntityBuilding]);
 
-  const onClickAction = (val: "Move" | "Collect" | "Build" | "Repair") => {
+  const onClickAction = (val: "Move" | "Collect" | "Build" | "Upgrade" | "Repair") => {
     if (val === "Build") {
       setBuildMenuOpen((open) => !open);
+      setUpgradeMenuOpen(false);
+      return;
+    }
+    if (val === "Upgrade") {
+      setUpgradeMenuOpen((open) => !open);
+      setBuildMenuOpen(false);
       return;
     }
     if (val === "Collect") {
@@ -230,6 +245,12 @@ export default function EntityDetailPanel() {
       : [],
     [selectedEntities.length, selectedType],
   );
+  const upgradeOptions = useMemo(
+    () => selectedEntities.length === 1
+      ? contentManager.getEntityType(selectedType)?.upgrades ?? []
+      : [],
+    [selectedEntities.length, selectedType],
+  );
   const buildKeys = "qwetasdfgzxcvb";
   const canAfford = (entityTypeId: string) => {
     const costs = contentManager.getEntityType(entityTypeId)?.build_cost ?? {};
@@ -241,6 +262,12 @@ export default function EntityDetailPanel() {
     if (Number.isFinite(entityId)) intentQueue.handleBuildCommand(entityId, entityTypeId);
     setBuildMenuOpen(false);
   };
+  const startUpgrade = (entityTypeId: string) => {
+    if (!canAfford(entityTypeId)) return;
+    const entityId = Number(firstId);
+    if (Number.isFinite(entityId)) intentQueue.handleUpgradeCommand(entityId, entityTypeId);
+    setUpgradeMenuOpen(false);
+  };
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -251,9 +278,19 @@ export default function EntityDetailPanel() {
         setBuildMenuOpen(false);
         return;
       }
+      if (event.key === "Escape" && upgradeMenuOpen) {
+        event.preventDefault();
+        setUpgradeMenuOpen(false);
+        return;
+      }
       if (!buildMenuOpen && (event.key === "b" || event.key === "B") && buildOptions.length > 0) {
         event.preventDefault();
         setBuildMenuOpen(true);
+        return;
+      }
+      if (!upgradeMenuOpen && (event.key === "u" || event.key === "U") && upgradeOptions.length > 0) {
+        event.preventDefault();
+        setUpgradeMenuOpen(true);
         return;
       }
       if (buildMenuOpen) {
@@ -264,10 +301,18 @@ export default function EntityDetailPanel() {
           startBuild(option.entity_type_id);
         }
       }
+      if (upgradeMenuOpen) {
+        const index = buildKeys.indexOf(event.key.toLowerCase());
+        const option = index >= 0 ? upgradeOptions[index] : undefined;
+        if (option) {
+          event.preventDefault();
+          startUpgrade(option.entity_type_id);
+        }
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [buildMenuOpen, buildOptions, firstId, selectedIdsKey]);
+  }, [buildMenuOpen, buildOptions, firstId, selectedIdsKey, upgradeMenuOpen, upgradeOptions]);
 
   if (!selectedEntities?.length) return null;
 
@@ -330,9 +375,9 @@ export default function EntityDetailPanel() {
                         target: {moveTarget}
                       </span>
                     )}
-                    {activeIntent?.kind === "build" && (
+                    {["build", "upgrade"].includes(activeIntent?.kind ?? "") && (
                       <span className="font-mono text-muted-foreground">
-                        building {buildState?.blueprint_id ?? ""} {typeof buildState?.progress === "number" ? `${(buildState.progress * 100).toFixed(0)}%` : ""}
+                        {activeIntent?.kind === "upgrade" ? "upgrading to" : "building"} {buildState?.blueprint_id ?? ""} {typeof buildState?.progress === "number" ? `${(buildState.progress * 100).toFixed(0)}%` : ""}
                       </span>
                     )}
                     {collectorState && collectorState.carry_capacity > 0 && (
@@ -362,7 +407,11 @@ export default function EntityDetailPanel() {
                         ? isCollectActiveForSelection
                         : a.value === "Repair"
                           ? selectedAction === "Repair"
-                        : buildMenuOpen
+                        : a.value === "Build"
+                          ? buildMenuOpen
+                          : a.value === "Upgrade"
+                            ? upgradeMenuOpen
+                            : false
                   }
                   onClick={(action) => action.enabled !== false && onClickAction(action.value)}
                 />
@@ -381,6 +430,28 @@ export default function EntityDetailPanel() {
                       type="button"
                       disabled={!enabled}
                       onClick={() => startBuild(option.entity_type_id)}
+                      className={enabled ? "rounded border border-border bg-muted px-2 py-1 hover:bg-accent" : "cursor-not-allowed rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground"}
+                    >
+                      [{buildKeys[index]?.toUpperCase()}] {option.entity_type_id} — {costText}
+                    </button>
+                  );
+                })}
+                <span className="text-muted-foreground">[Esc] cancel</span>
+              </div>
+            )}
+            {upgradeMenuOpen && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
+                <span className="text-muted-foreground">Upgrade:</span>
+                {upgradeOptions.map((option, index) => {
+                  const costs = contentManager.getEntityType(option.entity_type_id)?.build_cost ?? {};
+                  const enabled = canAfford(option.entity_type_id);
+                  const costText = Object.entries(costs).map(([resource, amount]) => `${amount} ${resource}`).join(", ");
+                  return (
+                    <button
+                      key={option.entity_type_id}
+                      type="button"
+                      disabled={!enabled}
+                      onClick={() => startUpgrade(option.entity_type_id)}
                       className={enabled ? "rounded border border-border bg-muted px-2 py-1 hover:bg-accent" : "cursor-not-allowed rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground"}
                     >
                       [{buildKeys[index]?.toUpperCase()}] {option.entity_type_id} — {costText}

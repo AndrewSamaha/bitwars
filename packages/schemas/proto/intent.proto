@@ -65,6 +65,12 @@ message BuildIntent {
   string player_id     = 5 [deprecated = true];
 }
 
+// Transform this entity in place into a content-defined upgraded type.
+message UpgradeIntent {
+  uint64 entity_id = 1;
+  string target_entity_type_id = 2;
+}
+
 // Collect intent payload (authoritative server-side).
 // Starts/maintains autonomous resource collection behavior for this entity.
 message CollectIntent {
@@ -97,6 +103,7 @@ message IntentEnvelope {
     BuildIntent          build  = 12;
     CollectIntent        collect = 13;
     RepairIntent         repair = 14;
+    UpgradeIntent        upgrade = 16;
   }
   reserved 8, 9, 15;
 }
@@ -110,6 +117,7 @@ message Intent {
     BuildIntent          build  = 3;
     CollectIntent        collect = 4;
     RepairIntent         repair = 5;
+    UpgradeIntent        upgrade = 6;
   }
 }
 
@@ -176,6 +184,11 @@ message BuildState {
   float  progress     = 3; // 0..1 (casts/channels/build progress)
 }
 
+message UpgradeState {
+  string target_entity_type_id = 1;
+  float progress = 2; // 0..1
+}
+
 message CollectState {
   uint64 entity_id = 1;
 }
@@ -195,5 +208,6 @@ message ActionState {
     BuildState  build  = 4;
     CollectState collect = 5;
     RepairState  repair  = 6;
+    UpgradeState upgrade = 7;
   }
 }

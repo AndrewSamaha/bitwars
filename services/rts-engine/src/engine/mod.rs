@@ -324,6 +324,7 @@ mod radiation_tests {
                 sensor: None,
                 visibility_range: None,
                 builds: Vec::new(),
+                upgrades: Vec::new(),
             },
         );
 
@@ -360,6 +361,7 @@ mod radiation_tests {
                 sensor: None,
                 visibility_range: None,
                 builds: Vec::new(),
+                upgrades: Vec::new(),
             },
         );
         entity_types.insert(
@@ -387,6 +389,7 @@ mod radiation_tests {
                 sensor: None,
                 visibility_range: None,
                 builds: Vec::new(),
+                upgrades: Vec::new(),
             },
         );
 
@@ -1324,6 +1327,7 @@ impl Engine {
             Some(pb::intent::Kind::Build(b)) => b.entity_id,
             Some(pb::intent::Kind::Collect(c)) => c.entity_id,
             Some(pb::intent::Kind::Repair(r)) => r.entity_id,
+            Some(pb::intent::Kind::Upgrade(u)) => u.entity_id,
             None => return String::new(),
         };
         self.state
@@ -1453,7 +1457,10 @@ impl Engine {
 
         let mut totals: HashMap<(String, String), f32> = HashMap::new();
         for entity in &self.state.entities {
-            if !is_player_owner(&entity.owner_player_id) || entity.health <= 0.0 {
+            if !is_player_owner(&entity.owner_player_id)
+                || entity.health <= 0.0
+                || self.is_upgrading(entity.id)
+            {
                 continue;
             }
             let Some(def) = content.get(&entity.entity_type_id) else {
@@ -1478,17 +1485,44 @@ impl Engine {
         }
     }
 
-    /// Advance active construction channels, charge their content-defined
-    /// resource rates, and spawn completed units near their builder.
+    /// An upgrading entity is entirely inactive: it cannot provide passive
+    /// economy, collection, refinery, radiation, or autonomous combat effects.
+    fn is_upgrading(&self, entity_id: u64) -> bool {
+        self.intents
+            .active_intents()
+            .get(&entity_id)
+            .is_some_and(|active| {
+                matches!(
+                    active.action.exec.as_ref(),
+                    Some(pb::action_state::Exec::Upgrade(_))
+                )
+            })
+    }
+
+    /// Advance active production and upgrade channels, charging their
+    /// content-defined resource rates. Builds spawn a product; upgrades
+    /// transform their source entity in place.
     async fn advance_builds(&mut self, dt: f32) {
         let Some(content) = self.content.clone() else {
             return;
         };
         let mut updates = Vec::new();
         for (entity_id, active) in self.intents.active_intents() {
-            let Some(pb::action_state::Exec::Build(build)) = active.action.exec.as_ref() else {
+            let (target_entity_type_id, old_progress, is_upgrade) =
+                match active.action.exec.as_ref() {
+                    Some(pb::action_state::Exec::Build(build)) => {
+                        (build.blueprint_id.as_str(), build.progress, false)
+                    }
+                    Some(pb::action_state::Exec::Upgrade(upgrade)) => (
+                        upgrade.target_entity_type_id.as_str(),
+                        upgrade.progress,
+                        true,
+                    ),
+                    _ => continue,
+                };
+            if target_entity_type_id.is_empty() {
                 continue;
-            };
+            }
             let Some(builder) = self
                 .state
                 .entities
@@ -1500,14 +1534,23 @@ impl Engine {
             let Some(builder_def) = content.get(&builder.entity_type_id) else {
                 continue;
             };
-            let Some(option) = builder_def
-                .builds
-                .iter()
-                .find(|option| option.entity_type_id == build.blueprint_id)
-            else {
+            let option = if is_upgrade {
+                builder_def
+                    .upgrades
+                    .iter()
+                    .find(|option| option.entity_type_id == target_entity_type_id)
+                    .map(|option| option.spend_rates.clone())
+            } else {
+                builder_def
+                    .builds
+                    .iter()
+                    .find(|option| option.entity_type_id == target_entity_type_id)
+                    .map(|option| option.spend_rates.clone())
+            };
+            let Some(rates) = option else {
                 continue;
             };
-            let Some(product_def) = content.get(&build.blueprint_id) else {
+            let Some(product_def) = content.get(target_entity_type_id) else {
                 continue;
             };
             let mut duration = 0.0f32;
@@ -1515,7 +1558,7 @@ impl Engine {
                 if *cost <= 0.0 {
                     continue;
                 }
-                let rate = option.spend_rates.get(resource).copied().unwrap_or(1.0);
+                let rate = rates.get(resource).copied().unwrap_or(1.0);
                 if rate <= 0.0 {
                     continue;
                 }
@@ -1525,17 +1568,28 @@ impl Engine {
                 updates.push((
                     *entity_id,
                     active.metadata.player_id.clone(),
-                    build.blueprint_id.clone(),
-                    build.progress,
+                    target_entity_type_id.to_string(),
+                    old_progress,
                     duration,
-                    option.spend_rates.clone(),
+                    rates,
                     product_def.build_cost.clone(),
+                    is_upgrade,
                 ));
             }
         }
 
         let mut completed = Vec::new();
-        for (entity_id, player_id, blueprint_id, old_progress, duration, rates, costs) in updates {
+        for (
+            entity_id,
+            player_id,
+            target_entity_type_id,
+            old_progress,
+            duration,
+            rates,
+            costs,
+            is_upgrade,
+        ) in updates
+        {
             let new_progress = (old_progress + dt / duration).min(1.0);
             let old_elapsed = old_progress * duration;
             let new_elapsed = new_progress * duration;
@@ -1553,13 +1607,24 @@ impl Engine {
                 continue;
             }
             if let Some(active) = self.intents.active_intents_mut().get_mut(&entity_id) {
-                if let Some(pb::action_state::Exec::Build(build)) = active.action.exec.as_mut() {
-                    build.progress = new_progress;
+                match active.action.exec.as_mut() {
+                    Some(pb::action_state::Exec::Build(build)) if !is_upgrade => {
+                        build.progress = new_progress;
+                    }
+                    Some(pb::action_state::Exec::Upgrade(upgrade)) if is_upgrade => {
+                        upgrade.progress = new_progress;
+                    }
+                    _ => continue,
                 }
             }
             if let Err(error) = self
                 .redis
-                .update_build_progress(entity_id, &blueprint_id, new_progress)
+                .update_construction_progress(
+                    entity_id,
+                    if is_upgrade { "upgrade" } else { "build" },
+                    &target_entity_type_id,
+                    new_progress,
+                )
                 .await
             {
                 warn!(
@@ -1568,11 +1633,49 @@ impl Engine {
                 );
             }
             if new_progress >= 1.0 {
-                completed.push((entity_id, player_id, blueprint_id));
+                completed.push((entity_id, player_id, target_entity_type_id, is_upgrade));
             }
         }
 
-        for (builder_id, player_id, blueprint_id) in completed {
+        for (builder_id, player_id, target_entity_type_id, is_upgrade) in completed {
+            if is_upgrade {
+                let Some(target_def) = content.get(&target_entity_type_id) else {
+                    continue;
+                };
+                let Some(entity) = self
+                    .state
+                    .entities
+                    .iter_mut()
+                    .find(|entity| entity.id == builder_id)
+                else {
+                    continue;
+                };
+                let source_health = content
+                    .get(&entity.entity_type_id)
+                    .map(|definition| definition.health.max(0.0))
+                    .unwrap_or(0.0);
+                let health_fraction = if source_health > 0.0 {
+                    (entity.health / source_health).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                entity.entity_type_id = target_entity_type_id;
+                entity.health = target_def.health.max(0.0) * health_fraction;
+                entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+                entity.force = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+                if let Some(metadata) = self.intents.finish(builder_id) {
+                    let _ = self.redis.clear_active_intent(builder_id).await;
+                    let _ = self
+                        .emit_lifecycle_event(
+                            &metadata,
+                            pb::LifecycleState::Finished,
+                            pb::LifecycleReason::None,
+                            self.state.tick,
+                        )
+                        .await;
+                }
+                continue;
+            }
             let Some(builder) = self
                 .state
                 .entities
@@ -1594,12 +1697,12 @@ impl Engine {
             let angle = (next_id as f32 * 2.399_963_1) % std::f32::consts::TAU;
             let spawn_distance = BUILD_SPAWN_RADIUS * 0.75;
             let health = content
-                .get(&blueprint_id)
+                .get(&target_entity_type_id)
                 .map(|definition| definition.health.max(0.0))
                 .unwrap_or(0.0);
             self.state.entities.push(pb::Entity {
                 id: next_id,
-                entity_type_id: blueprint_id,
+                entity_type_id: target_entity_type_id,
                 pos: Some(pb::Vec2 {
                     x: pos.x + angle.cos() * spawn_distance,
                     y: pos.y + angle.sin() * spawn_distance,
@@ -1684,6 +1787,9 @@ impl Engine {
         };
         let mut nodes = Vec::new();
         for e in &self.state.entities {
+            if self.is_upgrading(e.id) {
+                continue;
+            }
             let Some(pos) = e.pos.as_ref() else {
                 continue;
             };
@@ -1715,6 +1821,9 @@ impl Engine {
         };
         let mut refineries = Vec::new();
         for e in &self.state.entities {
+            if self.is_upgrading(e.id) {
+                continue;
+            }
             let owner = e.owner_player_id.as_str();
             if !is_player_owner(owner) {
                 continue;
@@ -1747,6 +1856,9 @@ impl Engine {
         };
         let mut collectors = Vec::new();
         for e in &self.state.entities {
+            if self.is_upgrading(e.id) {
+                continue;
+            }
             let owner = e.owner_player_id.as_str();
             if !is_player_owner(owner) {
                 continue;
@@ -1820,9 +1932,20 @@ impl Engine {
     }
 
     fn compute_radiation_damage(state: &GameState, content: &ContentPack) -> HashMap<u64, f32> {
+        Self::compute_radiation_damage_excluding_sources(state, content, &HashSet::new())
+    }
+
+    fn compute_radiation_damage_excluding_sources(
+        state: &GameState,
+        content: &ContentPack,
+        disabled_source_ids: &HashSet<u64>,
+    ) -> HashMap<u64, f32> {
         let mut damage_by_entity = HashMap::new();
         let mut sources = Vec::new();
         for entity in &state.entities {
+            if disabled_source_ids.contains(&entity.id) {
+                continue;
+            }
             let Some(pos) = entity.pos.as_ref() else {
                 continue;
             };
@@ -1901,7 +2024,20 @@ impl Engine {
         if dt <= 0.0 {
             return;
         }
-        let damage_by_entity = Self::compute_radiation_damage(&self.state, content);
+        let upgrading_ids: HashSet<u64> = self
+            .intents
+            .active_intents()
+            .iter()
+            .filter_map(|(entity_id, active)| {
+                matches!(
+                    active.action.exec.as_ref(),
+                    Some(pb::action_state::Exec::Upgrade(_))
+                )
+                .then_some(*entity_id)
+            })
+            .collect();
+        let damage_by_entity =
+            Self::compute_radiation_damage_excluding_sources(&self.state, content, &upgrading_ids);
         for entity in &mut self.state.entities {
             let Some(damage_per_second) = damage_by_entity.get(&entity.id).copied() else {
                 continue;
@@ -3419,6 +3555,12 @@ impl Engine {
                     kind: Some(pb::intent::Kind::Build(b)),
                 }
             }
+            Some(intent_envelope::Payload::Upgrade(u)) => {
+                info!(entity_id = u.entity_id, intent_id = %format_uuid(&intent_id), player = %player_id, target_entity_type_id = u.target_entity_type_id, "accept intent=Upgrade");
+                pb::Intent {
+                    kind: Some(pb::intent::Kind::Upgrade(u)),
+                }
+            }
             Some(intent_envelope::Payload::Collect(c)) => {
                 info!(entity_id = c.entity_id, intent_id = %format_uuid(&intent_id), player = %player_id, "accept intent=Collect");
                 pb::Intent {
@@ -3451,6 +3593,7 @@ impl Engine {
             Some(pb::intent::Kind::Build(b)) => b.entity_id,
             Some(pb::intent::Kind::Collect(c)) => c.entity_id,
             Some(pb::intent::Kind::Repair(r)) => r.entity_id,
+            Some(pb::intent::Kind::Upgrade(u)) => u.entity_id,
             None => {
                 self.emit_lifecycle_event(
                     &metadata,
@@ -3544,6 +3687,53 @@ impl Engine {
             }
         }
 
+        if let Some(pb::intent::Kind::Upgrade(upgrade)) = payload_intent.kind.as_ref() {
+            let Some(entity) = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == entity_id)
+            else {
+                return Err(anyhow!("upgrade source entity not found"));
+            };
+            let Some(content) = self.content.as_ref() else {
+                return Err(anyhow!("upgrade unavailable without content pack"));
+            };
+            let Some(source) = content.get(&entity.entity_type_id) else {
+                return Err(anyhow!("unknown upgrade source type"));
+            };
+            let Some(option) = source
+                .upgrades
+                .iter()
+                .find(|option| option.entity_type_id == upgrade.target_entity_type_id)
+            else {
+                return Err(anyhow!("entity cannot upgrade to requested type"));
+            };
+            let Some(target) = content.get(&upgrade.target_entity_type_id) else {
+                return Err(anyhow!("unknown upgrade target"));
+            };
+            if source.health <= 0.0 || (entity.health - source.health).abs() > f32::EPSILON {
+                return Err(anyhow!("entity must be at full health to upgrade"));
+            }
+            if target.build_cost.is_empty() {
+                return Err(anyhow!("upgrade target has no build_cost"));
+            }
+            let ledger = self.state.ledger.get(&player_id);
+            for (resource, cost) in &target.build_cost {
+                let rate = option.spend_rates.get(resource).copied().unwrap_or(1.0);
+                if *cost <= 0.0 || !rate.is_finite() || rate <= 0.0 {
+                    return Err(anyhow!("invalid upgrade cost or spend rate for {resource}"));
+                }
+                let available = ledger
+                    .and_then(|resources| resources.get(resource))
+                    .copied()
+                    .unwrap_or(0);
+                if available < cost.ceil() as i64 {
+                    return Err(anyhow!("insufficient {resource} for upgrade"));
+                }
+            }
+        }
+
         if let Some(pb::intent::Kind::Repair(repair)) = payload_intent.kind.as_ref() {
             let actor = self
                 .state
@@ -3601,6 +3791,7 @@ impl Engine {
             Some(pb::intent::Kind::Build(_)) => ("build", None),
             Some(pb::intent::Kind::Collect(_)) => ("collect", None),
             Some(pb::intent::Kind::Repair(_)) => ("repair", None),
+            Some(pb::intent::Kind::Upgrade(_)) => ("upgrade", None),
             None => ("unknown", None),
         };
 
@@ -3640,6 +3831,17 @@ impl Engine {
         }
 
         if let Some((entity_id, _)) = outcome.started {
+            if intent_kind == "upgrade" {
+                if let Some(entity) = self
+                    .state
+                    .entities
+                    .iter_mut()
+                    .find(|entity| entity.id == entity_id)
+                {
+                    entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+                    entity.force = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+                }
+            }
             // M2: persist active intent to Redis for reconnect tracking
             self.redis
                 .persist_active_intent(
@@ -3679,6 +3881,7 @@ impl Engine {
             Some(pb::intent::Kind::Build(b)) => intent_envelope::Payload::Build(b),
             Some(pb::intent::Kind::Collect(c)) => intent_envelope::Payload::Collect(c),
             Some(pb::intent::Kind::Repair(r)) => intent_envelope::Payload::Repair(r),
+            Some(pb::intent::Kind::Upgrade(u)) => intent_envelope::Payload::Upgrade(u),
             None => return Err(anyhow!("legacy intent missing kind")),
         };
 
@@ -3688,6 +3891,7 @@ impl Engine {
             Some(pb::intent::Kind::Build(b)) => b.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Collect(c)) => c.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Repair(r)) => r.client_cmd_id.as_str(),
+            Some(pb::intent::Kind::Upgrade(_)) => "",
             None => "",
         };
 
@@ -3709,6 +3913,7 @@ impl Engine {
             Some(pb::intent::Kind::Build(b)) => b.player_id.clone(),
             Some(pb::intent::Kind::Collect(c)) => c.player_id.clone(),
             Some(pb::intent::Kind::Repair(r)) => r.player_id.clone(),
+            Some(pb::intent::Kind::Upgrade(_)) => String::new(),
             None => String::new(),
         };
 

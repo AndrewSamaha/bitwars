@@ -14,10 +14,15 @@ import {
 } from "d3-force";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type Entity = { id: string; builds: readonly string[]; definition: string };
+type Entity = {
+  id: string;
+  builds: readonly string[];
+  upgrades: readonly string[];
+  definition: string;
+};
 type Point = { x: number; y: number };
 type GraphNode = SimulationNodeDatum & { id: string; entity: Entity };
-type GraphLink = { source: string; target: string };
+type GraphLink = { source: string; target: string; kind: "build" | "upgrade" };
 
 const INITIAL_ENTITIES: Entity[] = ENTITY_CONTENT.map((entity) => ({ ...entity }));
 const DEFAULT_ZOOM = 0.85;
@@ -28,9 +33,10 @@ const ENTITY_FIELDS = [...new Set(INITIAL_ENTITIES.flatMap((entity) =>
 ))];
 
 function linksFor(entities: readonly Entity[]): GraphLink[] {
-  return entities.flatMap((entity) =>
-  entity.builds.map((target) => ({ source: entity.id, target })),
-  );
+  return entities.flatMap((entity) => [
+    ...entity.builds.map((target) => ({ source: entity.id, target, kind: "build" as const })),
+    ...entity.upgrades.map((target) => ({ source: entity.id, target, kind: "upgrade" as const })),
+  ]);
 }
 
 function initialPositions(entities: readonly Entity[]): Record<string, Point> {
@@ -82,7 +88,18 @@ export default function ContentGraph() {
   const simulationRef = useRef<Simulation<GraphNode, undefined> | null>(null);
   const layoutSizeRef = useRef<Point | null>(null);
   const links = useMemo(() => linksFor(entities), [entities]);
-  const linkIds = useMemo(() => new Set(links.map(({ source, target }) => `${source}:${target}`)), [links]);
+  const directionalLinks = useMemo(
+    () => new Map(links.map(({ source, target }) => [`${source}:${target}`, true])),
+    [links],
+  );
+  const parallelLinks = useMemo(
+    () => new Set(
+      links
+        .map(({ source, target }) => `${source}:${target}`)
+        .filter((key, index, values) => values.indexOf(key) !== index),
+    ),
+    [links],
+  );
   const selected = entities.find((entity) => entity.id === selectedId) ?? entities[0];
 
   useEffect(() => {
@@ -181,7 +198,7 @@ export default function ContentGraph() {
     const response = await savingFetch("/api/content/entities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentId, childId, definition }) });
     if (!response.ok) return;
     setEntities((current) => current.flatMap((entity) => entity.id === parentId
-      ? [{ ...entity, builds: [...entity.builds, childId], definition: addBuild(entity.definition, childId) }, { id: childId, builds: [...parent.builds], definition }]
+      ? [{ ...entity, builds: [...entity.builds, childId], definition: addBuild(entity.definition, childId) }, { id: childId, builds: [...parent.builds], upgrades: [...parent.upgrades], definition }]
       : [entity]));
     setSelectedId(childId);
     setMenu(null);
@@ -222,7 +239,13 @@ export default function ContentGraph() {
     const newId = draftName ?? selected.id;
     const response = await savingFetch(`/api/content/entities/${selected.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ definition, newId }) });
     if (!response.ok) return;
-    setEntities((current) => current.map((entity) => ({ ...entity, id: entity.id === selected.id ? newId : entity.id, builds: entity.builds.map((id) => id === selected.id ? newId : id), definition: entity.id === selected.id ? definition : entity.definition })));
+    setEntities((current) => current.map((entity) => ({
+      ...entity,
+      id: entity.id === selected.id ? newId : entity.id,
+      builds: entity.builds.map((id) => id === selected.id ? newId : id),
+      upgrades: entity.upgrades.map((id) => id === selected.id ? newId : id),
+      definition: entity.id === selected.id ? definition : entity.definition,
+    })));
     setSelectedId(newId);
     setDraftDefinition(null);
     setDraftName(null);
@@ -236,8 +259,8 @@ export default function ContentGraph() {
       <section className="min-w-0 flex-1 p-6 lg:p-10">
         <header className="mb-8">
           <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars content</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Entity build graph</h1>
-          <p className="mt-2 text-slate-400">Drag sprites to arrange the force graph. Scroll to zoom. Arrows show build relationships.</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Entity relationship graph</h1>
+          <p className="mt-2 text-slate-400">Drag sprites to arrange the graph. Cyan arrows build new entities; amber arrows upgrade in place.</p>
         </header>
 
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
@@ -251,23 +274,31 @@ export default function ContentGraph() {
                 <marker id="reverse-build-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
                   <path d="M0,0 L0,6 L6,3 z" fill="#c084fc" />
                 </marker>
+                <marker id="upgrade-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L6,3 z" fill="#fbbf24" />
+                </marker>
               </defs>
-              {links.map(({ source, target }) => {
+              {links.map(({ source, target, kind }) => {
                 const from = positions[source];
                 const to = positions[target];
                 if (!from || !to) return null;
-                const reciprocal = linkIds.has(`${target}:${source}`);
+                const reciprocal = directionalLinks.has(`${target}:${source}`);
                 const reverse = reciprocal && source > target;
-                if (!reciprocal) {
-                  return <line key={`${source}-${target}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#22d3ee" strokeOpacity=".6" strokeWidth="2" markerEnd="url(#build-arrow)" />;
-                }
+                const parallel = parallelLinks.has(`${source}:${target}`);
                 const dx = to.x - from.x;
                 const dy = to.y - from.y;
                 const length = Math.hypot(dx, dy) || 1;
-                const curve = 28;
+                // A reversed path already reverses its normal, so both sides
+                // use the same signed bend to fan reciprocal arrows apart.
+                const curve = reciprocal
+                  ? 28
+                  : parallel
+                    ? (kind === "upgrade" ? 14 : -14)
+                    : 0;
                 const controlX = (from.x + to.x) / 2 - dy / length * curve;
                 const controlY = (from.y + to.y) / 2 + dx / length * curve;
-                return <path d={`M ${from.x} ${from.y} Q ${controlX} ${controlY} ${to.x} ${to.y}`} fill="none" key={`${source}-${target}`} markerEnd={`url(#${reverse ? "reverse-build-arrow" : "build-arrow"})`} stroke={reverse ? "#c084fc" : "#22d3ee"} strokeOpacity=".8" strokeWidth="2" />;
+                const isUpgrade = kind === "upgrade";
+                return <path d={`M ${from.x} ${from.y} Q ${controlX} ${controlY} ${to.x} ${to.y}`} fill="none" key={`${kind}-${source}-${target}`} markerEnd={`url(#${isUpgrade ? "upgrade-arrow" : reverse ? "reverse-build-arrow" : "build-arrow"})`} stroke={isUpgrade ? "#fbbf24" : reverse ? "#c084fc" : "#22d3ee"} strokeDasharray={isUpgrade ? "5 3" : undefined} strokeOpacity=".85" strokeWidth="2" />;
               })}
             </svg>
             {entities.map((entity) => {
@@ -298,7 +329,10 @@ export default function ContentGraph() {
                 >
                   <img alt="" className="pointer-events-none mb-1 size-12 select-none object-contain" draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} />
                   <span className="pointer-events-none text-sm font-medium">{entity.id}</span>
-                  <span className="pointer-events-none mt-1 text-xs text-slate-400">{entity.builds.length ? `Builds ${entity.builds.length}` : "No builds"}</span>
+                  <span className="pointer-events-none mt-1 text-xs text-slate-400">
+                    {entity.builds.length ? `Builds ${entity.builds.length}` : "No builds"}
+                    {entity.upgrades.length ? ` · Upgrades ${entity.upgrades.length}` : ""}
+                  </span>
                 </button>
               );
             })}
