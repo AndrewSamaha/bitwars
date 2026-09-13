@@ -846,19 +846,26 @@ export default function GameStage() {
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
             const scale = (e as any).scale ?? 1;
-            const visualScale = contentManager.getEntityType(typeId)?.visual_scale ?? 1;
+            const visual = contentManager.getEntityType(typeId)?.visual;
+            const visualScale = visual?.scale ?? 1;
             container.scale.set((scale * visualScale) / 2);
             container.zIndex = contentManager.getEntityType(typeId)?.z_index ?? 0;
             container.alpha = remembered ? 0.45 : 1;
 
             // Rotation: if we have proto velocity, rotate to face direction of travel
             const vel = e.vel as { x: number; y: number } | undefined;
+            const rotateDeg = visual?.rotate_deg ?? 0;
+            const rotateOffset = rotateDeg * Math.PI / 180;
             if (vel) {
               const { x: vx, y: vy } = vel;
               if (vx !== 0 || vy !== 0) {
                 // atan2 returns radians; 0 rad means pointing along +X axis
-                container.rotation = Math.atan2(vy, vx);
+                container.rotation = Math.atan2(vy, vx) + rotateOffset;
+              } else {
+                container.rotation = rotateOffset;
               }
+            } else {
+              container.rotation = rotateOffset;
             }
 
             // 3) Project ECS hover state + M6 ownership tint to Pixi (proto only)

@@ -162,10 +162,9 @@
       ],
       "format": "float"
     },
-    "visual_scale": {
-      "description": "Client-only multiplier for the entity's rendered size.",
-      "type": "number",
-      "format": "float"
+    "visual": {
+      "description": "Client-only presentation settings for the entity's rendered sprite.",
+      "$ref": "#/$defs/VisualDef"
     },
     "z_index": {
       "description": "Draw order within the world layer. Higher values render in front.",
@@ -573,6 +572,22 @@
       "required": [
         "entity_type_id"
       ]
+    },
+    "VisualDef": {
+      "description": "Client-only sprite presentation settings.",
+      "type": "object",
+      "properties": {
+        "rotate_deg": {
+          "description": "Clockwise offset from the asset's native right-facing forward direction.",
+          "type": "number",
+          "format": "float"
+        },
+        "scale": {
+          "description": "Multiplier for the entity's rendered size.",
+          "type": "number",
+          "format": "float"
+        }
+      }
     }
   }
 }

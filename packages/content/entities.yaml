@@ -18,7 +18,8 @@ entity_types:
     mass: 500
     health: 100
     visibility_range: 4000
-    visual_scale: 2
+    visual:
+      scale: 2
     radiation_sources:
       - radiation_type: theta
         min_effective_distance_border_color: null
@@ -44,7 +45,8 @@ entity_types:
     stop_radius: 1
     mass: 500
     health: 100
-    visual_scale: 4
+    visual:
+      scale: 4
     resource_node:
       resource_type: food
       collection_mode: transport
@@ -59,7 +61,8 @@ entity_types:
     stop_radius: 1
     mass: 500
     health: 100
-    visual_scale: 15
+    visual:
+      scale: 15
     radiation_sources:
       - radiation_type: stellar_heat
         min_effective_distance_border_color: null
@@ -97,7 +100,8 @@ entity_types:
     mass: 500
     health: 100
     hull_radius: 12
-    visual_scale: 0.9
+    visual:
+      scale: 0.9
     combat_targetable: true
     sensor:
       range: 400
@@ -187,7 +191,8 @@ entity_types:
     mass: 4
     health: 400
     hull_radius: 50
-    visual_scale: 2
+    visual:
+      scale: 2
     combat_targetable: true
     refinery:
       accepts:
@@ -220,7 +225,8 @@ entity_types:
     mass: 7
     health: 150
     hull_radius: 16
-    visual_scale: 1.5
+    visual:
+      scale: 1.5
     build_cost:
       minerals: 100
       energy: 100
@@ -243,7 +249,8 @@ entity_types:
     health: 150
     hull_radius: 16
     combat_targetable: true
-    visual_scale: 2
+    visual:
+      scale: 2
     build_cost:
       minerals: 600
       energy: 600
@@ -268,6 +275,18 @@ entity_types:
         spend_rates:
           minerals: 2.2
           energy: 2.2
+      - entity_type_id: heavy_fighter
+        spend_rates:
+          minerals: 1
+          energy: 1
+      - entity_type_id: battleship
+        spend_rates:
+          minerals: 1
+          energy: 1
+      - entity_type_id: science_vessel
+        spend_rates:
+          minerals: 1
+          energy: 1
       - entity_type_id: worker
         spend_rates:
           minerals: 2
@@ -309,7 +328,9 @@ entity_types:
     health: 40
     hull_radius: 50
     combat_targetable: true
-    visual_scale: 0.75
+    visual:
+      scale: 0.75
+      rotate_deg: 90
     combat:
       acquisition_range: 1200
       on_near_enemy_strategy: approach
@@ -388,7 +409,8 @@ entity_types:
     health: 100
     hull_radius: 12
     combat_targetable: true
-    visual_scale: 1.25
+    visual:
+      scale: 1.25
     sensor:
       range: 400
       cost_per_minute:
@@ -458,4 +480,90 @@ entity_types:
       range: 2000
       cost_per_minute:
         energy: 2.5
-    visual_scale: 1
+    visual:
+      scale: 1
+      rotate_deg: 90
+  heavy_fighter:
+    fog_memory: forget_when_hidden
+    speed: 400
+    stop_radius: 0.5
+    mass: 0.6
+    health: 100
+    hull_radius: 10
+    combat_targetable: true
+    build_cost:
+      minerals: 75
+      energy: 50
+    combat:
+      acquisition_range: 450
+      on_near_enemy_strategy: approach
+      attacks:
+        - id: laser
+          type: laser
+          range: 600
+          damage: 1o
+          cooldown_ticks: 120
+          priority: 0
+    sensor:
+      range: 2000
+      cost_per_minute:
+        energy: 2.5
+    visual:
+      scale: 1
+      rotate_deg: 90
+  battleship:
+    fog_memory: forget_when_hidden
+    speed: 400
+    stop_radius: 0.5
+    mass: 0.6
+    health: 100
+    hull_radius: 10
+    combat_targetable: true
+    build_cost:
+      minerals: 75
+      energy: 50
+    combat:
+      acquisition_range: 450
+      on_near_enemy_strategy: approach
+      attacks:
+        - id: laser
+          type: laser
+          range: 600
+          damage: 1o
+          cooldown_ticks: 120
+          priority: 0
+    sensor:
+      range: 2000
+      cost_per_minute:
+        energy: 2.5
+    visual:
+      scale: 2
+      rotate_deg: 90
+  science_vessel:
+    fog_memory: forget_when_hidden
+    speed: 500
+    stop_radius: 0.5
+    mass: 0.6
+    health: 60
+    hull_radius: 10
+    combat_targetable: true
+    build_cost:
+      minerals: 75
+      energy: 50
+    combat:
+      acquisition_range: 450
+      on_near_enemy_strategy: approach
+      attacks:
+        - id: laser
+          type: laser
+          range: 120
+          damage: 2
+          cooldown_ticks: 75
+          priority: 0
+    sensor:
+      range: 5000
+      cost_per_minute:
+        energy: 2.5
+    visual:
+      rotate_deg: 90
+      scale: 1.7

@@ -43,12 +43,9 @@ pub struct EntityTypeDef {
     /// Defaults to false so scenery and resource entities are safe by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub combat_targetable: bool,
-    /// Client-only multiplier for the entity's rendered size.
-    #[serde(
-        default = "default_visual_scale",
-        skip_serializing_if = "is_default_visual_scale"
-    )]
-    pub visual_scale: f32,
+    /// Client-only presentation settings for the entity's rendered sprite.
+    #[serde(default, skip_serializing_if = "VisualDef::is_default")]
+    pub visual: VisualDef,
     /// Draw order within the world layer. Higher values render in front.
     #[serde(default, skip_serializing_if = "is_default_z_index")]
     pub z_index: i32,
@@ -180,6 +177,35 @@ pub struct UpgradeOptionDef {
     pub spend_rates: HashMap<String, f32>,
 }
 
+/// Client-only sprite presentation settings.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct VisualDef {
+    /// Multiplier for the entity's rendered size.
+    #[serde(
+        default = "default_visual_scale",
+        skip_serializing_if = "is_default_visual_scale"
+    )]
+    pub scale: f32,
+    /// Clockwise offset from the asset's native right-facing forward direction.
+    #[serde(default, skip_serializing_if = "is_default_rotate_deg")]
+    pub rotate_deg: f32,
+}
+
+impl Default for VisualDef {
+    fn default() -> Self {
+        Self {
+            scale: default_visual_scale(),
+            rotate_deg: 0.0,
+        }
+    }
+}
+
+impl VisualDef {
+    fn is_default(visual: &Self) -> bool {
+        is_default_visual_scale(&visual.scale) && is_default_rotate_deg(&visual.rotate_deg)
+    }
+}
+
 /// Content-defined sensor available to any entity type.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SensorDef {
@@ -214,6 +240,10 @@ fn default_visual_scale() -> f32 {
 
 fn is_default_visual_scale(scale: &f32) -> bool {
     *scale == default_visual_scale()
+}
+
+fn is_default_rotate_deg(rotate_deg: &f32) -> bool {
+    *rotate_deg == 0.0
 }
 
 fn is_default_z_index(z_index: &i32) -> bool {
@@ -487,7 +517,7 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
-                visual_scale: 1.0,
+                visual: VisualDef::default(),
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
@@ -515,7 +545,7 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
-                visual_scale: 1.0,
+                visual: VisualDef::default(),
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
@@ -554,7 +584,7 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
-                visual_scale: 1.0,
+                visual: VisualDef::default(),
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
@@ -582,7 +612,7 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
-                visual_scale: 1.0,
+                visual: VisualDef::default(),
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
@@ -612,7 +642,7 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
-                visual_scale: 1.0,
+                visual: VisualDef::default(),
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
@@ -640,7 +670,7 @@ mod tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
-                visual_scale: 1.0,
+                visual: VisualDef::default(),
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),

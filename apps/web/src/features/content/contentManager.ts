@@ -42,8 +42,12 @@ export type EntityTypeDef = {
       contact_tolerance?: number;
     }>;
   };
-  /** Client-only multiplier for this entity type's rendered size. */
-  visual_scale?: number;
+  /** Client-only sprite presentation settings. */
+  visual?: {
+    scale?: number;
+    /** Clockwise offset from the asset's native right-facing direction. */
+    rotate_deg?: number;
+  };
   /** Draw order within the game world; higher values render in front. */
   z_index?: number;
   /** Whether hover indicators and entity detail UI should be suppressed. */

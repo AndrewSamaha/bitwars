@@ -18,6 +18,7 @@ type Entity = {
   id: string;
   builds: readonly string[];
   upgrades: readonly string[];
+  visual?: { scale?: number; rotate_deg?: number };
   definition: string;
 };
 type Point = { x: number; y: number };
@@ -50,6 +51,12 @@ function addBuild(definition: string, childId: string) {
   const buildBlock = /^builds:\n(?:(?: {2,}.*|\s*)\n)*/m;
   if (!buildBlock.test(definition)) return `${definition.trimEnd()}\nbuilds:\n  - entity_type_id: ${childId}\n`;
   return definition.replace(buildBlock, (block) => `${block.trimEnd()}\n  - entity_type_id: ${childId}\n`);
+}
+
+function visualRotateDeg(definition: string, fallback = 0): number {
+  const visualBlock = definition.match(/^visual:\n(?:(?: {2,}.*|\s*)\n)*/m)?.[0] ?? "";
+  const value = Number(visualBlock.match(/^\s*rotate_deg:\s*([^\s#]+)/m)?.[1]);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function builderOutwardForce(links: readonly GraphLink[]) {
@@ -303,6 +310,10 @@ export default function ContentGraph() {
             </svg>
             {entities.map((entity) => {
               const position = positions[entity.id];
+              const rotateDeg = visualRotateDeg(
+                entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition,
+                entity.visual?.rotate_deg ?? 0,
+              );
               return (
                 <button
                   className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"}`}
@@ -327,7 +338,7 @@ export default function ContentGraph() {
                   style={{ left: position?.x, top: position?.y }}
                   type="button"
                 >
-                  <img alt="" className="pointer-events-none mb-1 size-12 select-none object-contain" draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} />
+                  <img alt="" className="pointer-events-none mb-1 size-12 select-none object-contain" draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} style={{ transform: `rotate(${rotateDeg}deg)` }} />
                   <span className="pointer-events-none text-sm font-medium">{entity.id}</span>
                   <span className="pointer-events-none mt-1 text-xs text-slate-400">
                     {entity.builds.length ? `Builds ${entity.builds.length}` : "No builds"}
@@ -348,7 +359,7 @@ export default function ContentGraph() {
         {selected && <>
           <div className="flex items-center gap-3 border-b border-slate-700 pb-5">
             <button className="relative" onClick={() => assetInputRef.current?.click()} type="button">
-              <img alt="" className="size-14 object-contain" src={`/assets/${selected.id}/idle.png?v=${assetVersion}`} />
+              <img alt="" className="size-14 object-contain" src={`/assets/${selected.id}/idle.png?v=${assetVersion}`} style={{ transform: `rotate(${visualRotateDeg(draftDefinition ?? selected.definition, selected.visual?.rotate_deg ?? 0)}deg)` }} />
               <Pencil className="absolute -right-1 -bottom-1 size-5 rounded-full bg-cyan-400 p-1 text-slate-950" />
             </button>
             <input accept="image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadAsset(file); event.target.value = ""; }} ref={assetInputRef} type="file" />

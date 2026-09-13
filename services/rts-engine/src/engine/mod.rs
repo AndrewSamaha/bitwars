@@ -283,7 +283,7 @@ mod uuid_tests {
 #[cfg(test)]
 mod radiation_tests {
     use super::*;
-    use crate::content::{RadiationShieldingDef, RadiationSourceDef};
+    use crate::content::{RadiationShieldingDef, RadiationSourceDef, VisualDef};
 
     fn make_content() -> ContentPack {
         let mut entity_types = HashMap::new();
@@ -316,7 +316,7 @@ mod radiation_tests {
                     damage_per_second: 24.0,
                 }],
                 radiation_shielding: HashMap::new(),
-                visual_scale: 1.0,
+                visual: VisualDef::default(),
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
@@ -353,7 +353,7 @@ mod radiation_tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: collector_shielding,
-                visual_scale: 1.0,
+                visual: VisualDef::default(),
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),
@@ -381,7 +381,7 @@ mod radiation_tests {
                 refinery: None,
                 radiation_sources: Vec::new(),
                 radiation_shielding: HashMap::new(),
-                visual_scale: 1.0,
+                visual: VisualDef::default(),
                 z_index: 0,
                 suppress_hover: false,
                 build_cost: HashMap::new(),

@@ -25,10 +25,18 @@ function extractEntityTypes(yamlContent) {
       const block = definition.match(new RegExp(`^${field}:\\n((?: {2,}.*|\\s*)\\n)*`, "m"));
       return block ? [...block[0].matchAll(/^\s*-\s+entity_type_id:\s*([^\s#]+)/gm)].map((match) => match[1]) : [];
     };
+    const visualBlock = definition.match(/^visual:\n((?: {2,}.*|\s*)\n)*/m)?.[0] ?? "";
+    const visualNumber = (field) => Number(visualBlock.match(new RegExp(`^\\s*${field}:\\s*([^\\s#]+)`, "m"))?.[1]);
+    const scale = visualNumber("scale");
+    const rotateDeg = visualNumber("rotate_deg");
     types.push({
       id: current.id,
       builds: referencesFor("builds"),
       upgrades: referencesFor("upgrades"),
+      visual: {
+        ...(Number.isFinite(scale) ? { scale } : {}),
+        ...(Number.isFinite(rotateDeg) ? { rotate_deg: rotateDeg } : {}),
+      },
       definition,
     });
     current = undefined;

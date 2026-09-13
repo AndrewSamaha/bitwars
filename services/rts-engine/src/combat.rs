@@ -399,7 +399,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::content::{AttackDef, AttackType, CombatDef, EntityTypeDef, NearEnemyStrategy};
+    use crate::content::{AttackDef, AttackType, CombatDef, EntityTypeDef, NearEnemyStrategy, VisualDef};
 
     fn content() -> ContentPack {
         let raider = EntityTypeDef {
@@ -423,7 +423,7 @@ mod tests {
                 }],
             }),
             combat_targetable: true,
-            visual_scale: 1.0,
+            visual: VisualDef::default(),
             z_index: 0,
             suppress_hover: false,
             collector: None,

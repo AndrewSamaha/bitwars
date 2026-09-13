@@ -19,6 +19,7 @@ export async function GET() {
     id,
     builds: definition.builds?.map((build: { entity_type_id: string }) => build.entity_type_id) ?? [],
     upgrades: definition.upgrades?.map((upgrade: { entity_type_id: string }) => upgrade.entity_type_id) ?? [],
+    visual: definition.visual ?? {},
     definition: stringify(definition).trim(),
   })) });
 }
