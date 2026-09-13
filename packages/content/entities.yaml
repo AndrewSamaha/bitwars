@@ -201,6 +201,16 @@ entity_types:
     build_cost:
       minerals: 1000
       energy: 1000
+    combat:
+      acquisition_range: 500
+      on_near_enemy_strategy: stay
+      attacks:
+        - id: laser
+          type: laser
+          range: 500
+          damage: 4
+          cooldown_ticks: 100
+          priority: 0
     maintenance_cost_per_minute:
       food: 60
     sensor:
@@ -501,7 +511,7 @@ entity_types:
         - id: laser
           type: laser
           range: 600
-          damage: 1o
+          damage: 10
           cooldown_ticks: 120
           priority: 0
     sensor:
@@ -516,7 +526,7 @@ entity_types:
     speed: 400
     stop_radius: 0.5
     mass: 0.6
-    health: 100
+    health: 2000
     hull_radius: 10
     combat_targetable: true
     build_cost:
@@ -528,12 +538,12 @@ entity_types:
       attacks:
         - id: laser
           type: laser
-          range: 600
-          damage: 1o
-          cooldown_ticks: 120
+          range: 2500
+          damage: 25
+          cooldown_ticks: 100
           priority: 0
     sensor:
-      range: 2000
+      range: 5000
       cost_per_minute:
         energy: 2.5
     visual:
@@ -544,21 +554,21 @@ entity_types:
     speed: 500
     stop_radius: 0.5
     mass: 0.6
-    health: 60
+    health: 400
     hull_radius: 10
     combat_targetable: true
     build_cost:
       minerals: 75
       energy: 50
     combat:
-      acquisition_range: 450
-      on_near_enemy_strategy: approach
+      acquisition_range: 500
+      on_near_enemy_strategy: stay
       attacks:
         - id: laser
           type: laser
-          range: 120
-          damage: 2
-          cooldown_ticks: 75
+          range: 500
+          damage: 4
+          cooldown_ticks: 100
           priority: 0
     sensor:
       range: 5000
