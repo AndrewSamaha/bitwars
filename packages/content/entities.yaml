@@ -530,8 +530,8 @@ entity_types:
     hull_radius: 10
     combat_targetable: true
     build_cost:
-      minerals: 75
-      energy: 50
+      minerals: 2005
+      energy: 2000
     combat:
       acquisition_range: 450
       on_near_enemy_strategy: approach
@@ -547,7 +547,7 @@ entity_types:
       cost_per_minute:
         energy: 2.5
     visual:
-      scale: 2
+      scale: 2.3
       rotate_deg: 90
   science_vessel:
     fog_memory: forget_when_hidden
@@ -576,4 +576,4 @@ entity_types:
         energy: 2.5
     visual:
       rotate_deg: 90
-      scale: 1.7
+      scale: 2.3

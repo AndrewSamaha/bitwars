@@ -58,6 +58,7 @@ const FOG_ALPHA = 0.20;
 const FOG_ZOOM_SETTLE_MS = 150;
 const FOG_ZOOM_UPDATE_INTERVAL_MS = 1000 / 30;
 const SONAR_PING_DURATION_MS = 900;
+const MINIMAP_NOTIFICATION_DURATION_MS = 2_500;
 
 const PAN_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD",
@@ -204,9 +205,22 @@ export default function GameStage() {
           position: { x: number; y: number };
           startedAt: number;
         }> = [];
+        const minimapNotifications: Array<{
+          entityId: string | null;
+          position: { x: number; y: number };
+          startedAt: number;
+        }> = [];
+        let latestMinimapNotification: (typeof minimapNotifications)[number] | null = null;
         const onEntityDetected = (event: Event) => {
           const entity = (event as CustomEvent<Entity>).detail;
           if (!entity?.pos) return;
+          const notification = {
+            entityId: entity.id === undefined ? null : String(entity.id),
+            position: { x: entity.pos.x, y: entity.pos.y },
+            startedAt: performance.now(),
+          };
+          minimapNotifications.push(notification);
+          latestMinimapNotification = notification;
           const graphics = new Graphics();
           graphics.eventMode = "none";
           sonarPingContainer.addChild(graphics);
@@ -438,7 +452,10 @@ export default function GameStage() {
         minimapContainer.addChild(minimapMemoryGraphics);
         const minimapViewportGraphics = new Graphics();
         minimapViewportGraphics.eventMode = "none";
-        minimapContainer.addChild(minimapViewportGraphics);
+        const minimapNotificationGraphics = new Graphics();
+        minimapNotificationGraphics.label = "minimapNotifications";
+        minimapNotificationGraphics.eventMode = "none";
+        minimapContainer.addChild(minimapViewportGraphics, minimapNotificationGraphics);
         app.stage.addChild(minimapContainer);
 
         const selectionBoxGraphics = new Graphics();
@@ -541,6 +558,7 @@ export default function GameStage() {
           minimapGraphics.clear();
           minimapMemoryGraphics.clear();
           minimapViewportGraphics.clear();
+          minimapNotificationGraphics.clear();
           // Background
           minimapGraphics
             .circle(MINIMAP_RADIUS_PX, MINIMAP_RADIUS_PX, MINIMAP_RADIUS_PX)
@@ -614,6 +632,25 @@ export default function GameStage() {
             app.renderer.render({ container: minimapFogRenderContainer, target: minimapFogTexture, clear: true });
           }
           minimapViewportGraphics.stroke({ width: 1.5, color: 0x6a_aa_ff, alpha: 0.9 });
+          const nowMs = performance.now();
+          for (let index = minimapNotifications.length - 1; index >= 0; index -= 1) {
+            const notification = minimapNotifications[index];
+            const progress = (nowMs - notification.startedAt) / MINIMAP_NOTIFICATION_DURATION_MS;
+            if (progress >= 1) {
+              minimapNotifications.splice(index, 1);
+              continue;
+            }
+            const { px, py } = worldToMinimapPx(
+              notification.position.x,
+              notification.position.y,
+              centerWorld.x,
+              centerWorld.y,
+            );
+            if (Math.hypot(px - MINIMAP_RADIUS_PX, py - MINIMAP_RADIUS_PX) > MINIMAP_RADIUS_PX) continue;
+            minimapNotificationGraphics
+              .circle(px, py, 3 + progress * 24)
+              .stroke({ color: 0xef_44_44, width: 2, alpha: 1 - progress * 0.7 });
+          }
         }
 
         // M1: Container for waypoint indicator graphics (drawn each frame)
@@ -691,6 +728,19 @@ export default function GameStage() {
               app.screen.width / 2 - entity.pos.x * worldContainer.scale.x,
               app.screen.height / 2 - entity.pos.y * worldContainer.scale.y,
             );
+            ev.preventDefault();
+          } else if (ev.code === "KeyX" && !isFocusInEditable()) {
+            const notification = latestMinimapNotification;
+            if (!notification) return;
+            worldContainer.position.set(
+              app.screen.width / 2 - notification.position.x * worldContainer.scale.x,
+              app.screen.height / 2 - notification.position.y * worldContainer.scale.y,
+            );
+            const entity = notification.entityId ? findLiveEntityById(notification.entityId) : null;
+            const myPlayerId = myPlayerIdRef.current;
+            if (entity && myPlayerId && entity.owner_player_id === myPlayerId && entity.id !== undefined) {
+              setSelection([String(entity.id)]);
+            }
             ev.preventDefault();
           } else if (PAN_KEYS.has(ev.code)) {
             if (!isFocusInEditable()) {
