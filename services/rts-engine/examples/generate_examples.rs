@@ -43,6 +43,7 @@ fn main() -> anyhow::Result<()> {
         entities: vec![e1, e2],
         player_ledgers: vec![],
         collector_states: vec![],
+        combat_effect_states: vec![],
     };
 
     // Encode with prost::Message
@@ -73,6 +74,7 @@ fn main() -> anyhow::Result<()> {
         updates: vec![d1, d2],
         removed_entity_ids: Vec::new(),
         collector_state_updates: vec![],
+        combat_effect_state_updates: vec![],
     };
 
     let mut delta_buf = Vec::new();

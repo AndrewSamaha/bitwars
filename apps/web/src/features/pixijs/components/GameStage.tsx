@@ -124,6 +124,13 @@ export default function GameStage() {
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
+            } : params.kind === "Upgrade" ? {
+              type: "Upgrade",
+              entity_id: params.entityId,
+              target_entity_type_id: params.targetEntityTypeId,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
             } : {
               type: "Repair",
               entity_id: params.entityId,
@@ -280,6 +287,7 @@ export default function GameStage() {
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
           for (const entity of game.world.with("pos", "entity_type_id").without("remembered")) {
+            if (String((entity as any).active_intent_kind).toLowerCase() === "upgrade") continue;
             const sources = contentManager.getEntityType(entity.entity_type_id ?? "")?.radiation_sources;
             drawRadiationRanges(radiationRangeGraphics, sources, entity.pos.x, entity.pos.y);
           }
@@ -480,7 +488,8 @@ export default function GameStage() {
 
         const sensorSources = () => {
           return getOwnedSensorSources(
-            game.world.with("pos", "entity_type_id").without("remembered"),
+            Array.from(game.world.with("pos", "entity_type_id").without("remembered"))
+              .filter((entity) => String((entity as any).active_intent_kind).toLowerCase() !== "upgrade"),
             myPlayerIdRef.current,
             (typeId) => contentManager.getEntityType(typeId)?.sensor?.range,
           );
@@ -618,7 +627,7 @@ export default function GameStage() {
         const refreshBuildProgress = (nowMs: number) => {
           if (buildProgressRequestInFlight || nowMs - lastBuildProgressPollAt < BUILD_PROGRESS_POLL_MS) return;
           const entityIds = Array.from(game.world.with("id"))
-            .filter((entity) => String((entity as any).active_intent_kind).toLowerCase() === "build")
+            .filter((entity) => ["build", "upgrade"].includes(String((entity as any).active_intent_kind).toLowerCase()))
             .map((entity) => String((entity as any).id));
           if (entityIds.length === 0) {
             buildProgressByEntity.clear();
@@ -837,19 +846,26 @@ export default function GameStage() {
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
             const scale = (e as any).scale ?? 1;
-            const visualScale = contentManager.getEntityType(typeId)?.visual_scale ?? 1;
+            const visual = contentManager.getEntityType(typeId)?.visual;
+            const visualScale = visual?.scale ?? 1;
             container.scale.set((scale * visualScale) / 2);
             container.zIndex = contentManager.getEntityType(typeId)?.z_index ?? 0;
             container.alpha = remembered ? 0.45 : 1;
 
             // Rotation: if we have proto velocity, rotate to face direction of travel
             const vel = e.vel as { x: number; y: number } | undefined;
+            const rotateDeg = visual?.rotate_deg ?? 0;
+            const rotateOffset = rotateDeg * Math.PI / 180;
             if (vel) {
               const { x: vx, y: vy } = vel;
               if (vx !== 0 || vy !== 0) {
                 // atan2 returns radians; 0 rad means pointing along +X axis
-                container.rotation = Math.atan2(vy, vx);
+                container.rotation = Math.atan2(vy, vx) + rotateOffset;
+              } else {
+                container.rotation = rotateOffset;
               }
+            } else {
+              container.rotation = rotateOffset;
             }
 
             // 3) Project ECS hover state + M6 ownership tint to Pixi (proto only)
@@ -865,7 +881,7 @@ export default function GameStage() {
             const isSelected = latestSelectorsRef.current.isSelected(id);
             const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildProgress = buildProgressByEntity.get(String((e as any).id));
-            const isBuilding = String((e as any).active_intent_kind).toLowerCase() === "build";
+            const isBuilding = ["build", "upgrade"].includes(String((e as any).active_intent_kind).toLowerCase());
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if (((e as any).hover || isSelected) && !suppressHover) {
               if (primary) (primary as any).tint = isOwned || isSystemOwner ? SELECTED_COLOR : NON_OWNED_TINT;

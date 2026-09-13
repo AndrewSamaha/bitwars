@@ -90,6 +90,7 @@ impl IntentManager {
             pb::intent::Kind::Build(b) => Some(b.entity_id),
             pb::intent::Kind::Collect(c) => Some(c.entity_id),
             pb::intent::Kind::Repair(r) => Some(r.entity_id),
+            pb::intent::Kind::Upgrade(u) => Some(u.entity_id),
         }
     }
 
@@ -290,6 +291,12 @@ fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -
                 };
                 exec = Some(pb::action_state::Exec::Build(build_state));
             }
+            pb::intent::Kind::Upgrade(u) => {
+                exec = Some(pb::action_state::Exec::Upgrade(pb::UpgradeState {
+                    target_entity_type_id: u.target_entity_type_id.clone(),
+                    progress: 0.0,
+                }));
+            }
             pb::intent::Kind::Collect(c) => {
                 let collect_state = pb::CollectState {
                     entity_id: c.entity_id,
@@ -332,6 +339,7 @@ fn log_start(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u64
         Some(pb::action_state::Exec::Build(_)) => "Build",
         Some(pb::action_state::Exec::Collect(_)) => "Collect",
         Some(pb::action_state::Exec::Repair(_)) => "Repair",
+        Some(pb::action_state::Exec::Upgrade(_)) => "Upgrade",
         None => "Unknown",
     };
     trace_start(metadata, kind, entity_id);
@@ -344,6 +352,7 @@ fn log_finish(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u6
         Some(pb::action_state::Exec::Build(_)) => "Build",
         Some(pb::action_state::Exec::Collect(_)) => "Collect",
         Some(pb::action_state::Exec::Repair(_)) => "Repair",
+        Some(pb::action_state::Exec::Upgrade(_)) => "Upgrade",
         None => "Unknown",
     };
     info!(

@@ -30,7 +30,7 @@ export type QueuedMoveIntent = {
   createdAt: number;
 };
 
-export type ActiveIntentKind = "move" | "collect" | "build" | "repair" | "unknown";
+export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "unknown";
 
 export type ActiveIntentInfo = {
   clientCmdId: string;
@@ -72,6 +72,14 @@ export type SendIntentParams =
       kind: "Build";
       entityId: number;
       blueprintId: string;
+      clientCmdId: string;
+      clientSeq: number;
+      policy: IntentPolicyName;
+    }
+  | {
+      kind: "Upgrade";
+      entityId: number;
+      targetEntityTypeId: string;
       clientCmdId: string;
       clientSeq: number;
       policy: IntentPolicyName;
@@ -127,7 +135,7 @@ class IntentQueueManager {
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
-  private cmdToKind = new Map<string, "move" | "collect" | "build" | "repair">();
+  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
@@ -238,6 +246,27 @@ class IntentQueueManager {
       kind: "Build",
       entityId,
       blueprintId,
+      clientCmdId,
+      clientSeq: this.clientSeq,
+      policy: "REPLACE_ACTIVE",
+    });
+  }
+
+  /** Start an in-place, content-defined upgrade immediately. */
+  handleUpgradeCommand(entityId: number, targetEntityTypeId: string) {
+    const clientCmdId = uuidv7();
+    this.clientSeq += 1;
+    const state = this.getOrCreate(entityId);
+    state.queue = [];
+    state.active = { clientCmdId, entityId, kind: "upgrade" };
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.cmdToKind.set(clientCmdId, "upgrade");
+    this.persist();
+    this.notify();
+    void this.sendCallback?.({
+      kind: "Upgrade",
+      entityId,
+      targetEntityTypeId,
       clientCmdId,
       clientSeq: this.clientSeq,
       policy: "REPLACE_ACTIVE",
@@ -450,7 +479,7 @@ class IntentQueueManager {
     return typeof v === "number" ? v : null;
   }
 
-  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "repair" | null {
+  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | null {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 

@@ -195,6 +195,14 @@ pub struct BuildIntent {
     #[prost(string, tag = "5")]
     pub player_id: ::prost::alloc::string::String,
 }
+/// Transform this entity in place into a content-defined upgraded type.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpgradeIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(string, tag = "2")]
+    pub target_entity_type_id: ::prost::alloc::string::String,
+}
 /// Collect intent payload (authoritative server-side).
 /// Starts/maintains autonomous resource collection behavior for this entity.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -248,7 +256,7 @@ pub struct IntentEnvelope {
     /// defaults to REPLACE_ACTIVE when omitted
     #[prost(enumeration = "IntentPolicy", tag = "7")]
     pub policy: i32,
-    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14")]
+    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14, 16")]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
 /// Nested message and enum types in `IntentEnvelope`.
@@ -265,13 +273,15 @@ pub mod intent_envelope {
         Collect(super::CollectIntent),
         #[prost(message, tag = "14")]
         Repair(super::RepairIntent),
+        #[prost(message, tag = "16")]
+        Upgrade(super::UpgradeIntent),
     }
 }
 /// Extensible Intent envelope.
 /// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Intent {
-    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5")]
+    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5, 6")]
     pub kind: ::core::option::Option<intent::Kind>,
 }
 /// Nested message and enum types in `Intent`.
@@ -288,6 +298,8 @@ pub mod intent {
         Collect(super::CollectIntent),
         #[prost(message, tag = "5")]
         Repair(super::RepairIntent),
+        #[prost(message, tag = "6")]
+        Upgrade(super::UpgradeIntent),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -384,6 +396,14 @@ pub struct BuildState {
     #[prost(float, tag = "3")]
     pub progress: f32,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpgradeState {
+    #[prost(string, tag = "1")]
+    pub target_entity_type_id: ::prost::alloc::string::String,
+    /// 0..1
+    #[prost(float, tag = "2")]
+    pub progress: f32,
+}
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CollectState {
     #[prost(uint64, tag = "1")]
@@ -400,7 +420,7 @@ pub struct ActionState {
     /// Echo original intent for correlation/observability (optional but useful)
     #[prost(message, optional, tag = "1")]
     pub intent: ::core::option::Option<Intent>,
-    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6")]
+    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6, 7")]
     pub exec: ::core::option::Option<action_state::Exec>,
 }
 /// Nested message and enum types in `ActionState`.
@@ -417,6 +437,8 @@ pub mod action_state {
         Collect(super::CollectState),
         #[prost(message, tag = "6")]
         Repair(super::RepairState),
+        #[prost(message, tag = "7")]
+        Upgrade(super::UpgradeState),
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

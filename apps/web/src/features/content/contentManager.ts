@@ -42,8 +42,12 @@ export type EntityTypeDef = {
       contact_tolerance?: number;
     }>;
   };
-  /** Client-only multiplier for this entity type's rendered size. */
-  visual_scale?: number;
+  /** Client-only sprite presentation settings. */
+  visual?: {
+    scale?: number;
+    /** Clockwise offset from the asset's native right-facing direction. */
+    rotate_deg?: number;
+  };
   /** Draw order within the game world; higher values render in front. */
   z_index?: number;
   /** Whether hover indicators and entity detail UI should be suppressed. */
@@ -69,6 +73,14 @@ export type EntityTypeDef = {
     entity_type_id: string;
     spend_rates?: Record<string, number>;
   }>;
+  /** Content-defined in-place transformations offered by this entity type. */
+  upgrades?: Array<{
+    entity_type_id: string;
+    spend_rates?: Record<string, number>;
+  }>;
+  collector?: {
+    vfx?: "solar_proximity" | "mineral_transport";
+  };
   radiation_sources?: Array<{
     radiation_type: string;
     min_effective_distance_border_color?: string;
