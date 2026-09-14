@@ -89,6 +89,7 @@ export default function ContentGraph() {
   const [draftDefinition, setDraftDefinition] = useState<string | null>(null);
   const [draftName, setDraftName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const graphRef = useRef<HTMLDivElement>(null);
   const assetInputRef = useRef<HTMLInputElement>(null);
@@ -245,7 +246,12 @@ export default function ContentGraph() {
     const definition = draftDefinition ?? selected.definition;
     const newId = draftName ?? selected.id;
     const response = await savingFetch(`/api/content/entities/${selected.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ definition, newId }) });
-    if (!response.ok) return;
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      setSaveError(body?.error ?? "Unable to save this entity definition.");
+      return;
+    }
+    setSaveError(null);
     setEntities((current) => current.map((entity) => ({
       ...entity,
       id: entity.id === selected.id ? newId : entity.id,
@@ -318,7 +324,7 @@ export default function ContentGraph() {
                 <button
                   className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"}`}
                   key={entity.id}
-                  onClick={() => { setSelectedId(entity.id); setDraftDefinition(null); setDraftName(null); }}
+                  onClick={() => { setSelectedId(entity.id); setDraftDefinition(null); setDraftName(null); setSaveError(null); }}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     const bounds = graphRef.current?.getBoundingClientRect();
@@ -369,9 +375,10 @@ export default function ContentGraph() {
             <p className="text-sm font-medium text-slate-300">Fields</p>
             {(draftDefinition !== null && draftDefinition !== selected.definition || draftName !== null && draftName !== selected.id) && <div className="flex gap-2">
               <button className="rounded bg-cyan-400 px-3 py-1 text-sm font-medium text-slate-950" onClick={saveDraft} type="button">Save</button>
-              <button className="rounded border border-slate-600 px-3 py-1 text-sm" onClick={() => { setDraftDefinition(null); setDraftName(null); }} type="button">Cancel</button>
+              <button className="rounded border border-slate-600 px-3 py-1 text-sm" onClick={() => { setDraftDefinition(null); setDraftName(null); setSaveError(null); }} type="button">Cancel</button>
             </div>}
           </div>
+          {saveError && <p className="mt-2 text-sm text-red-400" role="alert">{saveError}</p>}
           <div className="mt-3 overflow-hidden rounded-lg border border-slate-700">
             <YamlEditor id={selected.id} onChange={setDraftDefinition} value={draftDefinition ?? selected.definition} />
           </div>

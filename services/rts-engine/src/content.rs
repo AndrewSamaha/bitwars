@@ -24,6 +24,7 @@ pub struct ContentPack {
 
 /// Per-entity-type definition loaded from the content YAML.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct EntityTypeDef {
     /// Client behavior when this entity leaves sensor coverage.
     pub fog_memory: FogMemory,
@@ -110,6 +111,7 @@ pub enum FogMemory {
 /// Timings are ticks, rather than seconds, so a combat replay is a pure
 /// function of the content version and tick stream.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CombatDef {
     /// Maximum distance at which this unit acquires a hostile target.
     pub acquisition_range: f32,
@@ -121,6 +123,7 @@ pub struct CombatDef {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AttackDef {
     pub id: String,
     #[serde(rename = "type")]
@@ -159,6 +162,7 @@ pub enum NearEnemyStrategy {
 
 /// One content-defined production option available to a builder.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct BuildOptionDef {
     pub entity_type_id: String,
     /// Resource conversion rates. A missing required resource defaults to 1/s.
@@ -171,6 +175,7 @@ pub struct BuildOptionDef {
 /// The target type's `build_cost` supplies the resource cost. A missing
 /// required resource rate defaults to 1/s, matching production builds.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpgradeOptionDef {
     pub entity_type_id: String,
     #[serde(default)]
@@ -179,6 +184,7 @@ pub struct UpgradeOptionDef {
 
 /// Client-only sprite presentation settings.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct VisualDef {
     /// Multiplier for the entity's rendered size.
     #[serde(
@@ -208,6 +214,7 @@ impl VisualDef {
 
 /// Content-defined sensor available to any entity type.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SensorDef {
     /// Per-resource operating cost, in units per minute.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -217,6 +224,7 @@ pub struct SensorDef {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RepairDef {
     /// Maximum center-to-center repair distance in world units.
     pub range: f32,
@@ -228,6 +236,7 @@ pub struct RepairDef {
 
 /// M7: Per-resource-type definition for display (name, order) in HUD.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResourceTypeDef {
     pub display_name: String,
     #[serde(default)]
@@ -264,6 +273,7 @@ pub enum CollectionMode {
 
 /// M8: Collector capabilities and rates.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CollectorDef {
     /// Client presentation profile for collection particle effects.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -288,6 +298,7 @@ pub struct CollectorDef {
 
 /// M8: Resource source profile for entity types that can be gathered from.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ResourceNodeDef {
     pub resource_type: String,
     pub collection_mode: CollectionMode,
@@ -299,6 +310,7 @@ pub struct ResourceNodeDef {
 
 /// M8: Refinery/processor profile.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RefineryDef {
     /// Resource type ids this structure accepts for deposit.
     #[serde(default)]
@@ -307,6 +319,7 @@ pub struct RefineryDef {
 
 /// Environmental radiation emitted by an entity type.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RadiationSourceDef {
     pub radiation_type: String,
     /// Hex color for the min-effective-distance range outline.
@@ -339,6 +352,7 @@ pub struct RadiationSourceDef {
 
 /// Per-radiation-type shielding profile for an entity type.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RadiationShieldingDef {
     /// Acts like extra standoff distance for hazard evaluation.
     #[serde(default)]
@@ -370,6 +384,7 @@ fn default_damage_multiplier() -> f32 {
 
 /// Raw deserialization target matching the YAML structure.
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ContentFile {
     entity_types: HashMap<String, EntityTypeDef>,
     #[serde(default)]
@@ -496,6 +511,21 @@ fn canonical_hash(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejects_unknown_entity_and_nested_combat_fields() {
+        let entity_error = serde_yaml::from_str::<EntityTypeDef>(
+            "fog_memory: forget_when_hidden\nspeed: 1\nstop_radius: 1\nmass: 1\nhealth: 1\nnot_a_real_field: true\n",
+        )
+        .unwrap_err();
+        assert!(entity_error.to_string().contains("not_a_real_field"));
+
+        let combat_error = serde_yaml::from_str::<EntityTypeDef>(
+            "fog_memory: forget_when_hidden\nspeed: 1\nstop_radius: 1\nmass: 1\nhealth: 1\ncombat:\n  acquisition_range: 100\n  attacks:\n    - id: laser\n      type: laser\n      damage: 1\n      cooldown_ticks: 1\n      not_a_real_attack_field: true\n",
+        )
+        .unwrap_err();
+        assert!(combat_error.to_string().contains("not_a_real_attack_field"));
+    }
 
     #[test]
     fn content_hash_is_deterministic() {

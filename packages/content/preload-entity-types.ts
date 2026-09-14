@@ -146,7 +146,7 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {},
-    "definition": "fog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 100\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 200\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 15\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 700\n      damage: 10\n      cooldown_ticks: 120\n      priority: 0\nsensor:\n  range: 700\n  cost_per_minute:\n    energy: 2.5"
+    "definition": "fog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 100\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 200\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 15\ncombat:\n  acquisition_range: 700\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 700\n      damage: 10\n      cooldown_ticks: 120\n      priority: 0\nsensor:\n  range: 700\n  cost_per_minute:\n    energy: 2.5"
   },
   {
     "id": "fighter_v1",

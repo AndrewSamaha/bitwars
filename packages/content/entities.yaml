@@ -22,11 +22,8 @@ entity_types:
       scale: 2
     radiation_sources:
       - radiation_type: theta
-        min_effective_distance_border_color: null
         min_effective_distance_fill_color: "#882cd6"
-        full_damage_distance_border_color: null
         full_damage_distance_fill_color: "#a753ef"
-        max_effective_distance_border_color: null
         max_effective_distance_fill_color: "#c384f8"
         min_effective_distance: 0
         full_damage_distance: 700
@@ -452,7 +449,7 @@ entity_types:
     health: 500
     hull_radius: 15
     combat:
-      acquisition_range: 500
+      acquisition_range: 700
       on_near_enemy_strategy: stay
       attacks:
         - id: laser

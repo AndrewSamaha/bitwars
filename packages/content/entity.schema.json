@@ -172,6 +172,7 @@
       "format": "int32"
     }
   },
+  "additionalProperties": false,
   "required": [
     "fog_memory",
     "speed",
@@ -216,6 +217,7 @@
           "$ref": "#/$defs/AttackType"
         }
       },
+      "additionalProperties": false,
       "required": [
         "id",
         "type",
@@ -247,6 +249,7 @@
           "default": {}
         }
       },
+      "additionalProperties": false,
       "required": [
         "entity_type_id"
       ]
@@ -315,7 +318,8 @@
             }
           ]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "CombatDef": {
       "description": "Data needed for server-authoritative autonomous combat.\n\nTimings are ticks, rather than seconds, so a combat replay is a pure\nfunction of the content version and tick stream.",
@@ -339,6 +343,7 @@
           "default": "approach"
         }
       },
+      "additionalProperties": false,
       "required": [
         "acquisition_range",
         "attacks"
@@ -387,7 +392,8 @@
           "format": "float",
           "default": 0.0
         }
-      }
+      },
+      "additionalProperties": false
     },
     "RadiationSourceDef": {
       "description": "Environmental radiation emitted by an entity type.",
@@ -459,6 +465,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "required": [
         "radiation_type"
       ]
@@ -475,7 +482,8 @@
             "type": "string"
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "RepairDef": {
       "type": "object",
@@ -499,6 +507,7 @@
           "format": "float"
         }
       },
+      "additionalProperties": false,
       "required": [
         "range",
         "cost_per_min",
@@ -526,6 +535,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "required": [
         "resource_type",
         "collection_mode"
@@ -549,6 +559,7 @@
           "format": "float"
         }
       },
+      "additionalProperties": false,
       "required": [
         "range"
       ]
@@ -569,6 +580,7 @@
           "default": {}
         }
       },
+      "additionalProperties": false,
       "required": [
         "entity_type_id"
       ]
@@ -587,7 +599,8 @@
           "type": "number",
           "format": "float"
         }
-      }
+      },
+      "additionalProperties": false
     }
   }
 }
