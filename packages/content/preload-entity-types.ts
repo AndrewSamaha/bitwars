@@ -155,7 +155,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 450\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 300\n      damage: 4\n      cooldown_ticks: 75\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 300\n      damage: 4\n      cooldown_ticks: 75\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
   },
   {
     "id": "heavy_fighter",
@@ -164,7 +164,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 100\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 450\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 600\n      damage: 10\n      cooldown_ticks: 120\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 100\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 600\n      damage: 10\n      cooldown_ticks: 120\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
   },
   {
     "id": "battleship",
@@ -173,7 +173,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 2.3
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 2000\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 2005\n  energy: 2000\ncombat:\n  acquisition_range: 450\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 2500\n      damage: 25\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\n  rotate_deg: 90"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 2000\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 2005\n  energy: 2000\ncombat:\n  acquisition_range: 5000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 2500\n      damage: 25\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\n  rotate_deg: 90"
   },
   {
     "id": "science_vessel",

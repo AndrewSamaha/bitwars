@@ -477,7 +477,7 @@ entity_types:
       minerals: 75
       energy: 50
     combat:
-      acquisition_range: 450
+      acquisition_range: 2000
       on_near_enemy_strategy: approach
       attacks:
         - id: laser
@@ -505,7 +505,7 @@ entity_types:
       minerals: 75
       energy: 50
     combat:
-      acquisition_range: 450
+      acquisition_range: 2000
       on_near_enemy_strategy: approach
       attacks:
         - id: laser
@@ -533,7 +533,7 @@ entity_types:
       minerals: 2005
       energy: 2000
     combat:
-      acquisition_range: 450
+      acquisition_range: 5000
       on_near_enemy_strategy: approach
       attacks:
         - id: laser
