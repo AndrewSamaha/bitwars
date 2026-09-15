@@ -58,3 +58,42 @@ export function unknownEntityFieldErrors(value: unknown): string[] {
   collectUnknownFields(value, rootSchema, "entity", errors);
   return errors;
 }
+
+export type EntityCombatRangeWarning = {
+  kind: "sensor" | "attack";
+  attackIndex?: number;
+  message: string;
+};
+
+/**
+ * Content balance guidance: an autonomous unit should be able to sense every
+ * enemy it can acquire, and acquire every enemy it can shoot.
+ */
+export function entityCombatRangeWarnings(value: unknown): EntityCombatRangeWarning[] {
+  if (!value || typeof value !== "object") return [];
+  const entity = value as {
+    sensor?: { range?: unknown };
+    combat?: { acquisition_range?: unknown; attacks?: Array<{ range?: unknown }> };
+  };
+  const acquisitionRange = entity.combat?.acquisition_range;
+  if (typeof acquisitionRange !== "number" || !Number.isFinite(acquisitionRange)) return [];
+
+  const warnings: EntityCombatRangeWarning[] = [];
+  const sensorRange = entity.sensor?.range;
+  if (!Number.isFinite(sensorRange) || (sensorRange as number) < acquisitionRange) {
+    warnings.push({
+      kind: "sensor",
+      message: `Sensor range (${Number.isFinite(sensorRange) ? sensorRange : "missing"}) should be at least combat acquisition range (${acquisitionRange}).`,
+    });
+  }
+  for (const [attackIndex, attack] of (entity.combat?.attacks ?? []).entries()) {
+    if (Number.isFinite(attack.range) && (attack.range as number) > acquisitionRange) {
+      warnings.push({
+        kind: "attack",
+        attackIndex,
+        message: `Weapon range (${attack.range}) exceeds combat acquisition range (${acquisitionRange}).`,
+      });
+    }
+  }
+  return warnings;
+}

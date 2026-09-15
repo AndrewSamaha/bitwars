@@ -2,6 +2,7 @@
 
 import { ENTITY_CONTENT } from "@bitwars/content";
 import YamlEditor from "@/features/content/components/YamlEditor";
+import { entityCombatRangeWarnings, unknownEntityFieldErrors } from "@/lib/content/schemaValidation";
 import { Pencil } from "lucide-react";
 import {
   forceCenter,
@@ -13,6 +14,7 @@ import {
   type SimulationNodeDatum,
 } from "d3-force";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { parseDocument } from "yaml";
 
 type Entity = {
   id: string;
@@ -24,6 +26,7 @@ type Entity = {
 type Point = { x: number; y: number };
 type GraphNode = SimulationNodeDatum & { id: string; entity: Entity };
 type GraphLink = { source: string; target: string; kind: "build" | "upgrade" };
+type DiagnosticStatus = "error" | "warning" | null;
 
 const INITIAL_ENTITIES: Entity[] = ENTITY_CONTENT.map((entity) => ({ ...entity }));
 const DEFAULT_ZOOM = 0.85;
@@ -57,6 +60,14 @@ function visualRotateDeg(definition: string, fallback = 0): number {
   const visualBlock = definition.match(/^visual:\n(?:(?: {2,}.*|\s*)\n)*/m)?.[0] ?? "";
   const value = Number(visualBlock.match(/^\s*rotate_deg:\s*([^\s#]+)/m)?.[1]);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function diagnosticStatus(definition: string): DiagnosticStatus {
+  const document = parseDocument(definition);
+  if (document.errors.length) return "error";
+  const entity = document.toJS();
+  if (unknownEntityFieldErrors(entity).length) return "error";
+  return entityCombatRangeWarnings(entity).length ? "warning" : null;
 }
 
 function builderOutwardForce(links: readonly GraphLink[]) {
@@ -109,6 +120,10 @@ export default function ContentGraph() {
     [links],
   );
   const selected = entities.find((entity) => entity.id === selectedId) ?? entities[0];
+  const diagnosticStatusByEntity = useMemo(() => new Map(entities.map((entity) => [
+    entity.id,
+    diagnosticStatus(entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition),
+  ])), [entities, selectedId, draftDefinition]);
 
   useEffect(() => {
     fetch("/api/content/entities").then((response) => response.ok ? response.json() : null).then((data) => {
@@ -316,13 +331,14 @@ export default function ContentGraph() {
             </svg>
             {entities.map((entity) => {
               const position = positions[entity.id];
+              const diagnosticStatus = diagnosticStatusByEntity.get(entity.id);
               const rotateDeg = visualRotateDeg(
                 entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition,
                 entity.visual?.rotate_deg ?? 0,
               );
               return (
                 <button
-                  className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"}`}
+                  className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"} ${diagnosticStatus === "error" ? "outline outline-2 outline-red-400" : diagnosticStatus === "warning" ? "outline outline-2 outline-yellow-400" : ""}`}
                   key={entity.id}
                   onClick={() => { setSelectedId(entity.id); setDraftDefinition(null); setDraftName(null); setSaveError(null); }}
                   onContextMenu={(event) => {

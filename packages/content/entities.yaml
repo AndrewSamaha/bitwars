@@ -349,7 +349,7 @@ entity_types:
           cooldown_ticks: 100
           priority: 0
     sensor:
-      range: 500
+      range: 1200
       cost_per_minute:
         energy: 2.5
   defense_pylon_v2:
@@ -454,7 +454,7 @@ entity_types:
       attacks:
         - id: laser
           type: laser
-          range: 700
+          range: 400
           damage: 10
           cooldown_ticks: 120
           priority: 0
