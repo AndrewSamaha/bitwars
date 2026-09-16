@@ -8,7 +8,7 @@ use crate::engine::state::GameState;
 use crate::pb::events_stream_record;
 use crate::pb::{
     self, CollectorState, CombatEffectState, Delta, EventsStreamRecord, LaserShotEvent,
-    LifecycleEvent, PlayerResourceLedger, ResourceEntry, Snapshot,
+    LifecycleEvent, PlayerResourceLedger, PlayerTechnologyState, ResourceEntry, Snapshot,
 };
 
 // ── M2: Per-entity tracking types ───────────────────────────────────────────
@@ -317,6 +317,19 @@ impl RedisClient {
             .collect::<Vec<_>>();
         let mut player_ledgers = player_ledgers;
         player_ledgers.sort_by(|a, b| a.player_id.cmp(&b.player_id));
+        let mut player_technologies = state
+            .technologies
+            .iter()
+            .map(|(player_id, technologies)| {
+                let mut technology_ids: Vec<String> = technologies.iter().cloned().collect();
+                technology_ids.sort();
+                PlayerTechnologyState {
+                    player_id: player_id.clone(),
+                    technology_ids,
+                }
+            })
+            .collect::<Vec<_>>();
+        player_technologies.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
         let snap = Snapshot {
             tick: state.tick as i64,
@@ -324,6 +337,7 @@ impl RedisClient {
             player_ledgers,
             collector_states,
             combat_effect_states,
+            player_technologies,
         };
         let bytes = snap.encode_to_vec();
 
@@ -585,6 +599,7 @@ impl RedisClient {
             tick: snapshot.tick as u64,
             entities: snapshot.entities,
             ledger,
+            technologies: Default::default(),
         };
 
         info!(

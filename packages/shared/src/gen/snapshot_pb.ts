@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file snapshot.proto.
  */
 export const file_snapshot: GenFile = /*@__PURE__*/
-  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyI2Cg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDIlQKFFBsYXllclJlc291cmNlTGVkZ2VyEhEKCXBsYXllcl9pZBgBIAEoCRIpCglyZXNvdXJjZXMYAiADKAsyFi5iaXR3YXJzLlJlc291cmNlRW50cnki3wEKCFNuYXBzaG90EgwKBHRpY2sYAiABKAMSIQoIZW50aXRpZXMYAyADKAsyDy5iaXR3YXJzLkVudGl0eRI1Cg5wbGF5ZXJfbGVkZ2VycxgEIAMoCzIdLmJpdHdhcnMuUGxheWVyUmVzb3VyY2VMZWRnZXISMQoQY29sbGVjdG9yX3N0YXRlcxgFIAMoCzIXLmJpdHdhcnMuQ29sbGVjdG9yU3RhdGUSOAoUY29tYmF0X2VmZmVjdF9zdGF0ZXMYBiADKAsyGi5iaXR3YXJzLkNvbWJhdEVmZmVjdFN0YXRlYgZwcm90bzM", [file_entity, file_collector_state, file_combat_effect_state]);
+  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyI2Cg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDIlQKFFBsYXllclJlc291cmNlTGVkZ2VyEhEKCXBsYXllcl9pZBgBIAEoCRIpCglyZXNvdXJjZXMYAiADKAsyFi5iaXR3YXJzLlJlc291cmNlRW50cnkiQgoVUGxheWVyVGVjaG5vbG9neVN0YXRlEhEKCXBsYXllcl9pZBgBIAEoCRIWCg50ZWNobm9sb2d5X2lkcxgCIAMoCSKcAgoIU25hcHNob3QSDAoEdGljaxgCIAEoAxIhCghlbnRpdGllcxgDIAMoCzIPLmJpdHdhcnMuRW50aXR5EjUKDnBsYXllcl9sZWRnZXJzGAQgAygLMh0uYml0d2Fycy5QbGF5ZXJSZXNvdXJjZUxlZGdlchIxChBjb2xsZWN0b3Jfc3RhdGVzGAUgAygLMhcuYml0d2Fycy5Db2xsZWN0b3JTdGF0ZRI4ChRjb21iYXRfZWZmZWN0X3N0YXRlcxgGIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGUSOwoTcGxheWVyX3RlY2hub2xvZ2llcxgHIAMoCzIeLmJpdHdhcnMuUGxheWVyVGVjaG5vbG9neVN0YXRlYgZwcm90bzM", [file_entity, file_collector_state, file_combat_effect_state]);
 
 /**
  * M7: Per-player resource totals. Resource types are data-driven (string IDs).
@@ -65,6 +65,31 @@ export const PlayerResourceLedgerSchema: GenMessage<PlayerResourceLedger> = /*@_
   messageDesc(file_snapshot, 1);
 
 /**
+ * Technologies completed by a player. Technology definitions are supplied by
+ * the versioned content pack; this is only mutable match state.
+ *
+ * @generated from message bitwars.PlayerTechnologyState
+ */
+export type PlayerTechnologyState = Message<"bitwars.PlayerTechnologyState"> & {
+  /**
+   * @generated from field: string player_id = 1;
+   */
+  playerId: string;
+
+  /**
+   * @generated from field: repeated string technology_ids = 2;
+   */
+  technologyIds: string[];
+};
+
+/**
+ * Describes the message bitwars.PlayerTechnologyState.
+ * Use `create(PlayerTechnologyStateSchema)` to create a new message.
+ */
+export const PlayerTechnologyStateSchema: GenMessage<PlayerTechnologyState> = /*@__PURE__*/
+  messageDesc(file_snapshot, 2);
+
+/**
  * @generated from message bitwars.Snapshot
  */
 export type Snapshot = Message<"bitwars.Snapshot"> & {
@@ -92,6 +117,11 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
    * @generated from field: repeated bitwars.CombatEffectState combat_effect_states = 6;
    */
   combatEffectStates: CombatEffectState[];
+
+  /**
+   * @generated from field: repeated bitwars.PlayerTechnologyState player_technologies = 7;
+   */
+  playerTechnologies: PlayerTechnologyState[];
 };
 
 /**
@@ -99,5 +129,5 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
  * Use `create(SnapshotSchema)` to create a new message.
  */
 export const SnapshotSchema: GenMessage<Snapshot> = /*@__PURE__*/
-  messageDesc(file_snapshot, 2);
+  messageDesc(file_snapshot, 3);
 

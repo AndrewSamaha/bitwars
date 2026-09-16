@@ -30,7 +30,7 @@ export type QueuedMoveIntent = {
   createdAt: number;
 };
 
-export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "unknown";
+export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "unknown";
 
 export type ActiveIntentInfo = {
   clientCmdId: string;
@@ -91,6 +91,14 @@ export type SendIntentParams =
       clientCmdId: string;
       clientSeq: number;
       policy: IntentPolicyName;
+    }
+  | {
+      kind: "Research";
+      entityId: number;
+      technologyId: string;
+      clientCmdId: string;
+      clientSeq: number;
+      policy: IntentPolicyName;
     };
 
 type SendCallback = (params: SendIntentParams) => Promise<void>;
@@ -135,7 +143,7 @@ class IntentQueueManager {
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
-  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair">();
+  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair" | "research">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
@@ -271,6 +279,19 @@ class IntentQueueManager {
       clientSeq: this.clientSeq,
       policy: "REPLACE_ACTIVE",
     });
+  }
+
+  /** Start research at a content-defined research-capable entity. */
+  handleResearchCommand(entityId: number, technologyId: string) {
+    const clientCmdId = uuidv7();
+    this.clientSeq += 1;
+    const state = this.getOrCreate(entityId);
+    state.queue = [];
+    state.active = { clientCmdId, entityId, kind: "research" };
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.cmdToKind.set(clientCmdId, "research");
+    this.persist(); this.notify();
+    void this.sendCallback?.({ kind: "Research", entityId, technologyId, clientCmdId, clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
   /**
@@ -479,7 +500,7 @@ class IntentQueueManager {
     return typeof v === "number" ? v : null;
   }
 
-  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | null {
+  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | "research" | null {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 

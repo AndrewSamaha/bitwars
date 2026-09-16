@@ -71,7 +71,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 2
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 4\nhealth: 400\nhull_radius: 50\nvisual:\n  scale: 2\ncombat_targetable: true\nrefinery:\n  accepts:\n    - food\n    - minerals\nbuild_cost:\n  minerals: 1000\n  energy: 1000\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nmaintenance_cost_per_minute:\n  food: 60\nsensor:\n  range: 4000\n  cost_per_minute:\n    energy: 5\nbuilds:\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 0.8\n      energy: 0.8\ncollector:\n  collects:\n    - energy\n  proximity_rate_per_second: 5\n  transport_rate_per_second: 0\n  carry_capacity: 0"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 4\nhealth: 400\nhull_radius: 50\nvisual:\n  scale: 2\ncombat_targetable: true\nrefinery:\n  accepts:\n    - food\n    - minerals\nbuild_cost:\n  minerals: 1000\n  energy: 1000\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nmaintenance_cost_per_minute:\n  food: 60\nsensor:\n  range: 4000\n  cost_per_minute:\n    energy: 5\nbuilds:\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 0.8\n      energy: 0.8\ncollector:\n  collects:\n    - energy\n  proximity_rate_per_second: 5\n  transport_rate_per_second: 0\n  carry_capacity: 0\nresearches:\n  - neutrino_sensors"
   },
   {
     "id": "processor",
@@ -171,17 +171,19 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {
-      "scale": 2.3
+      "scale": 2.3,
+      "rotate_deg": 90
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 2000\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 2005\n  energy: 2000\ncombat:\n  acquisition_range: 5000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 2500\n      damage: 25\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\n  rotate_deg: 90"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 2000\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 2005\n  energy: 2000\ncombat:\n  acquisition_range: 5000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 2500\n      damage: 25\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\n  rotate_deg: 90\nrequires_technologies:\n  all: [space_age, neutrino_sensors]"
   },
   {
     "id": "science_vessel",
     "builds": [],
     "upgrades": [],
     "visual": {
+      "scale": 2.3,
       "rotate_deg": 90
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 400\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  rotate_deg: 90\n  scale: 2.3"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 400\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  rotate_deg: 90\n  scale: 2.3\nresearches:\n  - neutrino_sensors"
   }
 ] as const;

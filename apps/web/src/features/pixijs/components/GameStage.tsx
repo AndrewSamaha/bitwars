@@ -132,6 +132,13 @@ export default function GameStage() {
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
+            } : params.kind === "Research" ? {
+              type: "Research",
+              entity_id: params.entityId,
+              technology_id: params.technologyId,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
             } : {
               type: "Repair",
               entity_id: params.entityId,

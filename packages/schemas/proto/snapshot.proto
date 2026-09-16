@@ -16,10 +16,18 @@ message PlayerResourceLedger {
   repeated ResourceEntry resources = 2;
 }
 
+// Technologies completed by a player. Technology definitions are supplied by
+// the versioned content pack; this is only mutable match state.
+message PlayerTechnologyState {
+  string player_id = 1;
+  repeated string technology_ids = 2;
+}
+
 message Snapshot {
   int64 tick = 2;
   repeated Entity entities = 3;
   repeated PlayerResourceLedger player_ledgers = 4;
   repeated CollectorState collector_states = 5;
   repeated CombatEffectState combat_effect_states = 6;
+  repeated PlayerTechnologyState player_technologies = 7;
 }

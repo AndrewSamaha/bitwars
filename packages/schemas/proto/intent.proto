@@ -71,6 +71,12 @@ message UpgradeIntent {
   string target_entity_type_id = 2;
 }
 
+// Research one content-defined technology using a research-capable entity.
+message ResearchIntent {
+  uint64 entity_id = 1;
+  string technology_id = 2;
+}
+
 // Collect intent payload (authoritative server-side).
 // Starts/maintains autonomous resource collection behavior for this entity.
 message CollectIntent {
@@ -104,6 +110,7 @@ message IntentEnvelope {
     CollectIntent        collect = 13;
     RepairIntent         repair = 14;
     UpgradeIntent        upgrade = 16;
+    ResearchIntent       research = 17;
   }
   reserved 8, 9, 15;
 }
@@ -118,6 +125,7 @@ message Intent {
     CollectIntent        collect = 4;
     RepairIntent         repair = 5;
     UpgradeIntent        upgrade = 6;
+    ResearchIntent       research = 7;
   }
 }
 
@@ -189,6 +197,11 @@ message UpgradeState {
   float progress = 2; // 0..1
 }
 
+message ResearchState {
+  string technology_id = 1;
+  float progress = 2;
+}
+
 message CollectState {
   uint64 entity_id = 1;
 }
@@ -209,5 +222,6 @@ message ActionState {
     CollectState collect = 5;
     RepairState  repair  = 6;
     UpgradeState upgrade = 7;
+    ResearchState research = 8;
   }
 }

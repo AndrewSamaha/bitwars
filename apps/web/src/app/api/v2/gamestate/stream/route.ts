@@ -60,8 +60,9 @@ export const GET = withAxiom(async (req: Request) => {
       const streamEvents = `rts:match:${GAME_ID}:events`;
       const contentDefsKey = `rts:match:${GAME_ID}:content_defs`;
       const contentDefs = await redis.get(contentDefsKey);
-      const entityTypes = contentDefs ? JSON.parse(contentDefs).entity_types ?? {} : {};
-      const visibility = new VisibilityFilter(actingAsId ?? playerId ?? "", entityTypes);
+      const parsedContent = contentDefs ? JSON.parse(contentDefs) : {};
+      const entityTypes = parsedContent.entity_types ?? {};
+      const visibility = new VisibilityFilter(actingAsId ?? playerId ?? "", entityTypes, parsedContent.technologies ?? {});
       let lastId: string | undefined;
 
       // Visibility state is connection-local, so every connection starts from

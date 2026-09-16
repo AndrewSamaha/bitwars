@@ -325,6 +325,8 @@ mod radiation_tests {
                 visibility_range: None,
                 builds: Vec::new(),
                 upgrades: Vec::new(),
+                requires_technologies: None,
+                researches: Vec::new(),
             },
         );
 
@@ -362,6 +364,8 @@ mod radiation_tests {
                 visibility_range: None,
                 builds: Vec::new(),
                 upgrades: Vec::new(),
+                requires_technologies: None,
+                researches: Vec::new(),
             },
         );
         entity_types.insert(
@@ -390,12 +394,15 @@ mod radiation_tests {
                 visibility_range: None,
                 builds: Vec::new(),
                 upgrades: Vec::new(),
+                requires_technologies: None,
+                researches: Vec::new(),
             },
         );
 
         ContentPack {
             entity_types,
             resource_types: HashMap::new(),
+            technologies: HashMap::new(),
             content_hash: "test".to_string(),
         }
     }
@@ -448,6 +455,7 @@ mod radiation_tests {
                 worker_same_distance,
             ],
             ledger: HashMap::new(),
+            technologies: HashMap::new(),
         };
 
         let damage = Engine::compute_radiation_damage(&state, &content);
@@ -491,6 +499,7 @@ mod radiation_tests {
                 },
             ],
             ledger: HashMap::new(),
+            technologies: HashMap::new(),
         };
 
         let damage = Engine::compute_radiation_damage(&state, &content);
@@ -523,6 +532,7 @@ mod radiation_tests {
                 },
             ],
             ledger: HashMap::new(),
+            technologies: HashMap::new(),
         };
 
         assert!(Engine::compute_radiation_damage(&state, &content)[&2] > 0.0);
@@ -1230,6 +1240,18 @@ impl Engine {
                 *resources.entry(resource_type.clone()).or_insert(0) += amount;
             }
         }
+        if let Some(content) = self.content.as_ref() {
+            let technologies = self
+                .state
+                .technologies
+                .entry(player_id.to_string())
+                .or_default();
+            technologies.extend(
+                content.technologies.iter().filter_map(|(id, definition)| {
+                    definition.granted_on_spawn.then_some(id.clone())
+                }),
+            );
+        }
 
         self.joined_players.insert(player_id.to_string());
         Ok(())
@@ -1328,6 +1350,7 @@ impl Engine {
             Some(pb::intent::Kind::Collect(c)) => c.entity_id,
             Some(pb::intent::Kind::Repair(r)) => r.entity_id,
             Some(pb::intent::Kind::Upgrade(u)) => u.entity_id,
+            Some(pb::intent::Kind::Research(r)) => r.entity_id,
             None => return String::new(),
         };
         self.state
@@ -1723,6 +1746,89 @@ impl Engine {
                     )
                     .await;
             }
+        }
+    }
+
+    /// Advance research channels. Research shares the construction spending
+    /// model but completion changes player state rather than spawning a unit.
+    fn advance_research(&mut self, dt: f32) {
+        let Some(content) = self.content.clone() else {
+            return;
+        };
+        let mut completed = Vec::new();
+        let jobs: Vec<_> = self
+            .intents
+            .active_intents()
+            .iter()
+            .filter_map(|(entity_id, active)| {
+                let Some(pb::action_state::Exec::Research(research)) = active.action.exec.as_ref()
+                else {
+                    return None;
+                };
+                Some((
+                    *entity_id,
+                    active.metadata.player_id.clone(),
+                    research.technology_id.clone(),
+                    research.progress,
+                ))
+            })
+            .collect();
+        for (entity_id, player_id, technology_id, old_progress) in jobs {
+            let Some(technology) = content.technologies.get(&technology_id) else {
+                continue;
+            };
+            let duration = technology
+                .research_cost
+                .iter()
+                .filter_map(|(resource, cost)| {
+                    (*cost > 0.0).then(|| {
+                        *cost
+                            / technology
+                                .research_rates
+                                .get(resource)
+                                .copied()
+                                .unwrap_or(1.0)
+                    })
+                })
+                .fold(0.0f32, f32::max);
+            if duration <= 0.0 {
+                continue;
+            }
+            let new_progress = (old_progress + dt / duration).min(1.0);
+            let old_elapsed = old_progress * duration;
+            let new_elapsed = new_progress * duration;
+            let mut affordable = true;
+            for (resource, cost) in &technology.research_cost {
+                let rate = technology
+                    .research_rates
+                    .get(resource)
+                    .copied()
+                    .unwrap_or(1.0);
+                let amount =
+                    ((new_elapsed * rate).min(*cost) - (old_elapsed * rate).min(*cost)).max(0.0);
+                affordable &= self.spend_resource(&player_id, resource, amount);
+            }
+            if !affordable {
+                continue;
+            }
+            if let Some(active) = self.intents.active_intents_mut().get_mut(&entity_id) {
+                if let Some(pb::action_state::Exec::Research(research)) =
+                    active.action.exec.as_mut()
+                {
+                    research.progress = new_progress;
+                }
+            }
+            if new_progress >= 1.0 {
+                completed.push((entity_id, player_id, technology_id));
+            }
+        }
+        for (entity_id, player_id, technology_id) in completed {
+            self.state
+                .technologies
+                .entry(player_id)
+                .or_default()
+                .insert(technology_id);
+            self.intents.finish(entity_id);
         }
     }
 
@@ -3005,6 +3111,7 @@ impl Engine {
         self.apply_repairs(dt).await;
         self.apply_resource_collection(dt);
         self.advance_builds(dt).await;
+        self.advance_research(dt);
         integrate(&self.cfg, &mut self.state, dt);
         self.apply_radiation_damage(dt);
         let radiation_victims: Vec<pb::Entity> = self
@@ -3218,6 +3325,7 @@ impl Engine {
             self.apply_repairs(dt).await;
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
+            self.advance_research(dt);
             self.apply_maintenance_costs(dt);
             record_tick_phase(
                 phase_durations.as_mut(),
@@ -3561,6 +3669,12 @@ impl Engine {
                     kind: Some(pb::intent::Kind::Upgrade(u)),
                 }
             }
+            Some(intent_envelope::Payload::Research(r)) => {
+                info!(entity_id = r.entity_id, technology_id = r.technology_id, player = %player_id, "accept intent=Research");
+                pb::Intent {
+                    kind: Some(pb::intent::Kind::Research(r)),
+                }
+            }
             Some(intent_envelope::Payload::Collect(c)) => {
                 info!(entity_id = c.entity_id, intent_id = %format_uuid(&intent_id), player = %player_id, "accept intent=Collect");
                 pb::Intent {
@@ -3594,6 +3708,7 @@ impl Engine {
             Some(pb::intent::Kind::Collect(c)) => c.entity_id,
             Some(pb::intent::Kind::Repair(r)) => r.entity_id,
             Some(pb::intent::Kind::Upgrade(u)) => u.entity_id,
+            Some(pb::intent::Kind::Research(r)) => r.entity_id,
             None => {
                 self.emit_lifecycle_event(
                     &metadata,
@@ -3668,6 +3783,17 @@ impl Engine {
             let Some(product) = content.get(&build.blueprint_id) else {
                 return Err(anyhow!("unknown build product"));
             };
+            if let Some(requirement) = &product.requires_technologies {
+                let owned = self
+                    .state
+                    .technologies
+                    .get(&player_id)
+                    .cloned()
+                    .unwrap_or_default();
+                if !requirement.is_satisfied_by(&owned) {
+                    return Err(anyhow!("missing required technology for build"));
+                }
+            }
             if product.build_cost.is_empty() {
                 return Err(anyhow!("build product has no build_cost"));
             }
@@ -3712,6 +3838,17 @@ impl Engine {
             let Some(target) = content.get(&upgrade.target_entity_type_id) else {
                 return Err(anyhow!("unknown upgrade target"));
             };
+            if let Some(requirement) = &target.requires_technologies {
+                let owned = self
+                    .state
+                    .technologies
+                    .get(&player_id)
+                    .cloned()
+                    .unwrap_or_default();
+                if !requirement.is_satisfied_by(&owned) {
+                    return Err(anyhow!("missing required technology for upgrade"));
+                }
+            }
             if source.health <= 0.0 || (entity.health - source.health).abs() > f32::EPSILON {
                 return Err(anyhow!("entity must be at full health to upgrade"));
             }
@@ -3730,6 +3867,74 @@ impl Engine {
                     .unwrap_or(0);
                 if available < cost.ceil() as i64 {
                     return Err(anyhow!("insufficient {resource} for upgrade"));
+                }
+            }
+        }
+
+        if let Some(pb::intent::Kind::Research(research)) = payload_intent.kind.as_ref() {
+            let content = self
+                .content
+                .as_ref()
+                .ok_or_else(|| anyhow!("research unavailable without content pack"))?;
+            let researcher_type = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == entity_id)
+                .map(|entity| entity.entity_type_id.as_str())
+                .unwrap_or_default();
+            let researcher = content
+                .get(researcher_type)
+                .ok_or_else(|| anyhow!("unknown researcher type"))?;
+            if !researcher
+                .researches
+                .iter()
+                .any(|id| id == &research.technology_id)
+            {
+                return Err(anyhow!("entity cannot research requested technology"));
+            }
+            let technology = content
+                .technologies
+                .get(&research.technology_id)
+                .ok_or_else(|| anyhow!("unknown technology"))?;
+            let owned = self
+                .state
+                .technologies
+                .get(&player_id)
+                .cloned()
+                .unwrap_or_default();
+            if owned.contains(&research.technology_id) {
+                return Err(anyhow!("technology already researched"));
+            }
+            if technology.granted_on_spawn {
+                return Err(anyhow!("spawn-granted technology cannot be researched"));
+            }
+            if let Some(requirement) = &technology.requires {
+                if !requirement.is_satisfied_by(&owned) {
+                    return Err(anyhow!("missing technology prerequisite"));
+                }
+            }
+            if technology.research_cost.is_empty() {
+                return Err(anyhow!("research technology has no research_cost"));
+            }
+            for (resource, cost) in &technology.research_cost {
+                let rate = technology
+                    .research_rates
+                    .get(resource)
+                    .copied()
+                    .unwrap_or(1.0);
+                if *cost <= 0.0 || !rate.is_finite() || rate <= 0.0 {
+                    return Err(anyhow!("invalid research cost or rate for {resource}"));
+                }
+                let available = self
+                    .state
+                    .ledger
+                    .get(&player_id)
+                    .and_then(|ledger| ledger.get(resource))
+                    .copied()
+                    .unwrap_or(0);
+                if available < cost.ceil() as i64 {
+                    return Err(anyhow!("insufficient {resource} for research"));
                 }
             }
         }
@@ -3792,6 +3997,7 @@ impl Engine {
             Some(pb::intent::Kind::Collect(_)) => ("collect", None),
             Some(pb::intent::Kind::Repair(_)) => ("repair", None),
             Some(pb::intent::Kind::Upgrade(_)) => ("upgrade", None),
+            Some(pb::intent::Kind::Research(_)) => ("research", None),
             None => ("unknown", None),
         };
 
@@ -3882,6 +4088,7 @@ impl Engine {
             Some(pb::intent::Kind::Collect(c)) => intent_envelope::Payload::Collect(c),
             Some(pb::intent::Kind::Repair(r)) => intent_envelope::Payload::Repair(r),
             Some(pb::intent::Kind::Upgrade(u)) => intent_envelope::Payload::Upgrade(u),
+            Some(pb::intent::Kind::Research(r)) => intent_envelope::Payload::Research(r),
             None => return Err(anyhow!("legacy intent missing kind")),
         };
 
@@ -3892,6 +4099,7 @@ impl Engine {
             Some(pb::intent::Kind::Collect(c)) => c.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Repair(r)) => r.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Upgrade(_)) => "",
+            Some(pb::intent::Kind::Research(_)) => "",
             None => "",
         };
 
@@ -3914,6 +4122,7 @@ impl Engine {
             Some(pb::intent::Kind::Collect(c)) => c.player_id.clone(),
             Some(pb::intent::Kind::Repair(r)) => r.player_id.clone(),
             Some(pb::intent::Kind::Upgrade(_)) => String::new(),
+            Some(pb::intent::Kind::Research(_)) => String::new(),
             None => String::new(),
         };
 

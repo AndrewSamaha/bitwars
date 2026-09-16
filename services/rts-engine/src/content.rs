@@ -18,6 +18,7 @@ pub struct ContentPack {
     pub entity_types: HashMap<String, EntityTypeDef>,
     /// M7: Resource type definitions for display (id → display_name, order).
     pub resource_types: HashMap<String, ResourceTypeDef>,
+    pub technologies: HashMap<String, TechnologyDef>,
     /// Hex-encoded xxh3-64 hash of the canonicalized JSON representation.
     pub content_hash: String,
 }
@@ -89,6 +90,68 @@ pub struct EntityTypeDef {
     /// Entity types this entity may transform into through an upgrade channel.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub upgrades: Vec<UpgradeOptionDef>,
+    /// Technologies required before this type can be built or upgraded into.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires_technologies: Option<TechnologyRequirement>,
+    /// Technology IDs this entity can research.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub researches: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum TechnologyRequirement {
+    Technology(String),
+    All { all: Vec<TechnologyRequirement> },
+    Any { any: Vec<TechnologyRequirement> },
+}
+
+impl TechnologyRequirement {
+    pub fn is_satisfied_by(&self, owned: &HashSet<String>) -> bool {
+        match self {
+            Self::Technology(id) => owned.contains(id),
+            Self::All { all } => all
+                .iter()
+                .all(|requirement| requirement.is_satisfied_by(owned)),
+            Self::Any { any } => any
+                .iter()
+                .any(|requirement| requirement.is_satisfied_by(owned)),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TechnologyDef {
+    pub display_name: String,
+    #[serde(default)]
+    pub granted_on_spawn: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<TechnologyRequirement>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub research_cost: HashMap<String, f32>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub research_rates: HashMap<String, f32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<TechnologyEffect>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TechnologyEffect {
+    /// Currently supported: `entity.sensor.range` (all owned sensor entities).
+    pub target: String,
+    pub operation: TechnologyEffectOperation,
+    pub value: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TechnologyEffectOperation {
+    Add,
+    Multiply,
+    Set,
+    Cap,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -389,6 +452,8 @@ struct ContentFile {
     entity_types: HashMap<String, EntityTypeDef>,
     #[serde(default)]
     resource_types: HashMap<String, ResourceTypeDef>,
+    #[serde(default)]
+    technologies: HashMap<String, TechnologyDef>,
 }
 
 impl ContentPack {
@@ -400,12 +465,15 @@ impl ContentPack {
             .with_context(|| format!("failed to parse content pack YAML: {}", path.display()))?;
 
         validate_upgrades(&file.entity_types)?;
+        validate_technologies(&file.entity_types, &file.technologies)?;
 
-        let content_hash = canonical_hash(&file.entity_types, &file.resource_types)?;
+        let content_hash =
+            canonical_hash(&file.entity_types, &file.resource_types, &file.technologies)?;
 
         Ok(Self {
             entity_types: file.entity_types,
             resource_types: file.resource_types,
+            technologies: file.technologies,
             content_hash,
         })
     }
@@ -415,6 +483,7 @@ impl ContentPack {
         let wrapper = serde_json::json!({
             "entity_types": &self.entity_types,
             "resource_types": &self.resource_types,
+            "technologies": &self.technologies,
         });
         Ok(serde_json::to_string_pretty(&wrapper)?)
     }
@@ -428,6 +497,74 @@ impl ContentPack {
     pub fn get_resource_type(&self, resource_type_id: &str) -> Option<&ResourceTypeDef> {
         self.resource_types.get(resource_type_id)
     }
+}
+
+fn validate_requirement(
+    requirement: &TechnologyRequirement,
+    technologies: &HashMap<String, TechnologyDef>,
+) -> Result<()> {
+    match requirement {
+        TechnologyRequirement::Technology(id) if !technologies.contains_key(id) => {
+            anyhow::bail!("technology requirement references unknown technology {id}")
+        }
+        TechnologyRequirement::Technology(_) => Ok(()),
+        TechnologyRequirement::All { all } => {
+            if all.is_empty() {
+                anyhow::bail!("technology all requirement cannot be empty");
+            }
+            for child in all {
+                validate_requirement(child, technologies)?;
+            }
+            Ok(())
+        }
+        TechnologyRequirement::Any { any } => {
+            if any.is_empty() {
+                anyhow::bail!("technology any requirement cannot be empty");
+            }
+            for child in any {
+                validate_requirement(child, technologies)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_technologies(
+    entity_types: &HashMap<String, EntityTypeDef>,
+    technologies: &HashMap<String, TechnologyDef>,
+) -> Result<()> {
+    for (id, technology) in technologies {
+        if technology.granted_on_spawn && !technology.research_cost.is_empty() {
+            anyhow::bail!("spawn-granted technology {id} cannot have a research cost");
+        }
+        if let Some(requirement) = &technology.requires {
+            validate_requirement(requirement, technologies)?;
+        }
+        for effect in &technology.effects {
+            if effect.target != "entity.sensor.range" {
+                anyhow::bail!(
+                    "technology {id} has unsupported effect target {}",
+                    effect.target
+                );
+            }
+            if !effect.value.is_finite() {
+                anyhow::bail!("technology {id} has a non-finite effect value");
+            }
+        }
+    }
+    for (entity_id, entity) in entity_types {
+        if let Some(requirement) = &entity.requires_technologies {
+            validate_requirement(requirement, technologies)?;
+        }
+        for technology_id in &entity.researches {
+            if !technologies.contains_key(technology_id) {
+                anyhow::bail!(
+                    "entity type {entity_id} researches unknown technology {technology_id}"
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Verify that upgrades form a one-way, content-valid progression graph.
@@ -498,10 +635,13 @@ fn validate_upgrades(entity_types: &HashMap<String, EntityTypeDef>) -> Result<()
 fn canonical_hash(
     entity_types: &HashMap<String, EntityTypeDef>,
     resource_types: &HashMap<String, ResourceTypeDef>,
+    technologies: &HashMap<String, TechnologyDef>,
 ) -> Result<String> {
     let et: std::collections::BTreeMap<&String, &EntityTypeDef> = entity_types.iter().collect();
     let rt: std::collections::BTreeMap<&String, &ResourceTypeDef> = resource_types.iter().collect();
-    let json = serde_json::json!({ "entity_types": et, "resource_types": rt });
+    let tech: std::collections::BTreeMap<&String, &TechnologyDef> = technologies.iter().collect();
+    let json =
+        serde_json::json!({ "entity_types": et, "resource_types": rt, "technologies": tech });
     let json_str =
         serde_json::to_string(&json).context("failed to serialize content to canonical JSON")?;
     let hash = xxhash_rust::xxh3::xxh3_64(json_str.as_bytes());
@@ -556,6 +696,8 @@ mod tests {
                 visibility_range: None,
                 builds: Vec::new(),
                 upgrades: Vec::new(),
+                requires_technologies: None,
+                researches: Vec::new(),
             },
         );
         types.insert(
@@ -584,12 +726,15 @@ mod tests {
                 visibility_range: None,
                 builds: Vec::new(),
                 upgrades: Vec::new(),
+                requires_technologies: None,
+                researches: Vec::new(),
             },
         );
 
         let empty_resources: HashMap<String, ResourceTypeDef> = HashMap::new();
-        let h1 = canonical_hash(&types, &empty_resources).unwrap();
-        let h2 = canonical_hash(&types, &empty_resources).unwrap();
+        let empty_technologies: HashMap<String, TechnologyDef> = HashMap::new();
+        let h1 = canonical_hash(&types, &empty_resources, &empty_technologies).unwrap();
+        let h2 = canonical_hash(&types, &empty_resources, &empty_technologies).unwrap();
         assert_eq!(h1, h2, "hash must be deterministic across calls");
         assert_eq!(h1.len(), 16, "hex xxh3-64 should be 16 chars");
     }
@@ -623,6 +768,8 @@ mod tests {
                 visibility_range: None,
                 builds: Vec::new(),
                 upgrades: Vec::new(),
+                requires_technologies: None,
+                researches: Vec::new(),
             },
         );
         types_a.insert(
@@ -651,6 +798,8 @@ mod tests {
                 visibility_range: None,
                 builds: Vec::new(),
                 upgrades: Vec::new(),
+                requires_technologies: None,
+                researches: Vec::new(),
             },
         );
 
@@ -681,6 +830,8 @@ mod tests {
                 visibility_range: None,
                 builds: Vec::new(),
                 upgrades: Vec::new(),
+                requires_technologies: None,
+                researches: Vec::new(),
             },
         );
         types_b.insert(
@@ -709,13 +860,15 @@ mod tests {
                 visibility_range: None,
                 builds: Vec::new(),
                 upgrades: Vec::new(),
+                requires_technologies: None,
+                researches: Vec::new(),
             },
         );
 
         let empty_resources: HashMap<String, ResourceTypeDef> = HashMap::new();
         assert_eq!(
-            canonical_hash(&types_a, &empty_resources).unwrap(),
-            canonical_hash(&types_b, &empty_resources).unwrap(),
+            canonical_hash(&types_a, &empty_resources, &HashMap::new()).unwrap(),
+            canonical_hash(&types_b, &empty_resources, &HashMap::new()).unwrap(),
             "hash must be independent of insertion order"
         );
     }

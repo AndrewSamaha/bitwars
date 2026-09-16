@@ -399,7 +399,9 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::content::{AttackDef, AttackType, CombatDef, EntityTypeDef, NearEnemyStrategy, VisualDef};
+    use crate::content::{
+        AttackDef, AttackType, CombatDef, EntityTypeDef, NearEnemyStrategy, VisualDef,
+    };
 
     fn content() -> ContentPack {
         let raider = EntityTypeDef {
@@ -438,6 +440,8 @@ mod tests {
             visibility_range: None,
             builds: Vec::new(),
             upgrades: Vec::new(),
+            requires_technologies: None,
+            researches: Vec::new(),
         };
         let mut worker = raider.clone();
         worker.combat = None;
@@ -448,6 +452,7 @@ mod tests {
                 ("worker".to_string(), worker),
             ]),
             resource_types: HashMap::new(),
+            technologies: HashMap::new(),
             content_hash: "test".to_string(),
         }
     }

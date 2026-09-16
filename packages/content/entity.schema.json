@@ -112,6 +112,24 @@
         }
       ]
     },
+    "requires_technologies": {
+      "description": "Technologies required before this type can be built or upgraded into.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TechnologyRequirement"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "researches": {
+      "description": "Technology IDs this entity can research.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "resource_node": {
       "description": "M8: Optional resource-node profile for collectible source entities.",
       "anyOf": [
@@ -562,6 +580,41 @@
       "additionalProperties": false,
       "required": [
         "range"
+      ]
+    },
+    "TechnologyRequirement": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TechnologyRequirement"
+              }
+            }
+          },
+          "required": [
+            "all"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TechnologyRequirement"
+              }
+            }
+          },
+          "required": [
+            "any"
+          ]
+        }
       ]
     },
     "UpgradeOptionDef": {
