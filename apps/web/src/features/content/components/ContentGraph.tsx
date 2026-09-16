@@ -256,9 +256,7 @@ export default function ContentGraph() {
       </div>}
       <section className="min-w-0 flex-1 p-6 lg:p-10">
         <header className="mb-8">
-          <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars content</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Entity relationship graph</h1>
-          <p className="mt-2 text-slate-400">Drag sprites to arrange the graph. Cyan arrows build new entities; amber arrows upgrade in place.</p>
+          <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars Content Editor</p>
         </header>
 
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
@@ -347,6 +345,11 @@ export default function ContentGraph() {
             </div>
           </div>
         </div>
+        <footer className="mb-8">
+          <p className="mt-2 text-slate-400">Drag sprites to arrange the graph. Cyan arrows build new entities; amber arrows upgrade in place.</p>
+        </footer>
+
+
       </section>
 
       <aside className="w-[42rem] shrink-0 border-l border-slate-700 bg-slate-900 p-6">
