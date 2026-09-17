@@ -1751,7 +1751,7 @@ impl Engine {
 
     /// Advance research channels. Research shares the construction spending
     /// model but completion changes player state rather than spawning a unit.
-    fn advance_research(&mut self, dt: f32) {
+    async fn advance_research(&mut self, dt: f32) {
         let Some(content) = self.content.clone() else {
             return;
         };
@@ -1818,6 +1818,16 @@ impl Engine {
                     research.progress = new_progress;
                 }
             }
+            if let Err(error) = self
+                .redis
+                .update_construction_progress(entity_id, "research", &technology_id, new_progress)
+                .await
+            {
+                warn!(
+                    ?error,
+                    entity_id, "failed to update research progress tracking"
+                );
+            }
             if new_progress >= 1.0 {
                 completed.push((entity_id, player_id, technology_id));
             }
@@ -1828,7 +1838,28 @@ impl Engine {
                 .entry(player_id)
                 .or_default()
                 .insert(technology_id);
-            self.intents.finish(entity_id);
+            if let Some(metadata) = self.intents.finish(entity_id) {
+                if let Err(error) = self.redis.clear_active_intent(entity_id).await {
+                    warn!(
+                        ?error,
+                        entity_id, "failed to clear completed research tracking"
+                    );
+                }
+                if let Err(error) = self
+                    .emit_lifecycle_event(
+                        &metadata,
+                        pb::LifecycleState::Finished,
+                        pb::LifecycleReason::None,
+                        self.state.tick,
+                    )
+                    .await
+                {
+                    warn!(
+                        ?error,
+                        entity_id, "failed to emit completed research lifecycle event"
+                    );
+                }
+            }
         }
     }
 
@@ -3111,7 +3142,7 @@ impl Engine {
         self.apply_repairs(dt).await;
         self.apply_resource_collection(dt);
         self.advance_builds(dt).await;
-        self.advance_research(dt);
+        self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
         self.apply_radiation_damage(dt);
         let radiation_victims: Vec<pb::Entity> = self
@@ -3325,7 +3356,7 @@ impl Engine {
             self.apply_repairs(dt).await;
             self.apply_resource_collection(dt);
             self.advance_builds(dt).await;
-            self.advance_research(dt);
+            self.advance_research(dt).await;
             self.apply_maintenance_costs(dt);
             record_tick_phase(
                 phase_durations.as_mut(),

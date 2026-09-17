@@ -354,7 +354,11 @@ class IntentQueueManager {
               ? "build"
             : serverActive.intent_kind?.toLowerCase() === "repair"
               ? "repair"
-            : "unknown";
+              : serverActive.intent_kind?.toLowerCase() === "upgrade"
+                ? "upgrade"
+                : serverActive.intent_kind?.toLowerCase() === "research"
+                  ? "research"
+              : "unknown";
       const moveTarget = serverActive.move_target;
       const target =
         kind === "move" &&
@@ -639,7 +643,7 @@ class IntentQueueManager {
           const active = state.active;
           // Old persisted active intents did not record their kind. Leave them
           // target-less until reconnect reconciliation classifies them.
-          if (active && !["move", "collect", "build", "repair"].includes(active.kind)) {
+          if (active && !["move", "collect", "build", "upgrade", "repair", "research"].includes(active.kind)) {
             return [entityId, { ...state, active: { ...active, kind: "unknown", target: undefined } }];
           }
           return [entityId, state];

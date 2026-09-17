@@ -7,6 +7,8 @@ loadouts:
     habitat: 1
     scout: 1
     processor: 1
+    science_vessel: 1
+    factory: 1
 global_neutral_fields:
   - type: star_yellow
     count: 100

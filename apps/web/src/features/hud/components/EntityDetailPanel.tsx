@@ -176,7 +176,7 @@ export default function EntityDetailPanel() {
     return (ai?.kind ?? "").toLowerCase() === "collect";
   });
   const isSelectedEntityBuilding = selectedEntities.length === 1 &&
-    ["build", "upgrade"].includes((idToActiveIntent.get(firstId)?.kind ?? "").toLowerCase());
+    ["build", "upgrade", "research"].includes((idToActiveIntent.get(firstId)?.kind ?? "").toLowerCase());
 
   useEffect(() => {
     if (!isSelectedEntityBuilding) {
@@ -399,9 +399,9 @@ export default function EntityDetailPanel() {
                         target: {moveTarget}
                       </span>
                     )}
-                    {["build", "upgrade"].includes(activeIntent?.kind ?? "") && (
+                    {["build", "upgrade", "research"].includes(activeIntent?.kind ?? "") && (
                       <span className="font-mono text-muted-foreground">
-                        {activeIntent?.kind === "upgrade" ? "upgrading to" : "building"} {buildState?.blueprint_id ?? ""} {typeof buildState?.progress === "number" ? `${(buildState.progress * 100).toFixed(0)}%` : ""}
+                        {activeIntent?.kind === "upgrade" ? "upgrading to" : activeIntent?.kind === "research" ? "researching" : "building"} {buildState?.blueprint_id ?? ""} {typeof buildState?.progress === "number" ? `${(buildState.progress * 100).toFixed(0)}%` : ""}
                       </span>
                     )}
                     {collectorState && collectorState.carry_capacity > 0 && (

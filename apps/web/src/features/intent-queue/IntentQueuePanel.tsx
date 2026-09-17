@@ -56,7 +56,13 @@ export default function IntentQueuePanel() {
                       ? "collecting"
                       : state.active.kind === "repair"
                         ? "repairing"
-                      : state.active.target
+                        : state.active.kind === "build"
+                          ? "building"
+                          : state.active.kind === "upgrade"
+                            ? "upgrading"
+                            : state.active.kind === "research"
+                              ? "researching"
+                        : state.active.target
                         ? `(${state.active.target.x.toFixed(0)}, ${state.active.target.y.toFixed(0)})`
                         : "awaiting reconciliation"}
                   </span>
