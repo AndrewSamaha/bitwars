@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TechnologyDef",
+  "type": "object",
+  "properties": {
+    "display_name": {
+      "description": "Player-facing name shown in the research UI.",
+      "type": "string"
+    },
+    "effects": {
+      "description": "Effects applied to the owning player after research completes.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TechnologyEffect"
+      }
+    },
+    "granted_on_spawn": {
+      "description": "Grant this technology to every player at spawn; it cannot have a research cost.",
+      "type": "boolean",
+      "default": false
+    },
+    "requires": {
+      "description": "Prerequisite technology or an all/any group of prerequisites.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TechnologyRequirement"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "research_cost": {
+      "description": "Resources consumed once when research begins.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "format": "float"
+      }
+    },
+    "research_rates": {
+      "description": "Per-resource research spend rates in units per second.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "format": "float"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "display_name"
+  ],
+  "$defs": {
+    "TechnologyEffect": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "description": "How the value changes the target: add, multiply, set, or cap.",
+          "$ref": "#/$defs/TechnologyEffectOperation"
+        },
+        "target": {
+          "description": "Currently supported: `entity.sensor.range` (all owned sensor entities).",
+          "type": "string"
+        },
+        "value": {
+          "description": "Operand used by the operation.",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "operation",
+        "value"
+      ]
+    },
+    "TechnologyEffectOperation": {
+      "type": "string",
+      "enum": [
+        "add",
+        "multiply",
+        "set",
+        "cap"
+      ]
+    },
+    "TechnologyRequirement": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TechnologyRequirement"
+              }
+            }
+          },
+          "required": [
+            "all"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TechnologyRequirement"
+              }
+            }
+          },
+          "required": [
+            "any"
+          ]
+        }
+      ]
+    }
+  }
+}

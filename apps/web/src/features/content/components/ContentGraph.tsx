@@ -93,7 +93,7 @@ function builderOutwardForce(links: readonly GraphLink[]) {
   return force;
 }
 
-export default function ContentGraph() {
+export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "entities" | "techtree"; onTabChange: (tab: "entities" | "techtree") => void }) {
   const [entities, setEntities] = useState<Entity[]>(INITIAL_ENTITIES);
   const [selectedId, setSelectedId] = useState<string>(INITIAL_ENTITIES[0]?.id ?? "");
   const [positions, setPositions] = useState<Record<string, Point>>(() => initialPositions(INITIAL_ENTITIES));
@@ -258,6 +258,11 @@ export default function ContentGraph() {
         <header className="mb-8">
           <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars Content Editor</p>
         </header>
+
+        <nav aria-label="Content type" className="mb-3 flex gap-1 border-b border-slate-700">
+          <button className={`px-4 py-2 text-sm font-medium ${activeTab === "entities" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} onClick={() => onTabChange("entities")} type="button">Entities</button>
+          <button className={`px-4 py-2 text-sm font-medium ${activeTab === "techtree" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} onClick={() => onTabChange("techtree")} type="button">Techtree</button>
+        </nav>
 
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
           <div ref={graphRef} className="relative h-[42rem] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">

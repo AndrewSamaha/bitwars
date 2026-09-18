@@ -29,9 +29,13 @@ pub struct ContentPack {
 pub struct EntityTypeDef {
     /// Client behavior when this entity leaves sensor coverage.
     pub fog_memory: FogMemory,
+    /// Maximum movement speed in world units per second.
     pub speed: f32,
+    /// Distance from a movement target at which this entity stops, in world units.
     pub stop_radius: f32,
+    /// Physics mass used when entities collide.
     pub mass: f32,
+    /// Hull hit points before the entity is destroyed.
     pub health: f32,
     /// Physical hull radius used by contact attacks. This is deliberately
     /// separate from visual scale and movement-order stop radius.
@@ -123,15 +127,21 @@ impl TechnologyRequirement {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TechnologyDef {
+    /// Player-facing name shown in the research UI.
     pub display_name: String,
+    /// Grant this technology to every player at spawn; it cannot have a research cost.
     #[serde(default)]
     pub granted_on_spawn: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Prerequisite technology or an all/any group of prerequisites.
     pub requires: Option<TechnologyRequirement>,
+    /// Resources consumed once when research begins.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub research_cost: HashMap<String, f32>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    /// Per-resource research spend rates in units per second.
     pub research_rates: HashMap<String, f32>,
+    /// Effects applied to the owning player after research completes.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<TechnologyEffect>,
 }
@@ -141,7 +151,9 @@ pub struct TechnologyDef {
 pub struct TechnologyEffect {
     /// Currently supported: `entity.sensor.range` (all owned sensor entities).
     pub target: String,
+    /// How the value changes the target: add, multiply, set, or cap.
     pub operation: TechnologyEffectOperation,
+    /// Operand used by the operation.
     pub value: f32,
 }
 
@@ -227,6 +239,7 @@ pub enum NearEnemyStrategy {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BuildOptionDef {
+    /// ID of the entity type this entity can build.
     pub entity_type_id: String,
     /// Resource conversion rates. A missing required resource defaults to 1/s.
     #[serde(default)]
@@ -240,6 +253,7 @@ pub struct BuildOptionDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpgradeOptionDef {
+    /// ID of the entity type this entity transforms into.
     pub entity_type_id: String,
     #[serde(default)]
     pub spend_rates: HashMap<String, f32>,
@@ -282,7 +296,8 @@ pub struct SensorDef {
     /// Per-resource operating cost, in units per minute.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub cost_per_minute: HashMap<String, f32>,
-    /// Circular detection radius in world units.
+    /// Circular detection radius in world units. For autonomous combat units,
+    /// this should be at least `combat.acquisition_range`.
     pub range: f32,
 }
 

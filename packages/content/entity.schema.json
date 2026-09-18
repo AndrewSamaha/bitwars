@@ -52,6 +52,7 @@
       "$ref": "#/$defs/FogMemory"
     },
     "health": {
+      "description": "Hull hit points before the entity is destroyed.",
       "type": "number",
       "format": "float"
     },
@@ -70,6 +71,7 @@
       }
     },
     "mass": {
+      "description": "Physics mass used when entities collide.",
       "type": "number",
       "format": "float"
     },
@@ -154,10 +156,12 @@
       ]
     },
     "speed": {
+      "description": "Maximum movement speed in world units per second.",
       "type": "number",
       "format": "float"
     },
     "stop_radius": {
+      "description": "Distance from a movement target at which this entity stops, in world units.",
       "type": "number",
       "format": "float"
     },
@@ -255,6 +259,7 @@
       "type": "object",
       "properties": {
         "entity_type_id": {
+          "description": "ID of the entity type this entity can build.",
           "type": "string"
         },
         "spend_rates": {
@@ -572,7 +577,7 @@
           }
         },
         "range": {
-          "description": "Circular detection radius in world units.",
+          "description": "Circular detection radius in world units. For autonomous combat units,\nthis should be at least `combat.acquisition_range`.",
           "type": "number",
           "format": "float"
         }
@@ -622,6 +627,7 @@
       "type": "object",
       "properties": {
         "entity_type_id": {
+          "description": "ID of the entity type this entity transforms into.",
           "type": "string"
         },
         "spend_rates": {

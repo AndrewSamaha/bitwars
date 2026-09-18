@@ -1,12 +1,44 @@
 "use client";
 
 import Editor, { type BeforeMount, type OnMount } from "@monaco-editor/react";
+import type { editor, Position } from "monaco-editor";
 import { configureMonacoYaml } from "monaco-yaml";
 import { parseDocument } from "yaml";
 import entitySchema from "@bitwars/content/entity.schema.json";
+import technologySchema from "@bitwars/content/technology.schema.json";
 import { entityCombatRangeWarnings } from "@/lib/content/schemaValidation";
 
 let yamlConfigured = false;
+let entityIds: Promise<string[]> | undefined;
+let technologyIds: Promise<string[]> | undefined;
+
+const hoverDocs: Record<string, string> = {
+  sensor: "Optional circular detection area available to this entity.",
+  range: "Detection radius in world units. For autonomous combat units, keep this at least combat.acquisition_range.",
+  acquisition_range: "Maximum distance at which autonomous combat acquires an enemy, in world units.",
+  research_cost: "Resources consumed once when research begins.",
+  research_rates: "Per-resource research spend rates in units per second.",
+  requires: "A prerequisite technology, or an all/any group of prerequisites.",
+  operation: "How an effect changes its target value.",
+};
+
+const operationDocs: Record<string, string> = {
+  add: "Adds value to the target.",
+  multiply: "Multiplies the target by value.",
+  set: "Replaces the target with value.",
+  cap: "Limits the target to value.",
+};
+
+function ids(path: "entities" | "technologies") {
+  const cache = path === "entities" ? entityIds : technologyIds;
+  if (cache) return cache;
+  const request: Promise<string[]> = fetch(`/api/content/${path}`)
+    .then((response) => response.ok ? response.json() : {})
+    .then((data: { entities?: Array<{ id: string }>; technologies?: Array<{ id: string }> }) => (data[path] ?? []).map((item) => item.id))
+    .catch(() => []);
+  if (path === "entities") entityIds = request; else technologyIds = request;
+  return request;
+}
 
 const configureYaml: BeforeMount = (monaco) => {
   if (yamlConfigured) return;
@@ -15,9 +47,44 @@ const configureYaml: BeforeMount = (monaco) => {
       fileMatch: ["**/*.entity.yaml"],
       schema: entitySchema,
       uri: "bitwars://schemas/entity.schema.json",
+    }, {
+      fileMatch: ["**/*.technology.yaml"],
+      schema: technologySchema,
+      uri: "bitwars://schemas/technology.schema.json",
     }],
     disableAdditionalProperties: true,
     validate: true,
+  });
+  monaco.languages.registerHoverProvider("yaml", {
+    provideHover(model: editor.ITextModel, position: Position) {
+      if (!model.uri.toString().includes("file:///bitwars/")) return null;
+      const word = model.getWordAtPosition(position)?.word;
+      if (!word) return null;
+      const description = operationDocs[word] ?? hoverDocs[word];
+      return description ? { contents: [{ value: `**${word}**\n\n${description}` }] } : null;
+    },
+  });
+  monaco.languages.registerCompletionItemProvider("yaml", {
+    triggerCharacters: [":", " "],
+    async provideCompletionItems(model: editor.ITextModel, position: Position) {
+      if (!model.uri.toString().includes("file:///bitwars/")) return { suggestions: [] };
+      const line = model.getLineContent(position.lineNumber);
+      const range = model.getWordUntilPosition(position);
+      const isTechnology = model.uri.toString().endsWith(".technology.yaml");
+      const inTechnologyList = /^\s*-\s*\w*$/.test(line)
+        && model.getLinesContent().slice(0, position.lineNumber - 1).some((previous) => /^\s*(requires|researches|requires_technologies):/.test(previous));
+      const keySuggestions = Object.entries((isTechnology ? technologySchema : entitySchema).properties ?? {}).map(([label, schema]: [string, any]) => ({
+        label,
+        kind: monaco.languages.CompletionItemKind.Property,
+        documentation: schema.description,
+        insertText: `${label}: `,
+        range,
+      }));
+      if (/^\s*operation:\s*/.test(line)) return { suggestions: Object.entries(operationDocs).map(([label, documentation]) => ({ label, documentation, kind: monaco.languages.CompletionItemKind.EnumMember, insertText: label, range })) };
+      if (/entity_type_id:\s*/.test(line)) return { suggestions: (await ids("entities")).map((label) => ({ label, kind: monaco.languages.CompletionItemKind.Reference, insertText: label, range })) };
+      if (inTechnologyList || /(requires|researches|requires_technologies):\s*(?:-\s*)?$/.test(line)) return { suggestions: (await ids("technologies")).map((label) => ({ label, kind: monaco.languages.CompletionItemKind.Reference, insertText: label, range })) };
+      return { suggestions: keySuggestions };
+    },
   });
   yamlConfigured = true;
 };
@@ -108,19 +175,20 @@ const markUnknownEntityFields: OnMount = (editor, monaco) => {
   });
 };
 
-export default function YamlEditor({ id, value, onChange }: {
+export default function YamlEditor({ id, value, onChange, kind = "entity" }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
+  kind?: "entity" | "technology";
 }) {
   return <Editor
     beforeMount={configureYaml}
     height="calc(100vh - 13rem)"
     language="yaml"
-    onMount={markUnknownEntityFields}
+    onMount={kind === "entity" ? markUnknownEntityFields : undefined}
     onChange={(next) => onChange(next ?? "")}
     options={{ automaticLayout: true, minimap: { enabled: false }, scrollBeyondLastLine: false, wordWrap: "on" }}
-    path={`file:///bitwars/${id}.entity.yaml`}
+    path={`file:///bitwars/${id}.${kind}.yaml`}
     theme="vs-dark"
     value={value}
   />;
