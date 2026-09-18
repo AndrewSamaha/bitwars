@@ -15,7 +15,8 @@ technologies:
   neutrino_sensors:
     display_name: Neutrino Sensors
     requires:
-      all: [space_age]
+      all:
+        - space_age
     research_cost:
       minerals: 100
       energy: 150
@@ -133,7 +134,7 @@ entity_types:
       vfx: solar_proximity
       collects:
         - energy
-      proximity_rate_per_second: 12
+      proximity_rate_per_second: 8
       transport_rate_per_second: 0
       carry_capacity: 0
     upgrades:
@@ -172,7 +173,7 @@ entity_types:
         - minerals
         - food
       transport_rate_per_second: 8
-      carry_capacity: 100
+      carry_capacity: 50
       deposit_entity_types:
         - processor
         - habitat
@@ -181,7 +182,7 @@ entity_types:
       cost_per_min:
         energy: 60
         minerals: 60
-      efficiency: 1
+      efficiency: 0.5
     builds:
       - entity_type_id: collector_solar
         spend_rates:
@@ -567,7 +568,9 @@ entity_types:
       scale: 2.3
       rotate_deg: 90
     requires_technologies:
-      all: [space_age, neutrino_sensors]
+      all:
+        - space_age
+        - neutrino_sensors
   science_vessel:
     fog_memory: forget_when_hidden
     speed: 500
