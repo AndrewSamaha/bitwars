@@ -50,11 +50,13 @@ export async function GET() {
     const parsed = contentDefsJson ? JSON.parse(contentDefsJson) : {};
     const entityTypes = parsed.entity_types ?? {};
     const resourceTypes = parsed.resource_types ?? {};
+    const technologies = parsed.technologies ?? {};
 
     return NextResponse.json({
       content_version: contentVersion ?? "",
       entity_types: entityTypes,
       resource_types: resourceTypes,
+      technologies,
     });
   } catch (e: any) {
     return NextResponse.json(

@@ -14,6 +14,7 @@ type EntityType = {
   sensor?: { range?: number };
   visibility_range?: number;
 };
+type TechnologyDef = { effects?: Array<{ target: string; operation: "add" | "multiply" | "set" | "cap"; value: number }> };
 
 type SnapshotPayload = {
   type: "snapshot";
@@ -22,6 +23,7 @@ type SnapshotPayload = {
   player_ledgers?: Array<{ player_id: string; resources: unknown[] }>;
   collector_states?: Array<{ entity_id: number | string }>;
   combat_effect_states?: Array<{ entity_id: number | string }>;
+  player_technologies?: Array<{ player_id: string; technology_ids: string[] }>;
 };
 
 type DeltaPayload = {
@@ -47,10 +49,12 @@ export class VisibilityFilter {
   constructor(
     readonly playerId: string,
     private readonly entityTypes: Record<string, EntityType>,
+    private readonly technologies: Record<string, TechnologyDef> = {},
   ) {}
 
   filterSnapshot(snapshot: SnapshotPayload): SnapshotPayload {
     this.entities = new Map(snapshot.entities.map((entity) => [idOf(entity.id), { ...entity }]));
+    this.ownedTechnologies = new Set(snapshot.player_technologies?.find((state) => state.player_id === this.playerId)?.technology_ids ?? []);
     this.visible = this.currentlyVisible();
     return {
       ...snapshot,
@@ -58,6 +62,7 @@ export class VisibilityFilter {
       player_ledgers: snapshot.player_ledgers?.filter((ledger) => ledger.player_id === this.playerId),
       collector_states: snapshot.collector_states?.filter((state) => this.visible.has(idOf(state.entity_id))),
       combat_effect_states: snapshot.combat_effect_states?.filter((state) => this.visible.has(idOf(state.entity_id))),
+      player_technologies: snapshot.player_technologies?.filter((state) => state.player_id === this.playerId),
     };
   }
 
@@ -134,10 +139,19 @@ export class VisibilityFilter {
 
   private sensorSources(): Array<{ pos: Pos; range: number }> {
     return [...this.entities.values()].flatMap((entity) => {
-      const range = this.entityTypes[entity.entity_type_id ?? ""]?.sensor?.range ?? 0;
+      let range = this.entityTypes[entity.entity_type_id ?? ""]?.sensor?.range ?? 0;
+      for (const id of this.ownedTechnologies) for (const effect of this.technologies[id]?.effects ?? []) {
+        if (effect.target !== "entity.sensor.range") continue;
+        if (effect.operation === "add") range += effect.value;
+        if (effect.operation === "multiply") range *= effect.value;
+        if (effect.operation === "set") range = effect.value;
+        if (effect.operation === "cap") range = Math.min(range, effect.value);
+      }
       return entity.owner_player_id === this.playerId && hasPosition(entity) && Number.isFinite(range) && range > 0
         ? [{ pos: entity.pos, range }]
         : [];
     });
   }
+
+  private ownedTechnologies = new Set<string>();
 }

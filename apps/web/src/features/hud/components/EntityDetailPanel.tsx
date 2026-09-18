@@ -30,6 +30,7 @@ export default function EntityDetailPanel() {
   const [, forceRerender] = useState(0);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [upgradeMenuOpen, setUpgradeMenuOpen] = useState(false);
+  const [researchMenuOpen, setResearchMenuOpen] = useState(false);
   const [buildStateById, setBuildStateById] = useState<BuildStateById>({});
 
   // The ECS changes when the authoritative game stream applies a snapshot or
@@ -63,6 +64,7 @@ export default function EntityDetailPanel() {
   useEffect(() => {
     setBuildMenuOpen(false);
     setUpgradeMenuOpen(false);
+    setResearchMenuOpen(false);
   }, [selectedIdsKey]);
 
   // Position the detail panel so it never overlaps the TerminalPanel
@@ -152,6 +154,8 @@ export default function EntityDetailPanel() {
       && (entityDef?.upgrades?.length ?? 0) > 0
       && typeof health === "number"
       && health >= (entityDef?.health ?? Infinity);
+    const canResearch = selectedEntities.length === 1
+      && (entityDef?.researches?.length ?? 0) > 0;
     const canRepair = selectedEntities.length > 0 && selectedEntities.every((id) =>
       Boolean(contentManager.getEntityType(idToType.get(id) ?? "")?.repair),
     );
@@ -160,6 +164,7 @@ export default function EntityDetailPanel() {
       { key: "c", name: "collect", enabled: true, value: "Collect" },
       { key: "b", name: "build", enabled: canBuild, value: "Build" },
       { key: "u", name: "upgrade", enabled: canUpgrade, value: "Upgrade" },
+      { key: "t", name: "research", enabled: canResearch, value: "Research" },
       { key: "r", name: "repair", enabled: canRepair, value: "Repair" },
     ];
   };
@@ -171,7 +176,7 @@ export default function EntityDetailPanel() {
     return (ai?.kind ?? "").toLowerCase() === "collect";
   });
   const isSelectedEntityBuilding = selectedEntities.length === 1 &&
-    ["build", "upgrade"].includes((idToActiveIntent.get(firstId)?.kind ?? "").toLowerCase());
+    ["build", "upgrade", "research"].includes((idToActiveIntent.get(firstId)?.kind ?? "").toLowerCase());
 
   useEffect(() => {
     if (!isSelectedEntityBuilding) {
@@ -210,7 +215,7 @@ export default function EntityDetailPanel() {
     };
   }, [firstId, isSelectedEntityBuilding]);
 
-  const onClickAction = (val: "Move" | "Collect" | "Build" | "Upgrade" | "Repair") => {
+  const onClickAction = (val: "Move" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research") => {
     if (val === "Build") {
       setBuildMenuOpen((open) => !open);
       setUpgradeMenuOpen(false);
@@ -219,6 +224,12 @@ export default function EntityDetailPanel() {
     if (val === "Upgrade") {
       setUpgradeMenuOpen((open) => !open);
       setBuildMenuOpen(false);
+      return;
+    }
+    if (val === "Research") {
+      setResearchMenuOpen((open) => !open);
+      setBuildMenuOpen(false);
+      setUpgradeMenuOpen(false);
       return;
     }
     if (val === "Collect") {
@@ -251,6 +262,12 @@ export default function EntityDetailPanel() {
       : [],
     [selectedEntities.length, selectedType],
   );
+  const researchOptions = useMemo(
+    () => selectedEntities.length === 1
+      ? contentManager.getEntityType(selectedType)?.researches ?? []
+      : [],
+    [selectedEntities.length, selectedType],
+  );
   const buildKeys = "qwetasdfgzxcvb";
   const canAfford = (entityTypeId: string) => {
     const costs = contentManager.getEntityType(entityTypeId)?.build_cost ?? {};
@@ -267,6 +284,13 @@ export default function EntityDetailPanel() {
     const entityId = Number(firstId);
     if (Number.isFinite(entityId)) intentQueue.handleUpgradeCommand(entityId, entityTypeId);
     setUpgradeMenuOpen(false);
+  };
+  const startResearch = (technologyId: string) => {
+    const costs = contentManager.getContent()?.technologies?.[technologyId]?.research_cost ?? {};
+    if (!Object.entries(costs).every(([resource, cost]) => selectors.getResource(resource) >= cost)) return;
+    const entityId = Number(firstId);
+    if (Number.isFinite(entityId)) intentQueue.handleResearchCommand(entityId, technologyId);
+    setResearchMenuOpen(false);
   };
 
   useEffect(() => {
@@ -375,9 +399,9 @@ export default function EntityDetailPanel() {
                         target: {moveTarget}
                       </span>
                     )}
-                    {["build", "upgrade"].includes(activeIntent?.kind ?? "") && (
+                    {["build", "upgrade", "research"].includes(activeIntent?.kind ?? "") && (
                       <span className="font-mono text-muted-foreground">
-                        {activeIntent?.kind === "upgrade" ? "upgrading to" : "building"} {buildState?.blueprint_id ?? ""} {typeof buildState?.progress === "number" ? `${(buildState.progress * 100).toFixed(0)}%` : ""}
+                        {activeIntent?.kind === "upgrade" ? "upgrading to" : activeIntent?.kind === "research" ? "researching" : "building"} {buildState?.blueprint_id ?? ""} {typeof buildState?.progress === "number" ? `${(buildState.progress * 100).toFixed(0)}%` : ""}
                       </span>
                     )}
                     {collectorState && collectorState.carry_capacity > 0 && (
@@ -407,10 +431,12 @@ export default function EntityDetailPanel() {
                         ? isCollectActiveForSelection
                         : a.value === "Repair"
                           ? selectedAction === "Repair"
-                        : a.value === "Build"
+                          : a.value === "Build"
                           ? buildMenuOpen
                           : a.value === "Upgrade"
                             ? upgradeMenuOpen
+                            : a.value === "Research"
+                              ? researchMenuOpen
                             : false
                   }
                   onClick={(action) => action.enabled !== false && onClickAction(action.value)}
@@ -459,6 +485,18 @@ export default function EntityDetailPanel() {
                   );
                 })}
                 <span className="text-muted-foreground">[Esc] cancel</span>
+              </div>
+            )}
+            {researchMenuOpen && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
+                <span className="text-muted-foreground">Research:</span>
+                {researchOptions.map((technologyId) => {
+                  const technology = contentManager.getContent()?.technologies?.[technologyId];
+                  const costs = technology?.research_cost ?? {};
+                  const enabled = Object.entries(costs).every(([resource, cost]) => selectors.getResource(resource) >= cost);
+                  const costText = Object.entries(costs).map(([resource, amount]) => `${amount} ${resource}`).join(", ");
+                  return <button key={technologyId} type="button" disabled={!enabled} onClick={() => startResearch(technologyId)} className={enabled ? "rounded border border-border bg-muted px-2 py-1 hover:bg-accent" : "cursor-not-allowed rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground"}>{technology?.display_name ?? technologyId} — {costText}</button>;
+                })}
               </div>
             )}
           </div>

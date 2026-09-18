@@ -3,9 +3,11 @@ use std::collections::HashMap;
 use rand::seq::SliceRandom;
 use tracing::debug;
 
-use crate::pb::{Entity, Vec2};
 use crate::content::ContentPack;
-use crate::spawn_config::{is_system_owner, Loadout, NeutralNearSpawn, SpawnConfig, UNIVERSE_OWNER};
+use crate::pb::{Entity, Vec2};
+use crate::spawn_config::{
+    is_system_owner, Loadout, NeutralNearSpawn, SpawnConfig, UNIVERSE_OWNER,
+};
 
 const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
 const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
@@ -16,6 +18,7 @@ const PLANET_MAX_DISTANCE_FROM_STAR: f32 = 4_500.0;
 
 /// M7: Per-player resource totals. Outer key = player_id, inner key = resource_type_id.
 pub type ResourceLedger = HashMap<String, HashMap<String, i64>>;
+pub type PlayerTechnologies = HashMap<String, std::collections::HashSet<String>>;
 
 #[derive(Clone)]
 pub struct GameState {
@@ -23,6 +26,8 @@ pub struct GameState {
     pub entities: Vec<Entity>,
     /// M7: Authoritative per-player resource ledger (player_id → resource_type → amount).
     pub ledger: ResourceLedger,
+    /// Completed, player-owned technologies. Definitions remain immutable content.
+    pub technologies: PlayerTechnologies,
 }
 
 /// Initialise the game world (config-based only). No player entities at init; they spawn on join.
@@ -36,6 +41,7 @@ pub fn init_world(spawn_config: &SpawnConfig) -> GameState {
         tick: 0,
         entities: Vec::new(),
         ledger: ResourceLedger::new(),
+        technologies: PlayerTechnologies::new(),
     }
 }
 
@@ -91,7 +97,13 @@ pub fn spawn_celestial_field(
                 field.standard_deviation.max(0.0),
                 rng,
             );
-            entities.push(neutral_entity(next_id, &field.entity_type_id, x, y, content));
+            entities.push(neutral_entity(
+                next_id,
+                &field.entity_type_id,
+                x,
+                y,
+                content,
+            ));
             next_id += 1;
         }
     }
@@ -123,7 +135,10 @@ fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &Conte
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
         owner_player_id: UNIVERSE_OWNER.to_string(),
-        health: content.get(entity_type_id).map(|def| def.health.max(0.0)).unwrap_or(0.0),
+        health: content
+            .get(entity_type_id)
+            .map(|def| def.health.max(0.0))
+            .unwrap_or(0.0),
     }
 }
 
@@ -228,7 +243,9 @@ fn radiation_spawn_clearance(entity_type_id: &str, content: &ContentPack) -> f32
             definition
                 .radiation_sources
                 .iter()
-                .map(|source| source.max_effective_distance.max(0.0) * RADIATION_SPAWN_SAFETY_MULTIPLIER)
+                .map(|source| {
+                    source.max_effective_distance.max(0.0) * RADIATION_SPAWN_SAFETY_MULTIPLIER
+                })
                 .fold(0.0, f32::max)
         })
         .unwrap_or(0.0)
@@ -255,10 +272,9 @@ fn sample_radiation_source_spawn_position(
             if is_system_owner(&entity.owner_player_id) {
                 return true;
             }
-            entity
-                .pos
-                .as_ref()
-                .is_none_or(|position| squared_distance(x, y, position.x, position.y) >= clearance_sq)
+            entity.pos.as_ref().is_none_or(|position| {
+                squared_distance(x, y, position.x, position.y) >= clearance_sq
+            })
         });
         if is_clear {
             return Some((x, y));
@@ -281,7 +297,10 @@ fn sample_position_in_annulus(
     } else {
         min_distance
     };
-    (origin_x + angle.cos() * distance, origin_y + angle.sin() * distance)
+    (
+        origin_x + angle.cos() * distance,
+        origin_y + angle.sin() * distance,
+    )
 }
 
 fn sample_player_unit_spawn_position(
@@ -354,7 +373,8 @@ mod tests {
     fn celestial_field_has_one_hundred_stars_and_seventy_five_planets() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
-        let config = SpawnConfig::load(&root.join("services/rts-engine/config/spawn.yaml")).unwrap();
+        let config =
+            SpawnConfig::load(&root.join("services/rts-engine/config/spawn.yaml")).unwrap();
         let star_count = config
             .global_neutral_fields
             .iter()
@@ -362,12 +382,41 @@ mod tests {
             .unwrap()
             .count;
         let mut entities = Vec::new();
-        spawn_celestial_field(&mut entities, &content, &config, &mut rand::rngs::StdRng::seed_from_u64(1));
+        spawn_celestial_field(
+            &mut entities,
+            &content,
+            &config,
+            &mut rand::rngs::StdRng::seed_from_u64(1),
+        );
 
-        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "star_yellow").count(), star_count);
-        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "planet_blue").count(), star_count * 3 / 4);
-        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "theta").count(), 1);
-        assert_eq!(entities.iter().filter(|entity| entity.entity_type_id == "minerals").count(), 1);
+        assert_eq!(
+            entities
+                .iter()
+                .filter(|entity| entity.entity_type_id == "star_yellow")
+                .count(),
+            star_count
+        );
+        assert_eq!(
+            entities
+                .iter()
+                .filter(|entity| entity.entity_type_id == "planet_blue")
+                .count(),
+            star_count * 3 / 4
+        );
+        assert_eq!(
+            entities
+                .iter()
+                .filter(|entity| entity.entity_type_id == "theta")
+                .count(),
+            1
+        );
+        assert_eq!(
+            entities
+                .iter()
+                .filter(|entity| entity.entity_type_id == "minerals")
+                .count(),
+            1
+        );
     }
 
     #[test]

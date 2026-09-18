@@ -91,6 +91,7 @@ impl IntentManager {
             pb::intent::Kind::Collect(c) => Some(c.entity_id),
             pb::intent::Kind::Repair(r) => Some(r.entity_id),
             pb::intent::Kind::Upgrade(u) => Some(u.entity_id),
+            pb::intent::Kind::Research(r) => Some(r.entity_id),
         }
     }
 
@@ -297,6 +298,12 @@ fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -
                     progress: 0.0,
                 }));
             }
+            pb::intent::Kind::Research(r) => {
+                exec = Some(pb::action_state::Exec::Research(pb::ResearchState {
+                    technology_id: r.technology_id.clone(),
+                    progress: 0.0,
+                }));
+            }
             pb::intent::Kind::Collect(c) => {
                 let collect_state = pb::CollectState {
                     entity_id: c.entity_id,
@@ -340,6 +347,7 @@ fn log_start(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u64
         Some(pb::action_state::Exec::Collect(_)) => "Collect",
         Some(pb::action_state::Exec::Repair(_)) => "Repair",
         Some(pb::action_state::Exec::Upgrade(_)) => "Upgrade",
+        Some(pb::action_state::Exec::Research(_)) => "Research",
         None => "Unknown",
     };
     trace_start(metadata, kind, entity_id);
@@ -353,6 +361,7 @@ fn log_finish(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u6
         Some(pb::action_state::Exec::Collect(_)) => "Collect",
         Some(pb::action_state::Exec::Repair(_)) => "Repair",
         Some(pb::action_state::Exec::Upgrade(_)) => "Upgrade",
+        Some(pb::action_state::Exec::Research(_)) => "Research",
         None => "Unknown",
     };
     info!(
@@ -529,6 +538,7 @@ mod tests {
                 health: 100.0,
             }],
             ledger: crate::engine::state::ResourceLedger::new(),
+            technologies: Default::default(),
         };
 
         let finished = manager.follow_targets(&mut state, 5.0, 0.016);
@@ -564,6 +574,7 @@ mod tests {
                 health: 100.0,
             }],
             ledger: crate::engine::state::ResourceLedger::new(),
+            technologies: Default::default(),
         };
 
         let finished = manager.follow_targets(&mut state, 5.0, 0.016);

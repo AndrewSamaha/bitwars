@@ -160,11 +160,13 @@ mod tests {
             tick: 10,
             entities: vec![entity(9), entity(2), entity(5)],
             ledger: HashMap::new(),
+            technologies: HashMap::new(),
         };
         let current = GameState {
             tick: 11,
             entities: vec![entity(5)],
             ledger: HashMap::new(),
+            technologies: HashMap::new(),
         };
 
         let delta = compute_delta(
@@ -187,6 +189,7 @@ mod tests {
             tick: 10,
             entities: vec![entity(4)],
             ledger: HashMap::new(),
+            technologies: HashMap::new(),
         };
         let collector = CollectorUiState {
             activity: "gathering".to_string(),

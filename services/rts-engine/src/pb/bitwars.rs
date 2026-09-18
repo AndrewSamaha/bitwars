@@ -94,6 +94,15 @@ pub struct PlayerResourceLedger {
     #[prost(message, repeated, tag = "2")]
     pub resources: ::prost::alloc::vec::Vec<ResourceEntry>,
 }
+/// Technologies completed by a player. Technology definitions are supplied by
+/// the versioned content pack; this is only mutable match state.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerTechnologyState {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub technology_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
     #[prost(int64, tag = "2")]
@@ -106,6 +115,8 @@ pub struct Snapshot {
     pub collector_states: ::prost::alloc::vec::Vec<CollectorState>,
     #[prost(message, repeated, tag = "6")]
     pub combat_effect_states: ::prost::alloc::vec::Vec<CombatEffectState>,
+    #[prost(message, repeated, tag = "7")]
+    pub player_technologies: ::prost::alloc::vec::Vec<PlayerTechnologyState>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotMeta {
@@ -203,6 +214,14 @@ pub struct UpgradeIntent {
     #[prost(string, tag = "2")]
     pub target_entity_type_id: ::prost::alloc::string::String,
 }
+/// Research one content-defined technology using a research-capable entity.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResearchIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(string, tag = "2")]
+    pub technology_id: ::prost::alloc::string::String,
+}
 /// Collect intent payload (authoritative server-side).
 /// Starts/maintains autonomous resource collection behavior for this entity.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -256,7 +275,7 @@ pub struct IntentEnvelope {
     /// defaults to REPLACE_ACTIVE when omitted
     #[prost(enumeration = "IntentPolicy", tag = "7")]
     pub policy: i32,
-    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14, 16")]
+    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14, 16, 17")]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
 /// Nested message and enum types in `IntentEnvelope`.
@@ -275,13 +294,15 @@ pub mod intent_envelope {
         Repair(super::RepairIntent),
         #[prost(message, tag = "16")]
         Upgrade(super::UpgradeIntent),
+        #[prost(message, tag = "17")]
+        Research(super::ResearchIntent),
     }
 }
 /// Extensible Intent envelope.
 /// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Intent {
-    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5, 6")]
+    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub kind: ::core::option::Option<intent::Kind>,
 }
 /// Nested message and enum types in `Intent`.
@@ -300,6 +321,8 @@ pub mod intent {
         Repair(super::RepairIntent),
         #[prost(message, tag = "6")]
         Upgrade(super::UpgradeIntent),
+        #[prost(message, tag = "7")]
+        Research(super::ResearchIntent),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -404,6 +427,13 @@ pub struct UpgradeState {
     #[prost(float, tag = "2")]
     pub progress: f32,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResearchState {
+    #[prost(string, tag = "1")]
+    pub technology_id: ::prost::alloc::string::String,
+    #[prost(float, tag = "2")]
+    pub progress: f32,
+}
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CollectState {
     #[prost(uint64, tag = "1")]
@@ -420,7 +450,7 @@ pub struct ActionState {
     /// Echo original intent for correlation/observability (optional but useful)
     #[prost(message, optional, tag = "1")]
     pub intent: ::core::option::Option<Intent>,
-    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6, 7, 8")]
     pub exec: ::core::option::Option<action_state::Exec>,
 }
 /// Nested message and enum types in `ActionState`.
@@ -439,6 +469,8 @@ pub mod action_state {
         Repair(super::RepairState),
         #[prost(message, tag = "7")]
         Upgrade(super::UpgradeState),
+        #[prost(message, tag = "8")]
+        Research(super::ResearchState),
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

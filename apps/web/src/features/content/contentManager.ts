@@ -78,6 +78,8 @@ export type EntityTypeDef = {
     entity_type_id: string;
     spend_rates?: Record<string, number>;
   }>;
+  requires_technologies?: TechnologyRequirement;
+  researches?: string[];
   collector?: {
     vfx?: "solar_proximity" | "mineral_transport";
   };
@@ -103,6 +105,16 @@ export type EntityTypeDef = {
   >;
 };
 
+export type TechnologyRequirement = string | { all?: TechnologyRequirement[]; any?: TechnologyRequirement[] };
+export type TechnologyDef = {
+  display_name: string;
+  granted_on_spawn?: boolean;
+  requires?: TechnologyRequirement;
+  research_cost?: Record<string, number>;
+  research_rates?: Record<string, number>;
+  effects?: Array<{ target: string; operation: "add" | "multiply" | "set" | "cap"; value: number }>;
+};
+
 /** M7: Resource type definition for HUD display (name, order). */
 export type ResourceTypeDef = {
   display_name: string;
@@ -114,6 +126,7 @@ export type ContentData = {
   entity_types: Record<string, EntityTypeDef>;
   /** M7: Resource type definitions (id → display_name, order). */
   resource_types?: Record<string, ResourceTypeDef>;
+  technologies?: Record<string, TechnologyDef>;
 };
 
 // ── Storage key ────────────────────────────────────────────────────────────

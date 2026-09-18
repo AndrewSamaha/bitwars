@@ -132,6 +132,13 @@ export default function GameStage() {
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
+            } : params.kind === "Research" ? {
+              type: "Research",
+              entity_id: params.entityId,
+              technology_id: params.technologyId,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
             } : {
               type: "Repair",
               entity_id: params.entityId,
@@ -664,7 +671,7 @@ export default function GameStage() {
         const refreshBuildProgress = (nowMs: number) => {
           if (buildProgressRequestInFlight || nowMs - lastBuildProgressPollAt < BUILD_PROGRESS_POLL_MS) return;
           const entityIds = Array.from(game.world.with("id"))
-            .filter((entity) => ["build", "upgrade"].includes(String((entity as any).active_intent_kind).toLowerCase()))
+            .filter((entity) => ["build", "upgrade", "research"].includes(String((entity as any).active_intent_kind).toLowerCase()))
             .map((entity) => String((entity as any).id));
           if (entityIds.length === 0) {
             buildProgressByEntity.clear();
@@ -931,7 +938,7 @@ export default function GameStage() {
             const isSelected = latestSelectorsRef.current.isSelected(id);
             const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildProgress = buildProgressByEntity.get(String((e as any).id));
-            const isBuilding = ["build", "upgrade"].includes(String((e as any).active_intent_kind).toLowerCase());
+            const isBuilding = ["build", "upgrade", "research"].includes(String((e as any).active_intent_kind).toLowerCase());
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if (((e as any).hover || isSelected) && !suppressHover) {
               if (primary) (primary as any).tint = isOwned || isSystemOwner ? SELECTED_COLOR : NON_OWNED_TINT;

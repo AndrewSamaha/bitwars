@@ -52,6 +52,7 @@
       "$ref": "#/$defs/FogMemory"
     },
     "health": {
+      "description": "Hull hit points before the entity is destroyed.",
       "type": "number",
       "format": "float"
     },
@@ -70,6 +71,7 @@
       }
     },
     "mass": {
+      "description": "Physics mass used when entities collide.",
       "type": "number",
       "format": "float"
     },
@@ -112,6 +114,24 @@
         }
       ]
     },
+    "requires_technologies": {
+      "description": "Technologies required before this type can be built or upgraded into.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TechnologyRequirement"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "researches": {
+      "description": "Technology IDs this entity can research.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "resource_node": {
       "description": "M8: Optional resource-node profile for collectible source entities.",
       "anyOf": [
@@ -136,10 +156,12 @@
       ]
     },
     "speed": {
+      "description": "Maximum movement speed in world units per second.",
       "type": "number",
       "format": "float"
     },
     "stop_radius": {
+      "description": "Distance from a movement target at which this entity stops, in world units.",
       "type": "number",
       "format": "float"
     },
@@ -237,6 +259,7 @@
       "type": "object",
       "properties": {
         "entity_type_id": {
+          "description": "ID of the entity type this entity can build.",
           "type": "string"
         },
         "spend_rates": {
@@ -554,7 +577,7 @@
           }
         },
         "range": {
-          "description": "Circular detection radius in world units.",
+          "description": "Circular detection radius in world units. For autonomous combat units,\nthis should be at least `combat.acquisition_range`.",
           "type": "number",
           "format": "float"
         }
@@ -564,11 +587,47 @@
         "range"
       ]
     },
+    "TechnologyRequirement": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TechnologyRequirement"
+              }
+            }
+          },
+          "required": [
+            "all"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TechnologyRequirement"
+              }
+            }
+          },
+          "required": [
+            "any"
+          ]
+        }
+      ]
+    },
     "UpgradeOptionDef": {
       "description": "One content-defined in-place transformation available to an entity.\n\nThe target type's `build_cost` supplies the resource cost. A missing\nrequired resource rate defaults to 1/s, matching production builds.",
       "type": "object",
       "properties": {
         "entity_type_id": {
+          "description": "ID of the entity type this entity transforms into.",
           "type": "string"
         },
         "spend_rates": {
