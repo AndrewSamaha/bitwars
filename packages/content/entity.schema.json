@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "build_cost": {
-      "description": "Resources required to create one instance of this entity type.",
+      "description": "Total construction or upgrade cost, keyed by resource ID. Spent progressively at the producer's spend_rates; omitted means no cost.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -20,7 +20,7 @@
       }
     },
     "collector": {
-      "description": "M8: Optional collection profile for collector-capable entities.",
+      "description": "Optional automatic resource collection capabilities. Omit to disable collection.",
       "anyOf": [
         {
           "$ref": "#/$defs/CollectorDef"
@@ -57,13 +57,13 @@
       "format": "float"
     },
     "hull_radius": {
-      "description": "Physical hull radius used by contact attacks. This is deliberately\nseparate from visual scale and movement-order stop radius.",
+      "description": "Physical hull radius in world units used by contact attacks. Defaults to 0.\nIndependent of visual scale and movement-order stop radius.",
       "type": "number",
       "format": "float",
       "default": 0.0
     },
     "maintenance_cost_per_minute": {
-      "description": "Per-resource upkeep charged to the entity owner, in units per minute.",
+      "description": "Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.\nCharged to the owner while active; balances stop at zero without accruing debt. Omitted means free upkeep.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -71,12 +71,12 @@
       }
     },
     "mass": {
-      "description": "Physics mass used when entities collide.",
+      "description": "Mass used to convert random physics forces to acceleration (force / mass). Use a positive value.",
       "type": "number",
       "format": "float"
     },
     "radiation_shielding": {
-      "description": "Per-radiation-type shielding modifiers for this entity type.",
+      "description": "Shielding keyed by radiation type ID. Missing types use zero distance offset and a damage multiplier of 1.",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/RadiationShieldingDef"
@@ -92,7 +92,7 @@
       }
     },
     "refinery": {
-      "description": "M8: Optional refinery/processor profile for transport deposits.",
+      "description": "Optional drop-off point for resources carried by transport collectors.",
       "anyOf": [
         {
           "$ref": "#/$defs/RefineryDef"
@@ -115,7 +115,7 @@
       ]
     },
     "requires_technologies": {
-      "description": "Technologies required before this type can be built or upgraded into.",
+      "description": "Technologies the player must own before building or upgrading into this type.\nUse a technology ID or nested all/any groups; omitted means no prerequisites.",
       "anyOf": [
         {
           "$ref": "#/$defs/TechnologyRequirement"
@@ -126,14 +126,14 @@
       ]
     },
     "researches": {
-      "description": "Technology IDs this entity can research.",
+      "description": "Technology IDs this entity can research. Omitted or empty means it cannot perform research.",
       "type": "array",
       "items": {
         "type": "string"
       }
     },
     "resource_node": {
-      "description": "M8: Optional resource-node profile for collectible source entities.",
+      "description": "Optional resource source that collectors can gather from.",
       "anyOf": [
         {
           "$ref": "#/$defs/ResourceNodeDef"
@@ -177,7 +177,7 @@
       }
     },
     "visibility_range": {
-      "description": "Target-side detection range used to extend a player's sensor coverage.",
+      "description": "Distance in world units at which this entity can be detected from an owned sensor source.\nDetection uses the larger of this value and the source's sensor range. Omitted means 0.",
       "type": [
         "number",
         "null"
@@ -207,35 +207,40 @@
       "type": "object",
       "properties": {
         "contact_tolerance": {
-          "description": "Extra slack beyond two touching hulls for a dismantle attack.",
+          "description": "Extra distance in world units beyond the sum of both hull radii for dismantle. Defaults to 0; negative values act as 0.",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "cooldown_ticks": {
+          "description": "Simulation ticks before this weapon can fire again. Values below 1 are treated as 1.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0
         },
         "damage": {
+          "description": "Hit points removed per successful attack, not per second.",
           "type": "number",
           "format": "float"
         },
         "id": {
+          "description": "Stable weapon ID within this entity type; identifies its cooldown and breaks equal-priority ties alphabetically.",
           "type": "string"
         },
         "priority": {
+          "description": "Higher numbers win among weapons in range; ties use the alphabetically first ID. Defaults to 0.",
           "type": "integer",
           "format": "int32",
           "default": 0
         },
         "range": {
-          "description": "Maximum center-to-center range for a ranged weapon.",
+          "description": "Maximum center-to-center laser distance in world units. Defaults to 0; ignored for dismantle.",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "type": {
+          "description": "Weapon behavior: laser uses range; dismantle uses both hull radii plus contact_tolerance.",
           "$ref": "#/$defs/AttackType"
         }
       },
@@ -248,10 +253,17 @@
       ]
     },
     "AttackType": {
-      "type": "string",
-      "enum": [
-        "laser",
-        "dismantle"
+      "oneOf": [
+        {
+          "description": "Ranged attack using the weapon's range in world units.",
+          "type": "string",
+          "const": "laser"
+        },
+        {
+          "description": "Contact attack within attacker hull radius + target hull radius + contact_tolerance.",
+          "type": "string",
+          "const": "dismantle"
+        }
       ]
     },
     "BuildOptionDef": {
@@ -263,7 +275,7 @@
           "type": "string"
         },
         "spend_rates": {
-          "description": "Resource conversion rates. A missing required resource defaults to 1/s.",
+          "description": "Resource units spent per second, keyed by resource ID, toward the target's build_cost. Missing rates default to 1/s.",
           "type": "object",
           "additionalProperties": {
             "type": "number",
@@ -278,22 +290,36 @@
       ]
     },
     "CollectionEffect": {
-      "type": "string",
-      "enum": [
-        "solar_proximity",
-        "mineral_transport"
+      "oneOf": [
+        {
+          "description": "Solar collection particle presentation. Visual only; does not select the resource collection mode.",
+          "type": "string",
+          "const": "solar_proximity"
+        },
+        {
+          "description": "Mineral transport particle presentation. Visual only; does not select the resource collection mode.",
+          "type": "string",
+          "const": "mineral_transport"
+        }
       ]
     },
     "CollectionMode": {
-      "description": "M8: Collection mode for a resource source.",
-      "type": "string",
-      "enum": [
-        "transport",
-        "proximity"
+      "description": "Collection mode for a resource source.",
+      "oneOf": [
+        {
+          "description": "Gather into the collector's cargo, then deliver to an accepting refinery to credit the owner's resources.",
+          "type": "string",
+          "const": "transport"
+        },
+        {
+          "description": "Credit the owner's resources directly while a collector remains within the source's effective distance band.",
+          "type": "string",
+          "const": "proximity"
+        }
       ]
     },
     "CollectorDef": {
-      "description": "M8: Collector capabilities and rates.",
+      "description": "Automatic resource collector capabilities and rates.",
       "type": "object",
       "properties": {
         "carry_capacity": {
@@ -373,10 +399,17 @@
       ]
     },
     "FogMemory": {
-      "type": "string",
-      "enum": [
-        "retain_last_known",
-        "forget_when_hidden"
+      "oneOf": [
+        {
+          "description": "Keep the last observed entity state after it leaves sensor coverage.",
+          "type": "string",
+          "const": "retain_last_known"
+        },
+        {
+          "description": "Remove the entity from the client's visible state when it leaves sensor coverage.",
+          "type": "string",
+          "const": "forget_when_hidden"
+        }
       ]
     },
     "NearEnemyStrategy": {
@@ -404,13 +437,13 @@
       "type": "object",
       "properties": {
         "damage_multiplier": {
-          "description": "Multiplies incoming damage after distance adjustment.",
+          "description": "Multiplier for incoming radiation damage after distance adjustment. Defaults to 1; 0 gives immunity.\nNegative values act as 0.",
           "type": "number",
           "format": "float",
           "default": 1.0
         },
         "distance_offset": {
-          "description": "Acts like extra standoff distance for hazard evaluation.",
+          "description": "World units added to actual source distance before checking radiation bands and falloff.\nDefaults to 0; negative values act as 0.",
           "type": "number",
           "format": "float",
           "default": 0.0
@@ -423,68 +456,73 @@
       "type": "object",
       "properties": {
         "damage_per_second": {
+          "description": "Hit points removed per second within the full-strength band, before shielding. Defaults to 0 (no damage).",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "full_damage_distance": {
+          "description": "End of the full-strength damage band in world units. Damage then falls linearly to zero at max_effective_distance.\nDefaults to 0 and is clamped between the inner and outer radii.",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "full_damage_distance_border_color": {
-          "description": "Hex color for the full-damage-distance range outline.",
+          "description": "Optional full-damage-distance range outline color: 3 or 6 hex digits, e.g. \"#f80\" or \"#ff8800\".\nQuote values beginning with # in YAML. Omitted means no outline; visual only.",
           "type": [
             "string",
             "null"
           ]
         },
         "full_damage_distance_fill_color": {
-          "description": "Hex color for the full-damage-distance range fill.",
+          "description": "Optional full-damage-distance range fill color: 3 or 6 hex digits, e.g. \"#f80\" or \"#ff8800\".\nQuote values beginning with # in YAML. Omitted means no fill; visual only.",
           "type": [
             "string",
             "null"
           ]
         },
         "max_effective_distance": {
+          "description": "Outer damage radius in world units; targets beyond this take no damage. Defaults to 120; clamped to at least the inner radius.",
           "type": "number",
           "format": "float",
           "default": 120.0
         },
         "max_effective_distance_border_color": {
-          "description": "Hex color for the max-effective-distance range outline.",
+          "description": "Optional max-effective-distance range outline color: 3 or 6 hex digits, e.g. \"#f80\" or \"#ff8800\".\nQuote values beginning with # in YAML. Omitted means no outline; visual only.",
           "type": [
             "string",
             "null"
           ]
         },
         "max_effective_distance_fill_color": {
-          "description": "Hex color for the max-effective-distance range fill.",
+          "description": "Optional max-effective-distance range fill color: 3 or 6 hex digits, e.g. \"#f80\" or \"#ff8800\".\nQuote values beginning with # in YAML. Omitted means no fill; visual only.",
           "type": [
             "string",
             "null"
           ]
         },
         "min_effective_distance": {
+          "description": "Inner damage radius in world units; targets closer than this take no damage. Defaults to 0. Shielding adjusts distance first.",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "min_effective_distance_border_color": {
-          "description": "Hex color for the min-effective-distance range outline.",
+          "description": "Optional min-effective-distance range outline color: 3 or 6 hex digits, e.g. \"#f80\" or \"#ff8800\".\nQuote values beginning with # in YAML. Omitted means no outline; visual only.",
           "type": [
             "string",
             "null"
           ]
         },
         "min_effective_distance_fill_color": {
-          "description": "Hex color for the min-effective-distance range fill.",
+          "description": "Optional min-effective-distance range fill color: 3 or 6 hex digits, e.g. \"#f80\" or \"#ff8800\".\nQuote values beginning with # in YAML. Omitted means no fill; visual only.",
           "type": [
             "string",
             "null"
           ]
         },
         "radiation_type": {
+          "description": "Radiation type ID used to look up the target's radiation_shielding entry.",
           "type": "string"
         }
       },
@@ -494,7 +532,7 @@
       ]
     },
     "RefineryDef": {
-      "description": "M8: Refinery/processor profile.",
+      "description": "Drop-off point for transported resources.",
       "type": "object",
       "properties": {
         "accepts": {
@@ -538,23 +576,27 @@
       ]
     },
     "ResourceNodeDef": {
-      "description": "M8: Resource source profile for entity types that can be gathered from.",
+      "description": "Resource source profile for entity types that can be gathered from.",
       "type": "object",
       "properties": {
         "collection_mode": {
+          "description": "Whether gathering fills cargo for delivery (transport) or credits resources directly (proximity).",
           "$ref": "#/$defs/CollectionMode"
         },
         "max_effective_distance": {
+          "description": "Outer center-to-center gathering distance in world units, inclusive. Defaults to 120 and is clamped to at least the inner distance.",
           "type": "number",
           "format": "float",
           "default": 120.0
         },
         "min_effective_distance": {
+          "description": "Inner center-to-center gathering distance in world units, inclusive. Defaults to 0.",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "resource_type": {
+          "description": "Resource ID produced by this source; must be included in the collector's collects list.",
           "type": "string"
         }
       },
@@ -590,12 +632,14 @@
     "TechnologyRequirement": {
       "anyOf": [
         {
+          "description": "ID of a technology the player must own.",
           "type": "string"
         },
         {
           "type": "object",
           "properties": {
             "all": {
+              "description": "All listed prerequisites must be satisfied. Use a non-empty list of technology IDs or nested all/any groups.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/TechnologyRequirement"
@@ -610,6 +654,7 @@
           "type": "object",
           "properties": {
             "any": {
+              "description": "At least one listed prerequisite must be satisfied. Use a non-empty list of technology IDs or nested all/any groups.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/TechnologyRequirement"
@@ -631,6 +676,7 @@
           "type": "string"
         },
         "spend_rates": {
+          "description": "Resource units spent per second, keyed by resource ID. Uses the target type's build_cost; missing rates default to 1/s.",
           "type": "object",
           "additionalProperties": {
             "type": "number",
@@ -649,7 +695,7 @@
       "type": "object",
       "properties": {
         "rotate_deg": {
-          "description": "Clockwise offset from the asset's native right-facing forward direction.",
+          "description": "Clockwise rotation in degrees from the asset's native right-facing direction. Defaults to 0.",
           "type": "number",
           "format": "float"
         },

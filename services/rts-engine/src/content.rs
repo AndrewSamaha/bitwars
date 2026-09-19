@@ -33,12 +33,12 @@ pub struct EntityTypeDef {
     pub speed: f32,
     /// Distance from a movement target at which this entity stops, in world units.
     pub stop_radius: f32,
-    /// Physics mass used when entities collide.
+    /// Mass used to convert random physics forces to acceleration (force / mass). Use a positive value.
     pub mass: f32,
     /// Hull hit points before the entity is destroyed.
     pub health: f32,
-    /// Physical hull radius used by contact attacks. This is deliberately
-    /// separate from visual scale and movement-order stop radius.
+    /// Physical hull radius in world units used by contact attacks. Defaults to 0.
+    /// Independent of visual scale and movement-order stop radius.
     #[serde(default)]
     pub hull_radius: f32,
     /// Optional autonomous-combat profile. When present, the server acquires
@@ -58,34 +58,36 @@ pub struct EntityTypeDef {
     /// Whether the client should suppress hover UI for this entity type.
     #[serde(default, skip_serializing_if = "is_false")]
     pub suppress_hover: bool,
-    /// M8: Optional collection profile for collector-capable entities.
+    /// Optional automatic resource collection capabilities. Omit to disable collection.
     #[serde(default)]
     pub collector: Option<CollectorDef>,
     /// Optional resource-powered repair ability.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repair: Option<RepairDef>,
-    /// M8: Optional resource-node profile for collectible source entities.
+    /// Optional resource source that collectors can gather from.
     #[serde(default)]
     pub resource_node: Option<ResourceNodeDef>,
-    /// M8: Optional refinery/processor profile for transport deposits.
+    /// Optional drop-off point for resources carried by transport collectors.
     #[serde(default)]
     pub refinery: Option<RefineryDef>,
     /// Environmental hazard emitters attached to this entity type.
     #[serde(default)]
     pub radiation_sources: Vec<RadiationSourceDef>,
-    /// Per-radiation-type shielding modifiers for this entity type.
+    /// Shielding keyed by radiation type ID. Missing types use zero distance offset and a damage multiplier of 1.
     #[serde(default)]
     pub radiation_shielding: HashMap<String, RadiationShieldingDef>,
-    /// Resources required to create one instance of this entity type.
+    /// Total construction or upgrade cost, keyed by resource ID. Spent progressively at the producer's spend_rates; omitted means no cost.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub build_cost: HashMap<String, f32>,
-    /// Per-resource upkeep charged to the entity owner, in units per minute.
+    /// Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.
+    /// Charged to the owner while active; balances stop at zero without accruing debt. Omitted means free upkeep.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub maintenance_cost_per_minute: HashMap<String, f32>,
     /// Optional area sensor. Its operating costs are charged continuously.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sensor: Option<SensorDef>,
-    /// Target-side detection range used to extend a player's sensor coverage.
+    /// Distance in world units at which this entity can be detected from an owned sensor source.
+    /// Detection uses the larger of this value and the source's sensor range. Omitted means 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility_range: Option<f32>,
     /// Units this entity type can produce.
@@ -94,10 +96,11 @@ pub struct EntityTypeDef {
     /// Entity types this entity may transform into through an upgrade channel.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub upgrades: Vec<UpgradeOptionDef>,
-    /// Technologies required before this type can be built or upgraded into.
+    /// Technologies the player must own before building or upgrading into this type.
+    /// Use a technology ID or nested all/any groups; omitted means no prerequisites.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requires_technologies: Option<TechnologyRequirement>,
-    /// Technology IDs this entity can research.
+    /// Technology IDs this entity can research. Omitted or empty means it cannot perform research.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub researches: Vec<String>,
 }
@@ -105,9 +108,16 @@ pub struct EntityTypeDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum TechnologyRequirement {
+    /// ID of a technology the player must own.
     Technology(String),
-    All { all: Vec<TechnologyRequirement> },
-    Any { any: Vec<TechnologyRequirement> },
+    All {
+        /// All listed prerequisites must be satisfied. Use a non-empty list of technology IDs or nested all/any groups.
+        all: Vec<TechnologyRequirement>,
+    },
+    Any {
+        /// At least one listed prerequisite must be satisfied. Use a non-empty list of technology IDs or nested all/any groups.
+        any: Vec<TechnologyRequirement>,
+    },
 }
 
 impl TechnologyRequirement {
@@ -135,13 +145,16 @@ pub struct TechnologyDef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     /// Prerequisite technology or an all/any group of prerequisites.
     pub requires: Option<TechnologyRequirement>,
-    /// Resources consumed once when research begins.
+    /// Total research cost, keyed by resource ID. Spent progressively at research_rates until research completes.
+    /// Spawn-granted technologies must omit this; researchable technologies need a non-empty cost.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub research_cost: HashMap<String, f32>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    /// Per-resource research spend rates in units per second.
+    /// Research spending in resource units per second, keyed by resource ID. Missing resources default to 1/s.
+    /// Completion time is the largest cost/rate; insufficient resources pause progress.
     pub research_rates: HashMap<String, f32>,
-    /// Effects applied to the owning player after research completes.
+    /// Ordered effects used when calculating the owning player's sensor coverage while this technology is owned,
+    /// including technologies granted at spawn. Omitted means no stat changes (the technology can still unlock prerequisites).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<TechnologyEffect>,
 }
@@ -149,34 +162,43 @@ pub struct TechnologyDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TechnologyEffect {
-    /// Currently supported: `entity.sensor.range` (all owned sensor entities).
+    /// Property modified for the owning player. Only `entity.sensor.range` is supported.
+    /// Applied to every owned entity's base sensor range (0 if absent), so an additive effect can create sensor coverage.
     pub target: String,
     /// How the value changes the target: add, multiply, set, or cap.
     pub operation: TechnologyEffectOperation,
-    /// Operand used by the operation.
+    /// Finite operand: world units for add/set/cap of sensor range, or a dimensionless factor for multiply.
     pub value: f32,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TechnologyEffectOperation {
+    /// Adds value to the current target value.
     Add,
+    /// Multiplies the current target value by value.
     Multiply,
+    /// Replaces the current target value with value.
     Set,
+    /// Sets the target to the smaller of its current value and value (an upper limit).
     Cap,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionEffect {
+    /// Solar collection particle presentation. Visual only; does not select the resource collection mode.
     SolarProximity,
+    /// Mineral transport particle presentation. Visual only; does not select the resource collection mode.
     MineralTransport,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FogMemory {
+    /// Keep the last observed entity state after it leaves sensor coverage.
     RetainLastKnown,
+    /// Remove the entity from the client's visible state when it leaves sensor coverage.
     #[default]
     ForgetWhenHidden,
 }
@@ -200,17 +222,22 @@ pub struct CombatDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AttackDef {
+    /// Stable weapon ID within this entity type; identifies its cooldown and breaks equal-priority ties alphabetically.
     pub id: String,
+    /// Weapon behavior: laser uses range; dismantle uses both hull radii plus contact_tolerance.
     #[serde(rename = "type")]
     pub attack_type: AttackType,
-    /// Maximum center-to-center range for a ranged weapon.
+    /// Maximum center-to-center laser distance in world units. Defaults to 0; ignored for dismantle.
     #[serde(default)]
     pub range: f32,
+    /// Hit points removed per successful attack, not per second.
     pub damage: f32,
+    /// Simulation ticks before this weapon can fire again. Values below 1 are treated as 1.
     pub cooldown_ticks: u64,
+    /// Higher numbers win among weapons in range; ties use the alphabetically first ID. Defaults to 0.
     #[serde(default)]
     pub priority: i32,
-    /// Extra slack beyond two touching hulls for a dismantle attack.
+    /// Extra distance in world units beyond the sum of both hull radii for dismantle. Defaults to 0; negative values act as 0.
     #[serde(default)]
     pub contact_tolerance: f32,
 }
@@ -218,7 +245,9 @@ pub struct AttackDef {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AttackType {
+    /// Ranged attack using the weapon's range in world units.
     Laser,
+    /// Contact attack within attacker hull radius + target hull radius + contact_tolerance.
     Dismantle,
 }
 
@@ -241,7 +270,7 @@ pub enum NearEnemyStrategy {
 pub struct BuildOptionDef {
     /// ID of the entity type this entity can build.
     pub entity_type_id: String,
-    /// Resource conversion rates. A missing required resource defaults to 1/s.
+    /// Resource units spent per second, keyed by resource ID, toward the target's build_cost. Missing rates default to 1/s.
     #[serde(default)]
     pub spend_rates: HashMap<String, f32>,
 }
@@ -255,6 +284,7 @@ pub struct BuildOptionDef {
 pub struct UpgradeOptionDef {
     /// ID of the entity type this entity transforms into.
     pub entity_type_id: String,
+    /// Resource units spent per second, keyed by resource ID. Uses the target type's build_cost; missing rates default to 1/s.
     #[serde(default)]
     pub spend_rates: HashMap<String, f32>,
 }
@@ -269,7 +299,7 @@ pub struct VisualDef {
         skip_serializing_if = "is_default_visual_scale"
     )]
     pub scale: f32,
-    /// Clockwise offset from the asset's native right-facing forward direction.
+    /// Clockwise rotation in degrees from the asset's native right-facing direction. Defaults to 0.
     #[serde(default, skip_serializing_if = "is_default_rotate_deg")]
     pub rotate_deg: f32,
 }
@@ -341,15 +371,17 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-/// M8: Collection mode for a resource source.
+/// Collection mode for a resource source.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionMode {
+    /// Gather into the collector's cargo, then deliver to an accepting refinery to credit the owner's resources.
     Transport,
+    /// Credit the owner's resources directly while a collector remains within the source's effective distance band.
     Proximity,
 }
 
-/// M8: Collector capabilities and rates.
+/// Automatic resource collector capabilities and rates.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CollectorDef {
@@ -374,19 +406,23 @@ pub struct CollectorDef {
     pub deposit_entity_types: Vec<String>,
 }
 
-/// M8: Resource source profile for entity types that can be gathered from.
+/// Resource source profile for entity types that can be gathered from.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceNodeDef {
+    /// Resource ID produced by this source; must be included in the collector's collects list.
     pub resource_type: String,
+    /// Whether gathering fills cargo for delivery (transport) or credits resources directly (proximity).
     pub collection_mode: CollectionMode,
+    /// Inner center-to-center gathering distance in world units, inclusive. Defaults to 0.
     #[serde(default)]
     pub min_effective_distance: f32,
+    /// Outer center-to-center gathering distance in world units, inclusive. Defaults to 120 and is clamped to at least the inner distance.
     #[serde(default = "default_max_effective_distance")]
     pub max_effective_distance: f32,
 }
 
-/// M8: Refinery/processor profile.
+/// Drop-off point for transported resources.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RefineryDef {
@@ -399,31 +435,43 @@ pub struct RefineryDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RadiationSourceDef {
+    /// Radiation type ID used to look up the target's radiation_shielding entry.
     pub radiation_type: String,
-    /// Hex color for the min-effective-distance range outline.
+    /// Optional min-effective-distance range outline color: 3 or 6 hex digits, e.g. "#f80" or "#ff8800".
+    /// Quote values beginning with # in YAML. Omitted means no outline; visual only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_effective_distance_border_color: Option<String>,
-    /// Hex color for the min-effective-distance range fill.
+    /// Optional min-effective-distance range fill color: 3 or 6 hex digits, e.g. "#f80" or "#ff8800".
+    /// Quote values beginning with # in YAML. Omitted means no fill; visual only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_effective_distance_fill_color: Option<String>,
-    /// Hex color for the full-damage-distance range outline.
+    /// Optional full-damage-distance range outline color: 3 or 6 hex digits, e.g. "#f80" or "#ff8800".
+    /// Quote values beginning with # in YAML. Omitted means no outline; visual only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full_damage_distance_border_color: Option<String>,
-    /// Hex color for the full-damage-distance range fill.
+    /// Optional full-damage-distance range fill color: 3 or 6 hex digits, e.g. "#f80" or "#ff8800".
+    /// Quote values beginning with # in YAML. Omitted means no fill; visual only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full_damage_distance_fill_color: Option<String>,
-    /// Hex color for the max-effective-distance range outline.
+    /// Optional max-effective-distance range outline color: 3 or 6 hex digits, e.g. "#f80" or "#ff8800".
+    /// Quote values beginning with # in YAML. Omitted means no outline; visual only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_effective_distance_border_color: Option<String>,
-    /// Hex color for the max-effective-distance range fill.
+    /// Optional max-effective-distance range fill color: 3 or 6 hex digits, e.g. "#f80" or "#ff8800".
+    /// Quote values beginning with # in YAML. Omitted means no fill; visual only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_effective_distance_fill_color: Option<String>,
+    /// Inner damage radius in world units; targets closer than this take no damage. Defaults to 0. Shielding adjusts distance first.
     #[serde(default)]
     pub min_effective_distance: f32,
+    /// Outer damage radius in world units; targets beyond this take no damage. Defaults to 120; clamped to at least the inner radius.
     #[serde(default = "default_max_effective_distance")]
     pub max_effective_distance: f32,
+    /// End of the full-strength damage band in world units. Damage then falls linearly to zero at max_effective_distance.
+    /// Defaults to 0 and is clamped between the inner and outer radii.
     #[serde(default)]
     pub full_damage_distance: f32,
+    /// Hit points removed per second within the full-strength band, before shielding. Defaults to 0 (no damage).
     #[serde(default)]
     pub damage_per_second: f32,
 }
@@ -432,10 +480,12 @@ pub struct RadiationSourceDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RadiationShieldingDef {
-    /// Acts like extra standoff distance for hazard evaluation.
+    /// World units added to actual source distance before checking radiation bands and falloff.
+    /// Defaults to 0; negative values act as 0.
     #[serde(default)]
     pub distance_offset: f32,
-    /// Multiplies incoming damage after distance adjustment.
+    /// Multiplier for incoming radiation damage after distance adjustment. Defaults to 1; 0 gives immunity.
+    /// Negative values act as 0.
     #[serde(default = "default_damage_multiplier")]
     pub damage_multiplier: f32,
 }

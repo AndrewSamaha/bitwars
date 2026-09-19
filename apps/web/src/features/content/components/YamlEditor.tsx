@@ -7,37 +7,14 @@ import { parseDocument } from "yaml";
 import entitySchema from "@bitwars/content/entity.schema.json";
 import technologySchema from "@bitwars/content/technology.schema.json";
 import { entityCombatRangeWarnings } from "@/lib/content/schemaValidation";
+import { completionHelp, hoverHelp } from "@/lib/content/editorHelp";
 
 let yamlConfigured = false;
-let entityIds: Promise<string[]> | undefined;
-let technologyIds: Promise<string[]> | undefined;
-
-const hoverDocs: Record<string, string> = {
-  sensor: "Optional circular detection area available to this entity.",
-  range: "Detection radius in world units. For autonomous combat units, keep this at least combat.acquisition_range.",
-  acquisition_range: "Maximum distance at which autonomous combat acquires an enemy, in world units.",
-  research_cost: "Resources consumed once when research begins.",
-  research_rates: "Per-resource research spend rates in units per second.",
-  requires: "A prerequisite technology, or an all/any group of prerequisites.",
-  operation: "How an effect changes its target value.",
-};
-
-const operationDocs: Record<string, string> = {
-  add: "Adds value to the target.",
-  multiply: "Multiplies the target by value.",
-  set: "Replaces the target with value.",
-  cap: "Limits the target to value.",
-};
-
-function ids(path: "entities" | "technologies") {
-  const cache = path === "entities" ? entityIds : technologyIds;
-  if (cache) return cache;
-  const request: Promise<string[]> = fetch(`/api/content/${path}`)
+function ids(path: "entities" | "technologies"): Promise<string[]> {
+  return fetch(`/api/content/${path}`)
     .then((response) => response.ok ? response.json() : {})
     .then((data: { entities?: Array<{ id: string }>; technologies?: Array<{ id: string }> }) => (data[path] ?? []).map((item) => item.id))
     .catch(() => []);
-  if (path === "entities") entityIds = request; else technologyIds = request;
-  return request;
 }
 
 const configureYaml: BeforeMount = (monaco) => {
@@ -53,37 +30,30 @@ const configureYaml: BeforeMount = (monaco) => {
       uri: "bitwars://schemas/technology.schema.json",
     }],
     disableAdditionalProperties: true,
+    // Schema-based help below also works without a YAML language-service worker.
+    hover: false,
+    completion: false,
     validate: true,
   });
   monaco.languages.registerHoverProvider("yaml", {
     provideHover(model: editor.ITextModel, position: Position) {
       if (!model.uri.toString().includes("file:///bitwars/")) return null;
-      const word = model.getWordAtPosition(position)?.word;
-      if (!word) return null;
-      const description = operationDocs[word] ?? hoverDocs[word];
-      return description ? { contents: [{ value: `**${word}**\n\n${description}` }] } : null;
+      const kind = model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
+      const description = hoverHelp(model.getValue(), model.getOffsetAt(position), kind);
+      return description ? { contents: [{ value: description }] } : null;
     },
   });
   monaco.languages.registerCompletionItemProvider("yaml", {
     triggerCharacters: [":", " "],
     async provideCompletionItems(model: editor.ITextModel, position: Position) {
       if (!model.uri.toString().includes("file:///bitwars/")) return { suggestions: [] };
-      const line = model.getLineContent(position.lineNumber);
-      const range = model.getWordUntilPosition(position);
-      const isTechnology = model.uri.toString().endsWith(".technology.yaml");
-      const inTechnologyList = /^\s*-\s*\w*$/.test(line)
-        && model.getLinesContent().slice(0, position.lineNumber - 1).some((previous) => /^\s*(requires|researches|requires_technologies):/.test(previous));
-      const keySuggestions = Object.entries((isTechnology ? technologySchema : entitySchema).properties ?? {}).map(([label, schema]: [string, any]) => ({
-        label,
-        kind: monaco.languages.CompletionItemKind.Property,
-        documentation: schema.description,
-        insertText: `${label}: `,
-        range,
-      }));
-      if (/^\s*operation:\s*/.test(line)) return { suggestions: Object.entries(operationDocs).map(([label, documentation]) => ({ label, documentation, kind: monaco.languages.CompletionItemKind.EnumMember, insertText: label, range })) };
-      if (/entity_type_id:\s*/.test(line)) return { suggestions: (await ids("entities")).map((label) => ({ label, kind: monaco.languages.CompletionItemKind.Reference, insertText: label, range })) };
-      if (inTechnologyList || /(requires|researches|requires_technologies):\s*(?:-\s*)?$/.test(line)) return { suggestions: (await ids("technologies")).map((label) => ({ label, kind: monaco.languages.CompletionItemKind.Reference, insertText: label, range })) };
-      return { suggestions: keySuggestions };
+      const word = model.getWordAtPosition(position) ?? model.getWordUntilPosition(position);
+      const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn };
+      const kind = model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
+      const help = completionHelp(model.getValue(), model.getOffsetAt({ ...position, column: word.startColumn }), model.getOffsetAt({ ...position, column: word.endColumn }), kind);
+      const suggestions = help.suggestions.map((item) => ({ ...item, range, kind: item.property ? monaco.languages.CompletionItemKind.Property : monaco.languages.CompletionItemKind.EnumMember }));
+      if (help.references) suggestions.push(...(await ids(help.references)).map((label) => ({ label, insertText: label, range, kind: monaco.languages.CompletionItemKind.Reference })));
+      return { suggestions };
     },
   });
   yamlConfigured = true;

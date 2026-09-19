@@ -8,7 +8,7 @@
       "type": "string"
     },
     "effects": {
-      "description": "Effects applied to the owning player after research completes.",
+      "description": "Ordered effects used when calculating the owning player's sensor coverage while this technology is owned,\nincluding technologies granted at spawn. Omitted means no stat changes (the technology can still unlock prerequisites).",
       "type": "array",
       "items": {
         "$ref": "#/$defs/TechnologyEffect"
@@ -31,7 +31,7 @@
       ]
     },
     "research_cost": {
-      "description": "Resources consumed once when research begins.",
+      "description": "Total research cost, keyed by resource ID. Spent progressively at research_rates until research completes.\nSpawn-granted technologies must omit this; researchable technologies need a non-empty cost.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -39,7 +39,7 @@
       }
     },
     "research_rates": {
-      "description": "Per-resource research spend rates in units per second.",
+      "description": "Research spending in resource units per second, keyed by resource ID. Missing resources default to 1/s.\nCompletion time is the largest cost/rate; insufficient resources pause progress.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -60,11 +60,11 @@
           "$ref": "#/$defs/TechnologyEffectOperation"
         },
         "target": {
-          "description": "Currently supported: `entity.sensor.range` (all owned sensor entities).",
+          "description": "Property modified for the owning player. Only `entity.sensor.range` is supported.\nApplied to every owned entity's base sensor range (0 if absent), so an additive effect can create sensor coverage.",
           "type": "string"
         },
         "value": {
-          "description": "Operand used by the operation.",
+          "description": "Finite operand: world units for add/set/cap of sensor range, or a dimensionless factor for multiply.",
           "type": "number",
           "format": "float"
         }
@@ -77,23 +77,40 @@
       ]
     },
     "TechnologyEffectOperation": {
-      "type": "string",
-      "enum": [
-        "add",
-        "multiply",
-        "set",
-        "cap"
+      "oneOf": [
+        {
+          "description": "Adds value to the current target value.",
+          "type": "string",
+          "const": "add"
+        },
+        {
+          "description": "Multiplies the current target value by value.",
+          "type": "string",
+          "const": "multiply"
+        },
+        {
+          "description": "Replaces the current target value with value.",
+          "type": "string",
+          "const": "set"
+        },
+        {
+          "description": "Sets the target to the smaller of its current value and value (an upper limit).",
+          "type": "string",
+          "const": "cap"
+        }
       ]
     },
     "TechnologyRequirement": {
       "anyOf": [
         {
+          "description": "ID of a technology the player must own.",
           "type": "string"
         },
         {
           "type": "object",
           "properties": {
             "all": {
+              "description": "All listed prerequisites must be satisfied. Use a non-empty list of technology IDs or nested all/any groups.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/TechnologyRequirement"
@@ -108,6 +125,7 @@
           "type": "object",
           "properties": {
             "any": {
+              "description": "At least one listed prerequisite must be satisfied. Use a non-empty list of technology IDs or nested all/any groups.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/TechnologyRequirement"
