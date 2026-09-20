@@ -25,13 +25,13 @@ function getResourceLedgerForPlayer(
 }
 
 function getResourceSpendTotalsForPlayer(
-  snapshot: { playerLedgers?: Array<{ playerId: string; resources: Array<{ resourceType: string; spendTotal?: number }> }> },
+  snapshot: { playerLedgers?: Array<{ playerId: string; resources: Array<{ resourceType: string; spendTotal?: number; gainTotal?: number }> }> },
   playerId: string,
-): Record<string, number> {
-  const totals: Record<string, number> = {};
+): Record<string, { gain: number; spend: number }> {
+  const totals: Record<string, { gain: number; spend: number }> = {};
   const ledger = (snapshot.playerLedgers ?? []).find((entry) => entry.playerId === playerId);
   for (const resource of ledger?.resources ?? []) {
-    if (resource.resourceType) totals[resource.resourceType] = Number(resource.spendTotal ?? 0);
+    if (resource.resourceType) totals[resource.resourceType] = { gain: Number(resource.gainTotal ?? 0), spend: Number(resource.spendTotal ?? 0) };
   }
   return totals;
 }

@@ -300,6 +300,7 @@ impl RedisClient {
         &mut self,
         state: &GameState,
         resource_spend_total: &HashMap<(String, String), f64>,
+        resource_gain_total: &HashMap<(String, String), f64>,
         boundary_stream_id: &str,
         collector_states: Vec<CollectorState>,
         combat_effect_states: Vec<CombatEffectState>,
@@ -314,6 +315,10 @@ impl RedisClient {
                         resource_type: resource_type.clone(),
                         amount: *amount,
                         spend_total: resource_spend_total
+                            .get(&(player_id.clone(), resource_type.clone()))
+                            .copied()
+                            .unwrap_or(0.0),
+                        gain_total: resource_gain_total
                             .get(&(player_id.clone(), resource_type.clone()))
                             .copied()
                             .unwrap_or(0.0),

@@ -12,6 +12,8 @@ message ResourceEntry {
   // Cumulative authoritative spending for this resource. This includes upkeep
   // demand even when the ledger is clamped at zero.
   double spend_total = 3;
+  // Cumulative collection/resource income, including fractional accrual.
+  double gain_total = 4;
 }
 
 message PlayerResourceLedger {

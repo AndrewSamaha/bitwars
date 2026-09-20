@@ -64,6 +64,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
       resource_type: r.resourceType ?? "",
       amount: biToNumOrStr(r.amount),
       spend_total: r.spendTotal,
+      gain_total: r.gainTotal,
     })),
   }));
   return {

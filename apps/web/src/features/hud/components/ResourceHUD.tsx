@@ -41,8 +41,8 @@ export function ResourceHUD() {
   const resourceTypes = content?.resource_types ?? {};
   const previousResources = useRef(resources);
   const [trends, setTrends] = useState<Record<string, ResourceTrend>>({});
-  const [spendTrends, setSpendTrends] = useState<Record<string, ResourceTrend>>({});
-  const previousSpendTotals = useRef<Record<string, number>>({});
+  const [flowTrends, setFlowTrends] = useState<Record<string, { gain: ResourceTrend; spend: ResourceTrend }>>({});
+  const previousFlowTotals = useRef<Record<string, { gain: number; spend: number }>>({});
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -59,17 +59,20 @@ export function ResourceHUD() {
   }, [resources]);
 
   useEffect(() => {
-    const onSpendTotals = (event: Event) => {
-      const totals = (event as CustomEvent<Record<string, number>>).detail;
-      const previous = previousSpendTotals.current;
-      previousSpendTotals.current = totals;
-      setSpendTrends((current) => Object.fromEntries(Object.entries(totals).map(([key, total]) => [
+    const onFlowTotals = (event: Event) => {
+      const totals = (event as CustomEvent<Record<string, { gain: number; spend: number }>>).detail;
+      const previous = previousFlowTotals.current;
+      previousFlowTotals.current = totals;
+      setFlowTrends((current) => Object.fromEntries(Object.entries(totals).map(([key, total]) => [
         key,
-        addResourceChange(current[key]?.changes ?? [], Math.max(0, total - (previous[key] ?? total))),
+        {
+          gain: addResourceChange(current[key]?.gain.changes ?? [], Math.max(0, total.gain - (previous[key]?.gain ?? total.gain))),
+          spend: addResourceChange(current[key]?.spend.changes ?? [], Math.max(0, total.spend - (previous[key]?.spend ?? total.spend))),
+        },
       ])));
     };
-    window.addEventListener("bitwars:resource-spend-totals", onSpendTotals);
-    return () => window.removeEventListener("bitwars:resource-spend-totals", onSpendTotals);
+    window.addEventListener("bitwars:resource-flow-totals", onFlowTotals);
+    return () => window.removeEventListener("bitwars:resource-flow-totals", onFlowTotals);
   }, []);
 
 
@@ -141,7 +144,7 @@ export function ResourceHUD() {
             <span className="invisible w-12 text-xs" aria-hidden="true">spend</span>
             {sortedKeys.map((key) => {
               const trend = trends[key];
-              const change = trend?.average ?? 0;
+              const change = (flowTrends[key]?.gain.gained ?? 0) - (flowTrends[key]?.spend.gained ?? 0);
               const samples = trend?.changes.length ?? 0;
               const ChangeIcon = change > 0 ? ArrowUp : ArrowDown;
               return (
@@ -158,7 +161,7 @@ export function ResourceHUD() {
                           ? "text-emerald-400"
                           : "text-red-400"
                     }`}
-                    title={`Average ${change > 0 ? "+" : "-"}${formatChange(change)} per update over the last ${samples} update${samples === 1 ? "" : "s"}`}
+                    title={`Net ${change > 0 ? "+" : change < 0 ? "−" : ""}${formatChange(change)} over the last ${samples} update${samples === 1 ? "" : "s"}`}
                   >
                     <ChangeIcon
                       aria-hidden="true"
@@ -186,7 +189,7 @@ export function ResourceHUD() {
             <span className="w-12 text-xs text-white/80">gain</span>
             {sortedKeys.map((key) => {
               const trend = trends[key];
-              const gained = trend?.gained ?? 0;
+              const gained = flowTrends[key]?.gain.gained ?? 0;
               const samples = trend?.changes.length ?? 0;
               return (
                 <span
@@ -202,7 +205,7 @@ export function ResourceHUD() {
             <span className="w-12 text-xs text-white/80">spend</span>
             {sortedKeys.map((key) => {
               const trend = trends[key];
-              const spent = spendTrends[key]?.gained ?? trend?.spent ?? 0;
+              const spent = flowTrends[key]?.spend.gained ?? 0;
               const samples = trend?.changes.length ?? 0;
               return (
                 <span
@@ -219,8 +222,8 @@ export function ResourceHUD() {
             <span className="text-xs text-white/80">net</span>
             {sortedKeys.map((key) => {
               const trend = trends[key];
-              const gained = trend?.gained ?? 0;
-              const spent = spendTrends[key]?.gained ?? trend?.spent ?? 0;
+              const gained = flowTrends[key]?.gain.gained ?? 0;
+              const spent = flowTrends[key]?.spend.gained ?? 0;
               const net = gained - spent;
               return (
                 <span

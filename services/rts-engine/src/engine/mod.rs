@@ -29,7 +29,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
 use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 10;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 11;
 const TICK_TIMING_WINDOW_TICKS: usize = 600;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -633,6 +633,7 @@ pub struct Engine {
     /// Cumulative maintenance demand and successful construction spending,
     /// published for economy diagnostics even when a ledger is at zero.
     resource_spend_total: HashMap<(String, String), f64>,
+    resource_gain_total: HashMap<(String, String), f64>,
     /// Per-collector runtime telemetry published through authoritative snapshots and deltas.
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
     /// Previous telemetry state used to emit sparse authoritative delta updates.
@@ -1057,6 +1058,7 @@ impl Engine {
                     repair_spend_fractional: HashMap::new(),
                     maintenance_spend_fractional: HashMap::new(),
                     resource_spend_total: HashMap::new(),
+                    resource_gain_total: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
                     prev_collector_ui_state_by_entity: HashMap::new(),
                     combat_effect_ui_state_by_entity: HashMap::new(),
@@ -1072,6 +1074,7 @@ impl Engine {
                     .publish_snapshot(
                         &engine.state,
                         &engine.resource_spend_total,
+                        &engine.resource_gain_total,
                         snap_boundary,
                         engine.collector_states_for_stream(),
                         engine.combat_effect_states_for_stream(),
@@ -1143,6 +1146,7 @@ impl Engine {
             repair_spend_fractional: HashMap::new(),
             maintenance_spend_fractional: HashMap::new(),
             resource_spend_total: HashMap::new(),
+            resource_gain_total: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
             prev_collector_ui_state_by_entity: HashMap::new(),
             combat_effect_ui_state_by_entity: HashMap::new(),
@@ -1152,7 +1156,7 @@ impl Engine {
         };
         engine
             .redis
-            .publish_snapshot(&engine.state, &engine.resource_spend_total, "0-0", Vec::new(), Vec::new())
+            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new())
             .await?;
 
         // M4: Publish content hash + definitions to Redis
@@ -1371,6 +1375,7 @@ impl Engine {
         if amount <= 0.0 {
             return;
         }
+        *self.resource_gain_total.entry((player_id.to_string(), resource_type.to_string())).or_insert(0.0) += amount as f64;
         let key = (player_id.to_string(), resource_type.to_string());
         let total = self.resource_fractional.get(&key).copied().unwrap_or(0.0) + amount;
         let whole = total.floor() as i64;
@@ -3265,6 +3270,7 @@ impl Engine {
                 .publish_snapshot(
                     &self.state,
                     &self.resource_spend_total,
+                    &self.resource_gain_total,
                     boundary,
                     collector_states,
                     combat_effect_states,
@@ -3514,6 +3520,7 @@ impl Engine {
                     .publish_snapshot(
                         &self.state,
                         &self.resource_spend_total,
+                        &self.resource_gain_total,
                         boundary,
                         collector_states,
                         combat_effect_states,

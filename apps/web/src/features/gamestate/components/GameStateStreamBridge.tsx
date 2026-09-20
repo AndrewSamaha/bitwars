@@ -36,7 +36,7 @@ function collectorStateFromStream({ entity_id: _entityId, ...state }: StreamColl
   return state;
 }
 
-type ResourceEntryPayload = { resource_type: string; amount: number; spend_total?: number };
+type ResourceEntryPayload = { resource_type: string; amount: number; spend_total?: number; gain_total?: number };
 type PlayerLedgerPayload = { player_id: string; resources: ResourceEntryPayload[] };
 
 type SnapshotPayload = {
@@ -158,13 +158,13 @@ export default function GameStateStreamBridge() {
         if (!res.ok) return;
         const data = (await res.json()) as {
           resource_ledger?: Record<string, number>;
-          resource_spend_totals?: Record<string, number>;
+          resource_spend_totals?: Record<string, { gain: number; spend: number }>;
         };
         const ledger = data?.resource_ledger;
         if (!mounted) return;
         if (ledger && Object.keys(ledger).length > 0) hud.actions.setResources(ledger);
         if (data.resource_spend_totals && Object.keys(data.resource_spend_totals).length > 0) {
-          window.dispatchEvent(new CustomEvent("bitwars:resource-spend-totals", {
+          window.dispatchEvent(new CustomEvent("bitwars:resource-flow-totals", {
             detail: data.resource_spend_totals,
           }));
         }
@@ -300,11 +300,11 @@ export default function GameStateStreamBridge() {
             console.log("[GameStateStreamBridge] setResources from snapshot", patch);
             hud.actions.setResources(patch);
           }
-          const spendTotals = Object.fromEntries(myLedger.resources.map((resource) => [
+          const resourceFlowTotals = Object.fromEntries(myLedger.resources.map((resource) => [
             resource.resource_type,
-            Number(resource.spend_total ?? 0),
+            { gain: Number(resource.gain_total ?? 0), spend: Number(resource.spend_total ?? 0) },
           ]));
-          window.dispatchEvent(new CustomEvent("bitwars:resource-spend-totals", { detail: spendTotals }));
+          window.dispatchEvent(new CustomEvent("bitwars:resource-flow-totals", { detail: resourceFlowTotals }));
         }
       }
       log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length });

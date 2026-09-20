@@ -96,6 +96,9 @@ pub struct ResourceEntry {
     /// demand even when the ledger is clamped at zero.
     #[prost(double, tag = "3")]
     pub spend_total: f64,
+    /// Cumulative collection/resource income, including fractional accrual.
+    #[prost(double, tag = "4")]
+    pub gain_total: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PlayerResourceLedger {
