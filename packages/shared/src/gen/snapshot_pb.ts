@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file snapshot.proto.
  */
 export const file_snapshot: GenFile = /*@__PURE__*/
-  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyI2Cg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDIlQKFFBsYXllclJlc291cmNlTGVkZ2VyEhEKCXBsYXllcl9pZBgBIAEoCRIpCglyZXNvdXJjZXMYAiADKAsyFi5iaXR3YXJzLlJlc291cmNlRW50cnkiQgoVUGxheWVyVGVjaG5vbG9neVN0YXRlEhEKCXBsYXllcl9pZBgBIAEoCRIWCg50ZWNobm9sb2d5X2lkcxgCIAMoCSKcAgoIU25hcHNob3QSDAoEdGljaxgCIAEoAxIhCghlbnRpdGllcxgDIAMoCzIPLmJpdHdhcnMuRW50aXR5EjUKDnBsYXllcl9sZWRnZXJzGAQgAygLMh0uYml0d2Fycy5QbGF5ZXJSZXNvdXJjZUxlZGdlchIxChBjb2xsZWN0b3Jfc3RhdGVzGAUgAygLMhcuYml0d2Fycy5Db2xsZWN0b3JTdGF0ZRI4ChRjb21iYXRfZWZmZWN0X3N0YXRlcxgGIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGUSOwoTcGxheWVyX3RlY2hub2xvZ2llcxgHIAMoCzIeLmJpdHdhcnMuUGxheWVyVGVjaG5vbG9neVN0YXRlYgZwcm90bzM", [file_entity, file_collector_state, file_combat_effect_state]);
+  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyJLCg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDEhMKC3NwZW5kX3RvdGFsGAMgASgBIlQKFFBsYXllclJlc291cmNlTGVkZ2VyEhEKCXBsYXllcl9pZBgBIAEoCRIpCglyZXNvdXJjZXMYAiADKAsyFi5iaXR3YXJzLlJlc291cmNlRW50cnkiQgoVUGxheWVyVGVjaG5vbG9neVN0YXRlEhEKCXBsYXllcl9pZBgBIAEoCRIWCg50ZWNobm9sb2d5X2lkcxgCIAMoCSKcAgoIU25hcHNob3QSDAoEdGljaxgCIAEoAxIhCghlbnRpdGllcxgDIAMoCzIPLmJpdHdhcnMuRW50aXR5EjUKDnBsYXllcl9sZWRnZXJzGAQgAygLMh0uYml0d2Fycy5QbGF5ZXJSZXNvdXJjZUxlZGdlchIxChBjb2xsZWN0b3Jfc3RhdGVzGAUgAygLMhcuYml0d2Fycy5Db2xsZWN0b3JTdGF0ZRI4ChRjb21iYXRfZWZmZWN0X3N0YXRlcxgGIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGUSOwoTcGxheWVyX3RlY2hub2xvZ2llcxgHIAMoCzIeLmJpdHdhcnMuUGxheWVyVGVjaG5vbG9neVN0YXRlYgZwcm90bzM", [file_entity, file_collector_state, file_combat_effect_state]);
 
 /**
  * M7: Per-player resource totals. Resource types are data-driven (string IDs).
@@ -33,6 +33,14 @@ export type ResourceEntry = Message<"bitwars.ResourceEntry"> & {
    * @generated from field: int64 amount = 2;
    */
   amount: bigint;
+
+  /**
+   * Cumulative authoritative spending for this resource. This includes upkeep
+   * demand even when the ledger is clamped at zero.
+   *
+   * @generated from field: double spend_total = 3;
+   */
+  spendTotal: number;
 };
 
 /**

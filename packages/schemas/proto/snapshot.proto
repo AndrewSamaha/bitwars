@@ -9,6 +9,9 @@ import "combat_effect_state.proto";
 message ResourceEntry {
   string resource_type = 1;
   int64 amount = 2;
+  // Cumulative authoritative spending for this resource. This includes upkeep
+  // demand even when the ledger is clamped at zero.
+  double spend_total = 3;
 }
 
 message PlayerResourceLedger {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -14,16 +14,16 @@ import { useHUD } from "@/features/hud/components/HUDContext";
 import {
   addResourceChange,
   type ResourceTrend,
+  RESOURCE_TREND_WINDOW,
   resourceChanges,
 } from "@/features/hud/resourceChanges";
 
 const HUD_BASE =
   "pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded bg-black/70 px-3 py-2 font-sans text-sm";
 const HUD_EMPTY = "text-white/80";
-const HUD_FULL = "flex flex-wrap items-center gap-3 text-white/95";
 
 const formatKey = (key: string) => key.charAt(0).toUpperCase() + key.slice(1);
-const formatChange = (change: number) => Number(Math.abs(change).toFixed(2));
+const formatChange = (change: number) => Math.round(Math.abs(change));
 
 const subscribeToContent = (notify: () => void) =>
   contentManager.subscribe(notify);
@@ -41,6 +41,9 @@ export function ResourceHUD() {
   const resourceTypes = content?.resource_types ?? {};
   const previousResources = useRef(resources);
   const [trends, setTrends] = useState<Record<string, ResourceTrend>>({});
+  const [spendTrends, setSpendTrends] = useState<Record<string, ResourceTrend>>({});
+  const previousSpendTotals = useRef<Record<string, number>>({});
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const changes = resourceChanges(previousResources.current, resources);
@@ -54,6 +57,21 @@ export function ResourceHUD() {
       ),
     );
   }, [resources]);
+
+  useEffect(() => {
+    const onSpendTotals = (event: Event) => {
+      const totals = (event as CustomEvent<Record<string, number>>).detail;
+      const previous = previousSpendTotals.current;
+      previousSpendTotals.current = totals;
+      setSpendTrends((current) => Object.fromEntries(Object.entries(totals).map(([key, total]) => [
+        key,
+        addResourceChange(current[key]?.changes ?? [], Math.max(0, total - (previous[key] ?? total))),
+      ])));
+    };
+    window.addEventListener("bitwars:resource-spend-totals", onSpendTotals);
+    return () => window.removeEventListener("bitwars:resource-spend-totals", onSpendTotals);
+  }, []);
+
 
   const sortedKeys = useMemo(() => {
     const hasContentTypes = Object.keys(resourceTypes).length > 0;
@@ -72,6 +90,11 @@ export function ResourceHUD() {
 
   const labelFor = (key: string) =>
     resourceTypes[key]?.display_name ?? formatKey(key);
+  const resourceGridStyle = {
+    // Keep the gain/spend label column reserved while collapsed too. Otherwise
+    // opening the ledger lets the longer "spend" label widen the whole HUD.
+    gridTemplateColumns: `3rem repeat(${sortedKeys.length}, minmax(4rem, max-content)) auto`,
+  };
 
   const ariaLabel =
     sortedKeys.length === 0
@@ -108,40 +131,111 @@ export function ResourceHUD() {
   }
 
   return (
-    <div className={`${HUD_BASE} flex items-center gap-2`}>
+    <div className={`${HUD_BASE} flex items-start gap-2`}>
       <AudioToggle />
-      <output className={HUD_FULL} aria-label={ariaLabel}>
-        {sortedKeys.map((key) => {
-          const trend = trends[key];
-          const change = trend?.average ?? 0;
-          const samples = trend?.changes.length ?? 0;
-          const ChangeIcon = change > 0 ? ArrowUp : ArrowDown;
-          return (
-            <span key={key} className="flex items-center gap-0">
-              <span className="text-white/80 pr-2">{labelFor(key)}</span>
-              <span className="font-medium tabular-nums">
-                {Number(resources[key] ?? 0)}
-              </span>
-              <span
-                className={`inline-flex size-3.5 shrink-0 items-center justify-center pointer-events-auto ${
-                  change === 0
-                    ? "invisible"
-                    : change > 0
-                      ? "text-emerald-400"
-                      : "text-red-400"
-                }`}
-                title={`Average ${change > 0 ? "+" : "-"}${formatChange(change)} per update over the last ${samples} update${samples === 1 ? "" : "s"}`}
-              >
-                <ChangeIcon
-                  aria-hidden="true"
-                  className="size-3.5"
-                  strokeWidth={2.5}
-                />
-              </span>
-            </span>
-          );
-        })}
-      </output>
+      <div
+        className="grid min-w-0 items-center gap-x-3 gap-y-1"
+        style={resourceGridStyle}
+      >
+          <output className="contents" aria-label={ariaLabel}>
+            <span className="invisible w-12 text-xs" aria-hidden="true">spend</span>
+            {sortedKeys.map((key) => {
+              const trend = trends[key];
+              const change = trend?.average ?? 0;
+              const samples = trend?.changes.length ?? 0;
+              const ChangeIcon = change > 0 ? ArrowUp : ArrowDown;
+              return (
+                <span key={key} className="flex items-center gap-0 text-white/95">
+                  <span className="text-white/80 pr-2">{labelFor(key)}</span>
+                  <span className="font-medium tabular-nums">
+                    {Number(resources[key] ?? 0)}
+                  </span>
+                  <span
+                    className={`inline-flex size-3.5 shrink-0 items-center justify-center pointer-events-auto ${
+                      change === 0
+                        ? "invisible"
+                        : change > 0
+                          ? "text-emerald-400"
+                          : "text-red-400"
+                    }`}
+                    title={`Average ${change > 0 ? "+" : "-"}${formatChange(change)} per update over the last ${samples} update${samples === 1 ? "" : "s"}`}
+                  >
+                    <ChangeIcon
+                      aria-hidden="true"
+                      className="size-3.5"
+                      strokeWidth={2.5}
+                    />
+                  </span>
+                </span>
+              );
+            })}
+          </output>
+          <button
+            type="button"
+            className="pointer-events-auto inline-flex size-4 items-center justify-center text-white/70 hover:text-white"
+            aria-label={`${expanded ? "Hide" : "Show"} resource gains and costs`}
+            aria-expanded={expanded}
+            title={`${expanded ? "Hide" : "Show"} gains and costs over the last ${RESOURCE_TREND_WINDOW} updates`}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+          </button>
+        {expanded && (
+          <>
+            <span className="col-span-full h-px bg-white/15" aria-hidden="true" />
+            <span className="w-12 text-xs text-white/80">gain</span>
+            {sortedKeys.map((key) => {
+              const trend = trends[key];
+              const gained = trend?.gained ?? 0;
+              const samples = trend?.changes.length ?? 0;
+              return (
+                <span
+                  key={key}
+                  title={`Total gain over the last ${samples} update${samples === 1 ? "" : "s"}`}
+                  className="text-xs tabular-nums text-emerald-400"
+                >
+                  +{formatChange(gained)}
+                </span>
+              );
+            })}
+            <span aria-hidden="true" />
+            <span className="w-12 text-xs text-white/80">spend</span>
+            {sortedKeys.map((key) => {
+              const trend = trends[key];
+              const spent = spendTrends[key]?.gained ?? trend?.spent ?? 0;
+              const samples = trend?.changes.length ?? 0;
+              return (
+                <span
+                  key={key}
+                  title={`Total spend over the last ${samples} update${samples === 1 ? "" : "s"}`}
+                  className="text-xs tabular-nums text-red-400"
+                >
+                  −{formatChange(spent)}
+                </span>
+              );
+            })}
+            <span aria-hidden="true" />
+            <span className="col-span-full h-px bg-white/15" aria-hidden="true" />
+            <span className="text-xs text-white/80">net</span>
+            {sortedKeys.map((key) => {
+              const trend = trends[key];
+              const gained = trend?.gained ?? 0;
+              const spent = spendTrends[key]?.gained ?? trend?.spent ?? 0;
+              const net = gained - spent;
+              return (
+                <span
+                  key={key}
+                  title="Total gain minus total spend over the rolling window"
+                  className={`text-xs tabular-nums ${net > 0 ? "text-emerald-400" : net < 0 ? "text-red-400" : "text-white/80"}`}
+                >
+                  {net > 0 ? "+" : net < 0 ? "−" : ""}{formatChange(net)}
+                </span>
+              );
+            })}
+            <span aria-hidden="true" />
+          </>
+        )}
+      </div>
     </div>
   );
 }

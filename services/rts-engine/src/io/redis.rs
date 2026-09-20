@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use prost::Message;
 use redis::{AsyncCommands, Value as RedisValue};
 use serde::{Deserialize, Serialize};
@@ -297,6 +299,7 @@ impl RedisClient {
     pub async fn publish_snapshot(
         &mut self,
         state: &GameState,
+        resource_spend_total: &HashMap<(String, String), f64>,
         boundary_stream_id: &str,
         collector_states: Vec<CollectorState>,
         combat_effect_states: Vec<CombatEffectState>,
@@ -310,6 +313,10 @@ impl RedisClient {
                     .map(|(resource_type, amount)| ResourceEntry {
                         resource_type: resource_type.clone(),
                         amount: *amount,
+                        spend_total: resource_spend_total
+                            .get(&(player_id.clone(), resource_type.clone()))
+                            .copied()
+                            .unwrap_or(0.0),
                     })
                     .collect();
                 entries.sort_by(|a, b| a.resource_type.cmp(&b.resource_type));

@@ -11,7 +11,7 @@ const DEFAULT_GAME_ID = 'demo-001';
 
 /** Build resource_ledger map for one player from decoded snapshot (M7). */
 function getResourceLedgerForPlayer(
-  snapshot: { playerLedgers?: Array<{ playerId: string; resources: Array<{ resourceType: string; amount: bigint }> }> },
+  snapshot: { playerLedgers?: Array<{ playerId: string; resources: Array<{ resourceType: string; amount: bigint; spendTotal?: number }> }> },
   playerId: string
 ): Record<string, number> {
   const ledger: Record<string, number> = {};
@@ -22,6 +22,18 @@ function getResourceLedgerForPlayer(
     if (key) ledger[key] = Number(r.amount ?? 0);
   }
   return ledger;
+}
+
+function getResourceSpendTotalsForPlayer(
+  snapshot: { playerLedgers?: Array<{ playerId: string; resources: Array<{ resourceType: string; spendTotal?: number }> }> },
+  playerId: string,
+): Record<string, number> {
+  const totals: Record<string, number> = {};
+  const ledger = (snapshot.playerLedgers ?? []).find((entry) => entry.playerId === playerId);
+  for (const resource of ledger?.resources ?? []) {
+    if (resource.resourceType) totals[resource.resourceType] = Number(resource.spendTotal ?? 0);
+  }
+  return totals;
 }
 
 export async function GET() {
@@ -49,6 +61,8 @@ export async function GET() {
         const snapshot = decodeSnapshotBinary(snapshotBuf);
         const resource_ledger = getResourceLedgerForPlayer(snapshot, playerId);
         if (Object.keys(resource_ledger).length > 0) payload.resource_ledger = resource_ledger;
+        const resource_spend_totals = getResourceSpendTotalsForPlayer(snapshot, playerId);
+        if (Object.keys(resource_spend_totals).length > 0) payload.resource_spend_totals = resource_spend_totals;
       }
     } catch {
       // Snapshot missing or decode error: omit resource_ledger

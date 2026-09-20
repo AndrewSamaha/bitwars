@@ -3,6 +3,8 @@ export const RESOURCE_TREND_WINDOW = 30;
 export type ResourceTrend = {
   changes: number[];
   average: number;
+  gained: number;
+  spent: number;
 };
 
 export function resourceChanges(
@@ -23,8 +25,16 @@ export function addResourceChange(
   window = RESOURCE_TREND_WINDOW,
 ): ResourceTrend {
   const next = [...changes, change].slice(-Math.max(1, window));
+  const gained = next
+    .filter((value) => value > 0)
+    .reduce((total, value) => total + value, 0);
+  const spent = next
+    .filter((value) => value < 0)
+    .reduce((total, value) => total + Math.abs(value), 0);
   return {
     changes: next,
     average: next.reduce((total, value) => total + value, 0) / next.length,
+    gained,
+    spent,
   };
 }

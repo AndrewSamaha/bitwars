@@ -63,6 +63,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
     resources: (pl.resources ?? []).map((r) => ({
       resource_type: r.resourceType ?? "",
       amount: biToNumOrStr(r.amount),
+      spend_total: r.spendTotal,
     })),
   }));
   return {

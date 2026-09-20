@@ -92,6 +92,10 @@ pub struct ResourceEntry {
     pub resource_type: ::prost::alloc::string::String,
     #[prost(int64, tag = "2")]
     pub amount: i64,
+    /// Cumulative authoritative spending for this resource. This includes upkeep
+    /// demand even when the ledger is clamped at zero.
+    #[prost(double, tag = "3")]
+    pub spend_total: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PlayerResourceLedger {

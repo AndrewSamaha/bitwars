@@ -29,4 +29,13 @@ describe("resource changes", () => {
     trend = addResourceChange(trend.changes, 0);
     expect(trend.average).toBe(0);
   });
+
+  it("separates total gains and spending within the same rolling window", () => {
+    let trend = addResourceChange([], 10);
+    trend = addResourceChange(trend.changes, -4);
+    trend = addResourceChange(trend.changes, 2);
+
+    expect(trend.gained).toBe(12);
+    expect(trend.spent).toBe(4);
+  });
 });

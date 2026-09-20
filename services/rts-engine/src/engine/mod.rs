@@ -630,6 +630,9 @@ pub struct Engine {
     repair_spend_fractional: HashMap<(String, String), f32>,
     /// Fractional upkeep accumulated between whole-unit ledger debits.
     maintenance_spend_fractional: HashMap<(String, String), f32>,
+    /// Cumulative maintenance demand and successful construction spending,
+    /// published for economy diagnostics even when a ledger is at zero.
+    resource_spend_total: HashMap<(String, String), f64>,
     /// Per-collector runtime telemetry published through authoritative snapshots and deltas.
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
     /// Previous telemetry state used to emit sparse authoritative delta updates.
@@ -1053,6 +1056,7 @@ impl Engine {
                     build_spend_fractional: HashMap::new(),
                     repair_spend_fractional: HashMap::new(),
                     maintenance_spend_fractional: HashMap::new(),
+                    resource_spend_total: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
                     prev_collector_ui_state_by_entity: HashMap::new(),
                     combat_effect_ui_state_by_entity: HashMap::new(),
@@ -1067,6 +1071,7 @@ impl Engine {
                     .redis
                     .publish_snapshot(
                         &engine.state,
+                        &engine.resource_spend_total,
                         snap_boundary,
                         engine.collector_states_for_stream(),
                         engine.combat_effect_states_for_stream(),
@@ -1137,6 +1142,7 @@ impl Engine {
             build_spend_fractional: HashMap::new(),
             repair_spend_fractional: HashMap::new(),
             maintenance_spend_fractional: HashMap::new(),
+            resource_spend_total: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
             prev_collector_ui_state_by_entity: HashMap::new(),
             combat_effect_ui_state_by_entity: HashMap::new(),
@@ -1146,7 +1152,7 @@ impl Engine {
         };
         engine
             .redis
-            .publish_snapshot(&engine.state, "0-0", Vec::new(), Vec::new())
+            .publish_snapshot(&engine.state, &engine.resource_spend_total, "0-0", Vec::new(), Vec::new())
             .await?;
 
         // M4: Publish content hash + definitions to Redis
@@ -1380,6 +1386,15 @@ impl Engine {
         }
     }
 
+    fn record_resource_spend(&mut self, player_id: &str, resource_type: &str, amount: f32) {
+        if amount.is_finite() && amount > 0.0 {
+            *self
+                .resource_spend_total
+                .entry((player_id.to_string(), resource_type.to_string()))
+                .or_insert(0.0) += amount as f64;
+        }
+    }
+
     /// Debit whole ledger units while retaining fractional construction spend.
     /// Construction is only accepted when its full cost is currently affordable,
     /// so this cannot take a ledger negative during normal play.
@@ -1415,6 +1430,7 @@ impl Engine {
         } else {
             self.build_spend_fractional.remove(&key);
         }
+        self.record_resource_spend(player_id, resource_type, amount);
         true
     }
 
@@ -1461,6 +1477,7 @@ impl Engine {
 
     /// Charge continuous upkeep without taking a ledger below zero or accruing debt.
     fn spend_maintenance_resource(&mut self, player_id: &str, resource_type: &str, amount: f32) {
+        self.record_resource_spend(player_id, resource_type, amount);
         debit_maintenance_without_debt(
             &mut self.state.ledger,
             &mut self.maintenance_spend_fractional,
@@ -3247,6 +3264,7 @@ impl Engine {
                 .redis
                 .publish_snapshot(
                     &self.state,
+                    &self.resource_spend_total,
                     boundary,
                     collector_states,
                     combat_effect_states,
@@ -3495,6 +3513,7 @@ impl Engine {
                     .redis
                     .publish_snapshot(
                         &self.state,
+                        &self.resource_spend_total,
                         boundary,
                         collector_states,
                         combat_effect_states,
