@@ -63,12 +63,6 @@ export default function EntityDetailPanel() {
   }, [selectedEntities, selectedIdsKey]);
 
   useEffect(() => {
-    const open = () => setCollectMenuOpen(true);
-    window.addEventListener("bitwars:open-collect-picker", open);
-    return () => window.removeEventListener("bitwars:open-collect-picker", open);
-  }, []);
-
-  useEffect(() => {
     setBuildMenuOpen(false);
     setUpgradeMenuOpen(false);
     setResearchMenuOpen(false);
@@ -250,10 +244,7 @@ export default function EntityDetailPanel() {
       return;
     }
     if (val === "Collect") {
-      setCollectMenuOpen((open) => !open);
-      setBuildMenuOpen(false);
-      setUpgradeMenuOpen(false);
-      setResearchMenuOpen(false);
+      openCollectPicker();
       return;
     }
     if (val === "Repair") {
@@ -300,6 +291,17 @@ export default function EntityDetailPanel() {
     }
     setCollectMenuOpen(false);
   };
+  const openCollectPicker = () => {
+    if (collectOptions.length === 0) return;
+    if (collectOptions.length === 1) {
+      startCollection({ resourceTypeId: collectOptions[0], nearestCompatible: false });
+      return;
+    }
+    setCollectMenuOpen((open) => !open);
+    setBuildMenuOpen(false);
+    setUpgradeMenuOpen(false);
+    setResearchMenuOpen(false);
+  };
   const buildKeys = "qwetasdfgzxcvb";
   // Reserve n for the explicit nearest-compatible collection mode. The rest
   // mirrors the option-key ordering used by build and upgrade menus.
@@ -327,6 +329,11 @@ export default function EntityDetailPanel() {
     if (Number.isFinite(entityId)) intentQueue.handleResearchCommand(entityId, technologyId);
     setResearchMenuOpen(false);
   };
+
+  useEffect(() => {
+    window.addEventListener("bitwars:open-collect-picker", openCollectPicker);
+    return () => window.removeEventListener("bitwars:open-collect-picker", openCollectPicker);
+  }, [collectOptions, selectedIdsKey]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

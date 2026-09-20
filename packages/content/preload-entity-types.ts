@@ -71,7 +71,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 2
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 4\nhealth: 400\nhull_radius: 50\nvisual:\n  scale: 2\ncombat_targetable: true\nrefinery:\n  accepts:\n    - food\n    - minerals\nbuild_cost:\n  minerals: 1000\n  energy: 1000\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nmaintenance_cost_per_minute:\n  food: 60\nsensor:\n  range: 4000\n  cost_per_minute:\n    energy: 5\nbuilds:\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 0.8\n      energy: 0.8\ncollector:\n  collects:\n    - energy\n  proximity_rate_per_second: 5\n  transport_rate_per_second: 0\n  carry_capacity: 0\nresearches:\n  - neutrino_sensors"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 4\nhealth: 400\nhull_radius: 50\nvisual:\n  scale: 2\ncombat_targetable: true\nrefinery:\n  accepts:\n    - food\n    - minerals\nbuild_cost:\n  minerals: 1000\n  energy: 1000\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nmaintenance_cost_per_minute:\n  food: 60\nsensor:\n  range: 4000\n  cost_per_minute:\n    energy: 5\nbuilds:\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 0.8\n      energy: 0.8\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  proximity_rate_per_second: 5\n  transport_rate_per_second: 0\n  carry_capacity: 0\nresearches:\n  - neutrino_sensors"
   },
   {
     "id": "processor",

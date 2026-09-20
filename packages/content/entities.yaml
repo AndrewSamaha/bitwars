@@ -239,6 +239,7 @@ entity_types:
           minerals: 0.8
           energy: 0.8
     collector:
+      vfx: solar_proximity
       collects:
         - energy
       proximity_rate_per_second: 5
