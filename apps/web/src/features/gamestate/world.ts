@@ -34,6 +34,8 @@ export type CollectorStateView = {
     carry_amount: number;
     carry_capacity: number;
     effective_rate_per_second: number;
+    assigned_resource_type?: string;
+    assigned_nearest_compatible?: boolean;
     updated_tick?: number;
   };
 };

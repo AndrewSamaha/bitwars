@@ -102,6 +102,8 @@ pub fn compute_delta(
                         || previous.carry_amount != state.carry_amount
                         || previous.carry_capacity != state.carry_capacity
                         || previous.effective_rate_per_second != state.effective_rate_per_second
+                        || previous.assigned_resource_type != state.assigned_resource_type
+                        || previous.assigned_nearest_compatible != state.assigned_nearest_compatible
                 })
                 .unwrap_or(true)
         })
@@ -112,6 +114,8 @@ pub fn compute_delta(
             carry_amount: state.carry_amount,
             carry_capacity: state.carry_capacity,
             effective_rate_per_second: state.effective_rate_per_second,
+            assigned_resource_type: state.assigned_resource_type.clone(),
+            assigned_nearest_compatible: state.assigned_nearest_compatible,
         })
         .collect();
     collector_state_updates.sort_by_key(|state| state.entity_id);
@@ -197,6 +201,8 @@ mod tests {
             carry_amount: 2.0,
             carry_capacity: 10.0,
             effective_rate_per_second: 0.0,
+            assigned_resource_type: "minerals".to_string(),
+            assigned_nearest_compatible: false,
             updated_tick: 10,
         };
         let previous = HashMap::from([(4, collector.clone())]);

@@ -115,6 +115,9 @@ export default function GameStage() {
           : params.kind === "Collect" ? {
               type: "Collect",
               entity_id: params.entityId,
+              ...(params.nearestCompatible
+                ? { nearest_compatible: true }
+                : { resource_type_id: params.resourceTypeId }),
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
@@ -703,12 +706,7 @@ export default function GameStage() {
             if (sel.hasSelection) setSelectedAction('Move');
           } else if (ev.key === 'c' || ev.key === 'C') {
             if (sel.hasSelection) {
-              for (const id of sel.selectedEntities) {
-                const entityIdNum = Number(id);
-                if (Number.isFinite(entityIdNum)) {
-                  intentQueue.handleCollectCommand(entityIdNum, "REPLACE_ACTIVE");
-                }
-              }
+              window.dispatchEvent(new Event("bitwars:open-collect-picker"));
             }
           } else if ((ev.key === "r" || ev.key === "R") && !isFocusInEditable()) {
             const canRepair = sel.hasSelection && sel.selectedEntities.every((id) => {

@@ -2,13 +2,13 @@ min_entity_spawn_distance: 200
 max_entity_spawn_distance: 300
 max_raiders: 150
 loadouts:
-  - worker: 1
-    collector_solar: 1
+  - worker: 2
+    collector_solar: 0
     habitat: 1
     scout: 1
-    processor: 1
-    science_vessel: 1
-    factory: 1
+    processor: 0
+    science_vessel: 0
+    factory: 0
 global_neutral_fields:
   - type: star_yellow
     count: 100

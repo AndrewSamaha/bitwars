@@ -31,6 +31,7 @@ export default function EntityDetailPanel() {
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [upgradeMenuOpen, setUpgradeMenuOpen] = useState(false);
   const [researchMenuOpen, setResearchMenuOpen] = useState(false);
+  const [collectMenuOpen, setCollectMenuOpen] = useState(false);
   const [buildStateById, setBuildStateById] = useState<BuildStateById>({});
 
   // The ECS changes when the authoritative game stream applies a snapshot or
@@ -62,9 +63,16 @@ export default function EntityDetailPanel() {
   }, [selectedEntities, selectedIdsKey]);
 
   useEffect(() => {
+    const open = () => setCollectMenuOpen(true);
+    window.addEventListener("bitwars:open-collect-picker", open);
+    return () => window.removeEventListener("bitwars:open-collect-picker", open);
+  }, []);
+
+  useEffect(() => {
     setBuildMenuOpen(false);
     setUpgradeMenuOpen(false);
     setResearchMenuOpen(false);
+    setCollectMenuOpen(false);
   }, [selectedIdsKey]);
 
   // Position the detail panel so it never overlaps the TerminalPanel
@@ -94,6 +102,8 @@ export default function EntityDetailPanel() {
       carry_amount: number;
       carry_capacity: number;
       effective_rate_per_second: number;
+      assigned_resource_type?: string;
+      assigned_nearest_compatible?: boolean;
     }
   >();
   if (selectedEntities.length > 0) {
@@ -114,6 +124,8 @@ export default function EntityDetailPanel() {
               carry_amount?: number;
               carry_capacity?: number;
               effective_rate_per_second?: number;
+              assigned_resource_type?: string;
+              assigned_nearest_compatible?: boolean;
             }
           | undefined;
         if (id != null && pos) {
@@ -137,6 +149,8 @@ export default function EntityDetailPanel() {
               carry_amount: Number(collectorState.carry_amount ?? 0),
               carry_capacity: Number(collectorState.carry_capacity ?? 0),
               effective_rate_per_second: Number(collectorState.effective_rate_per_second ?? 0),
+              assigned_resource_type: String(collectorState.assigned_resource_type ?? ""),
+              assigned_nearest_compatible: Boolean(collectorState.assigned_nearest_compatible),
             });
           }
         }
@@ -159,9 +173,12 @@ export default function EntityDetailPanel() {
     const canRepair = selectedEntities.length > 0 && selectedEntities.every((id) =>
       Boolean(contentManager.getEntityType(idToType.get(id) ?? "")?.repair),
     );
+    const canCollect = selectedEntities.length > 0 && selectedEntities.every((id) =>
+      (contentManager.getEntityType(idToType.get(id) ?? "")?.collector?.collects?.length ?? 0) > 0,
+    );
     return [
       { key: "m", name: "move", enabled: true, value: "Move" },
-      { key: "c", name: "collect", enabled: true, value: "Collect" },
+      { key: "c", name: "collect", enabled: canCollect, value: "Collect" },
       { key: "b", name: "build", enabled: canBuild, value: "Build" },
       { key: "u", name: "upgrade", enabled: canUpgrade, value: "Upgrade" },
       { key: "t", name: "research", enabled: canResearch, value: "Research" },
@@ -233,12 +250,10 @@ export default function EntityDetailPanel() {
       return;
     }
     if (val === "Collect") {
-      for (const id of selectedEntities) {
-        const entityIdNum = Number(id);
-        if (Number.isFinite(entityIdNum)) {
-          intentQueue.handleCollectCommand(entityIdNum, "REPLACE_ACTIVE");
-        }
-      }
+      setCollectMenuOpen((open) => !open);
+      setBuildMenuOpen(false);
+      setUpgradeMenuOpen(false);
+      setResearchMenuOpen(false);
       return;
     }
     if (val === "Repair") {
@@ -268,7 +283,27 @@ export default function EntityDetailPanel() {
       : [],
     [selectedEntities.length, selectedType],
   );
+  const collectOptions = useMemo(() => {
+    if (selectedEntities.length === 0) return [];
+    const supported = selectedEntities.map((id) =>
+      new Set(contentManager.getEntityType(idToType.get(id) ?? "")?.collector?.collects ?? []),
+    );
+    if (supported.some((types) => types.size === 0)) return [];
+    return [...supported[0]].filter((type) => supported.every((types) => types.has(type))).sort();
+  }, [selectedEntities, selectedIdsKey, idToType]);
+  const startCollection = (assignment: { resourceTypeId?: string; nearestCompatible: boolean }) => {
+    for (const id of selectedEntities) {
+      const entityIdNum = Number(id);
+      if (Number.isFinite(entityIdNum)) {
+        intentQueue.handleCollectCommand(entityIdNum, assignment, "REPLACE_ACTIVE");
+      }
+    }
+    setCollectMenuOpen(false);
+  };
   const buildKeys = "qwetasdfgzxcvb";
+  // Reserve n for the explicit nearest-compatible collection mode. The rest
+  // mirrors the option-key ordering used by build and upgrade menus.
+  const collectKeys = "qwetasdfgzxcvb";
   const canAfford = (entityTypeId: string) => {
     const costs = contentManager.getEntityType(entityTypeId)?.build_cost ?? {};
     return Object.entries(costs).every(([resource, cost]) => selectors.getResource(resource) >= cost);
@@ -297,6 +332,11 @@ export default function EntityDetailPanel() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      if (event.key === "Escape" && collectMenuOpen) {
+        event.preventDefault();
+        setCollectMenuOpen(false);
+        return;
+      }
       if (event.key === "Escape" && buildMenuOpen) {
         event.preventDefault();
         setBuildMenuOpen(false);
@@ -317,6 +357,21 @@ export default function EntityDetailPanel() {
         setUpgradeMenuOpen(true);
         return;
       }
+      if (collectMenuOpen) {
+        const key = event.key.toLowerCase();
+        if (key === "n") {
+          event.preventDefault();
+          startCollection({ nearestCompatible: true });
+          return;
+        }
+        const index = collectKeys.indexOf(key);
+        const resourceType = index >= 0 ? collectOptions[index] : undefined;
+        if (resourceType) {
+          event.preventDefault();
+          startCollection({ resourceTypeId: resourceType, nearestCompatible: false });
+          return;
+        }
+      }
       if (buildMenuOpen) {
         const index = buildKeys.indexOf(event.key.toLowerCase());
         const option = index >= 0 ? buildOptions[index] : undefined;
@@ -336,7 +391,7 @@ export default function EntityDetailPanel() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [buildMenuOpen, buildOptions, firstId, selectedIdsKey, upgradeMenuOpen, upgradeOptions]);
+  }, [buildMenuOpen, buildOptions, collectMenuOpen, collectOptions, firstId, selectedIdsKey, upgradeMenuOpen, upgradeOptions]);
 
   if (!selectedEntities?.length) return null;
 
@@ -409,6 +464,11 @@ export default function EntityDetailPanel() {
                         carry: {collectorState.carry_amount.toFixed(1)} / {collectorState.carry_capacity.toFixed(1)}
                       </span>
                     )}
+                    {collectorState && (collectorState.assigned_nearest_compatible || collectorState.assigned_resource_type) && (
+                      <span className="font-mono text-muted-foreground">
+                        assigned: {collectorState.assigned_nearest_compatible ? "nearest" : collectorState.assigned_resource_type}
+                      </span>
+                    )}
                     {collectorState && collectorState.carry_capacity <= 0 && (
                       <span className="font-mono text-muted-foreground">
                         rate: {collectorState.effective_rate_per_second.toFixed(1)}/s
@@ -428,21 +488,44 @@ export default function EntityDetailPanel() {
                     a.value === "Move"
                       ? selectedAction === "Move"
                       : a.value === "Collect"
-                        ? isCollectActiveForSelection
+                        ? collectMenuOpen || isCollectActiveForSelection
                         : a.value === "Repair"
                           ? selectedAction === "Repair"
                           : a.value === "Build"
-                          ? buildMenuOpen
-                          : a.value === "Upgrade"
-                            ? upgradeMenuOpen
-                            : a.value === "Research"
-                              ? researchMenuOpen
-                            : false
+                            ? buildMenuOpen
+                            : a.value === "Upgrade"
+                              ? upgradeMenuOpen
+                              : a.value === "Research"
+                                ? researchMenuOpen
+                                : false
                   }
                   onClick={(action) => action.enabled !== false && onClickAction(action.value)}
                 />
               ))}
             </div>
+            {collectMenuOpen && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
+                <span className="text-muted-foreground">Collect:</span>
+                <button
+                  type="button"
+                  onClick={() => startCollection({ nearestCompatible: true })}
+                  className="rounded border border-border bg-muted px-2 py-1 hover:bg-accent"
+                >
+                  [n] nearest
+                </button>
+                {collectOptions.map((resourceType, index) => (
+                  <button
+                    key={resourceType}
+                    type="button"
+                    onClick={() => startCollection({ resourceTypeId: resourceType, nearestCompatible: false })}
+                    className="rounded border border-border bg-muted px-2 py-1 hover:bg-accent"
+                  >
+                    [{collectKeys[index]}] {contentManager.getResourceType(resourceType)?.display_name ?? resourceType}
+                  </button>
+                ))}
+                <span className="text-muted-foreground">[Esc] cancel</span>
+              </div>
+            )}
             {buildMenuOpen && (
               <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
                 <span className="text-muted-foreground">Build:</span>

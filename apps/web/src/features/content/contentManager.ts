@@ -82,6 +82,7 @@ export type EntityTypeDef = {
   researches?: string[];
   collector?: {
     vfx?: "solar_proximity" | "mineral_transport";
+    collects?: string[];
   };
   radiation_sources?: Array<{
     radiation_type: string;

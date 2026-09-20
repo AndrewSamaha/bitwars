@@ -250,6 +250,19 @@ impl IntentManager {
         &self.current_action
     }
 
+    /// Return the maintained collection assignment for an entity, if it is
+    /// currently collecting. Used by the engine to apply reassignment rules
+    /// before REPLACE_ACTIVE removes the old action.
+    pub fn active_collect_assignment(&self, entity_id: u64) -> Option<(String, bool)> {
+        let active = self.current_action.get(&entity_id)?;
+        match active.action.exec.as_ref()? {
+            pb::action_state::Exec::Collect(state) => {
+                Some((state.resource_type_id.clone(), state.nearest_compatible))
+            }
+            _ => None,
+        }
+    }
+
     /// Mutable active actions for authoritative systems that advance channels
     /// such as construction.
     pub fn active_intents_mut(&mut self) -> &mut HashMap<u64, ActiveIntent> {
@@ -307,6 +320,8 @@ fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -
             pb::intent::Kind::Collect(c) => {
                 let collect_state = pb::CollectState {
                     entity_id: c.entity_id,
+                    resource_type_id: c.resource_type_id.clone(),
+                    nearest_compatible: c.nearest_compatible,
                 };
                 exec = Some(pb::action_state::Exec::Collect(collect_state));
             }
@@ -419,6 +434,8 @@ mod tests {
                 entity_id,
                 client_cmd_id: String::new(),
                 player_id: String::new(),
+                resource_type_id: String::new(),
+                nearest_compatible: true,
             })),
         }
     }

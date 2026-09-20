@@ -62,6 +62,10 @@ pub struct CollectorUiState {
     #[serde(default)]
     pub effective_rate_per_second: f32,
     #[serde(default)]
+    pub assigned_resource_type: String,
+    #[serde(default)]
+    pub assigned_nearest_compatible: bool,
+    #[serde(default)]
     pub updated_tick: u64,
 }
 

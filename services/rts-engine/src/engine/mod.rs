@@ -1882,6 +1882,10 @@ impl Engine {
         carry_capacity: f32,
         effective_rate_per_second: f32,
     ) {
+        let (assigned_resource_type, assigned_nearest_compatible) = self
+            .intents
+            .active_collect_assignment(entity_id)
+            .unwrap_or_default();
         self.collector_ui_state_by_entity.insert(
             entity_id,
             CollectorUiState {
@@ -1890,6 +1894,8 @@ impl Engine {
                 carry_amount: carry_amount.max(0.0),
                 carry_capacity: carry_capacity.max(0.0),
                 effective_rate_per_second: effective_rate_per_second.max(0.0),
+                assigned_resource_type,
+                assigned_nearest_compatible,
                 updated_tick: self.state.tick,
             },
         );
@@ -2710,6 +2716,20 @@ impl Engine {
                 _ => None,
             })
             .collect();
+        // Freeze the player-issued assignment for this tick. An empty type
+        // together with nearest_compatible is the explicit legacy auto mode.
+        let collection_assignments: HashMap<u64, (String, bool)> = self
+            .intents
+            .active_intents()
+            .iter()
+            .filter_map(|(id, active)| match active.action.exec.as_ref() {
+                Some(pb::action_state::Exec::Collect(state)) => Some((
+                    *id,
+                    (state.resource_type_id.clone(), state.nearest_compatible),
+                )),
+                _ => None,
+            })
+            .collect();
         let collectors = self.build_collector_snapshots();
         let nodes = self.build_resource_node_snapshots();
         let refineries = self.build_refinery_snapshots();
@@ -2773,6 +2793,12 @@ impl Engine {
                 }
                 continue;
             }
+
+            let Some((assigned_resource_type, nearest_compatible)) =
+                collection_assignments.get(&collector.id)
+            else {
+                continue;
+            };
 
             // Transport mode: carry->deposit has priority only when carry is full.
             if let Some(ref carry) = carry_snapshot {
@@ -2879,6 +2905,18 @@ impl Engine {
                             .unwrap_or(std::cmp::Ordering::Equal)
                             .then_with(|| a.id.cmp(&b.id))
                     })
+            } else if !*nearest_compatible {
+                nodes
+                    .iter()
+                    .filter(|n| n.mode == CollectionMode::Transport)
+                    .filter(|n| n.resource_type == *assigned_resource_type)
+                    .min_by(|a, b| {
+                        let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
+                        let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
+                        da.partial_cmp(&db)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                            .then_with(|| a.id.cmp(&b.id))
+                    })
             } else {
                 Self::pick_best_node(
                     &collector,
@@ -2965,12 +3003,27 @@ impl Engine {
             if handled_transport {
                 continue;
             }
-            if let Some(node) = Self::pick_best_node(
-                &collector,
-                &nodes,
-                CollectionMode::Proximity,
-                &collector_def.collects,
-            ) {
+            let proximity_node = if *nearest_compatible {
+                Self::pick_best_node(
+                    &collector,
+                    &nodes,
+                    CollectionMode::Proximity,
+                    &collector_def.collects,
+                )
+            } else {
+                nodes
+                    .iter()
+                    .filter(|n| n.mode == CollectionMode::Proximity)
+                    .filter(|n| n.resource_type == *assigned_resource_type)
+                    .min_by(|a, b| {
+                        let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
+                        let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
+                        da.partial_cmp(&db)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                            .then_with(|| a.id.cmp(&b.id))
+                    })
+            };
+            if let Some(node) = proximity_node {
                 let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
                 if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
@@ -3028,6 +3081,16 @@ impl Engine {
                     carry_capacity,
                     0.0,
                 );
+                if let Some(entity) = self
+                    .state
+                    .entities
+                    .iter_mut()
+                    .find(|e| e.id == collector.id)
+                {
+                    let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+                    vel.x = 0.0;
+                    vel.y = 0.0;
+                }
             }
         }
     }
@@ -3043,6 +3106,8 @@ impl Engine {
                 carry_amount: state.carry_amount,
                 carry_capacity: state.carry_capacity,
                 effective_rate_per_second: state.effective_rate_per_second,
+                assigned_resource_type: state.assigned_resource_type.clone(),
+                assigned_nearest_compatible: state.assigned_nearest_compatible,
             })
             .collect();
         states.sort_by_key(|state| state.entity_id);
@@ -3786,6 +3851,54 @@ impl Engine {
                 return Err(anyhow!("entity not owned"));
             }
             Some(_) => {}
+        }
+
+        // Collection assignments are authoritative content IDs. Validate them
+        // here, not in the web route, because intents may arrive from replay,
+        // CLI, or another client. A missing source/refinery is deliberately
+        // not an error: the collector retains its order and waits.
+        if let Some(pb::intent::Kind::Collect(collect)) = payload_intent.kind.as_ref() {
+            let content = self
+                .content
+                .as_ref()
+                .ok_or_else(|| anyhow!("collection unavailable without content pack"))?;
+            let entity = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == entity_id)
+                .ok_or_else(|| anyhow!("collector entity not found"))?;
+            let collector = content
+                .get(&entity.entity_type_id)
+                .and_then(|definition| definition.collector.as_ref())
+                .ok_or_else(|| anyhow!("entity cannot collect resources"))?;
+            if collect.nearest_compatible {
+                if !collect.resource_type_id.is_empty() {
+                    return Err(anyhow!("nearest collection must not name a resource type"));
+                }
+            } else if collect.resource_type_id.is_empty()
+                || content
+                    .get_resource_type(&collect.resource_type_id)
+                    .is_none()
+                || !collector
+                    .collects
+                    .iter()
+                    .any(|id| id == &collect.resource_type_id)
+            {
+                return Err(anyhow!("collector cannot collect requested resource type"));
+            }
+
+            // Replacing one maintained Collect assignment with a different one
+            // discards in-flight cargo. Other orders merely interrupt the
+            // temporary assignment and intentionally leave cargo untouched.
+            let requested = (collect.resource_type_id.clone(), collect.nearest_compatible);
+            if self
+                .intents
+                .active_collect_assignment(entity_id)
+                .is_some_and(|active| active != requested)
+            {
+                self.carry_by_entity.remove(&entity_id);
+            }
         }
 
         // Production is entirely content-driven and always revalidated by the

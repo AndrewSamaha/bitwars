@@ -64,6 +64,8 @@ export type SendIntentParams =
   | {
       kind: "Collect";
       entityId: number;
+      resourceTypeId?: string;
+      nearestCompatible: boolean;
       clientCmdId: string;
       clientSeq: number;
       policy: IntentPolicyName;
@@ -213,9 +215,13 @@ class IntentQueueManager {
    * Send a maintained Collect intent immediately.
    * Collect does not participate in the local waypoint queue.
    */
-  handleCollectCommand(entityId: number, policy: IntentPolicyName = "REPLACE_ACTIVE") {
+  handleCollectCommand(
+    entityId: number,
+    assignment: { resourceTypeId?: string; nearestCompatible: boolean },
+    policy: IntentPolicyName = "REPLACE_ACTIVE",
+  ) {
     const clientCmdId = uuidv7();
-    this.sendCollectNow(entityId, clientCmdId, policy);
+    this.sendCollectNow(entityId, clientCmdId, assignment, policy);
   }
 
   /** Start repairing a selected friendly target immediately. */
@@ -578,6 +584,7 @@ class IntentQueueManager {
   private async sendCollectNow(
     entityId: number,
     clientCmdId: string,
+    assignment: { resourceTypeId?: string; nearestCompatible: boolean },
     policy: IntentPolicyName,
   ) {
     const state = this.getOrCreate(entityId);
@@ -597,6 +604,8 @@ class IntentQueueManager {
       await this.sendCallback({
         kind: "Collect",
         entityId,
+        resourceTypeId: assignment.resourceTypeId,
+        nearestCompatible: assignment.nearestCompatible,
         clientCmdId,
         clientSeq: this.clientSeq,
         policy,

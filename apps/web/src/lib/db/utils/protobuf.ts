@@ -32,6 +32,8 @@ export const mapDeltaToJson = (d: Delta) => ({
     carry_amount: state.carryAmount,
     carry_capacity: state.carryCapacity,
     effective_rate_per_second: state.effectiveRatePerSecond,
+    assigned_resource_type: state.assignedResourceType,
+    assigned_nearest_compatible: state.assignedNearestCompatible,
   })),
   combat_effect_state_updates: (d.combatEffectStateUpdates ?? []).map((state) => ({
     entity_id: biToNumOrStr(state.entityId),
@@ -75,6 +77,8 @@ export const mapSnapshotToJson = (s: Snapshot) => {
       carry_amount: state.carryAmount,
       carry_capacity: state.carryCapacity,
       effective_rate_per_second: state.effectiveRatePerSecond,
+      assigned_resource_type: state.assignedResourceType,
+      assigned_nearest_compatible: state.assignedNearestCompatible,
     })),
     combat_effect_states: (s.combatEffectStates ?? []).map((state) => ({
       entity_id: biToNumOrStr(state.entityId),

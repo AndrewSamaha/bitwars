@@ -117,7 +117,7 @@ entity_types:
     health: 100
     hull_radius: 12
     visual:
-      scale: 0.9
+      scale: 0.7
     combat_targetable: true
     sensor:
       range: 400
@@ -134,7 +134,7 @@ entity_types:
       vfx: solar_proximity
       collects:
         - energy
-      proximity_rate_per_second: 8
+      proximity_rate_per_second: 3
       transport_rate_per_second: 0
       carry_capacity: 0
     upgrades:

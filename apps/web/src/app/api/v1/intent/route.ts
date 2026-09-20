@@ -64,8 +64,15 @@ function encodeCollectEnvelope(params: {
   protocolVersion: number;
   policy: IntentPolicy;
   entityId: bigint;
+  resourceTypeId: string;
+  nearestCompatible: boolean;
 }): Uint8Array {
-  const collectPayload = encodeVarintField(1, params.entityId); // CollectIntent.entity_id
+  const collectPayload = concatBytes([
+    encodeVarintField(1, params.entityId), // CollectIntent.entity_id
+    ...(params.nearestCompatible
+      ? [encodeVarintField(5, 1n)]
+      : [encodeStringField(4, params.resourceTypeId)]),
+  ]);
   return concatBytes([
     encodeLengthDelimitedField(1, params.clientCmdId), // client_cmd_id
     encodeStringField(3, params.playerId), // player_id
@@ -137,6 +144,11 @@ export async function POST(req: NextRequest) {
     if (t === "Repair" && (!Number.isInteger(Number(body?.target_id)) || Number(body.target_id) <= 0)) {
       return NextResponse.json({ error: "target_id must be a positive integer for Repair" }, { status: 400 });
     }
+    const resourceTypeId = typeof body?.resource_type_id === "string" ? body.resource_type_id.trim() : "";
+    const nearestCompatible = body?.nearest_compatible === true;
+    if (t === "Collect" && (nearestCompatible ? Boolean(resourceTypeId) : !resourceTypeId)) {
+      return NextResponse.json({ error: "Collect requires exactly one of resource_type_id or nearest_compatible" }, { status: 400 });
+    }
 
     if (!validateUuid(clientCmdId) || uuidVersion(clientCmdId) !== 7) {
       return NextResponse.json({ error: "client_cmd_id must be a UUIDv7 string" }, { status: 400 });
@@ -184,6 +196,8 @@ export async function POST(req: NextRequest) {
         protocolVersion: ENGINE_PROTOCOL_MAJOR,
         policy,
         entityId,
+        resourceTypeId,
+        nearestCompatible,
       });
     } else if (t === "Build") {
       const build = create(BuildIntentSchema, {

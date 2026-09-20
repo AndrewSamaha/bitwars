@@ -10,4 +10,8 @@ message CollectorState {
   float carry_amount = 4;
   float carry_capacity = 5;
   float effective_rate_per_second = 6;
+  // The maintained Collect order, distinct from resource_type (the current
+  // cargo/gathering resource shown above).
+  string assigned_resource_type = 7;
+  bool assigned_nearest_compatible = 8;
 }

@@ -83,6 +83,11 @@ message CollectIntent {
   uint64 entity_id     = 1; // collector entity
   string client_cmd_id = 2 [deprecated = true];
   string player_id     = 3 [deprecated = true];
+  // When set, restrict autonomous collection to this compatible resource type.
+  string resource_type_id = 4;
+  // Explicitly retain the legacy "nearest compatible" behavior. This is a
+  // separate flag so an empty resource_type_id is never ambiguous on the wire.
+  bool nearest_compatible = 5;
 }
 
 // Repair intent payload (authoritative server-side).
@@ -204,6 +209,8 @@ message ResearchState {
 
 message CollectState {
   uint64 entity_id = 1;
+  string resource_type_id = 2;
+  bool nearest_compatible = 3;
 }
 
 message RepairState {

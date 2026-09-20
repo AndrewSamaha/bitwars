@@ -63,6 +63,12 @@ pub struct CollectorState {
     pub carry_capacity: f32,
     #[prost(float, tag = "6")]
     pub effective_rate_per_second: f32,
+    /// The maintained Collect order, distinct from resource_type (the current
+    /// cargo/gathering resource shown above).
+    #[prost(string, tag = "7")]
+    pub assigned_resource_type: ::prost::alloc::string::String,
+    #[prost(bool, tag = "8")]
+    pub assigned_nearest_compatible: bool,
 }
 /// Authoritative presentation state for a continuous entity interaction.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -235,6 +241,13 @@ pub struct CollectIntent {
     #[deprecated]
     #[prost(string, tag = "3")]
     pub player_id: ::prost::alloc::string::String,
+    /// When set, restrict autonomous collection to this compatible resource type.
+    #[prost(string, tag = "4")]
+    pub resource_type_id: ::prost::alloc::string::String,
+    /// Explicitly retain the legacy "nearest compatible" behavior. This is a
+    /// separate flag so an empty resource_type_id is never ambiguous on the wire.
+    #[prost(bool, tag = "5")]
+    pub nearest_compatible: bool,
 }
 /// Repair intent payload (authoritative server-side).
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -434,10 +447,14 @@ pub struct ResearchState {
     #[prost(float, tag = "2")]
     pub progress: f32,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectState {
     #[prost(uint64, tag = "1")]
     pub entity_id: u64,
+    #[prost(string, tag = "2")]
+    pub resource_type_id: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub nearest_compatible: bool,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct RepairState {
