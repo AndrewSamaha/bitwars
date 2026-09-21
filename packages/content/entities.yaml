@@ -34,14 +34,11 @@ technologies:
         - space_age
     research_cost:
       minerals: 100
-      energy: 150
+      food: 200
+      energy: 250
     research_rates:
       minerals: 1
       energy: 1
-    effects:
-      - target: entity.sensor.range
-        operation: multiply
-        value: 1.25
 entity_types:
   theta:
     fog_memory: retain_last_known
@@ -466,6 +463,9 @@ entity_types:
       stellar_heat:
         distance_offset: 90
         damage_multiplier: 0.1
+    requires_technologies:
+      all:
+        - solar_efficiency_1
     collector:
       vfx: solar_proximity
       collects:
@@ -617,3 +617,4 @@ entity_types:
       scale: 2.3
     researches:
       - neutrino_sensors
+      - solar_efficiency_1

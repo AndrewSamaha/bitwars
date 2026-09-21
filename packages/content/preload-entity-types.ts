@@ -139,7 +139,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1.25
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\ncombat_targetable: true\nvisual:\n  scale: 1.25\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  proximity_rate_per_second: 15\n  transport_rate_per_second: 0\n  carry_capacity: 0"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\ncombat_targetable: true\nvisual:\n  scale: 1.25\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\nrequires_technologies:\n  all:\n    - solar_efficiency_1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  proximity_rate_per_second: 15\n  transport_rate_per_second: 0\n  carry_capacity: 0"
   },
   {
     "id": "defense_pylon_v3",
@@ -184,6 +184,6 @@ export const ENTITY_CONTENT = [
       "scale": 2.3,
       "rotate_deg": 90
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 400\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  rotate_deg: 90\n  scale: 2.3\nresearches:\n  - neutrino_sensors"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 400\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  rotate_deg: 90\n  scale: 2.3\nresearches:\n  - neutrino_sensors\n  - solar_efficiency_1"
   }
 ] as const;
