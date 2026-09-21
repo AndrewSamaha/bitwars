@@ -63,6 +63,15 @@ describe("content editor help", () => {
     expect(complete("requires: base\neffects:\n  - target: |", "technology").references).toBeUndefined();
   });
 
+  it("completes entity-schema paths for effect targets", () => {
+    expect(complete("effects:\n  - target: |", "technology").suggestions.map((item) => item.label)).toEqual(["entity"]);
+    const entity = complete("effects:\n  - target: entity.|", "technology").suggestions;
+    expect(entity.map((item) => item.label)).toContain("health");
+    expect(entity.find((item) => item.label === "health")?.filterText).toBe("entity.health");
+    expect(entity.find((item) => item.label === "sensor")?.insertText).toBe("sensor.");
+    expect(complete("effects:\n  - target: entity.sensor.|", "technology").suggestions.map((item) => item.label)).toContain("range");
+  });
+
   it("replaces a partial key without inserting a second colon", () => {
     const text = "sensor:\n  ran: 100";
     const start = text.indexOf("ran");

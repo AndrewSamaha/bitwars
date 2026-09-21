@@ -27,6 +27,21 @@ technologies:
       - target: entity.sensor.range
         operation: multiply
         value: 1.25
+  solar_efficiency_1:
+    display_name: solar_efficiency_1
+    requires:
+      all:
+        - space_age
+    research_cost:
+      minerals: 100
+      energy: 150
+    research_rates:
+      minerals: 1
+      energy: 1
+    effects:
+      - target: entity.sensor.range
+        operation: multiply
+        value: 1.25
 entity_types:
   theta:
     fog_memory: retain_last_known

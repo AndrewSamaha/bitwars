@@ -87,11 +87,29 @@ export function hoverHelp(text: string, offset: number, kind: ContentKind): stri
   return at ? documentation(schemasAt(kind, at.path), at.key ? undefined : at.value) : undefined;
 }
 
-export type HelpCompletion = { label: string; insertText: string; documentation?: string; property?: boolean };
+export type HelpCompletion = { label: string; insertText: string; documentation?: string; property?: boolean; filterText?: string };
+function effectTargetCompletions(prefix: string): HelpCompletion[] {
+  const segments = prefix.split(".");
+  if (!prefix.includes(".")) return "entity".startsWith(prefix) ? [{ label: "entity", insertText: "entity." }] : [];
+  if (segments[0] !== "entity") return [];
+  const schemas = schemasAt("entity", segments.slice(1, -1));
+  const filterPrefix = `${segments.slice(0, -1).join(".")}.`;
+  return [...new Map(schemas.flatMap((schema) => Object.entries(schema.properties ?? {})).map(([label, child]) => [label, {
+    label,
+    insertText: `${label}${variants(child, contentSchemas.entity).some((schema) => schema.properties) ? "." : ""}`,
+    filterText: `${filterPrefix}${label}`,
+    documentation: documentation(variants(child, contentSchemas.entity)),
+    property: true,
+  }])).values()];
+}
 export function completionHelp(text: string, start: number, end: number, kind: ContentKind): {
   suggestions: HelpCompletion[];
   references?: "entities" | "technologies";
 } {
+  const targetPrefix = kind === "technology"
+    ? text.slice(text.lastIndexOf("\n", start - 1) + 1, start).match(/^\s*-\s+target:\s*([^\s]*)$/)?.[1]
+    : undefined;
+  if (targetPrefix !== undefined) return { suggestions: effectTargetCompletions(targetPrefix) };
   // Parse a placeholder so incomplete keys/empty values still have a YAML path.
   const marker = "__bitwars_completion__";
   const draft = text.slice(0, start) + marker + text.slice(end);

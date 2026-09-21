@@ -44,13 +44,13 @@ const configureYaml: BeforeMount = (monaco) => {
     },
   });
   monaco.languages.registerCompletionItemProvider("yaml", {
-    triggerCharacters: [":", " "],
+    triggerCharacters: [":", " ", "."],
     async provideCompletionItems(model: editor.ITextModel, position: Position) {
       if (!model.uri.toString().includes("file:///bitwars/")) return { suggestions: [] };
-      const word = model.getWordAtPosition(position) ?? model.getWordUntilPosition(position);
-      const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn };
+      const segment = model.getLineContent(position.lineNumber).slice(0, position.column - 1).match(/[a-z0-9_-]*$/i)?.[0] ?? "";
+      const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: position.column - segment.length, endColumn: position.column };
       const kind = model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
-      const help = completionHelp(model.getValue(), model.getOffsetAt({ ...position, column: word.startColumn }), model.getOffsetAt({ ...position, column: word.endColumn }), kind);
+      const help = completionHelp(model.getValue(), model.getOffsetAt({ ...position, column: range.startColumn }), model.getOffsetAt({ ...position, column: range.endColumn }), kind);
       const suggestions = help.suggestions.map((item) => ({ ...item, range, kind: item.property ? monaco.languages.CompletionItemKind.Property : monaco.languages.CompletionItemKind.EnumMember }));
       if (help.references) suggestions.push(...(await ids(help.references)).map((label) => ({ label, insertText: label, range, kind: monaco.languages.CompletionItemKind.Reference })));
       return { suggestions };
@@ -145,6 +145,13 @@ const markUnknownEntityFields: OnMount = (editor, monaco) => {
   });
 };
 
+const triggerDotSuggestions: OnMount = (editor) => {
+  const subscription = editor.onDidChangeModelContent(({ changes }) => {
+    if (changes.some(({ text }) => text === ".")) void editor.trigger("bitwars", "editor.action.triggerSuggest", {});
+  });
+  editor.onDidDispose(() => subscription.dispose());
+};
+
 export default function YamlEditor({ id, value, onChange, kind = "entity" }: {
   id: string;
   value: string;
@@ -155,7 +162,10 @@ export default function YamlEditor({ id, value, onChange, kind = "entity" }: {
     beforeMount={configureYaml}
     height="calc(100vh - 13rem)"
     language="yaml"
-    onMount={kind === "entity" ? markUnknownEntityFields : undefined}
+    onMount={(editor, monaco) => {
+      if (kind === "entity") markUnknownEntityFields(editor, monaco);
+      triggerDotSuggestions(editor, monaco);
+    }}
     onChange={(next) => onChange(next ?? "")}
     options={{ automaticLayout: true, minimap: { enabled: false }, scrollBeyondLastLine: false, wordWrap: "on" }}
     path={`file:///bitwars/${id}.${kind}.yaml`}
