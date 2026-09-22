@@ -6,6 +6,8 @@
     "clean": "bash ./scripts/clean.sh",
     "dev": "dotenv -e .env -- turbo run dev --parallel --env-mode=loose",
     "build": "turbo run build",
+    "start": "dotenv -e .env -- pnpm --filter bitwars start",
+    "start:all": "dotenv -e .env -- bash ./scripts/start-production.sh",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:read-binary": "pnpm --filter bitwars test",
