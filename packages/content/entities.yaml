@@ -420,7 +420,7 @@ entity_types:
       minerals: 100
       energy: 50
     maintenance_cost_per_minute:
-      energy: 200
+      energy: 100
     speed: 5
     stop_radius: 0.5
     mass: 1
