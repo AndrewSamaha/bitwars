@@ -41,6 +41,9 @@ coverage/
 .DS_Store
 *.pem
 
+# Locally generated image candidates; selected final sprites are committed separately.
+/packages/content/art-candidates/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

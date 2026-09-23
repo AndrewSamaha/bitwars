@@ -4,6 +4,7 @@ import { ENTITY_CONTENT } from "@bitwars/content";
 import YamlEditor from "@/features/content/components/YamlEditor";
 import { entityCombatRangeWarnings, unknownEntityFieldErrors } from "@/lib/content/schemaValidation";
 import { Pencil } from "lucide-react";
+import Link from "next/link";
 import {
   forceCenter,
   forceCollide,
@@ -262,6 +263,7 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
         <nav aria-label="Content type" className="mb-3 flex gap-1 border-b border-slate-700">
           <button className={`px-4 py-2 text-sm font-medium ${activeTab === "entities" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} onClick={() => onTabChange("entities")} type="button">Entities</button>
           <button className={`px-4 py-2 text-sm font-medium ${activeTab === "techtree" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} onClick={() => onTabChange("techtree")} type="button">Techtree</button>
+          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprites">Sprites</Link>
         </nav>
 
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">

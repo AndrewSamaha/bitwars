@@ -361,6 +361,8 @@ entity_types:
       range: 5000
       cost_per_minute:
         energy: 2.5
+    builds:
+      - entity_type_id: scout_long_range
   raider:
     fog_memory: forget_when_hidden
     speed: 110
@@ -618,3 +620,28 @@ entity_types:
     researches:
       - neutrino_sensors
       - solar_efficiency_1
+  scout_long_range:
+    fog_memory: forget_when_hidden
+    speed: 500
+    stop_radius: 0.5
+    mass: 0.6
+    health: 60
+    hull_radius: 10
+    combat_targetable: true
+    build_cost:
+      minerals: 75
+      energy: 50
+    combat:
+      acquisition_range: 450
+      on_near_enemy_strategy: approach
+      attacks:
+        - id: laser
+          type: laser
+          range: 120
+          damage: 2
+          cooldown_ticks: 75
+          priority: 0
+    sensor:
+      range: 5000
+      cost_per_minute:
+        energy: 2.5
