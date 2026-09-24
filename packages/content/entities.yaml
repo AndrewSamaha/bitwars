@@ -293,7 +293,7 @@ entity_types:
     hull_radius: 16
     combat_targetable: true
     visual:
-      scale: 1.5
+      scale: 1.2
     build_cost:
       minerals: 200
       energy: 200

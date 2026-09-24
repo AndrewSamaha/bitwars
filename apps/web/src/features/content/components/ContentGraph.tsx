@@ -37,6 +37,7 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 1.4;
 const GRAPH_WIDTH = 1600;
 const GRAPH_HEIGHT = 1000;
+const DRAW_TO_SCALE_GRAPH_SIZE = 3000;
 const ENTITY_FIELDS = [...new Set(INITIAL_ENTITIES.flatMap((entity) =>
   [...entity.definition.matchAll(/^([a-z_]+):/gm)].map((match) => match[1]),
 ))];
@@ -119,7 +120,7 @@ export default function ContentGraph() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
-  const [drawToScale, setDrawToScale] = useState(false);
+  const [drawToScale, setDrawToScale] = useState(true);
   const [drawToScaleReady, setDrawToScaleReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [spriteSizes, setSpriteSizes] = useState<Record<string, SpriteSize>>({});
@@ -141,6 +142,8 @@ export default function ContentGraph() {
     [links],
   );
   const selected = entities.find((entity) => entity.id === selectedId) ?? entities[0];
+  const graphWidth = drawToScale ? DRAW_TO_SCALE_GRAPH_SIZE : GRAPH_WIDTH;
+  const graphHeight = drawToScale ? DRAW_TO_SCALE_GRAPH_SIZE : GRAPH_HEIGHT;
   const diagnosticStatusByEntity = useMemo(() => new Map(entities.map((entity) => [
     entity.id,
     diagnosticStatus(entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition),
@@ -171,7 +174,7 @@ export default function ContentGraph() {
   }, []);
 
   useEffect(() => {
-    setDrawToScale(new URLSearchParams(window.location.search).get("drawToScale") === "1");
+    setDrawToScale(new URLSearchParams(window.location.search).get("drawToScale") !== "0");
     setDrawToScaleReady(true);
   }, []);
 
@@ -215,23 +218,23 @@ export default function ContentGraph() {
     let simulation: Simulation<GraphNode, undefined> | null = null;
     const layout = () => {
       simulation?.stop();
-      layoutSizeRef.current = { x: GRAPH_WIDTH, y: GRAPH_HEIGHT };
+      layoutSizeRef.current = { x: graphWidth, y: graphHeight };
       const nodes: GraphNode[] = entities.map((entity, index) => ({
         id: entity.id,
         entity,
-        x: GRAPH_WIDTH / 2 + (index % 4 - 1.5) * 120,
-        y: GRAPH_HEIGHT / 2 + (Math.floor(index / 4) - 1) * 120,
+        x: graphWidth / 2 + (index % 4 - 1.5) * 120,
+        y: graphHeight / 2 + (Math.floor(index / 4) - 1) * 120,
       }));
       simulation = forceSimulation(nodes)
         .force("link", forceLink<GraphNode, GraphLink>(links.map((link) => ({ ...link }))).id((node) => node.id).distance(155).strength(0.9))
         .force("charge", forceManyBody().strength(-520))
         .force("collide", forceCollide<GraphNode>((node) => nodeRadius(node.entity)))
         .force("builder-outward", builderOutwardForce(links))
-        .force("center", forceCenter(GRAPH_WIDTH / 2, GRAPH_HEIGHT / 2));
+        .force("center", forceCenter(graphWidth / 2, graphHeight / 2));
       simulationRef.current = simulation;
       simulation.on("tick", () => setPositions(Object.fromEntries(nodes.map((node) => [node.id, {
-        x: Math.min((layoutSizeRef.current?.x ?? GRAPH_WIDTH) - nodeRadius(node.entity), Math.max(nodeRadius(node.entity), node.x ?? nodeRadius(node.entity))),
-        y: Math.min((layoutSizeRef.current?.y ?? GRAPH_HEIGHT) - nodeRadius(node.entity), Math.max(nodeRadius(node.entity), node.y ?? nodeRadius(node.entity))),
+        x: Math.min((layoutSizeRef.current?.x ?? graphWidth) - nodeRadius(node.entity), Math.max(nodeRadius(node.entity), node.x ?? nodeRadius(node.entity))),
+        y: Math.min((layoutSizeRef.current?.y ?? graphHeight) - nodeRadius(node.entity), Math.max(nodeRadius(node.entity), node.y ?? nodeRadius(node.entity))),
       }]))));
     };
 
@@ -240,7 +243,7 @@ export default function ContentGraph() {
       simulation?.stop();
       simulationRef.current = null;
     };
-  }, [drawToScale, drawToScaleReady, entities, links, loading, spriteSizes]);
+  }, [drawToScale, drawToScaleReady, entities, graphHeight, graphWidth, links, loading, spriteSizes]);
 
   async function createChild(parentId: string) {
     const parent = entities.find((entity) => entity.id === parentId);
@@ -337,8 +340,8 @@ export default function ContentGraph() {
             {loading ? <div aria-label="Loading entities" className="grid h-full grid-cols-4 gap-12 p-12" role="status">
               {Array.from({ length: 12 }, (_, index) => <div className="h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/60" key={index} />)}
             </div> : <>
-            <div style={{ width: GRAPH_WIDTH * zoom, height: GRAPH_HEIGHT * zoom }}>
-            <div className="relative" style={{ width: GRAPH_WIDTH, height: GRAPH_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+            <div style={{ width: graphWidth * zoom, height: graphHeight * zoom }}>
+            <div className="relative" style={{ width: graphWidth, height: graphHeight, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full overflow-visible">
               <defs>
                 <marker id="build-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
