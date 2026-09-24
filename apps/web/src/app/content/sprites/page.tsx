@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 type Entity = { id: string };
 type Candidate = { id: string; url: string; revisedPrompt?: string };
 type Generation = { entityId: string; requestId: string; count: number; finalPrompt: string; candidates: Candidate[] };
+type HistoryGeneration = { entityId: string; requestId: string; createdAt: string; provider: string; prompt: string; candidates: Candidate[] };
 type GenerationEvent =
   | { type: "start"; entityId: string; requestId: string; count: number; finalPrompt: string }
   | { type: "candidate"; candidate: Candidate }
@@ -23,6 +24,9 @@ export default function SpriteGenerationPage() {
   const [steps, setSteps] = useState(40);
   const [count, setCount] = useState(4);
   const [generation, setGeneration] = useState<Generation | null>(null);
+  const [history, setHistory] = useState<HistoryGeneration[] | null>(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [tab, setTab] = useState<"generate" | "history">("generate");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -40,10 +44,20 @@ export default function SpriteGenerationPage() {
       .catch(() => setMessage("Could not load entity IDs."));
   }, []);
 
+  useEffect(() => {
+    if (!entityId) return;
+    setHistory(null);
+    fetch(`/api/content/sprites/history?entityId=${encodeURIComponent(entityId)}`)
+      .then((response) => response.ok ? response.json() : { generations: [] })
+      .then((data) => setHistory(data.generations ?? []))
+      .catch(() => setHistory([]));
+  }, [entityId, historyVersion]);
+
   const referenceOptions = entities;
 
   function selectEntity(id: string) {
     setEntityId(id);
+    setTab("generate");
     setReferences((current) => current.includes(id) ? current : [id, ...current].slice(0, 3));
   }
 
@@ -93,18 +107,19 @@ export default function SpriteGenerationPage() {
       setMessage(error instanceof Error ? error.message : "Generation failed.");
     } finally {
       setBusy(false);
+      setHistoryVersion((version) => version + 1);
     }
   }
 
-  async function publish(candidate: Candidate) {
-    if (!generation) return;
+  async function publish(candidate: Candidate, source: Pick<Generation, "entityId" | "requestId"> | null = generation) {
+    if (!source) return;
     setBusy(true);
     setMessage(null);
     try {
-      const response = await fetch(`/api/content/sprites/${generation.entityId}/${generation.requestId}/${candidate.id}/publish`, { method: "POST" });
+      const response = await fetch(`/api/content/sprites/${source.entityId}/${source.requestId}/${candidate.id}/publish`, { method: "POST" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Publishing failed.");
-      setMessage(`Published ${candidate.id} as ${generation.entityId}/idle.png.`);
+      setMessage(`Published ${candidate.id} as ${source.entityId}/idle.png.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Publishing failed.");
     } finally {
@@ -122,12 +137,21 @@ export default function SpriteGenerationPage() {
       <Link className="rounded border border-slate-600 px-3 py-2 text-sm hover:border-cyan-400 hover:text-cyan-300" href="/content/entities">Back to content</Link>
     </div>
 
-    <section className="grid gap-6 rounded-xl border border-slate-700 bg-slate-900/70 p-6 md:grid-cols-2">
-      <label className="grid gap-2 text-sm font-medium">Entity
+    <div className="mb-6 flex items-end justify-between gap-4 border-b border-slate-700">
+      <label className="mb-3 grid gap-2 text-sm font-medium">Entity
         <select className="rounded border border-slate-600 bg-slate-950 px-3 py-2" onChange={(event) => selectEntity(event.target.value)} value={entityId}>
           {entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.id}</option>)}
         </select>
       </label>
+      <nav aria-label="Sprite editor view" className="flex gap-1">
+        <button className={`border-b-2 px-4 py-2 text-sm font-medium ${tab === "generate" ? "border-cyan-400 text-cyan-300" : "border-transparent text-slate-400 hover:text-cyan-300"}`} onClick={() => setTab("generate")} type="button">Sprite Generation</button>
+        <button className={`border-b-2 px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40 ${tab === "history" ? "border-cyan-400 text-cyan-300" : "border-transparent text-slate-400 hover:text-cyan-300"}`} disabled={!history?.length} onClick={() => setTab("history")} type="button">Previous Generations</button>
+      </nav>
+    </div>
+
+    {message && <p className="mb-5 rounded border border-cyan-500/50 bg-cyan-950/40 px-4 py-3 text-cyan-100">{message}</p>}
+    {tab === "generate" ? <>
+    <section className="grid gap-6 rounded-xl border border-slate-700 bg-slate-900/70 p-6 md:grid-cols-2">
       <label className="grid gap-2 text-sm font-medium">Image provider
         <select className="rounded border border-slate-600 bg-slate-950 px-3 py-2" onChange={(event) => setProvider(event.target.value)} value={provider}>
           <option value="openai">OpenAI · GPT Image 2.5 Flare</option>
@@ -174,7 +198,6 @@ export default function SpriteGenerationPage() {
       <div className="md:col-span-2"><button className="rounded bg-cyan-400 px-4 py-2 font-medium text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={busy || !entityId || brief.trim().length < 12} onClick={generate} type="button">{busy ? "Working…" : "Generate candidates"}</button></div>
     </section>
 
-    {message && <p className="mt-5 rounded border border-cyan-500/50 bg-cyan-950/40 px-4 py-3 text-cyan-100">{message}</p>}
     {generation && <section className="mt-8">
       <h2 className="text-xl font-semibold">Review candidates <span className="text-sm font-normal text-slate-400">({generation.candidates.length}/{generation.count})</span></h2>
       <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900 p-4">
@@ -194,6 +217,21 @@ export default function SpriteGenerationPage() {
           <div className="aspect-square rounded-lg bg-slate-800" />
           <div className="mt-3 h-4 w-24 rounded bg-slate-800" />
           <div className="mt-4 h-9 rounded bg-slate-800" />
+        </article>)}
+      </div>
+    </section>}
+    </> : <section>
+      <h2 className="text-xl font-semibold">Previous generations for {entityId}</h2>
+      <div className="mt-4 space-y-6">
+        {history?.map((previous) => <article className="rounded-xl border border-slate-700 bg-slate-900 p-5" key={previous.requestId}>
+          <p className="text-sm text-slate-400">{new Date(previous.createdAt).toLocaleString()} · {previous.provider}</p>
+          <p className="mt-2 text-sm text-slate-300">{previous.prompt}</p>
+          <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {previous.candidates.map((candidate) => <article className="rounded-lg border border-slate-700 bg-slate-950 p-3" key={candidate.id}>
+              <div className="grid aspect-square place-items-center rounded bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%),linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]"><img alt={`${candidate.id} for ${previous.entityId}`} className="max-h-full max-w-full object-contain" src={candidate.url} /></div>
+              <button className="mt-3 w-full rounded border border-cyan-500 px-3 py-2 text-sm text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50" disabled={busy} onClick={() => publish(candidate, previous)} type="button">Use this sprite</button>
+            </article>)}
+          </div>
         </article>)}
       </div>
     </section>}
