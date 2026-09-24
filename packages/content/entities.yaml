@@ -408,6 +408,8 @@ entity_types:
       range: 500
       cost_per_minute:
         energy: 2.5
+    visual:
+      scale: 0.3
     upgrades:
       - entity_type_id: defense_pylon_v3
   defense_pylon:
@@ -483,6 +485,8 @@ entity_types:
     mass: 1
     health: 500
     hull_radius: 15
+    visual:
+      scale: 0.3
     combat:
       acquisition_range: 700
       on_near_enemy_strategy: stay
