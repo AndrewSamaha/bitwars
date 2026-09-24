@@ -124,6 +124,7 @@ export default function ContentGraph() {
   const [drawToScaleReady, setDrawToScaleReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [spriteSizes, setSpriteSizes] = useState<Record<string, SpriteSize>>({});
+  const [spriteMenuOpen, setSpriteMenuOpen] = useState(false);
   const graphRef = useRef<HTMLDivElement>(null);
   const assetInputRef = useRef<HTMLInputElement>(null);
   const simulationRef = useRef<Simulation<GraphNode, undefined> | null>(null);
@@ -333,7 +334,6 @@ export default function ContentGraph() {
         <nav aria-label="Content type" className="mb-3 flex gap-1 border-b border-slate-700">
           <Link className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" href="/content/entities">Entities</Link>
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/techtree">Techtree</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprites">Sprites</Link>
         </nav>
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
           <div ref={graphRef} className="relative h-[calc(100vh-16.625rem-1px)] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
@@ -441,10 +441,16 @@ export default function ContentGraph() {
       <aside className="w-[42rem] shrink-0 border-l border-slate-700 bg-slate-900 p-6">
         {selected && <>
           <div className="flex items-center gap-3 border-b border-slate-700 pb-5">
-            <button className="relative" onClick={() => assetInputRef.current?.click()} type="button">
+            <div className="relative">
+            <button aria-expanded={spriteMenuOpen} aria-haspopup="menu" aria-label="Change sprite" className="relative" onClick={() => setSpriteMenuOpen((open) => !open)} type="button">
               <img alt="" className="size-14 object-contain" src={`/assets/${selected.id}/idle.png?v=${assetVersion}`} style={{ transform: `rotate(${visualRotateDeg(draftDefinition ?? selected.definition, selected.visual?.rotate_deg ?? 0)}deg)` }} />
               <Pencil className="absolute -right-1 -bottom-1 size-5 rounded-full bg-cyan-400 p-1 text-slate-950" />
             </button>
+            {spriteMenuOpen && <div className="absolute left-0 top-full z-20 mt-2 w-44 rounded-md border border-slate-600 bg-slate-900 p-1 shadow-xl" role="menu">
+              <button className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-800" onClick={() => { setSpriteMenuOpen(false); assetInputRef.current?.click(); }} role="menuitem" type="button">Upload from file</button>
+              <Link className="block rounded px-3 py-2 text-sm hover:bg-slate-800" href="/content/sprites/" role="menuitem">Generate new sprite</Link>
+            </div>}
+            </div>
             <input accept="image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadAsset(file); event.target.value = ""; }} ref={assetInputRef} type="file" />
             <div><p className="text-sm text-slate-400">Entity definition</p><input className="w-full bg-transparent text-xl font-semibold outline-none" onChange={(event) => setDraftName(event.target.value)} value={draftName ?? selected.id} /></div>
           </div>
