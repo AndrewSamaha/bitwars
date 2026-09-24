@@ -47,13 +47,6 @@ function linksFor(entities: readonly Entity[]): GraphLink[] {
   ]);
 }
 
-function initialPositions(entities: readonly Entity[]): Record<string, Point> {
-  return Object.fromEntries(entities.map((entity, index) => [entity.id, {
-    x: 120 + (index % 6) * 140,
-    y: 100 + Math.floor(index / 6) * 150,
-  }]));
-}
-
 function addBuild(definition: string, childId: string) {
   const buildBlock = /^builds:\n(?:(?: {2,}.*|\s*)\n)*/m;
   if (!buildBlock.test(definition)) return `${definition.trimEnd()}\nbuilds:\n  - entity_type_id: ${childId}\n`;
@@ -102,9 +95,9 @@ function builderOutwardForce(links: readonly GraphLink[]) {
 }
 
 export default function ContentGraph() {
-  const [entities, setEntities] = useState<Entity[]>(INITIAL_ENTITIES);
+  const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedId, setSelectedId] = useState<string>(INITIAL_ENTITIES[0]?.id ?? "");
-  const [positions, setPositions] = useState<Record<string, Point>>(() => initialPositions(INITIAL_ENTITIES));
+  const [positions, setPositions] = useState<Record<string, Point>>({});
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [assetVersion, setAssetVersion] = useState(0);
   const [draftDefinition, setDraftDefinition] = useState<string | null>(null);
@@ -113,6 +106,7 @@ export default function ContentGraph() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [drawToScale, setDrawToScale] = useState(false);
+  const [loading, setLoading] = useState(true);
   const graphRef = useRef<HTMLDivElement>(null);
   const assetInputRef = useRef<HTMLInputElement>(null);
   const simulationRef = useRef<Simulation<GraphNode, undefined> | null>(null);
@@ -137,9 +131,17 @@ export default function ContentGraph() {
   ])), [entities, selectedId, draftDefinition]);
 
   useEffect(() => {
-    fetch("/api/content/entities").then((response) => response.ok ? response.json() : null).then((data) => {
-      if (data?.entities?.length) setEntities(data.entities);
-    }).catch(() => {});
+    const controller = new AbortController();
+    fetch("/api/content/entities", { signal: controller.signal }).then((response) => response.ok ? response.json() : null).then((data) => {
+      if (controller.signal.aborted) return;
+      setEntities(data?.entities?.length ? data.entities : INITIAL_ENTITIES);
+      setLoading(false);
+    }).catch(() => {
+      if (controller.signal.aborted) return;
+      setEntities(INITIAL_ENTITIES);
+      setLoading(false);
+    });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -170,6 +172,7 @@ export default function ContentGraph() {
   }
 
   useEffect(() => {
+    if (loading) return;
     let simulation: Simulation<GraphNode, undefined> | null = null;
     const layout = () => {
       simulation?.stop();
@@ -198,7 +201,7 @@ export default function ContentGraph() {
       simulation?.stop();
       simulationRef.current = null;
     };
-  }, [entities, links]);
+  }, [entities, links, loading]);
 
   async function createChild(parentId: string) {
     const parent = entities.find((entity) => entity.id === parentId);
@@ -286,6 +289,9 @@ export default function ContentGraph() {
         </nav>
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
           <div ref={graphRef} className="relative h-[42rem] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
+            {loading ? <div aria-label="Loading entities" className="grid h-full grid-cols-4 gap-12 p-12" role="status">
+              {Array.from({ length: 12 }, (_, index) => <div className="h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/60" key={index} />)}
+            </div> : <>
             <div style={{ width: GRAPH_WIDTH * zoom, height: GRAPH_HEIGHT * zoom }}>
             <div className="relative" style={{ width: GRAPH_WIDTH, height: GRAPH_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full overflow-visible">
@@ -372,6 +378,7 @@ export default function ContentGraph() {
             </div>}
             </div>
             </div>
+            </>}
           </div>
         </div>
         <footer className="mb-8">

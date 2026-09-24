@@ -38,8 +38,10 @@ export const ENTITY_CONTENT = [
     "id": "minerals",
     "builds": [],
     "upgrades": [],
-    "visual": {},
-    "definition": "fog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nresource_node:\n  resource_type: minerals\n  collection_mode: transport\n  min_effective_distance: 20\n  max_effective_distance: 50"
+    "visual": {
+      "scale": 3
+    },
+    "definition": "fog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nvisual:\n  scale: 3\nresource_node:\n  resource_type: minerals\n  collection_mode: transport\n  min_effective_distance: 20\n  max_effective_distance: 50"
   },
   {
     "id": "collector_solar",
@@ -97,9 +99,9 @@ export const ENTITY_CONTENT = [
     ],
     "upgrades": [],
     "visual": {
-      "scale": 2
+      "scale": 1.5
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 16\ncombat_targetable: true\nvisual:\n  scale: 2\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: processor\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: fighter_v1\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: heavy_fighter\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: battleship\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: science_vessel\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 2\n      energy: 2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 16\ncombat_targetable: true\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: processor\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: fighter_v1\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: heavy_fighter\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: battleship\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: science_vessel\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 2\n      energy: 2"
   },
   {
     "id": "scout",
