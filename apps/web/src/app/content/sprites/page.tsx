@@ -118,7 +118,7 @@ export default function SpriteGenerationPage() {
         <h1 className="mt-2 text-3xl font-semibold">Sprite generation</h1>
         <p className="mt-2 max-w-2xl text-slate-400">Generate a few original candidates from an art brief and existing BitWars style references. Review before publishing one as the entity’s live sprite.</p>
       </div>
-      <Link className="rounded border border-slate-600 px-3 py-2 text-sm hover:border-cyan-400 hover:text-cyan-300" href="/content">Back to content</Link>
+      <Link className="rounded border border-slate-600 px-3 py-2 text-sm hover:border-cyan-400 hover:text-cyan-300" href="/content/entities">Back to content</Link>
     </div>
 
     <section className="grid gap-6 rounded-xl border border-slate-700 bg-slate-900/70 p-6 md:grid-cols-2">

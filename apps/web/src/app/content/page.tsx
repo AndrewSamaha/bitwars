@@ -1,12 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import ContentGraph from "@/features/content/components/ContentGraph";
-import TechnologyGraph from "@/features/content/components/TechnologyGraph";
-import { useState } from "react";
-
-export default function ContentPage() {
-  const [tab, setTab] = useState<"entities" | "techtree">("entities");
-  return tab === "entities"
-    ? <ContentGraph activeTab={tab} onTabChange={setTab} />
-    : <TechnologyGraph activeTab={tab} onTabChange={setTab} />;
+export default async function ContentPage({ searchParams }: { searchParams: Promise<{ drawToScale?: string }> }) {
+  const { drawToScale } = await searchParams;
+  redirect(`/content/entities${drawToScale === "1" || drawToScale === "0" ? `?drawToScale=${drawToScale}` : ""}`);
 }
