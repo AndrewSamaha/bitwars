@@ -31,5 +31,5 @@ global_neutral_fields:
 neutrals_near_spawn: []
 starting_resources:
   food: 500
-  minerals: 200
-  energy: 250
+  minerals: 500
+  energy: 500

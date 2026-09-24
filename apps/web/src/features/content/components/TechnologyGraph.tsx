@@ -2,6 +2,7 @@
 
 import YamlEditor from "@/features/content/components/YamlEditor";
 import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, type SimulationNodeDatum } from "d3-force";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseDocument } from "yaml";
 
@@ -21,7 +22,7 @@ function requirementLinks(requires: Requirement | undefined, target: string, kin
   return (["all", "any"] as const).flatMap((key) => requires[key]?.flatMap((item) => requirementLinks(item, target, key)) ?? []);
 }
 
-export default function TechnologyGraph({ activeTab, onTabChange }: { activeTab: "entities" | "techtree"; onTabChange: (tab: "entities" | "techtree") => void }) {
+export default function TechnologyGraph() {
   const [technologies, setTechnologies] = useState<Technology[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [draftDefinition, setDraftDefinition] = useState<string | null>(null);
@@ -105,10 +106,10 @@ export default function TechnologyGraph({ activeTab, onTabChange }: { activeTab:
 
   return <main className="flex min-h-screen bg-slate-950 text-slate-100">
     {saving && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80"><div className="rounded-lg border border-cyan-400/40 bg-slate-900 px-5 py-3 text-sm text-cyan-300">Saving…</div></div>}
-    <section className="min-w-0 flex-1 p-6 lg:p-10">
-      <header className="mb-8"><p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars Content Editor</p></header>
-      <nav aria-label="Content type" className="mb-3 flex gap-1 border-b border-slate-700"><button className="px-4 py-2 text-sm font-medium text-slate-400" onClick={() => onTabChange("entities")} type="button">Entities</button><button className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" onClick={() => onTabChange("techtree")} type="button">Techtree</button></nav>
-      <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6"><div ref={graphRef} className="relative h-[42rem] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50"><div style={{ width: WIDTH * zoom, height: HEIGHT * zoom }}><div className="relative" style={{ width: WIDTH, height: HEIGHT, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+    <section className="min-w-0 flex-1 p-6 lg:px-10 lg:pb-10 lg:pt-6">
+      <header className="mb-[10px]"><p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars Content Editor</p></header>
+      <nav aria-label="Content type" className="mb-3 flex gap-1 border-b border-slate-700"><Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/entities">Entities</Link><Link className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" href="/content/techtree">Techtree</Link></nav>
+      <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6"><div ref={graphRef} className="relative h-[calc(100vh-14.1875rem)] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50"><div style={{ width: WIDTH * zoom, height: HEIGHT * zoom }}><div className="relative" style={{ width: WIDTH, height: HEIGHT, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
         <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full"><defs><marker id="tech-all-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#22d3ee" /></marker><marker id="tech-any-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="#fbbf24" /></marker></defs>{links.map((link, index) => { const from = positions[link.source]; const to = positions[link.target]; return from && to && <path d={`M ${from.x} ${from.y} L ${to.x} ${to.y}`} fill="none" key={`${link.source}-${link.target}-${index}`} markerEnd={`url(#tech-${link.kind}-arrow)`} stroke={link.kind === "all" ? "#22d3ee" : "#fbbf24"} strokeDasharray={link.kind === "any" ? "5 3" : undefined} strokeWidth="2" />; })}</svg>
         {technologies.map((technology) => <button className={`absolute min-h-20 w-36 -translate-x-1/2 -translate-y-1/2 rounded-xl border p-3 text-center text-sm transition ${selected?.id === technology.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"}`} key={technology.id} onClick={() => { setSelectedId(technology.id); setDraftDefinition(null); setDraftName(null); setSaveError(null); }} onContextMenu={(event) => { event.preventDefault(); const bounds = graphRef.current?.getBoundingClientRect(); if (bounds) setMenu({ id: technology.id, x: (event.clientX - bounds.left + graphRef.current!.scrollLeft) / zoom, y: (event.clientY - bounds.top + graphRef.current!.scrollTop) / zoom }); }} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); moveNode(technology.id, event); }} onPointerMove={(event) => moveNode(technology.id, event)} onPointerUp={(event) => { event.currentTarget.releasePointerCapture(event.pointerId); const node = simulationRef.current?.nodes().find((candidate) => candidate.id === technology.id); if (node) { node.fx = null; node.fy = null; } simulationRef.current?.alphaTarget(0); }} style={{ left: positions[technology.id]?.x, top: positions[technology.id]?.y }} type="button">{displayName(technology)}</button>)}
         {menu && <div className="absolute z-20 w-36 rounded-md border border-slate-600 bg-slate-900 p-1 shadow-xl" style={{ left: menu.x, top: menu.y }}><button className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-800" onClick={() => createChild(menu.id)} type="button">Create child</button></div>}

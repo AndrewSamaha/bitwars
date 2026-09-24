@@ -116,6 +116,8 @@ entity_types:
     mass: 500
     health: 100
     visibility_range: 1000
+    visual:
+      scale: 3
     resource_node:
       resource_type: minerals
       collection_mode: transport
@@ -129,7 +131,7 @@ entity_types:
     health: 100
     hull_radius: 12
     visual:
-      scale: 0.7
+      scale: 0.2
     combat_targetable: true
     sensor:
       range: 400
@@ -212,6 +214,10 @@ entity_types:
         spend_rates:
           minerals: 1.2
           energy: 1.2
+      - entity_type_id: military_factory
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2
   habitat:
     fog_memory: forget_when_hidden
     speed: 60
@@ -291,10 +297,10 @@ entity_types:
     hull_radius: 16
     combat_targetable: true
     visual:
-      scale: 2
+      scale: 1.6
     build_cost:
-      minerals: 600
-      energy: 600
+      minerals: 200
+      energy: 200
     sensor:
       range: 400
       cost_per_minute:
@@ -312,18 +318,6 @@ entity_types:
         spend_rates:
           minerals: 2.2
           energy: 2.2
-      - entity_type_id: fighter_v1
-        spend_rates:
-          minerals: 2.2
-          energy: 2.2
-      - entity_type_id: heavy_fighter
-        spend_rates:
-          minerals: 1
-          energy: 1
-      - entity_type_id: battleship
-        spend_rates:
-          minerals: 1
-          energy: 1
       - entity_type_id: science_vessel
         spend_rates:
           minerals: 1
@@ -332,7 +326,7 @@ entity_types:
         spend_rates:
           minerals: 2
           energy: 2
-      - entity_type_id: defense_pylon
+      - entity_type_id: resource_transport
         spend_rates:
           minerals: 2
           energy: 2
@@ -361,6 +355,8 @@ entity_types:
       range: 5000
       cost_per_minute:
         energy: 2.5
+    builds:
+      - entity_type_id: scout_long_range
   raider:
     fog_memory: forget_when_hidden
     speed: 110
@@ -412,6 +408,8 @@ entity_types:
       range: 500
       cost_per_minute:
         energy: 2.5
+    visual:
+      scale: 0.3
     upgrades:
       - entity_type_id: defense_pylon_v3
   defense_pylon:
@@ -440,6 +438,8 @@ entity_types:
       range: 500
       cost_per_minute:
         energy: 2.5
+    visual:
+      scale: 0.25
     upgrades:
       - entity_type_id: defense_pylon_v2
   collector_solar_v2:
@@ -485,6 +485,8 @@ entity_types:
     mass: 1
     health: 500
     hull_radius: 15
+    visual:
+      scale: 0.3
     combat:
       acquisition_range: 700
       on_near_enemy_strategy: stay
@@ -618,3 +620,98 @@ entity_types:
     researches:
       - neutrino_sensors
       - solar_efficiency_1
+  scout_long_range:
+    fog_memory: forget_when_hidden
+    speed: 500
+    stop_radius: 0.5
+    mass: 0.6
+    health: 60
+    hull_radius: 10
+    combat_targetable: true
+    build_cost:
+      minerals: 75
+      energy: 50
+    combat:
+      acquisition_range: 450
+      on_near_enemy_strategy: approach
+      attacks:
+        - id: laser
+          type: laser
+          range: 120
+          damage: 2
+          cooldown_ticks: 75
+          priority: 0
+    visual:
+      scale: 0.2
+    sensor:
+      range: 5000
+      cost_per_minute:
+        energy: 2.5
+  resource_transport:
+    fog_memory: forget_when_hidden
+    speed: 80
+    stop_radius: 2
+    mass: 2
+    health: 300
+    hull_radius: 75
+    combat_targetable: true
+    visual:
+      scale: 0.2
+    sensor:
+      range: 400
+      cost_per_minute:
+        energy: 0.1
+    build_cost:
+      minerals: 100
+      energy: 100
+    maintenance_cost_per_minute:
+      energy: 1.5
+      food: 2
+    collector:
+      vfx: mineral_transport
+      collects:
+        - minerals
+        - food
+      transport_rate_per_second: 8
+      carry_capacity: 90
+      deposit_entity_types:
+        - processor
+        - habitat
+  military_factory:
+    fog_memory: forget_when_hidden
+    speed: 60
+    stop_radius: 0.5
+    mass: 7
+    health: 150
+    hull_radius: 16
+    combat_targetable: true
+    visual:
+      scale: 0.4
+    build_cost:
+      minerals: 200
+      energy: 200
+    sensor:
+      range: 400
+      cost_per_minute:
+        energy: 0.1
+    builds:
+      - entity_type_id: scout
+        spend_rates:
+          minerals: 1
+          energy: 1
+      - entity_type_id: fighter_v1
+        spend_rates:
+          minerals: 2.2
+          energy: 2.2
+      - entity_type_id: heavy_fighter
+        spend_rates:
+          minerals: 1
+          energy: 1
+      - entity_type_id: battleship
+        spend_rates:
+          minerals: 1
+          energy: 1
+      - entity_type_id: defense_pylon
+        spend_rates:
+          minerals: 2
+          energy: 2

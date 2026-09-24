@@ -3,7 +3,9 @@
 import { ENTITY_CONTENT } from "@bitwars/content";
 import YamlEditor from "@/features/content/components/YamlEditor";
 import { entityCombatRangeWarnings, unknownEntityFieldErrors } from "@/lib/content/schemaValidation";
+import { gameScreenEntityScale } from "@/features/pixijs/renderer/entityScale";
 import { Pencil } from "lucide-react";
+import Link from "next/link";
 import {
   forceCenter,
   forceCollide,
@@ -24,6 +26,7 @@ type Entity = {
   definition: string;
 };
 type Point = { x: number; y: number };
+type SpriteSize = { width: number; height: number };
 type GraphNode = SimulationNodeDatum & { id: string; entity: Entity };
 type GraphLink = { source: string; target: string; kind: "build" | "upgrade" };
 type DiagnosticStatus = "error" | "warning" | null;
@@ -34,6 +37,7 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 1.4;
 const GRAPH_WIDTH = 1600;
 const GRAPH_HEIGHT = 1000;
+const DRAW_TO_SCALE_GRAPH_SIZE = 3000;
 const ENTITY_FIELDS = [...new Set(INITIAL_ENTITIES.flatMap((entity) =>
   [...entity.definition.matchAll(/^([a-z_]+):/gm)].map((match) => match[1]),
 ))];
@@ -43,13 +47,6 @@ function linksFor(entities: readonly Entity[]): GraphLink[] {
     ...entity.builds.map((target) => ({ source: entity.id, target, kind: "build" as const })),
     ...entity.upgrades.map((target) => ({ source: entity.id, target, kind: "upgrade" as const })),
   ]);
-}
-
-function initialPositions(entities: readonly Entity[]): Record<string, Point> {
-  return Object.fromEntries(entities.map((entity, index) => [entity.id, {
-    x: 120 + (index % 6) * 140,
-    y: 100 + Math.floor(index / 6) * 150,
-  }]));
 }
 
 function addBuild(definition: string, childId: string) {
@@ -62,6 +59,25 @@ function visualRotateDeg(definition: string, fallback = 0): number {
   const visualBlock = definition.match(/^visual:\n(?:(?: {2,}.*|\s*)\n)*/m)?.[0] ?? "";
   const value = Number(visualBlock.match(/^\s*rotate_deg:\s*([^\s#]+)/m)?.[1]);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function visualScale(definition: string, fallback = 1): number {
+  const visualBlock = definition.match(/^visual:\n(?:(?: {2,}.*|\s*)\n)*/m)?.[0] ?? "";
+  const value = Number(visualBlock.match(/^\s*scale:\s*([^\s#]+)/m)?.[1]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function loadSpriteSize(src: string): Promise<SpriteSize> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => resolve({ width: 48, height: 48 });
+    image.src = src;
+  });
+}
+
+async function loadSpriteSizes(entities: readonly Entity[]) {
+  return Object.fromEntries(await Promise.all(entities.map(async (entity) => [entity.id, await loadSpriteSize(`/assets/${entity.id}/idle.png`)] as const)));
 }
 
 function diagnosticStatus(definition: string): DiagnosticStatus {
@@ -93,10 +109,10 @@ function builderOutwardForce(links: readonly GraphLink[]) {
   return force;
 }
 
-export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "entities" | "techtree"; onTabChange: (tab: "entities" | "techtree") => void }) {
-  const [entities, setEntities] = useState<Entity[]>(INITIAL_ENTITIES);
+export default function ContentGraph() {
+  const [entities, setEntities] = useState<Entity[]>([]);
   const [selectedId, setSelectedId] = useState<string>(INITIAL_ENTITIES[0]?.id ?? "");
-  const [positions, setPositions] = useState<Record<string, Point>>(() => initialPositions(INITIAL_ENTITIES));
+  const [positions, setPositions] = useState<Record<string, Point>>({});
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [assetVersion, setAssetVersion] = useState(0);
   const [draftDefinition, setDraftDefinition] = useState<string | null>(null);
@@ -104,6 +120,11 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const [drawToScale, setDrawToScale] = useState(true);
+  const [drawToScaleReady, setDrawToScaleReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [spriteSizes, setSpriteSizes] = useState<Record<string, SpriteSize>>({});
+  const [spriteMenuOpen, setSpriteMenuOpen] = useState(false);
   const graphRef = useRef<HTMLDivElement>(null);
   const assetInputRef = useRef<HTMLInputElement>(null);
   const simulationRef = useRef<Simulation<GraphNode, undefined> | null>(null);
@@ -122,16 +143,60 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
     [links],
   );
   const selected = entities.find((entity) => entity.id === selectedId) ?? entities[0];
+  const graphWidth = drawToScale ? DRAW_TO_SCALE_GRAPH_SIZE : GRAPH_WIDTH;
+  const graphHeight = drawToScale ? DRAW_TO_SCALE_GRAPH_SIZE : GRAPH_HEIGHT;
   const diagnosticStatusByEntity = useMemo(() => new Map(entities.map((entity) => [
     entity.id,
     diagnosticStatus(entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition),
   ])), [entities, selectedId, draftDefinition]);
 
   useEffect(() => {
-    fetch("/api/content/entities").then((response) => response.ok ? response.json() : null).then((data) => {
-      if (data?.entities?.length) setEntities(data.entities);
-    }).catch(() => {});
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/content/entities", { signal: controller.signal });
+        const data = response.ok ? await response.json() : null;
+        const loadedEntities = data?.entities?.length ? data.entities : INITIAL_ENTITIES;
+        const sizes = await loadSpriteSizes(loadedEntities);
+        if (controller.signal.aborted) return;
+        setSpriteSizes(sizes);
+        setEntities(loadedEntities);
+        setLoading(false);
+      } catch {
+        if (controller.signal.aborted) return;
+        const sizes = await loadSpriteSizes(INITIAL_ENTITIES);
+        if (controller.signal.aborted) return;
+        setSpriteSizes(sizes);
+        setEntities(INITIAL_ENTITIES);
+        setLoading(false);
+      }
+    })();
+    return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    setDrawToScale(new URLSearchParams(window.location.search).get("drawToScale") !== "0");
+    setDrawToScaleReady(true);
+  }, []);
+
+  function updateDrawToScale(enabled: boolean) {
+    setDrawToScale(enabled);
+    const url = new URL(window.location.href);
+    url.searchParams.set("drawToScale", enabled ? "1" : "0");
+    window.history.replaceState(null, "", url);
+  }
+
+  function scaledSpriteSize(entity: Entity, definition = entity.definition): SpriteSize {
+    const source = spriteSizes[entity.id] ?? { width: 48, height: 48 };
+    const scale = gameScreenEntityScale(1, visualScale(definition, entity.visual?.scale ?? 1));
+    return { width: source.width * scale, height: source.height * scale };
+  }
+
+  function nodeRadius(entity: Entity) {
+    if (!drawToScale) return 72;
+    const sprite = scaledSpriteSize(entity);
+    return Math.max(72, Math.hypot(sprite.width, sprite.height) / 2 + 12);
+  }
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -150,26 +215,27 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
   }
 
   useEffect(() => {
+    if (loading || !drawToScaleReady) return;
     let simulation: Simulation<GraphNode, undefined> | null = null;
     const layout = () => {
       simulation?.stop();
-      layoutSizeRef.current = { x: GRAPH_WIDTH, y: GRAPH_HEIGHT };
+      layoutSizeRef.current = { x: graphWidth, y: graphHeight };
       const nodes: GraphNode[] = entities.map((entity, index) => ({
         id: entity.id,
         entity,
-        x: GRAPH_WIDTH / 2 + (index % 4 - 1.5) * 120,
-        y: GRAPH_HEIGHT / 2 + (Math.floor(index / 4) - 1) * 120,
+        x: graphWidth / 2 + (index % 4 - 1.5) * 120,
+        y: graphHeight / 2 + (Math.floor(index / 4) - 1) * 120,
       }));
       simulation = forceSimulation(nodes)
         .force("link", forceLink<GraphNode, GraphLink>(links.map((link) => ({ ...link }))).id((node) => node.id).distance(155).strength(0.9))
         .force("charge", forceManyBody().strength(-520))
-        .force("collide", forceCollide<GraphNode>(72))
+        .force("collide", forceCollide<GraphNode>((node) => nodeRadius(node.entity)))
         .force("builder-outward", builderOutwardForce(links))
-        .force("center", forceCenter(GRAPH_WIDTH / 2, GRAPH_HEIGHT / 2));
+        .force("center", forceCenter(graphWidth / 2, graphHeight / 2));
       simulationRef.current = simulation;
       simulation.on("tick", () => setPositions(Object.fromEntries(nodes.map((node) => [node.id, {
-        x: Math.min((layoutSizeRef.current?.x ?? GRAPH_WIDTH) - 64, Math.max(64, node.x ?? 64)),
-        y: Math.min((layoutSizeRef.current?.y ?? GRAPH_HEIGHT) - 64, Math.max(64, node.y ?? 64)),
+        x: Math.min((layoutSizeRef.current?.x ?? graphWidth) - nodeRadius(node.entity), Math.max(nodeRadius(node.entity), node.x ?? nodeRadius(node.entity))),
+        y: Math.min((layoutSizeRef.current?.y ?? graphHeight) - nodeRadius(node.entity), Math.max(nodeRadius(node.entity), node.y ?? nodeRadius(node.entity))),
       }]))));
     };
 
@@ -178,7 +244,7 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
       simulation?.stop();
       simulationRef.current = null;
     };
-  }, [entities, links]);
+  }, [drawToScale, drawToScaleReady, entities, graphHeight, graphWidth, links, loading, spriteSizes]);
 
   async function createChild(parentId: string) {
     const parent = entities.find((entity) => entity.id === parentId);
@@ -223,7 +289,13 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
     const body = new FormData();
     body.set("file", file);
     const response = await savingFetch(`/api/content/entities/${selected.id}/asset`, { method: "POST", body });
-    if (response.ok) setAssetVersion(Date.now());
+    if (response.ok) {
+      const src = URL.createObjectURL(file);
+      const size = await loadSpriteSize(src);
+      URL.revokeObjectURL(src);
+      setSpriteSizes((current) => ({ ...current, [selected.id]: size }));
+      setAssetVersion(Date.now());
+    }
   }
 
   async function saveDraft() {
@@ -254,20 +326,22 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
       {saving && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 backdrop-blur-sm">
         <div className="rounded-lg border border-cyan-400/40 bg-slate-900 px-5 py-3 text-sm text-cyan-300">Saving…</div>
       </div>}
-      <section className="min-w-0 flex-1 p-6 lg:p-10">
-        <header className="mb-8">
+      <section className="min-w-0 flex-1 p-6 lg:px-10 lg:pb-10 lg:pt-6">
+        <header className="mb-[18px]">
           <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars Content Editor</p>
         </header>
 
         <nav aria-label="Content type" className="mb-3 flex gap-1 border-b border-slate-700">
-          <button className={`px-4 py-2 text-sm font-medium ${activeTab === "entities" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} onClick={() => onTabChange("entities")} type="button">Entities</button>
-          <button className={`px-4 py-2 text-sm font-medium ${activeTab === "techtree" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} onClick={() => onTabChange("techtree")} type="button">Techtree</button>
+          <Link className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" href="/content/entities">Entities</Link>
+          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/techtree">Techtree</Link>
         </nav>
-
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
-          <div ref={graphRef} className="relative h-[42rem] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
-            <div style={{ width: GRAPH_WIDTH * zoom, height: GRAPH_HEIGHT * zoom }}>
-            <div className="relative" style={{ width: GRAPH_WIDTH, height: GRAPH_HEIGHT, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
+          <div ref={graphRef} className="relative h-[calc(100vh-16.625rem-1px)] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
+            {loading ? <div aria-label="Loading entities" className="grid h-full grid-cols-4 gap-12 p-12" role="status">
+              {Array.from({ length: 12 }, (_, index) => <div className="h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/60" key={index} />)}
+            </div> : <>
+            <div style={{ width: graphWidth * zoom, height: graphHeight * zoom }}>
+            <div className="relative" style={{ width: graphWidth, height: graphHeight, transform: `scale(${zoom})`, transformOrigin: "top left" }}>
             <svg aria-hidden="true" className="pointer-events-none absolute inset-0 size-full overflow-visible">
               <defs>
                 <marker id="build-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
@@ -306,10 +380,12 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
             {entities.map((entity) => {
               const position = positions[entity.id];
               const diagnosticStatus = diagnosticStatusByEntity.get(entity.id);
+              const definition = entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition;
               const rotateDeg = visualRotateDeg(
-                entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition,
+                definition,
                 entity.visual?.rotate_deg ?? 0,
               );
+              const sprite = scaledSpriteSize(entity, definition);
               return (
                 <button
                   className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"} ${diagnosticStatus === "error" ? "outline outline-2 outline-red-400" : diagnosticStatus === "warning" ? "outline outline-2 outline-yellow-400" : ""}`}
@@ -334,7 +410,7 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
                   style={{ left: position?.x, top: position?.y }}
                   type="button"
                 >
-                  <img alt="" className="pointer-events-none mb-1 size-12 select-none object-contain" draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} style={{ transform: `rotate(${rotateDeg}deg)` }} />
+                  <img alt="" className={`pointer-events-none select-none object-contain ${drawToScale ? "absolute left-1/2 top-1/2 max-w-none" : "mb-1 size-12"}`} draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} style={drawToScale ? { width: sprite.width, height: sprite.height, transform: `translate(-50%, -50%) rotate(${rotateDeg}deg)` } : { transform: `rotate(${rotateDeg}deg)` }} />
                   <span className="pointer-events-none text-sm font-medium">{entity.id}</span>
                   <span className="pointer-events-none mt-1 text-xs text-slate-400">
                     {entity.builds.length ? `Builds ${entity.builds.length}` : "No builds"}
@@ -348,10 +424,15 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
             </div>}
             </div>
             </div>
+            </>}
           </div>
         </div>
-        <footer className="mb-8">
+        <footer>
           <p className="mt-2 text-slate-400">Drag sprites to arrange the graph. Cyan arrows build new entities; amber arrows upgrade in place.</p>
+          <label className="mt-3 flex w-fit items-center gap-2 text-sm text-slate-300">
+            <input checked={drawToScale} onChange={(event) => updateDrawToScale(event.target.checked)} type="checkbox" />
+            Draw to scale
+          </label>
         </footer>
 
 
@@ -360,10 +441,16 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
       <aside className="w-[42rem] shrink-0 border-l border-slate-700 bg-slate-900 p-6">
         {selected && <>
           <div className="flex items-center gap-3 border-b border-slate-700 pb-5">
-            <button className="relative" onClick={() => assetInputRef.current?.click()} type="button">
+            <div className="relative">
+            <button aria-expanded={spriteMenuOpen} aria-haspopup="menu" aria-label="Change sprite" className="relative" onClick={() => setSpriteMenuOpen((open) => !open)} type="button">
               <img alt="" className="size-14 object-contain" src={`/assets/${selected.id}/idle.png?v=${assetVersion}`} style={{ transform: `rotate(${visualRotateDeg(draftDefinition ?? selected.definition, selected.visual?.rotate_deg ?? 0)}deg)` }} />
               <Pencil className="absolute -right-1 -bottom-1 size-5 rounded-full bg-cyan-400 p-1 text-slate-950" />
             </button>
+            {spriteMenuOpen && <div className="absolute left-0 top-full z-20 mt-2 w-44 rounded-md border border-slate-600 bg-slate-900 p-1 shadow-xl" role="menu">
+              <button className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-800" onClick={() => { setSpriteMenuOpen(false); assetInputRef.current?.click(); }} role="menuitem" type="button">Upload from file</button>
+              <Link className="block rounded px-3 py-2 text-sm hover:bg-slate-800" href={`/content/sprites/?entityId=${encodeURIComponent(selected.id)}`} role="menuitem">Generate new sprite</Link>
+            </div>}
+            </div>
             <input accept="image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadAsset(file); event.target.value = ""; }} ref={assetInputRef} type="file" />
             <div><p className="text-sm text-slate-400">Entity definition</p><input className="w-full bg-transparent text-xl font-semibold outline-none" onChange={(event) => setDraftName(event.target.value)} value={draftName ?? selected.id} /></div>
           </div>

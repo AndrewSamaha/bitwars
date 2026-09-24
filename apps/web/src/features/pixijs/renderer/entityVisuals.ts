@@ -1,8 +1,9 @@
 import { Assets, Container, Sprite, type Texture } from "pixi.js";
 import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
 import { createStarVisual } from "./entities/starVisual";
+import { GAME_WORLD_SCALE } from "./entityScale";
 
-export const GAME_WORLD_SCALE = 0.5;
+export { GAME_WORLD_SCALE } from "./entityScale";
 export const DEFAULT_ENTITY_SCALE = 0.5;
 const DEFAULT_ENTITY_TYPE = "corvette";
 
