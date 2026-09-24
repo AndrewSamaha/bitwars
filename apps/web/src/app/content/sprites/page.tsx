@@ -27,14 +27,15 @@ export default function SpriteGenerationPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    const requestedEntityId = new URLSearchParams(window.location.search).get("entityId");
     fetch("/api/content/entities")
       .then((response) => response.ok ? response.json() : null)
       .then((data) => {
-        const next = data?.entities ?? [];
+        const next: Entity[] = data?.entities ?? [];
         setEntities(next);
-        const firstId = next[0]?.id ?? "";
-        setEntityId(firstId);
-        setReferences(firstId ? [firstId] : []);
+        const initialId = requestedEntityId && next.some((entity) => entity.id === requestedEntityId) ? requestedEntityId : next[0]?.id ?? "";
+        setEntityId(initialId);
+        setReferences(initialId ? [initialId] : []);
       })
       .catch(() => setMessage("Could not load entity IDs."));
   }, []);

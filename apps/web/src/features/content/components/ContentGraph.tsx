@@ -448,7 +448,7 @@ export default function ContentGraph() {
             </button>
             {spriteMenuOpen && <div className="absolute left-0 top-full z-20 mt-2 w-44 rounded-md border border-slate-600 bg-slate-900 p-1 shadow-xl" role="menu">
               <button className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-800" onClick={() => { setSpriteMenuOpen(false); assetInputRef.current?.click(); }} role="menuitem" type="button">Upload from file</button>
-              <Link className="block rounded px-3 py-2 text-sm hover:bg-slate-800" href="/content/sprites/" role="menuitem">Generate new sprite</Link>
+              <Link className="block rounded px-3 py-2 text-sm hover:bg-slate-800" href={`/content/sprites/?entityId=${encodeURIComponent(selected.id)}`} role="menuitem">Generate new sprite</Link>
             </div>}
             </div>
             <input accept="image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadAsset(file); event.target.value = ""; }} ref={assetInputRef} type="file" />
