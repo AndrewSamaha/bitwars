@@ -131,7 +131,7 @@ entity_types:
     health: 100
     hull_radius: 12
     visual:
-      scale: 0.4
+      scale: 0.2
     combat_targetable: true
     sensor:
       range: 400
@@ -645,6 +645,8 @@ entity_types:
           damage: 2
           cooldown_ticks: 75
           priority: 0
+    visual:
+      scale: 0.2
     sensor:
       range: 5000
       cost_per_minute:

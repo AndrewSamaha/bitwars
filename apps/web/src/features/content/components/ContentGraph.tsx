@@ -3,7 +3,7 @@
 import { ENTITY_CONTENT } from "@bitwars/content";
 import YamlEditor from "@/features/content/components/YamlEditor";
 import { entityCombatRangeWarnings, unknownEntityFieldErrors } from "@/lib/content/schemaValidation";
-import { gameEntityScale } from "@/features/pixijs/renderer/entityScale";
+import { gameScreenEntityScale } from "@/features/pixijs/renderer/entityScale";
 import { Pencil } from "lucide-react";
 import Link from "next/link";
 import {
@@ -26,6 +26,7 @@ type Entity = {
   definition: string;
 };
 type Point = { x: number; y: number };
+type SpriteSize = { width: number; height: number };
 type GraphNode = SimulationNodeDatum & { id: string; entity: Entity };
 type GraphLink = { source: string; target: string; kind: "build" | "upgrade" };
 type DiagnosticStatus = "error" | "warning" | null;
@@ -63,6 +64,19 @@ function visualScale(definition: string, fallback = 1): number {
   const visualBlock = definition.match(/^visual:\n(?:(?: {2,}.*|\s*)\n)*/m)?.[0] ?? "";
   const value = Number(visualBlock.match(/^\s*scale:\s*([^\s#]+)/m)?.[1]);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function loadSpriteSize(src: string): Promise<SpriteSize> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => resolve({ width: 48, height: 48 });
+    image.src = src;
+  });
+}
+
+async function loadSpriteSizes(entities: readonly Entity[]) {
+  return Object.fromEntries(await Promise.all(entities.map(async (entity) => [entity.id, await loadSpriteSize(`/assets/${entity.id}/idle.png`)] as const)));
 }
 
 function diagnosticStatus(definition: string): DiagnosticStatus {
@@ -106,7 +120,9 @@ export default function ContentGraph() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [drawToScale, setDrawToScale] = useState(false);
+  const [drawToScaleReady, setDrawToScaleReady] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [spriteSizes, setSpriteSizes] = useState<Record<string, SpriteSize>>({});
   const graphRef = useRef<HTMLDivElement>(null);
   const assetInputRef = useRef<HTMLInputElement>(null);
   const simulationRef = useRef<Simulation<GraphNode, undefined> | null>(null);
@@ -132,20 +148,31 @@ export default function ContentGraph() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/content/entities", { signal: controller.signal }).then((response) => response.ok ? response.json() : null).then((data) => {
-      if (controller.signal.aborted) return;
-      setEntities(data?.entities?.length ? data.entities : INITIAL_ENTITIES);
-      setLoading(false);
-    }).catch(() => {
-      if (controller.signal.aborted) return;
-      setEntities(INITIAL_ENTITIES);
-      setLoading(false);
-    });
+    void (async () => {
+      try {
+        const response = await fetch("/api/content/entities", { signal: controller.signal });
+        const data = response.ok ? await response.json() : null;
+        const loadedEntities = data?.entities?.length ? data.entities : INITIAL_ENTITIES;
+        const sizes = await loadSpriteSizes(loadedEntities);
+        if (controller.signal.aborted) return;
+        setSpriteSizes(sizes);
+        setEntities(loadedEntities);
+        setLoading(false);
+      } catch {
+        if (controller.signal.aborted) return;
+        const sizes = await loadSpriteSizes(INITIAL_ENTITIES);
+        if (controller.signal.aborted) return;
+        setSpriteSizes(sizes);
+        setEntities(INITIAL_ENTITIES);
+        setLoading(false);
+      }
+    })();
     return () => controller.abort();
   }, []);
 
   useEffect(() => {
     setDrawToScale(new URLSearchParams(window.location.search).get("drawToScale") === "1");
+    setDrawToScaleReady(true);
   }, []);
 
   function updateDrawToScale(enabled: boolean) {
@@ -153,6 +180,18 @@ export default function ContentGraph() {
     const url = new URL(window.location.href);
     url.searchParams.set("drawToScale", enabled ? "1" : "0");
     window.history.replaceState(null, "", url);
+  }
+
+  function scaledSpriteSize(entity: Entity, definition = entity.definition): SpriteSize {
+    const source = spriteSizes[entity.id] ?? { width: 48, height: 48 };
+    const scale = gameScreenEntityScale(1, visualScale(definition, entity.visual?.scale ?? 1));
+    return { width: source.width * scale, height: source.height * scale };
+  }
+
+  function nodeRadius(entity: Entity) {
+    if (!drawToScale) return 72;
+    const sprite = scaledSpriteSize(entity);
+    return Math.max(72, Math.hypot(sprite.width, sprite.height) / 2 + 12);
   }
 
   useEffect(() => {
@@ -172,7 +211,7 @@ export default function ContentGraph() {
   }
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || !drawToScaleReady) return;
     let simulation: Simulation<GraphNode, undefined> | null = null;
     const layout = () => {
       simulation?.stop();
@@ -186,13 +225,13 @@ export default function ContentGraph() {
       simulation = forceSimulation(nodes)
         .force("link", forceLink<GraphNode, GraphLink>(links.map((link) => ({ ...link }))).id((node) => node.id).distance(155).strength(0.9))
         .force("charge", forceManyBody().strength(-520))
-        .force("collide", forceCollide<GraphNode>(72))
+        .force("collide", forceCollide<GraphNode>((node) => nodeRadius(node.entity)))
         .force("builder-outward", builderOutwardForce(links))
         .force("center", forceCenter(GRAPH_WIDTH / 2, GRAPH_HEIGHT / 2));
       simulationRef.current = simulation;
       simulation.on("tick", () => setPositions(Object.fromEntries(nodes.map((node) => [node.id, {
-        x: Math.min((layoutSizeRef.current?.x ?? GRAPH_WIDTH) - 64, Math.max(64, node.x ?? 64)),
-        y: Math.min((layoutSizeRef.current?.y ?? GRAPH_HEIGHT) - 64, Math.max(64, node.y ?? 64)),
+        x: Math.min((layoutSizeRef.current?.x ?? GRAPH_WIDTH) - nodeRadius(node.entity), Math.max(nodeRadius(node.entity), node.x ?? nodeRadius(node.entity))),
+        y: Math.min((layoutSizeRef.current?.y ?? GRAPH_HEIGHT) - nodeRadius(node.entity), Math.max(nodeRadius(node.entity), node.y ?? nodeRadius(node.entity))),
       }]))));
     };
 
@@ -201,7 +240,7 @@ export default function ContentGraph() {
       simulation?.stop();
       simulationRef.current = null;
     };
-  }, [entities, links, loading]);
+  }, [drawToScale, drawToScaleReady, entities, links, loading, spriteSizes]);
 
   async function createChild(parentId: string) {
     const parent = entities.find((entity) => entity.id === parentId);
@@ -246,7 +285,13 @@ export default function ContentGraph() {
     const body = new FormData();
     body.set("file", file);
     const response = await savingFetch(`/api/content/entities/${selected.id}/asset`, { method: "POST", body });
-    if (response.ok) setAssetVersion(Date.now());
+    if (response.ok) {
+      const src = URL.createObjectURL(file);
+      const size = await loadSpriteSize(src);
+      URL.revokeObjectURL(src);
+      setSpriteSizes((current) => ({ ...current, [selected.id]: size }));
+      setAssetVersion(Date.now());
+    }
   }
 
   async function saveDraft() {
@@ -332,14 +377,12 @@ export default function ContentGraph() {
             {entities.map((entity) => {
               const position = positions[entity.id];
               const diagnosticStatus = diagnosticStatusByEntity.get(entity.id);
+              const definition = entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition;
               const rotateDeg = visualRotateDeg(
-                entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition,
+                definition,
                 entity.visual?.rotate_deg ?? 0,
               );
-              const scale = drawToScale ? gameEntityScale(1, visualScale(
-                entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition,
-                entity.visual?.scale ?? 1,
-              )) : 1;
+              const sprite = scaledSpriteSize(entity, definition);
               return (
                 <button
                   className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"} ${diagnosticStatus === "error" ? "outline outline-2 outline-red-400" : diagnosticStatus === "warning" ? "outline outline-2 outline-yellow-400" : ""}`}
@@ -364,7 +407,7 @@ export default function ContentGraph() {
                   style={{ left: position?.x, top: position?.y }}
                   type="button"
                 >
-                  <img alt="" className="pointer-events-none mb-1 size-12 select-none object-contain" draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} style={{ transform: `rotate(${rotateDeg}deg) scale(${scale})` }} />
+                  <img alt="" className={`pointer-events-none select-none object-contain ${drawToScale ? "absolute left-1/2 top-1/2 max-w-none" : "mb-1 size-12"}`} draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} style={drawToScale ? { width: sprite.width, height: sprite.height, transform: `translate(-50%, -50%) rotate(${rotateDeg}deg)` } : { transform: `rotate(${rotateDeg}deg)` }} />
                   <span className="pointer-events-none text-sm font-medium">{entity.id}</span>
                   <span className="pointer-events-none mt-1 text-xs text-slate-400">
                     {entity.builds.length ? `Builds ${entity.builds.length}` : "No builds"}
