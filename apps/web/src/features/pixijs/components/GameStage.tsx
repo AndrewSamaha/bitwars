@@ -23,6 +23,7 @@ import {
   updateGameEntityVisual,
   type EntityVisual,
 } from "@/features/pixijs/renderer/entityVisuals";
+import { gameEntityScale } from "@/features/pixijs/renderer/entityScale";
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
 import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog";
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
@@ -903,7 +904,7 @@ export default function GameStage() {
             const scale = (e as any).scale ?? 1;
             const visual = contentManager.getEntityType(typeId)?.visual;
             const visualScale = visual?.scale ?? 1;
-            container.scale.set((scale * visualScale) / 2);
+            container.scale.set(gameEntityScale(scale, visualScale));
             container.zIndex = contentManager.getEntityType(typeId)?.z_index ?? 0;
             container.alpha = remembered ? 0.45 : 1;
 

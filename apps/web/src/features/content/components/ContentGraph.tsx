@@ -3,6 +3,7 @@
 import { ENTITY_CONTENT } from "@bitwars/content";
 import YamlEditor from "@/features/content/components/YamlEditor";
 import { entityCombatRangeWarnings, unknownEntityFieldErrors } from "@/lib/content/schemaValidation";
+import { gameEntityScale } from "@/features/pixijs/renderer/entityScale";
 import { Pencil } from "lucide-react";
 import Link from "next/link";
 import {
@@ -65,6 +66,12 @@ function visualRotateDeg(definition: string, fallback = 0): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function visualScale(definition: string, fallback = 1): number {
+  const visualBlock = definition.match(/^visual:\n(?:(?: {2,}.*|\s*)\n)*/m)?.[0] ?? "";
+  const value = Number(visualBlock.match(/^\s*scale:\s*([^\s#]+)/m)?.[1]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
 function diagnosticStatus(definition: string): DiagnosticStatus {
   const document = parseDocument(definition);
   if (document.errors.length) return "error";
@@ -105,6 +112,7 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+  const [drawToScale, setDrawToScale] = useState(false);
   const graphRef = useRef<HTMLDivElement>(null);
   const assetInputRef = useRef<HTMLInputElement>(null);
   const simulationRef = useRef<Simulation<GraphNode, undefined> | null>(null);
@@ -265,6 +273,10 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
           <button className={`px-4 py-2 text-sm font-medium ${activeTab === "techtree" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} onClick={() => onTabChange("techtree")} type="button">Techtree</button>
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprites">Sprites</Link>
         </nav>
+        <label className="mb-3 flex w-fit items-center gap-2 text-sm text-slate-300">
+          <input checked={drawToScale} onChange={(event) => setDrawToScale(event.target.checked)} type="checkbox" />
+          Draw to scale
+        </label>
 
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
           <div ref={graphRef} className="relative h-[42rem] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
@@ -312,6 +324,10 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
                 entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition,
                 entity.visual?.rotate_deg ?? 0,
               );
+              const scale = drawToScale ? gameEntityScale(1, visualScale(
+                entity.id === selectedId && draftDefinition !== null ? draftDefinition : entity.definition,
+                entity.visual?.scale ?? 1,
+              )) : 1;
               return (
                 <button
                   className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"} ${diagnosticStatus === "error" ? "outline outline-2 outline-red-400" : diagnosticStatus === "warning" ? "outline outline-2 outline-yellow-400" : ""}`}
@@ -336,7 +352,7 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
                   style={{ left: position?.x, top: position?.y }}
                   type="button"
                 >
-                  <img alt="" className="pointer-events-none mb-1 size-12 select-none object-contain" draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} style={{ transform: `rotate(${rotateDeg}deg)` }} />
+                  <img alt="" className="pointer-events-none mb-1 size-12 select-none object-contain" draggable={false} onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} src={`/assets/${entity.id}/idle.png?v=${assetVersion}`} style={{ transform: `rotate(${rotateDeg}deg) scale(${scale})` }} />
                   <span className="pointer-events-none text-sm font-medium">{entity.id}</span>
                   <span className="pointer-events-none mt-1 text-xs text-slate-400">
                     {entity.builds.length ? `Builds ${entity.builds.length}` : "No builds"}

@@ -129,7 +129,7 @@ entity_types:
     health: 100
     hull_radius: 12
     visual:
-      scale: 0.7
+      scale: 0.4
     combat_targetable: true
     sensor:
       range: 400
@@ -293,8 +293,8 @@ entity_types:
     visual:
       scale: 2
     build_cost:
-      minerals: 600
-      energy: 600
+      minerals: 200
+      energy: 200
     sensor:
       range: 400
       cost_per_minute:
@@ -442,6 +442,8 @@ entity_types:
       range: 500
       cost_per_minute:
         energy: 2.5
+    visual:
+      scale: 0.25
     upgrades:
       - entity_type_id: defense_pylon_v2
   collector_solar_v2:
