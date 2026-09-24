@@ -325,8 +325,8 @@ export default function ContentGraph() {
       {saving && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 backdrop-blur-sm">
         <div className="rounded-lg border border-cyan-400/40 bg-slate-900 px-5 py-3 text-sm text-cyan-300">Saving…</div>
       </div>}
-      <section className="min-w-0 flex-1 p-6 lg:p-10">
-        <header className="mb-8">
+      <section className="min-w-0 flex-1 p-6 lg:px-10 lg:pb-10 lg:pt-6">
+        <header className="mb-[18px]">
           <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars Content Editor</p>
         </header>
 
@@ -336,7 +336,7 @@ export default function ContentGraph() {
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprites">Sprites</Link>
         </nav>
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
-          <div ref={graphRef} className="relative h-[42rem] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
+          <div ref={graphRef} className="relative h-[calc(100vh-16.625rem-1px)] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
             {loading ? <div aria-label="Loading entities" className="grid h-full grid-cols-4 gap-12 p-12" role="status">
               {Array.from({ length: 12 }, (_, index) => <div className="h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/60" key={index} />)}
             </div> : <>
@@ -427,7 +427,7 @@ export default function ContentGraph() {
             </>}
           </div>
         </div>
-        <footer className="mb-8">
+        <footer>
           <p className="mt-2 text-slate-400">Drag sprites to arrange the graph. Cyan arrows build new entities; amber arrows upgrade in place.</p>
           <label className="mt-3 flex w-fit items-center gap-2 text-sm text-slate-300">
             <input checked={drawToScale} onChange={(event) => updateDrawToScale(event.target.checked)} type="checkbox" />
