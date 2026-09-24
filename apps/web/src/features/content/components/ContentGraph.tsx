@@ -143,6 +143,17 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
   }, []);
 
   useEffect(() => {
+    setDrawToScale(new URLSearchParams(window.location.search).get("drawToScale") === "1");
+  }, []);
+
+  function updateDrawToScale(enabled: boolean) {
+    setDrawToScale(enabled);
+    const url = new URL(window.location.href);
+    url.searchParams.set("drawToScale", enabled ? "1" : "0");
+    window.history.replaceState(null, "", url);
+  }
+
+  useEffect(() => {
     const graph = graphRef.current;
     if (!graph) return;
     const onWheel = (event: WheelEvent) => {
@@ -273,11 +284,6 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
           <button className={`px-4 py-2 text-sm font-medium ${activeTab === "techtree" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} onClick={() => onTabChange("techtree")} type="button">Techtree</button>
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprites">Sprites</Link>
         </nav>
-        <label className="mb-3 flex w-fit items-center gap-2 text-sm text-slate-300">
-          <input checked={drawToScale} onChange={(event) => setDrawToScale(event.target.checked)} type="checkbox" />
-          Draw to scale
-        </label>
-
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
           <div ref={graphRef} className="relative h-[42rem] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
             <div style={{ width: GRAPH_WIDTH * zoom, height: GRAPH_HEIGHT * zoom }}>
@@ -370,6 +376,10 @@ export default function ContentGraph({ activeTab, onTabChange }: { activeTab: "e
         </div>
         <footer className="mb-8">
           <p className="mt-2 text-slate-400">Drag sprites to arrange the graph. Cyan arrows build new entities; amber arrows upgrade in place.</p>
+          <label className="mt-3 flex w-fit items-center gap-2 text-sm text-slate-300">
+            <input checked={drawToScale} onChange={(event) => updateDrawToScale(event.target.checked)} type="checkbox" />
+            Draw to scale
+          </label>
         </footer>
 
 
