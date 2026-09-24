@@ -48,9 +48,9 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {
-      "scale": 0.4
+      "scale": 0.2
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\nvisual:\n  scale: 0.4\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  proximity_rate_per_second: 3\n  transport_rate_per_second: 0\n  carry_capacity: 0\nupgrades:\n  - entity_type_id: collector_solar_v2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\nvisual:\n  scale: 0.2\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  proximity_rate_per_second: 3\n  transport_rate_per_second: 0\n  carry_capacity: 0\nupgrades:\n  - entity_type_id: collector_solar_v2"
   },
   {
     "id": "worker",
@@ -99,9 +99,9 @@ export const ENTITY_CONTENT = [
     ],
     "upgrades": [],
     "visual": {
-      "scale": 1.5
+      "scale": 1.2
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 16\ncombat_targetable: true\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: processor\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: fighter_v1\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: heavy_fighter\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: battleship\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: science_vessel\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 2\n      energy: 2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 16\ncombat_targetable: true\nvisual:\n  scale: 1.2\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: processor\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: fighter_v1\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: heavy_fighter\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: battleship\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: science_vessel\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 2\n      energy: 2"
   },
   {
     "id": "scout",
@@ -194,7 +194,9 @@ export const ENTITY_CONTENT = [
     "id": "scout_long_range",
     "builds": [],
     "upgrades": [],
-    "visual": {},
-    "definition": "fog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 450\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 120\n      damage: 2\n      cooldown_ticks: 75\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5"
+    "visual": {
+      "scale": 0.2
+    },
+    "definition": "fog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 450\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 120\n      damage: 2\n      cooldown_ticks: 75\n      priority: 0\nvisual:\n  scale: 0.2\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5"
   }
 ] as const;
