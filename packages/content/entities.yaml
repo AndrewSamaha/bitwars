@@ -149,7 +149,7 @@ entity_types:
       collects:
         - energy
       minimum_distance:
-        value: 250
+        value: 400
         entity_types:
           - collector_solar
           - collector_solar_v2

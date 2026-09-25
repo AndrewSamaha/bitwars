@@ -5,8 +5,16 @@ export const GAMESTATE_UPDATED_EVENT = "bitwars:gamestate-updated";
 export const ENTITY_EXPLODED_EVENT = "bitwars:entity-exploded";
 export const ENTITY_DETECTED_EVENT = "bitwars:entity-detected";
 export const BUILD_COMPLETED_EVENT = "bitwars:build-completed";
+export const MINIMUM_DISTANCE_VIOLATION_EVENT = "bitwars:minimum-distance-violation";
+export const CENTER_CAMERA_ON_ENTITY_EVENT = "bitwars:center-camera-on-entity";
 
 export type GameStateUpdatedDetail = { entityIds?: string[] };
+export type MinimumDistanceViolationDetail = {
+  collectorEntityId: string;
+  blockingEntityId: string;
+  requiredDistance: number;
+  actualDistance: number;
+};
 
 export function dispatchGameStateUpdated(entityIds?: string[]) {
   window.dispatchEvent(
@@ -31,4 +39,12 @@ export function dispatchEntityDetected(entity: Entity) {
 export function dispatchBuildCompleted(entity: Entity) {
   if (!entity.pos) return;
   window.dispatchEvent(new CustomEvent<Entity>(BUILD_COMPLETED_EVENT, { detail: entity }));
+}
+
+export function dispatchMinimumDistanceViolation(detail: MinimumDistanceViolationDetail) {
+  window.dispatchEvent(new CustomEvent<MinimumDistanceViolationDetail>(MINIMUM_DISTANCE_VIOLATION_EVENT, { detail }));
+}
+
+export function dispatchCenterCameraOnEntity(entityId: string) {
+  window.dispatchEvent(new CustomEvent<string>(CENTER_CAMERA_ON_ENTITY_EVENT, { detail: entityId }));
 }

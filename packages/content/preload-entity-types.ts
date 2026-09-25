@@ -50,7 +50,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 0.2
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\nvisual:\n  scale: 0.2\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 250\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n  proximity_rate_per_second: 3\n  transport_rate_per_second: 0\n  carry_capacity: 0\nupgrades:\n  - entity_type_id: collector_solar_v2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\nvisual:\n  scale: 0.2\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 400\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n  proximity_rate_per_second: 3\n  transport_rate_per_second: 0\n  carry_capacity: 0\nupgrades:\n  - entity_type_id: collector_solar_v2"
   },
   {
     "id": "worker",

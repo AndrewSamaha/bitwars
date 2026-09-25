@@ -10,6 +10,7 @@ import TerminalPanel from "@/features/hud/components/TerminalPanel";
 import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel";
 import IntentQueuePanel from "@/features/intent-queue/IntentQueuePanel";
 import { ResourceHUD } from "@/features/hud/components/ResourceHUD";
+import LifecycleToasts from "@/features/hud/components/LifecycleToasts";
 import { SessionProvider, useSession } from "@/features/users/components/identity/SessionContext";
 
 /** Server passes serialized player (dates as ISO strings); PlayerProvider parses with PlayerSchema. */
@@ -43,6 +44,7 @@ function GameClientShell() {
           <AudioEventBridge />
           <GameStateStreamBridge />
           <ResourceHUD />
+          <LifecycleToasts />
           <EntityDetailPanel />
           <IntentQueuePanel />
           <GameStage />
