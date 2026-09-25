@@ -149,10 +149,11 @@ entity_types:
       collects:
         - energy
       minimum_distance:
-        value: 400
+        value: 800
         entity_types:
           - collector_solar
           - collector_solar_v2
+          - habitat
       proximity_rate_per_second: 3
       transport_rate_per_second: 0
       carry_capacity: 0
@@ -268,6 +269,12 @@ entity_types:
       proximity_rate_per_second: 5
       transport_rate_per_second: 0
       carry_capacity: 0
+      minimum_distance:
+        value: 800
+        entity_types:
+          - collector_solar
+          - collector_solar_v2
+          - habitat
     researches:
       - neutrino_sensors
   processor:
@@ -476,10 +483,11 @@ entity_types:
       collects:
         - energy
       minimum_distance:
-        value: 250
+        value: 800
         entity_types:
           - collector_solar
           - collector_solar_v2
+          - habitat
       proximity_rate_per_second: 15
       transport_rate_per_second: 0
       carry_capacity: 0
