@@ -50,7 +50,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 0.2
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\nvisual:\n  scale: 0.2\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 800\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\n  proximity_rate_per_second: 3\n  transport_rate_per_second: 0\n  carry_capacity: 0\nupgrades:\n  - entity_type_id: collector_solar_v2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\nvisual:\n  scale: 0.2\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 800\n    retry_after_ms: 1000\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\n  proximity_rate_per_second: 3\n  transport_rate_per_second: 0\n  carry_capacity: 0\nupgrades:\n  - entity_type_id: collector_solar_v2"
   },
   {
     "id": "worker",
@@ -74,7 +74,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 2
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 4\nhealth: 400\nhull_radius: 50\nvisual:\n  scale: 2\ncombat_targetable: true\nrefinery:\n  accepts:\n    - food\n    - minerals\nbuild_cost:\n  minerals: 1000\n  energy: 1000\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nmaintenance_cost_per_minute:\n  food: 60\nsensor:\n  range: 4000\n  cost_per_minute:\n    energy: 5\nbuilds:\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 0.8\n      energy: 0.8\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  proximity_rate_per_second: 5\n  transport_rate_per_second: 0\n  carry_capacity: 0\n  minimum_distance:\n    value: 800\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\nresearches:\n  - neutrino_sensors"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 4\nhealth: 400\nhull_radius: 50\nvisual:\n  scale: 2\ncombat_targetable: true\nrefinery:\n  accepts:\n    - food\n    - minerals\nbuild_cost:\n  minerals: 1000\n  energy: 1000\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nmaintenance_cost_per_minute:\n  food: 60\nsensor:\n  range: 4000\n  cost_per_minute:\n    energy: 5\nbuilds:\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 0.8\n      energy: 0.8\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  proximity_rate_per_second: 5\n  transport_rate_per_second: 0\n  carry_capacity: 0\n  minimum_distance:\n    value: 800\n    retry_after_ms: 1000\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\nresearches:\n  - neutrino_sensors"
   },
   {
     "id": "processor",
@@ -134,7 +134,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 0.25
     },
-    "definition": "fog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 100\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 100\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 15\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 2\n      cooldown_ticks: 51\n      priority: 0\nsensor:\n  range: 500\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 0.25\nupgrades:\n  - entity_type_id: defense_pylon_v2"
+    "definition": "fog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 100\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 100\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 150\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 2\n      cooldown_ticks: 51\n      priority: 0\nsensor:\n  range: 500\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 0.25\nupgrades:\n  - entity_type_id: defense_pylon_v2"
   },
   {
     "id": "collector_solar_v2",
@@ -143,7 +143,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1.25
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\ncombat_targetable: true\nvisual:\n  scale: 1.25\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\nrequires_technologies:\n  all:\n    - solar_efficiency_1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 800\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\n  proximity_rate_per_second: 15\n  transport_rate_per_second: 0\n  carry_capacity: 0"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\ncombat_targetable: true\nvisual:\n  scale: 1.25\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\nrequires_technologies:\n  all:\n    - solar_efficiency_1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 800\n    retry_after_ms: 1000\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\n  proximity_rate_per_second: 15\n  transport_rate_per_second: 0\n  carry_capacity: 0"
   },
   {
     "id": "defense_pylon_v3",
@@ -161,7 +161,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 300\n      damage: 4\n      cooldown_ticks: 75\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 100\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 300\n      damage: 4\n      cooldown_ticks: 75\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
   },
   {
     "id": "heavy_fighter",

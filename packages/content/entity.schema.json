@@ -434,6 +434,12 @@
             "type": "string"
           }
         },
+        "retry_after_ms": {
+          "description": "Delay before retrying collection after another collector blocks it.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
         "value": {
           "description": "Inclusive center-to-center distance in world units.",
           "type": "number",
@@ -443,7 +449,8 @@
       "additionalProperties": false,
       "required": [
         "value",
-        "entity_types"
+        "entity_types",
+        "retry_after_ms"
       ]
     },
     "NearEnemyStrategy": {

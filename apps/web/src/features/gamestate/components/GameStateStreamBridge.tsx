@@ -8,7 +8,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchBuildCompleted, dispatchEntityDetected, dispatchEntityExploded, dispatchGameStateUpdated, dispatchMinimumDistanceViolation } from "@/features/gamestate/events";
+import { dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -409,7 +409,18 @@ export default function GameStateStreamBridge() {
       }
       for (const state of payload.collector_state_updates ?? []) {
         const existing = byId.get(normalizeId(state.entity_id));
-        if (existing) existing.collector_state = collectorStateFromStream(state);
+        if (existing) {
+          if (shouldNotifyCollectionWaiting(
+            existing.collector_state?.activity,
+            state.activity,
+            existing.entity_type_id,
+            existing.owner_player_id,
+            currentPlayerIdRef.current,
+          )) {
+            dispatchCollectionWaiting({ collectorEntityId: normalizeId(state.entity_id) });
+          }
+          existing.collector_state = collectorStateFromStream(state);
+        }
       }
       for (const state of payload.combat_effect_state_updates ?? []) {
         const existing = byId.get(normalizeId(state.entity_id));

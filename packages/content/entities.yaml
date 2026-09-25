@@ -150,6 +150,7 @@ entity_types:
         - energy
       minimum_distance:
         value: 800
+        retry_after_ms: 1000
         entity_types:
           - collector_solar
           - collector_solar_v2
@@ -271,6 +272,7 @@ entity_types:
       carry_capacity: 0
       minimum_distance:
         value: 800
+        retry_after_ms: 1000
         entity_types:
           - collector_solar
           - collector_solar_v2
@@ -435,7 +437,7 @@ entity_types:
     stop_radius: 0.5
     mass: 1
     health: 500
-    hull_radius: 15
+    hull_radius: 150
     combat:
       acquisition_range: 500
       on_near_enemy_strategy: stay
@@ -484,6 +486,7 @@ entity_types:
         - energy
       minimum_distance:
         value: 800
+        retry_after_ms: 1000
         entity_types:
           - collector_solar
           - collector_solar_v2
@@ -525,7 +528,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 60
-    hull_radius: 10
+    hull_radius: 100
     combat_targetable: true
     build_cost:
       minerals: 75

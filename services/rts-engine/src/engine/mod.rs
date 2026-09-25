@@ -40,7 +40,16 @@ const COLLECTOR_ACTIVITY_GATHERING: &str = "gathering";
 const COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF: &str = "moving_to_dropoff";
 const COLLECTOR_ACTIVITY_DELIVERING: &str = "delivering";
 const COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING: &str = "proximity_collecting";
+const COLLECTOR_ACTIVITY_WAITING_FOR_TURN: &str = "waiting_for_turn";
 const BUILD_SPAWN_RADIUS: f32 = 100.0;
+
+fn retry_delay_ticks(retry_after_ms: u64, tps: u32) -> u64 {
+    (retry_after_ms
+        .saturating_mul(tps as u64)
+        .saturating_add(999)
+        / 1000)
+        .max(1)
+}
 
 #[derive(Clone, Debug)]
 struct CarryState {
@@ -197,6 +206,7 @@ mod collection_distance_tests {
         let rule = MinimumDistanceDef {
             value: 250.0,
             entity_types: vec!["collector_solar".to_string()],
+            retry_after_ms: 1000,
         };
         let entity = |id, entity_type_id: &str, owner_player_id: &str, x| pb::Entity {
             id,
@@ -210,6 +220,7 @@ mod collection_distance_tests {
             &collector,
             &[entity(2, "collector_solar", "p1", 249.0)],
             &rule,
+            &HashSet::from([2]),
         )
         .expect("nearby same-owner collector should block collection");
         assert_eq!(violation.blocking_entity_id, 2);
@@ -223,8 +234,23 @@ mod collection_distance_tests {
                 entity(4, "collector_solar", "p1", 250.0),
             ],
             &rule,
+            &HashSet::from([2, 3, 4]),
         )
         .is_none());
+        assert!(Engine::minimum_distance_violation(
+            &collector,
+            &[entity(2, "collector_solar", "p1", 10.0)],
+            &rule,
+            &HashSet::new(),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn retry_delay_rounds_up_to_a_tick() {
+        assert_eq!(retry_delay_ticks(1000, 60), 60);
+        assert_eq!(retry_delay_ticks(1001, 60), 61);
+        assert_eq!(retry_delay_ticks(1, 60), 1);
     }
 }
 
@@ -684,6 +710,8 @@ pub struct Engine {
     resource_gain_total: HashMap<(String, String), f64>,
     /// Per-collector runtime telemetry published through authoritative snapshots and deltas.
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
+    /// Next tick when a spacing-blocked collector may try gathering again.
+    collection_retry_tick_by_entity: HashMap<u64, u64>,
     /// Previous telemetry state used to emit sparse authoritative delta updates.
     prev_collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
     /// Per-attacker continuous combat effects, streamed for presentation.
@@ -1108,6 +1136,7 @@ impl Engine {
                     resource_spend_total: HashMap::new(),
                     resource_gain_total: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
+                    collection_retry_tick_by_entity: HashMap::new(),
                     prev_collector_ui_state_by_entity: HashMap::new(),
                     combat_effect_ui_state_by_entity: HashMap::new(),
                     prev_combat_effect_ui_state_by_entity: HashMap::new(),
@@ -1196,6 +1225,7 @@ impl Engine {
             resource_spend_total: HashMap::new(),
             resource_gain_total: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
+            collection_retry_tick_by_entity: HashMap::new(),
             prev_collector_ui_state_by_entity: HashMap::new(),
             combat_effect_ui_state_by_entity: HashMap::new(),
             prev_combat_effect_ui_state_by_entity: HashMap::new(),
@@ -1971,30 +2001,6 @@ impl Engine {
         );
     }
 
-    async fn cancel_collect_for_minimum_distance(
-        &mut self,
-        entity_id: u64,
-        violation: pb::MinimumDistanceViolation,
-    ) {
-        let Some(metadata) = self.intents.finish(entity_id) else {
-            return;
-        };
-        if let Err(error) = self.redis.clear_active_intent(entity_id).await {
-            warn!(?error, entity_id, "failed to clear minimum-distance-blocked collect intent");
-        }
-        if let Err(error) = self
-            .emit_lifecycle_event_with_minimum_distance_violation(
-                &metadata,
-                pb::LifecycleState::Canceled,
-                self.state.tick,
-                violation,
-            )
-            .await
-        {
-            warn!(?error, entity_id, "failed to emit minimum-distance collection cancellation");
-        }
-    }
-
     fn hydrate_entity_health_if_missing(&mut self) {
         let Some(content) = self.content.as_ref() else {
             return;
@@ -2736,12 +2742,14 @@ impl Engine {
         collector: &CollectorSnapshot,
         entities: &[pb::Entity],
         minimum_distance: &MinimumDistanceDef,
+        operating_collectors: &HashSet<u64>,
     ) -> Option<pb::MinimumDistanceViolation> {
         let minimum_distance_sq = minimum_distance.value * minimum_distance.value;
         entities
             .iter()
             .filter(|entity| {
                 entity.id != collector.id
+                    && operating_collectors.contains(&entity.id)
                     && entity.owner_player_id == collector.owner_player_id
                     && minimum_distance
                         .entity_types
@@ -2862,7 +2870,18 @@ impl Engine {
                 _ => None,
             })
             .collect();
-        let collectors = self.build_collector_snapshots();
+        let mut collectors = self.build_collector_snapshots();
+        // Existing producers keep their spot; simultaneous arrivals use entity ID.
+        collectors.sort_by_key(|collector| {
+            (
+                !self
+                    .collector_ui_state_by_entity
+                    .get(&collector.id)
+                    .is_some_and(|state| state.activity == COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
+                collector.id,
+            )
+        });
+        let mut operating_collectors = HashSet::new();
         let nodes = self.build_resource_node_snapshots();
         let refineries = self.build_refinery_snapshots();
         let collector_ids: HashSet<u64> = collectors.iter().map(|c| c.id).collect();
@@ -2883,6 +2902,7 @@ impl Engine {
             .collect();
         for id in stale_ui_ids {
             self.collector_ui_state_by_entity.remove(&id);
+            self.collection_retry_tick_by_entity.remove(&id);
         }
 
         for collector in collectors {
@@ -2904,6 +2924,7 @@ impl Engine {
             // M8 (collect-intent model): autonomous collection only runs while
             // a maintained Collect intent is active for this entity.
             if !collect_active_entities.contains(&collector.id) {
+                self.collection_retry_tick_by_entity.remove(&collector.id);
                 if let Some(carry) = carry_snapshot.as_ref() {
                     self.set_collector_ui_state(
                         collector.id,
@@ -3158,25 +3179,54 @@ impl Engine {
             if let Some(node) = proximity_node {
                 let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
                 if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
-                    if let Some(violation) = collector_def
-                        .minimum_distance
-                        .as_ref()
-                        .and_then(|rule| {
-                            Self::minimum_distance_violation(&collector, &self.state.entities, rule)
+                    let waiting_for_retry = self
+                        .collection_retry_tick_by_entity
+                        .get(&collector.id)
+                        .is_some_and(|next_tick| self.state.tick < *next_tick);
+                    let blocker = if waiting_for_retry {
+                        None
+                    } else {
+                        collector_def.minimum_distance.as_ref().and_then(|rule| {
+                            Self::minimum_distance_violation(
+                                &collector,
+                                &self.state.entities,
+                                rule,
+                                &operating_collectors,
+                            )
                         })
-                    {
-                        self.cancel_collect_for_minimum_distance(collector.id, violation)
-                            .await;
+                    };
+                    if waiting_for_retry || blocker.is_some() {
+                        if let (Some(rule), Some(_)) =
+                            (collector_def.minimum_distance.as_ref(), blocker)
+                        {
+                            let retry_ticks = retry_delay_ticks(rule.retry_after_ms, self.cfg.tps);
+                            self.collection_retry_tick_by_entity.insert(
+                                collector.id,
+                                self.state.tick.saturating_add(retry_ticks),
+                            );
+                        }
                         self.set_collector_ui_state(
                             collector.id,
-                            COLLECTOR_ACTIVITY_IDLE,
+                            COLLECTOR_ACTIVITY_WAITING_FOR_TURN,
                             &node.resource_type,
                             0.0,
                             carry_capacity,
                             0.0,
                         );
+                        if let Some(entity) = self
+                            .state
+                            .entities
+                            .iter_mut()
+                            .find(|e| e.id == collector.id)
+                        {
+                            let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+                            vel.x = 0.0;
+                            vel.y = 0.0;
+                        }
                         continue;
                     }
+                    self.collection_retry_tick_by_entity.remove(&collector.id);
+                    operating_collectors.insert(collector.id);
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
                     self.credit_resource(&collector.owner_player_id, &node.resource_type, rate);
                     self.set_collector_ui_state(
@@ -3203,6 +3253,7 @@ impl Engine {
                     .iter_mut()
                     .find(|e| e.id == collector.id)
                 {
+                    self.collection_retry_tick_by_entity.remove(&collector.id);
                     Self::drive_velocity_to_band(
                         entity,
                         speed,
@@ -4043,32 +4094,6 @@ impl Engine {
                 return Err(anyhow!("collector cannot collect requested resource type"));
             }
 
-            let minimum_distance_violation = collector.minimum_distance.as_ref().and_then(|rule| {
-                entity.pos.as_ref().and_then(|position| {
-                    Self::minimum_distance_violation(
-                        &CollectorSnapshot {
-                            id: entity.id,
-                            entity_type_id: entity.entity_type_id.clone(),
-                            owner_player_id: entity.owner_player_id.clone(),
-                            x: position.x,
-                            y: position.y,
-                        },
-                        &self.state.entities,
-                        rule,
-                    )
-                })
-            });
-            if let Some(violation) = minimum_distance_violation {
-                self.emit_lifecycle_event_with_minimum_distance_violation(
-                    &metadata,
-                    pb::LifecycleState::Rejected,
-                    accept_tick,
-                    violation,
-                )
-                .await?;
-                return Err(anyhow!("collector is too close to another owned entity"));
-            }
-
             // Replacing one maintained Collect assignment with a different one
             // discards in-flight cargo. Other orders merely interrupt the
             // temporary assignment and intentionally leave cargo untouched.
@@ -4362,6 +4387,7 @@ impl Engine {
         }
 
         if let Some((entity_id, _)) = outcome.started {
+            self.collection_retry_tick_by_entity.remove(&entity_id);
             if intent_kind == "upgrade" {
                 if let Some(entity) = self
                     .state
@@ -4478,23 +4504,6 @@ impl Engine {
     ) -> Result<()> {
         self.emit_lifecycle_event_with_details(metadata, state, reason, tick, None)
             .await
-    }
-
-    async fn emit_lifecycle_event_with_minimum_distance_violation(
-        &mut self,
-        metadata: &IntentMetadata,
-        state: pb::LifecycleState,
-        tick: u64,
-        minimum_distance_violation: pb::MinimumDistanceViolation,
-    ) -> Result<()> {
-        self.emit_lifecycle_event_with_details(
-            metadata,
-            state,
-            pb::LifecycleReason::MinimumDistanceViolation,
-            tick,
-            Some(minimum_distance_violation),
-        )
-        .await
     }
 
     async fn emit_lifecycle_event_with_details(

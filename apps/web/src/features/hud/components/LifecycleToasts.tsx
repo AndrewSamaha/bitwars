@@ -3,12 +3,15 @@
 import { AlertTriangle, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  COLLECTION_WAITING_EVENT,
   dispatchCenterCameraOnEntity,
   MINIMUM_DISTANCE_VIOLATION_EVENT,
+  type CollectionWaitingDetail,
   type MinimumDistanceViolationDetail,
 } from "@/features/gamestate/events";
 
-type Toast = MinimumDistanceViolationDetail & { id: number; entering?: boolean; leaving?: boolean; leavingTop?: number };
+type Toast = { id: number; message: string; focusEntityId: string; entering?: boolean; leaving?: boolean; leavingTop?: number };
+const COLLECTION_WAITING_MESSAGE = "Too close to another active collector. Move it farther away and restart collection, or wait for space to open up. It will retry automatically while waiting.";
 
 export default function LifecycleToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -48,18 +51,29 @@ export default function LifecycleToasts() {
   }, [toasts]);
 
   useEffect(() => {
-    const onMinimumDistanceViolation = (event: Event) => {
-      const detail = (event as CustomEvent<MinimumDistanceViolationDetail>).detail;
-      if (!detail) return;
-      const toast = { ...detail, id: nextId.current++, entering: true };
+    const showToast = (message: string, focusEntityId: string) => {
+      const toast = { message, focusEntityId, id: nextId.current++, entering: true };
       setToasts((current) => [...current.slice(-2), toast]);
       window.requestAnimationFrame(() => {
         setToasts((current) => current.map((item) => (item.id === toast.id ? { ...item, entering: false } : item)));
       });
       window.setTimeout(() => dismiss(toast.id), 6_000);
     };
+    const onMinimumDistanceViolation = (event: Event) => {
+      const detail = (event as CustomEvent<MinimumDistanceViolationDetail>).detail;
+      if (!detail) return;
+      showToast(`Collector ${detail.collectorEntityId} is ${Math.round(detail.actualDistance)} units from collector ${detail.blockingEntityId}; ${Math.round(detail.requiredDistance)} required. Click to focus it.`, detail.blockingEntityId);
+    };
+    const onCollectionWaiting = (event: Event) => {
+      const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
+      if (detail) showToast(`${COLLECTION_WAITING_MESSAGE} Click to focus it.`, detail.collectorEntityId);
+    };
     window.addEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
-    return () => window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
+    window.addEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
+    return () => {
+      window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
+      window.removeEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
+    };
   }, [dismiss]);
 
   if (toasts.length === 0) return null;
@@ -80,15 +94,13 @@ export default function LifecycleToasts() {
             <button
               className="min-w-0 flex-1 text-left"
               onClick={() => {
-                dispatchCenterCameraOnEntity(toast.blockingEntityId);
+                dispatchCenterCameraOnEntity(toast.focusEntityId);
                 dismiss(toast.id);
               }}
               type="button"
             >
               <p className="font-medium">Collection blocked</p>
-              <p className="mt-1 text-xs text-slate-300">
-                Collector {toast.collectorEntityId} is {Math.round(toast.actualDistance)} units from collector {toast.blockingEntityId}; {Math.round(toast.requiredDistance)} required. Click to focus it.
-              </p>
+              <p className="mt-1 text-xs text-slate-300">{toast.message}</p>
             </button>
             <button aria-label="Dismiss" className="self-start text-slate-400 hover:text-white" onClick={() => dismiss(toast.id)} type="button">
               <X aria-hidden className="size-4" />

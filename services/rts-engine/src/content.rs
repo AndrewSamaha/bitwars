@@ -417,6 +417,8 @@ pub struct MinimumDistanceDef {
     pub value: f32,
     /// Entity types that participate in the same-owner distance check.
     pub entity_types: Vec<String>,
+    /// Delay before retrying collection after another collector blocks it.
+    pub retry_after_ms: u64,
 }
 
 /// Resource source profile for entity types that can be gathered from.
@@ -651,6 +653,11 @@ fn validate_technologies(
             }
             if minimum_distance.entity_types.is_empty() {
                 anyhow::bail!("entity type {entity_id} minimum distance requires entity types");
+            }
+            if minimum_distance.retry_after_ms == 0 {
+                anyhow::bail!(
+                    "entity type {entity_id} minimum distance requires a positive retry delay"
+                );
             }
             for other_type in &minimum_distance.entity_types {
                 if !entity_types.contains_key(other_type) {
