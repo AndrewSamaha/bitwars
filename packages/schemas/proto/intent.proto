@@ -32,6 +32,7 @@ enum LifecycleReason {
   PROTOCOL_MISMATCH = 6;
   ENTITY_BUSY = 7;
   NOT_OWNED = 8;  // M6: entity not owned by issuing player
+  MINIMUM_DISTANCE_VIOLATION = 9;
 }
 
 // Represents an in-flight destination for an entity (server-side).
@@ -142,6 +143,13 @@ message LifecycleEvent {
   LifecycleState state    = 5;
   LifecycleReason reason  = 6;
   uint32 protocol_version = 7;
+  MinimumDistanceViolation minimum_distance_violation = 8;
+}
+
+message MinimumDistanceViolation {
+  uint64 blocking_entity_id = 1;
+  float required_distance = 2;
+  float actual_distance = 3;
 }
 
 // A server-authoritative firing decision. Damage is already resolved at this

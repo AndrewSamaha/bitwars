@@ -30,7 +30,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
 use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 11;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 12;
 const TICK_TIMING_WINDOW_TICKS: usize = 600;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -206,12 +206,16 @@ mod collection_distance_tests {
             ..Default::default()
         };
 
-        assert!(!Engine::meets_minimum_distance(
+        let violation = Engine::minimum_distance_violation(
             &collector,
             &[entity(2, "collector_solar", "p1", 249.0)],
             &rule,
-        ));
-        assert!(Engine::meets_minimum_distance(
+        )
+        .expect("nearby same-owner collector should block collection");
+        assert_eq!(violation.blocking_entity_id, 2);
+        assert_eq!(violation.required_distance, 250.0);
+        assert_eq!(violation.actual_distance, 249.0);
+        assert!(Engine::minimum_distance_violation(
             &collector,
             &[
                 entity(2, "collector_solar", "p2", 1.0),
@@ -219,7 +223,8 @@ mod collection_distance_tests {
                 entity(4, "collector_solar", "p1", 250.0),
             ],
             &rule,
-        ));
+        )
+        .is_none());
     }
 }
 
@@ -1966,6 +1971,30 @@ impl Engine {
         );
     }
 
+    async fn cancel_collect_for_minimum_distance(
+        &mut self,
+        entity_id: u64,
+        violation: pb::MinimumDistanceViolation,
+    ) {
+        let Some(metadata) = self.intents.finish(entity_id) else {
+            return;
+        };
+        if let Err(error) = self.redis.clear_active_intent(entity_id).await {
+            warn!(?error, entity_id, "failed to clear minimum-distance-blocked collect intent");
+        }
+        if let Err(error) = self
+            .emit_lifecycle_event_with_minimum_distance_violation(
+                &metadata,
+                pb::LifecycleState::Canceled,
+                self.state.tick,
+                violation,
+            )
+            .await
+        {
+            warn!(?error, entity_id, "failed to emit minimum-distance collection cancellation");
+        }
+    }
+
     fn hydrate_entity_health_if_missing(&mut self) {
         let Some(content) = self.content.as_ref() else {
             return;
@@ -2703,11 +2732,11 @@ impl Engine {
             })
     }
 
-    fn meets_minimum_distance(
+    fn minimum_distance_violation(
         collector: &CollectorSnapshot,
         entities: &[pb::Entity],
         minimum_distance: &MinimumDistanceDef,
-    ) -> bool {
+    ) -> Option<pb::MinimumDistanceViolation> {
         let minimum_distance_sq = minimum_distance.value * minimum_distance.value;
         entities
             .iter()
@@ -2719,10 +2748,25 @@ impl Engine {
                         .iter()
                         .any(|entity_type| entity_type == &entity.entity_type_id)
             })
-            .filter_map(|entity| entity.pos.as_ref())
-            .all(|position| {
-                Self::distance_sq(collector.x, collector.y, position.x, position.y)
-                    >= minimum_distance_sq
+            .filter_map(|entity| {
+                entity.pos.as_ref().map(|position| {
+                    (
+                        entity.id,
+                        Self::distance_sq(collector.x, collector.y, position.x, position.y),
+                    )
+                })
+            })
+            .filter(|(_, distance_sq)| *distance_sq < minimum_distance_sq)
+            .min_by(|(a_id, a_distance_sq), (b_id, b_distance_sq)| {
+                a_distance_sq
+                    .partial_cmp(b_distance_sq)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a_id.cmp(b_id))
+            })
+            .map(|(blocking_entity_id, distance_sq)| pb::MinimumDistanceViolation {
+                blocking_entity_id,
+                required_distance: minimum_distance.value,
+                actual_distance: distance_sq.sqrt(),
             })
     }
 
@@ -2791,7 +2835,7 @@ impl Engine {
         }
     }
 
-    fn apply_resource_collection(&mut self, dt: f32) {
+    async fn apply_resource_collection(&mut self, dt: f32) {
         if self.content.is_none() {
             return;
         }
@@ -3113,19 +3157,26 @@ impl Engine {
             };
             if let Some(node) = proximity_node {
                 let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
-                if dist >= node.min_effective_distance
-                    && dist <= node.max_effective_distance
-                    && collector_def
+                if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
+                    if let Some(violation) = collector_def
                         .minimum_distance
                         .as_ref()
-                        .is_none_or(|minimum_distance| {
-                            Self::meets_minimum_distance(
-                                &collector,
-                                &self.state.entities,
-                                minimum_distance,
-                            )
+                        .and_then(|rule| {
+                            Self::minimum_distance_violation(&collector, &self.state.entities, rule)
                         })
-                {
+                    {
+                        self.cancel_collect_for_minimum_distance(collector.id, violation)
+                            .await;
+                        self.set_collector_ui_state(
+                            collector.id,
+                            COLLECTOR_ACTIVITY_IDLE,
+                            &node.resource_type,
+                            0.0,
+                            carry_capacity,
+                            0.0,
+                        );
+                        continue;
+                    }
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
                     self.credit_resource(&collector.owner_player_id, &node.resource_type, rate);
                     self.set_collector_ui_state(
@@ -3305,7 +3356,7 @@ impl Engine {
         self.emit_combat_destructions(&combat.destructions).await;
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_repairs(dt).await;
-        self.apply_resource_collection(dt);
+        self.apply_resource_collection(dt).await;
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
@@ -3521,7 +3572,7 @@ impl Engine {
                 &mut phase_started,
             );
             self.apply_repairs(dt).await;
-            self.apply_resource_collection(dt);
+            self.apply_resource_collection(dt).await;
             self.advance_builds(dt).await;
             self.advance_research(dt).await;
             self.apply_maintenance_costs(dt);
@@ -3992,6 +4043,32 @@ impl Engine {
                 return Err(anyhow!("collector cannot collect requested resource type"));
             }
 
+            let minimum_distance_violation = collector.minimum_distance.as_ref().and_then(|rule| {
+                entity.pos.as_ref().and_then(|position| {
+                    Self::minimum_distance_violation(
+                        &CollectorSnapshot {
+                            id: entity.id,
+                            entity_type_id: entity.entity_type_id.clone(),
+                            owner_player_id: entity.owner_player_id.clone(),
+                            x: position.x,
+                            y: position.y,
+                        },
+                        &self.state.entities,
+                        rule,
+                    )
+                })
+            });
+            if let Some(violation) = minimum_distance_violation {
+                self.emit_lifecycle_event_with_minimum_distance_violation(
+                    &metadata,
+                    pb::LifecycleState::Rejected,
+                    accept_tick,
+                    violation,
+                )
+                .await?;
+                return Err(anyhow!("collector is too close to another owned entity"));
+            }
+
             // Replacing one maintained Collect assignment with a different one
             // discards in-flight cargo. Other orders merely interrupt the
             // temporary assignment and intentionally leave cargo untouched.
@@ -4399,6 +4476,35 @@ impl Engine {
         reason: pb::LifecycleReason,
         tick: u64,
     ) -> Result<()> {
+        self.emit_lifecycle_event_with_details(metadata, state, reason, tick, None)
+            .await
+    }
+
+    async fn emit_lifecycle_event_with_minimum_distance_violation(
+        &mut self,
+        metadata: &IntentMetadata,
+        state: pb::LifecycleState,
+        tick: u64,
+        minimum_distance_violation: pb::MinimumDistanceViolation,
+    ) -> Result<()> {
+        self.emit_lifecycle_event_with_details(
+            metadata,
+            state,
+            pb::LifecycleReason::MinimumDistanceViolation,
+            tick,
+            Some(minimum_distance_violation),
+        )
+        .await
+    }
+
+    async fn emit_lifecycle_event_with_details(
+        &mut self,
+        metadata: &IntentMetadata,
+        state: pb::LifecycleState,
+        reason: pb::LifecycleReason,
+        tick: u64,
+        minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
+    ) -> Result<()> {
         if !self
             .lifecycle_emitted
             .insert((metadata.intent_id.clone(), state))
@@ -4413,6 +4519,7 @@ impl Engine {
             reason,
             tick,
             metadata.protocol_version,
+            minimum_distance_violation,
         )
         .await
     }
@@ -4426,6 +4533,7 @@ impl Engine {
         reason: pb::LifecycleReason,
         tick: u64,
         protocol_version: u32,
+        minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
     ) -> Result<()> {
         let event = pb::LifecycleEvent {
             intent_id: intent_id.to_vec(),
@@ -4435,6 +4543,7 @@ impl Engine {
             state: state as i32,
             reason: reason as i32,
             protocol_version,
+            minimum_distance_violation,
         };
         self.redis
             .publish_lifecycle_event(&event)

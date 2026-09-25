@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file intent.proto.
  */
 export const file_intent: GenFile = /*@__PURE__*/
-  fileDesc("CgxpbnRlbnQucHJvdG8SB2JpdHdhcnMiQgoMTW90aW9uVGFyZ2V0Eh0KBnRhcmdldBgBIAEoCzINLmJpdHdhcnMuVmVjMhITCgtzdG9wX3JhZGl1cxgCIAEoAiJ6ChRNb3ZlVG9Mb2NhdGlvbkludGVudBIRCgllbnRpdHlfaWQYASABKAQSHQoGdGFyZ2V0GAIgASgLMg0uYml0d2Fycy5WZWMyEhkKDWNsaWVudF9jbWRfaWQYAyABKAlCAhgBEhUKCXBsYXllcl9pZBgEIAEoCUICGAEiZgoMQXR0YWNrSW50ZW50EhEKCWVudGl0eV9pZBgBIAEoBBIRCgl0YXJnZXRfaWQYAiABKAQSGQoNY2xpZW50X2NtZF9pZBgDIAEoCUICGAESFQoJcGxheWVyX2lkGAQgASgJQgIYASKJAQoLQnVpbGRJbnRlbnQSEQoJZW50aXR5X2lkGAEgASgEEhQKDGJsdWVwcmludF9pZBgCIAEoCRIfCghsb2NhdGlvbhgDIAEoCzINLmJpdHdhcnMuVmVjMhIZCg1jbGllbnRfY21kX2lkGAQgASgJQgIYARIVCglwbGF5ZXJfaWQYBSABKAlCAhgBIkEKDVVwZ3JhZGVJbnRlbnQSEQoJZW50aXR5X2lkGAEgASgEEh0KFXRhcmdldF9lbnRpdHlfdHlwZV9pZBgCIAEoCSI6Cg5SZXNlYXJjaEludGVudBIRCgllbnRpdHlfaWQYASABKAQSFQoNdGVjaG5vbG9neV9pZBgCIAEoCSKKAQoNQ29sbGVjdEludGVudBIRCgllbnRpdHlfaWQYASABKAQSGQoNY2xpZW50X2NtZF9pZBgCIAEoCUICGAESFQoJcGxheWVyX2lkGAMgASgJQgIYARIYChByZXNvdXJjZV90eXBlX2lkGAQgASgJEhoKEm5lYXJlc3RfY29tcGF0aWJsZRgFIAEoCCJmCgxSZXBhaXJJbnRlbnQSEQoJZW50aXR5X2lkGAEgASgEEhEKCXRhcmdldF9pZBgCIAEoBBIZCg1jbGllbnRfY21kX2lkGAMgASgJQgIYARIVCglwbGF5ZXJfaWQYBCABKAlCAhgBIv8DCg5JbnRlbnRFbnZlbG9wZRIVCg1jbGllbnRfY21kX2lkGAEgASgMEhEKCWludGVudF9pZBgCIAEoDBIRCglwbGF5ZXJfaWQYAyABKAkSEgoKY2xpZW50X3NlcRgEIAEoBBITCgtzZXJ2ZXJfdGljaxgFIAEoBBIYChBwcm90b2NvbF92ZXJzaW9uGAYgASgNEiUKBnBvbGljeRgHIAEoDjIVLmJpdHdhcnMuSW50ZW50UG9saWN5Ei0KBG1vdmUYCiABKAsyHS5iaXR3YXJzLk1vdmVUb0xvY2F0aW9uSW50ZW50SAASJwoGYXR0YWNrGAsgASgLMhUuYml0d2Fycy5BdHRhY2tJbnRlbnRIABIlCgVidWlsZBgMIAEoCzIULmJpdHdhcnMuQnVpbGRJbnRlbnRIABIpCgdjb2xsZWN0GA0gASgLMhYuYml0d2Fycy5Db2xsZWN0SW50ZW50SAASJwoGcmVwYWlyGA4gASgLMhUuYml0d2Fycy5SZXBhaXJJbnRlbnRIABIpCgd1cGdyYWRlGBAgASgLMhYuYml0d2Fycy5VcGdyYWRlSW50ZW50SAASKwoIcmVzZWFyY2gYESABKAsyFy5iaXR3YXJzLlJlc2VhcmNoSW50ZW50SABCCQoHcGF5bG9hZEoECAgQCUoECAkQCkoECA8QECK7AgoGSW50ZW50Ei0KBG1vdmUYASABKAsyHS5iaXR3YXJzLk1vdmVUb0xvY2F0aW9uSW50ZW50SAASJwoGYXR0YWNrGAIgASgLMhUuYml0d2Fycy5BdHRhY2tJbnRlbnRIABIlCgVidWlsZBgDIAEoCzIULmJpdHdhcnMuQnVpbGRJbnRlbnRIABIpCgdjb2xsZWN0GAQgASgLMhYuYml0d2Fycy5Db2xsZWN0SW50ZW50SAASJwoGcmVwYWlyGAUgASgLMhUuYml0d2Fycy5SZXBhaXJJbnRlbnRIABIpCgd1cGdyYWRlGAYgASgLMhYuYml0d2Fycy5VcGdyYWRlSW50ZW50SAASKwoIcmVzZWFyY2gYByABKAsyFy5iaXR3YXJzLlJlc2VhcmNoSW50ZW50SABCBgoEa2luZCLOAQoOTGlmZWN5Y2xlRXZlbnQSEQoJaW50ZW50X2lkGAEgASgMEhUKDWNsaWVudF9jbWRfaWQYAiABKAwSEQoJcGxheWVyX2lkGAMgASgJEhMKC3NlcnZlcl90aWNrGAQgASgEEiYKBXN0YXRlGAUgASgOMhcuYml0d2Fycy5MaWZlY3ljbGVTdGF0ZRIoCgZyZWFzb24YBiABKA4yGC5iaXR3YXJzLkxpZmVjeWNsZVJlYXNvbhIYChBwcm90b2NvbF92ZXJzaW9uGAcgASgNIosBCg5MYXNlclNob3RFdmVudBITCgthdHRhY2tlcl9pZBgBIAEoBBIRCgl0YXJnZXRfaWQYAiABKAQSHQoGb3JpZ2luGAMgASgLMg0uYml0d2Fycy5WZWMyEh0KBnRhcmdldBgEIAEoCzINLmJpdHdhcnMuVmVjMhITCgtzZXJ2ZXJfdGljaxgFIAEoBCKcAQoSRXZlbnRzU3RyZWFtUmVjb3JkEiwKCWxpZmVjeWNsZRgBIAEoCzIXLmJpdHdhcnMuTGlmZWN5Y2xlRXZlbnRIABIfCgVkZWx0YRgCIAEoCzIOLmJpdHdhcnMuRGVsdGFIABItCgpsYXNlcl9zaG90GAMgASgLMhcuYml0d2Fycy5MYXNlclNob3RFdmVudEgAQggKBnJlY29yZCItCgtJbnRlbnRRdWV1ZRIeCgVpdGVtcxgBIAMoCzIPLmJpdHdhcnMuSW50ZW50IqQCCgtJbnRlbnRTdGF0ZRI9Cg1pbnRlbnRfcXVldWVzGAEgAygLMiYuYml0d2Fycy5JbnRlbnRTdGF0ZS5JbnRlbnRRdWV1ZXNFbnRyeRI/Cg5jdXJyZW50X2FjdGlvbhgCIAMoCzInLmJpdHdhcnMuSW50ZW50U3RhdGUuQ3VycmVudEFjdGlvbkVudHJ5GkkKEUludGVudFF1ZXVlc0VudHJ5EgsKA2tleRgBIAEoBBIjCgV2YWx1ZRgCIAEoCzIULmJpdHdhcnMuSW50ZW50UXVldWU6AjgBGkoKEkN1cnJlbnRBY3Rpb25FbnRyeRILCgNrZXkYASABKAQSIwoFdmFsdWUYAiABKAsyFC5iaXR3YXJzLkFjdGlvblN0YXRlOgI4ASIyCglNb3ZlU3RhdGUSJQoGdGFyZ2V0GAEgASgLMhUuYml0d2Fycy5Nb3Rpb25UYXJnZXQiRwoLQXR0YWNrU3RhdGUSEQoJdGFyZ2V0X2lkGAEgASgEEiUKDmxhc3Rfa25vd25fcG9zGAIgASgLMg0uYml0d2Fycy5WZWMyIlUKCkJ1aWxkU3RhdGUSFAoMYmx1ZXByaW50X2lkGAEgASgJEh8KCGxvY2F0aW9uGAIgASgLMg0uYml0d2Fycy5WZWMyEhAKCHByb2dyZXNzGAMgASgCIj8KDFVwZ3JhZGVTdGF0ZRIdChV0YXJnZXRfZW50aXR5X3R5cGVfaWQYASABKAkSEAoIcHJvZ3Jlc3MYAiABKAIiOAoNUmVzZWFyY2hTdGF0ZRIVCg10ZWNobm9sb2d5X2lkGAEgASgJEhAKCHByb2dyZXNzGAIgASgCIlcKDENvbGxlY3RTdGF0ZRIRCgllbnRpdHlfaWQYASABKAQSGAoQcmVzb3VyY2VfdHlwZV9pZBgCIAEoCRIaChJuZWFyZXN0X2NvbXBhdGlibGUYAyABKAgiIAoLUmVwYWlyU3RhdGUSEQoJdGFyZ2V0X2lkGAEgASgEItACCgtBY3Rpb25TdGF0ZRIfCgZpbnRlbnQYASABKAsyDy5iaXR3YXJzLkludGVudBIiCgRtb3ZlGAIgASgLMhIuYml0d2Fycy5Nb3ZlU3RhdGVIABImCgZhdHRhY2sYAyABKAsyFC5iaXR3YXJzLkF0dGFja1N0YXRlSAASJAoFYnVpbGQYBCABKAsyEy5iaXR3YXJzLkJ1aWxkU3RhdGVIABIoCgdjb2xsZWN0GAUgASgLMhUuYml0d2Fycy5Db2xsZWN0U3RhdGVIABImCgZyZXBhaXIYBiABKAsyFC5iaXR3YXJzLlJlcGFpclN0YXRlSAASKAoHdXBncmFkZRgHIAEoCzIVLmJpdHdhcnMuVXBncmFkZVN0YXRlSAASKgoIcmVzZWFyY2gYCCABKAsyFi5iaXR3YXJzLlJlc2VhcmNoU3RhdGVIAEIGCgRleGVjKmQKDEludGVudFBvbGljeRIdChlJTlRFTlRfUE9MSUNZX1VOU1BFQ0lGSUVEEAASEgoOUkVQTEFDRV9BQ1RJVkUQARIKCgZBUFBFTkQQAhIVChFDTEVBUl9USEVOX0FQUEVORBADKpUBCg5MaWZlY3ljbGVTdGF0ZRIfChtMSUZFQ1lDTEVfU1RBVEVfVU5TUEVDSUZJRUQQABIMCghSRUNFSVZFRBABEgwKCEFDQ0VQVEVEEAISDwoLSU5fUFJPR1JFU1MQAxILCgdCTE9DS0VEEAQSDAoIRklOSVNIRUQQBRIMCghDQU5DRUxFRBAGEgwKCFJFSkVDVEVEEAcqugEKD0xpZmVjeWNsZVJlYXNvbhIgChxMSUZFQ1lDTEVfUkVBU09OX1VOU1BFQ0lGSUVEEAASCAoETk9ORRABEg8KC0lOVEVSUlVQVEVEEAISDQoJRFVQTElDQVRFEAMSEAoMT1VUX09GX09SREVSEAQSEgoOSU5WQUxJRF9UQVJHRVQQBRIVChFQUk9UT0NPTF9NSVNNQVRDSBAGEg8KC0VOVElUWV9CVVNZEAcSDQoJTk9UX09XTkVEEAhiBnByb3RvMw", [file_delta, file_vec2]);
+  fileDesc("CgxpbnRlbnQucHJvdG8SB2JpdHdhcnMiQgoMTW90aW9uVGFyZ2V0Eh0KBnRhcmdldBgBIAEoCzINLmJpdHdhcnMuVmVjMhITCgtzdG9wX3JhZGl1cxgCIAEoAiJ6ChRNb3ZlVG9Mb2NhdGlvbkludGVudBIRCgllbnRpdHlfaWQYASABKAQSHQoGdGFyZ2V0GAIgASgLMg0uYml0d2Fycy5WZWMyEhkKDWNsaWVudF9jbWRfaWQYAyABKAlCAhgBEhUKCXBsYXllcl9pZBgEIAEoCUICGAEiZgoMQXR0YWNrSW50ZW50EhEKCWVudGl0eV9pZBgBIAEoBBIRCgl0YXJnZXRfaWQYAiABKAQSGQoNY2xpZW50X2NtZF9pZBgDIAEoCUICGAESFQoJcGxheWVyX2lkGAQgASgJQgIYASKJAQoLQnVpbGRJbnRlbnQSEQoJZW50aXR5X2lkGAEgASgEEhQKDGJsdWVwcmludF9pZBgCIAEoCRIfCghsb2NhdGlvbhgDIAEoCzINLmJpdHdhcnMuVmVjMhIZCg1jbGllbnRfY21kX2lkGAQgASgJQgIYARIVCglwbGF5ZXJfaWQYBSABKAlCAhgBIkEKDVVwZ3JhZGVJbnRlbnQSEQoJZW50aXR5X2lkGAEgASgEEh0KFXRhcmdldF9lbnRpdHlfdHlwZV9pZBgCIAEoCSI6Cg5SZXNlYXJjaEludGVudBIRCgllbnRpdHlfaWQYASABKAQSFQoNdGVjaG5vbG9neV9pZBgCIAEoCSKKAQoNQ29sbGVjdEludGVudBIRCgllbnRpdHlfaWQYASABKAQSGQoNY2xpZW50X2NtZF9pZBgCIAEoCUICGAESFQoJcGxheWVyX2lkGAMgASgJQgIYARIYChByZXNvdXJjZV90eXBlX2lkGAQgASgJEhoKEm5lYXJlc3RfY29tcGF0aWJsZRgFIAEoCCJmCgxSZXBhaXJJbnRlbnQSEQoJZW50aXR5X2lkGAEgASgEEhEKCXRhcmdldF9pZBgCIAEoBBIZCg1jbGllbnRfY21kX2lkGAMgASgJQgIYARIVCglwbGF5ZXJfaWQYBCABKAlCAhgBIv8DCg5JbnRlbnRFbnZlbG9wZRIVCg1jbGllbnRfY21kX2lkGAEgASgMEhEKCWludGVudF9pZBgCIAEoDBIRCglwbGF5ZXJfaWQYAyABKAkSEgoKY2xpZW50X3NlcRgEIAEoBBITCgtzZXJ2ZXJfdGljaxgFIAEoBBIYChBwcm90b2NvbF92ZXJzaW9uGAYgASgNEiUKBnBvbGljeRgHIAEoDjIVLmJpdHdhcnMuSW50ZW50UG9saWN5Ei0KBG1vdmUYCiABKAsyHS5iaXR3YXJzLk1vdmVUb0xvY2F0aW9uSW50ZW50SAASJwoGYXR0YWNrGAsgASgLMhUuYml0d2Fycy5BdHRhY2tJbnRlbnRIABIlCgVidWlsZBgMIAEoCzIULmJpdHdhcnMuQnVpbGRJbnRlbnRIABIpCgdjb2xsZWN0GA0gASgLMhYuYml0d2Fycy5Db2xsZWN0SW50ZW50SAASJwoGcmVwYWlyGA4gASgLMhUuYml0d2Fycy5SZXBhaXJJbnRlbnRIABIpCgd1cGdyYWRlGBAgASgLMhYuYml0d2Fycy5VcGdyYWRlSW50ZW50SAASKwoIcmVzZWFyY2gYESABKAsyFy5iaXR3YXJzLlJlc2VhcmNoSW50ZW50SABCCQoHcGF5bG9hZEoECAgQCUoECAkQCkoECA8QECK7AgoGSW50ZW50Ei0KBG1vdmUYASABKAsyHS5iaXR3YXJzLk1vdmVUb0xvY2F0aW9uSW50ZW50SAASJwoGYXR0YWNrGAIgASgLMhUuYml0d2Fycy5BdHRhY2tJbnRlbnRIABIlCgVidWlsZBgDIAEoCzIULmJpdHdhcnMuQnVpbGRJbnRlbnRIABIpCgdjb2xsZWN0GAQgASgLMhYuYml0d2Fycy5Db2xsZWN0SW50ZW50SAASJwoGcmVwYWlyGAUgASgLMhUuYml0d2Fycy5SZXBhaXJJbnRlbnRIABIpCgd1cGdyYWRlGAYgASgLMhYuYml0d2Fycy5VcGdyYWRlSW50ZW50SAASKwoIcmVzZWFyY2gYByABKAsyFy5iaXR3YXJzLlJlc2VhcmNoSW50ZW50SABCBgoEa2luZCKVAgoOTGlmZWN5Y2xlRXZlbnQSEQoJaW50ZW50X2lkGAEgASgMEhUKDWNsaWVudF9jbWRfaWQYAiABKAwSEQoJcGxheWVyX2lkGAMgASgJEhMKC3NlcnZlcl90aWNrGAQgASgEEiYKBXN0YXRlGAUgASgOMhcuYml0d2Fycy5MaWZlY3ljbGVTdGF0ZRIoCgZyZWFzb24YBiABKA4yGC5iaXR3YXJzLkxpZmVjeWNsZVJlYXNvbhIYChBwcm90b2NvbF92ZXJzaW9uGAcgASgNEkUKGm1pbmltdW1fZGlzdGFuY2VfdmlvbGF0aW9uGAggASgLMiEuYml0d2Fycy5NaW5pbXVtRGlzdGFuY2VWaW9sYXRpb24iagoYTWluaW11bURpc3RhbmNlVmlvbGF0aW9uEhoKEmJsb2NraW5nX2VudGl0eV9pZBgBIAEoBBIZChFyZXF1aXJlZF9kaXN0YW5jZRgCIAEoAhIXCg9hY3R1YWxfZGlzdGFuY2UYAyABKAIiiwEKDkxhc2VyU2hvdEV2ZW50EhMKC2F0dGFja2VyX2lkGAEgASgEEhEKCXRhcmdldF9pZBgCIAEoBBIdCgZvcmlnaW4YAyABKAsyDS5iaXR3YXJzLlZlYzISHQoGdGFyZ2V0GAQgASgLMg0uYml0d2Fycy5WZWMyEhMKC3NlcnZlcl90aWNrGAUgASgEIpwBChJFdmVudHNTdHJlYW1SZWNvcmQSLAoJbGlmZWN5Y2xlGAEgASgLMhcuYml0d2Fycy5MaWZlY3ljbGVFdmVudEgAEh8KBWRlbHRhGAIgASgLMg4uYml0d2Fycy5EZWx0YUgAEi0KCmxhc2VyX3Nob3QYAyABKAsyFy5iaXR3YXJzLkxhc2VyU2hvdEV2ZW50SABCCAoGcmVjb3JkIi0KC0ludGVudFF1ZXVlEh4KBWl0ZW1zGAEgAygLMg8uYml0d2Fycy5JbnRlbnQipAIKC0ludGVudFN0YXRlEj0KDWludGVudF9xdWV1ZXMYASADKAsyJi5iaXR3YXJzLkludGVudFN0YXRlLkludGVudFF1ZXVlc0VudHJ5Ej8KDmN1cnJlbnRfYWN0aW9uGAIgAygLMicuYml0d2Fycy5JbnRlbnRTdGF0ZS5DdXJyZW50QWN0aW9uRW50cnkaSQoRSW50ZW50UXVldWVzRW50cnkSCwoDa2V5GAEgASgEEiMKBXZhbHVlGAIgASgLMhQuYml0d2Fycy5JbnRlbnRRdWV1ZToCOAEaSgoSQ3VycmVudEFjdGlvbkVudHJ5EgsKA2tleRgBIAEoBBIjCgV2YWx1ZRgCIAEoCzIULmJpdHdhcnMuQWN0aW9uU3RhdGU6AjgBIjIKCU1vdmVTdGF0ZRIlCgZ0YXJnZXQYASABKAsyFS5iaXR3YXJzLk1vdGlvblRhcmdldCJHCgtBdHRhY2tTdGF0ZRIRCgl0YXJnZXRfaWQYASABKAQSJQoObGFzdF9rbm93bl9wb3MYAiABKAsyDS5iaXR3YXJzLlZlYzIiVQoKQnVpbGRTdGF0ZRIUCgxibHVlcHJpbnRfaWQYASABKAkSHwoIbG9jYXRpb24YAiABKAsyDS5iaXR3YXJzLlZlYzISEAoIcHJvZ3Jlc3MYAyABKAIiPwoMVXBncmFkZVN0YXRlEh0KFXRhcmdldF9lbnRpdHlfdHlwZV9pZBgBIAEoCRIQCghwcm9ncmVzcxgCIAEoAiI4Cg1SZXNlYXJjaFN0YXRlEhUKDXRlY2hub2xvZ3lfaWQYASABKAkSEAoIcHJvZ3Jlc3MYAiABKAIiVwoMQ29sbGVjdFN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIYChByZXNvdXJjZV90eXBlX2lkGAIgASgJEhoKEm5lYXJlc3RfY29tcGF0aWJsZRgDIAEoCCIgCgtSZXBhaXJTdGF0ZRIRCgl0YXJnZXRfaWQYASABKAQi0AIKC0FjdGlvblN0YXRlEh8KBmludGVudBgBIAEoCzIPLmJpdHdhcnMuSW50ZW50EiIKBG1vdmUYAiABKAsyEi5iaXR3YXJzLk1vdmVTdGF0ZUgAEiYKBmF0dGFjaxgDIAEoCzIULmJpdHdhcnMuQXR0YWNrU3RhdGVIABIkCgVidWlsZBgEIAEoCzITLmJpdHdhcnMuQnVpbGRTdGF0ZUgAEigKB2NvbGxlY3QYBSABKAsyFS5iaXR3YXJzLkNvbGxlY3RTdGF0ZUgAEiYKBnJlcGFpchgGIAEoCzIULmJpdHdhcnMuUmVwYWlyU3RhdGVIABIoCgd1cGdyYWRlGAcgASgLMhUuYml0d2Fycy5VcGdyYWRlU3RhdGVIABIqCghyZXNlYXJjaBgIIAEoCzIWLmJpdHdhcnMuUmVzZWFyY2hTdGF0ZUgAQgYKBGV4ZWMqZAoMSW50ZW50UG9saWN5Eh0KGUlOVEVOVF9QT0xJQ1lfVU5TUEVDSUZJRUQQABISCg5SRVBMQUNFX0FDVElWRRABEgoKBkFQUEVORBACEhUKEUNMRUFSX1RIRU5fQVBQRU5EEAMqlQEKDkxpZmVjeWNsZVN0YXRlEh8KG0xJRkVDWUNMRV9TVEFURV9VTlNQRUNJRklFRBAAEgwKCFJFQ0VJVkVEEAESDAoIQUNDRVBURUQQAhIPCgtJTl9QUk9HUkVTUxADEgsKB0JMT0NLRUQQBBIMCghGSU5JU0hFRBAFEgwKCENBTkNFTEVEEAYSDAoIUkVKRUNURUQQByraAQoPTGlmZWN5Y2xlUmVhc29uEiAKHExJRkVDWUNMRV9SRUFTT05fVU5TUEVDSUZJRUQQABIICgROT05FEAESDwoLSU5URVJSVVBURUQQAhINCglEVVBMSUNBVEUQAxIQCgxPVVRfT0ZfT1JERVIQBBISCg5JTlZBTElEX1RBUkdFVBAFEhUKEVBST1RPQ09MX01JU01BVENIEAYSDwoLRU5USVRZX0JVU1kQBxINCglOT1RfT1dORUQQCBIeChpNSU5JTVVNX0RJU1RBTkNFX1ZJT0xBVElPThAJYgZwcm90bzM", [file_delta, file_vec2]);
 
 /**
  * Represents an in-flight destination for an entity (server-side).
@@ -522,6 +522,11 @@ export type LifecycleEvent = Message<"bitwars.LifecycleEvent"> & {
    * @generated from field: uint32 protocol_version = 7;
    */
   protocolVersion: number;
+
+  /**
+   * @generated from field: bitwars.MinimumDistanceViolation minimum_distance_violation = 8;
+   */
+  minimumDistanceViolation?: MinimumDistanceViolation;
 };
 
 /**
@@ -530,6 +535,33 @@ export type LifecycleEvent = Message<"bitwars.LifecycleEvent"> & {
  */
 export const LifecycleEventSchema: GenMessage<LifecycleEvent> = /*@__PURE__*/
   messageDesc(file_intent, 10);
+
+/**
+ * @generated from message bitwars.MinimumDistanceViolation
+ */
+export type MinimumDistanceViolation = Message<"bitwars.MinimumDistanceViolation"> & {
+  /**
+   * @generated from field: uint64 blocking_entity_id = 1;
+   */
+  blockingEntityId: bigint;
+
+  /**
+   * @generated from field: float required_distance = 2;
+   */
+  requiredDistance: number;
+
+  /**
+   * @generated from field: float actual_distance = 3;
+   */
+  actualDistance: number;
+};
+
+/**
+ * Describes the message bitwars.MinimumDistanceViolation.
+ * Use `create(MinimumDistanceViolationSchema)` to create a new message.
+ */
+export const MinimumDistanceViolationSchema: GenMessage<MinimumDistanceViolation> = /*@__PURE__*/
+  messageDesc(file_intent, 11);
 
 /**
  * A server-authoritative firing decision. Damage is already resolved at this
@@ -569,7 +601,7 @@ export type LaserShotEvent = Message<"bitwars.LaserShotEvent"> & {
  * Use `create(LaserShotEventSchema)` to create a new message.
  */
 export const LaserShotEventSchema: GenMessage<LaserShotEvent> = /*@__PURE__*/
-  messageDesc(file_intent, 11);
+  messageDesc(file_intent, 12);
 
 /**
  * @generated from message bitwars.EventsStreamRecord
@@ -606,7 +638,7 @@ export type EventsStreamRecord = Message<"bitwars.EventsStreamRecord"> & {
  * Use `create(EventsStreamRecordSchema)` to create a new message.
  */
 export const EventsStreamRecordSchema: GenMessage<EventsStreamRecord> = /*@__PURE__*/
-  messageDesc(file_intent, 12);
+  messageDesc(file_intent, 13);
 
 /**
  * Per-entity queue of intents (for M1 and beyond).
@@ -625,7 +657,7 @@ export type IntentQueue = Message<"bitwars.IntentQueue"> & {
  * Use `create(IntentQueueSchema)` to create a new message.
  */
 export const IntentQueueSchema: GenMessage<IntentQueue> = /*@__PURE__*/
-  messageDesc(file_intent, 13);
+  messageDesc(file_intent, 14);
 
 /**
  * Server-side auxiliary state for intents and destinations.
@@ -656,7 +688,7 @@ export type IntentState = Message<"bitwars.IntentState"> & {
  * Use `create(IntentStateSchema)` to create a new message.
  */
 export const IntentStateSchema: GenMessage<IntentState> = /*@__PURE__*/
-  messageDesc(file_intent, 14);
+  messageDesc(file_intent, 15);
 
 /**
  * Execution state per kind (authoritative server-side).
@@ -675,7 +707,7 @@ export type MoveState = Message<"bitwars.MoveState"> & {
  * Use `create(MoveStateSchema)` to create a new message.
  */
 export const MoveStateSchema: GenMessage<MoveState> = /*@__PURE__*/
-  messageDesc(file_intent, 15);
+  messageDesc(file_intent, 16);
 
 /**
  * @generated from message bitwars.AttackState
@@ -699,7 +731,7 @@ export type AttackState = Message<"bitwars.AttackState"> & {
  * Use `create(AttackStateSchema)` to create a new message.
  */
 export const AttackStateSchema: GenMessage<AttackState> = /*@__PURE__*/
-  messageDesc(file_intent, 16);
+  messageDesc(file_intent, 17);
 
 /**
  * @generated from message bitwars.BuildState
@@ -728,7 +760,7 @@ export type BuildState = Message<"bitwars.BuildState"> & {
  * Use `create(BuildStateSchema)` to create a new message.
  */
 export const BuildStateSchema: GenMessage<BuildState> = /*@__PURE__*/
-  messageDesc(file_intent, 17);
+  messageDesc(file_intent, 18);
 
 /**
  * @generated from message bitwars.UpgradeState
@@ -752,7 +784,7 @@ export type UpgradeState = Message<"bitwars.UpgradeState"> & {
  * Use `create(UpgradeStateSchema)` to create a new message.
  */
 export const UpgradeStateSchema: GenMessage<UpgradeState> = /*@__PURE__*/
-  messageDesc(file_intent, 18);
+  messageDesc(file_intent, 19);
 
 /**
  * @generated from message bitwars.ResearchState
@@ -774,7 +806,7 @@ export type ResearchState = Message<"bitwars.ResearchState"> & {
  * Use `create(ResearchStateSchema)` to create a new message.
  */
 export const ResearchStateSchema: GenMessage<ResearchState> = /*@__PURE__*/
-  messageDesc(file_intent, 19);
+  messageDesc(file_intent, 20);
 
 /**
  * @generated from message bitwars.CollectState
@@ -801,7 +833,7 @@ export type CollectState = Message<"bitwars.CollectState"> & {
  * Use `create(CollectStateSchema)` to create a new message.
  */
 export const CollectStateSchema: GenMessage<CollectState> = /*@__PURE__*/
-  messageDesc(file_intent, 20);
+  messageDesc(file_intent, 21);
 
 /**
  * @generated from message bitwars.RepairState
@@ -818,7 +850,7 @@ export type RepairState = Message<"bitwars.RepairState"> & {
  * Use `create(RepairStateSchema)` to create a new message.
  */
 export const RepairStateSchema: GenMessage<RepairState> = /*@__PURE__*/
-  messageDesc(file_intent, 21);
+  messageDesc(file_intent, 22);
 
 /**
  * Unified per-entity execution container (one active at a time).
@@ -886,7 +918,7 @@ export type ActionState = Message<"bitwars.ActionState"> & {
  * Use `create(ActionStateSchema)` to create a new message.
  */
 export const ActionStateSchema: GenMessage<ActionState> = /*@__PURE__*/
-  messageDesc(file_intent, 22);
+  messageDesc(file_intent, 23);
 
 /**
  * @generated from enum bitwars.IntentPolicy
@@ -1020,6 +1052,11 @@ export enum LifecycleReason {
    * @generated from enum value: NOT_OWNED = 8;
    */
   NOT_OWNED = 8,
+
+  /**
+   * @generated from enum value: MINIMUM_DISTANCE_VIOLATION = 9;
+   */
+  MINIMUM_DISTANCE_VIOLATION = 9,
 }
 
 /**
