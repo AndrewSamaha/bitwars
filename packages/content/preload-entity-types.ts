@@ -23,7 +23,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 4
     },
-    "definition": "fog_memory: retain_last_known\nspeed: 0\nz_index: -2\nsuppress_hover: true\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 4\nresource_node:\n  resource_type: food\n  collection_mode: transport\n  min_effective_distance: 20\n  max_effective_distance: 50"
+    "definition": "fog_memory: retain_last_known\nspeed: 0\nz_index: -2\nsuppress_hover: true\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 4\nresource_node:\n  resource_type: food\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50"
   },
   {
     "id": "star_yellow",
@@ -41,7 +41,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 3
     },
-    "definition": "fog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nvisual:\n  scale: 3\nresource_node:\n  resource_type: minerals\n  collection_mode: transport\n  min_effective_distance: 20\n  max_effective_distance: 50"
+    "definition": "fog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nvisual:\n  scale: 3\nresource_node:\n  resource_type: minerals\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50"
   },
   {
     "id": "collector_solar",

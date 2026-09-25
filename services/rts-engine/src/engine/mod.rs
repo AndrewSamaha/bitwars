@@ -64,6 +64,7 @@ struct ResourceNodeSnapshot {
     y: f32,
     resource_type: String,
     mode: CollectionMode,
+    max_simultaneous_collectors: Option<u32>,
     min_effective_distance: f32,
     max_effective_distance: f32,
 }
@@ -85,6 +86,26 @@ struct CollectorSnapshot {
     owner_player_id: String,
     x: f32,
     y: f32,
+}
+
+fn claim_transport_slot(node: &ResourceNodeSnapshot, gathering_by_node: &mut HashMap<u64, u32>) -> bool {
+    let gathering = gathering_by_node.entry(node.id).or_default();
+    if node.max_simultaneous_collectors.is_some_and(|limit| *gathering >= limit) {
+        return false;
+    }
+    *gathering += 1;
+    true
+}
+
+fn collection_order_key(previous_activity: Option<&str>, waiting_since: Option<u64>, entity_id: u64) -> (u8, u64, u64) {
+    let priority = if matches!(previous_activity, Some(COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING | COLLECTOR_ACTIVITY_GATHERING)) {
+        0
+    } else if waiting_since.is_some() {
+        1
+    } else {
+        2
+    };
+    (priority, waiting_since.unwrap_or(u64::MAX), entity_id)
 }
 
 fn debit_maintenance_without_debt(
@@ -251,6 +272,79 @@ mod collection_distance_tests {
         assert_eq!(retry_delay_ticks(1000, 60), 60);
         assert_eq!(retry_delay_ticks(1001, 60), 61);
         assert_eq!(retry_delay_ticks(1, 60), 1);
+    }
+}
+
+#[cfg(test)]
+mod transport_capacity_tests {
+    use super::*;
+
+    #[test]
+    fn content_configures_transport_node_capacity() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml");
+        let content = ContentPack::load(&path).unwrap();
+        for entity_type in ["minerals", "planet_blue"] {
+            assert_eq!(content.get(entity_type).unwrap().resource_node.as_ref().unwrap().max_simultaneous_collectors, Some(1));
+        }
+    }
+
+    #[test]
+    fn capacity_is_per_resource_entity() {
+        let node = ResourceNodeSnapshot {
+            id: 10,
+            x: 0.0,
+            y: 0.0,
+            resource_type: "minerals".into(),
+            mode: CollectionMode::Transport,
+            max_simultaneous_collectors: Some(1),
+            min_effective_distance: 20.0,
+            max_effective_distance: 50.0,
+        };
+        let mut gathering = HashMap::new();
+        assert!(claim_transport_slot(&node, &mut gathering));
+        assert!(!claim_transport_slot(&node, &mut gathering));
+        assert!(claim_transport_slot(&ResourceNodeSnapshot { id: 11, ..node.clone() }, &mut gathering));
+        gathering.clear(); // A full worker has started its delivery trip.
+        assert!(claim_transport_slot(&node, &mut gathering));
+    }
+
+    #[test]
+    fn incumbent_then_longest_waiting_then_new_arrival() {
+        let mut workers = [
+            (1, None, None),
+            (7, Some("waiting_for_turn"), Some(3)),
+            (9, Some("gathering"), None),
+            (2, Some("waiting_for_turn"), Some(5)),
+            (4, Some("waiting_for_turn"), Some(3)),
+        ];
+        workers.sort_by_key(|(id, activity, since)| collection_order_key(*activity, *since, *id));
+        assert_eq!(workers.map(|(id, _, _)| id), [9, 4, 7, 2, 1]);
+    }
+
+    #[test]
+    fn collector_stays_bound_to_its_node_across_trips() {
+        let collector = CollectorSnapshot {
+            id: 1,
+            entity_type_id: "worker".into(),
+            owner_player_id: "p1".into(),
+            x: 0.0,
+            y: 0.0,
+        };
+        let far = ResourceNodeSnapshot {
+            id: 10,
+            x: 100.0,
+            y: 0.0,
+            resource_type: "minerals".into(),
+            mode: CollectionMode::Transport,
+            max_simultaneous_collectors: Some(1),
+            min_effective_distance: 20.0,
+            max_effective_distance: 50.0,
+        };
+        let nodes = [far.clone(), ResourceNodeSnapshot { id: 11, x: 10.0, ..far }];
+        let collects = vec!["minerals".to_string()];
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(10), None, "minerals", false, &collects).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(99), None, "minerals", false, &collects).unwrap().id, 11);
     }
 }
 
@@ -696,6 +790,10 @@ pub struct Engine {
     joined_players: HashSet<String>,
     /// M8: In-flight transport-mode carry amounts per collector entity.
     carry_by_entity: HashMap<u64, CarryState>,
+    /// Transport collectors stay bound to one resource entity across delivery trips.
+    transport_node_by_entity: HashMap<u64, u64>,
+    /// First tick spent waiting at a full resource entity; used for FIFO admission.
+    transport_wait_since_tick_by_entity: HashMap<u64, u64>,
     /// M8: Fractional per-player resources accumulated between integer ledger commits.
     resource_fractional: HashMap<(String, String), f32>,
     /// Fractional resource debits accumulated while construction channels run.
@@ -1129,6 +1227,8 @@ impl Engine {
                     telemetry,
                     joined_players,
                     carry_by_entity: HashMap::new(),
+                    transport_node_by_entity: HashMap::new(),
+                    transport_wait_since_tick_by_entity: HashMap::new(),
                     resource_fractional: HashMap::new(),
                     build_spend_fractional: HashMap::new(),
                     repair_spend_fractional: HashMap::new(),
@@ -1218,6 +1318,8 @@ impl Engine {
             telemetry,
             joined_players: HashSet::new(),
             carry_by_entity: HashMap::new(),
+            transport_node_by_entity: HashMap::new(),
+            transport_wait_since_tick_by_entity: HashMap::new(),
             resource_fractional: HashMap::new(),
             build_spend_fractional: HashMap::new(),
             repair_spend_fractional: HashMap::new(),
@@ -2048,6 +2150,7 @@ impl Engine {
                 y: pos.y,
                 resource_type: node.resource_type.clone(),
                 mode: node.collection_mode.clone(),
+                max_simultaneous_collectors: node.max_simultaneous_collectors,
                 min_effective_distance: node.min_effective_distance.max(0.0),
                 max_effective_distance: node
                     .max_effective_distance
@@ -2713,6 +2816,37 @@ impl Engine {
             })
     }
 
+    fn pick_transport_node<'a>(
+        collector: &CollectorSnapshot,
+        nodes: &'a [ResourceNodeSnapshot],
+        bound_id: Option<u64>,
+        preferred_resource_type: Option<&str>,
+        assigned_resource_type: &str,
+        nearest_compatible: bool,
+        collects: &[String],
+    ) -> Option<&'a ResourceNodeSnapshot> {
+        let eligible = |node: &&ResourceNodeSnapshot| {
+            node.mode == CollectionMode::Transport
+                && if let Some(resource_type) = preferred_resource_type {
+                    node.resource_type == resource_type
+                } else if nearest_compatible {
+                    collects.contains(&node.resource_type)
+                } else {
+                    node.resource_type == assigned_resource_type
+                }
+        };
+        if let Some(node) = nodes.iter().filter(eligible).find(|node| Some(node.id) == bound_id) {
+            return Some(node);
+        }
+        nodes.iter().filter(eligible).min_by(|a, b| {
+            let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
+            let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
+            da.partial_cmp(&db)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        })
+    }
+
     fn pick_best_refinery<'a>(
         collector: &CollectorSnapshot,
         refineries: &'a [RefinerySnapshot],
@@ -2871,20 +3005,23 @@ impl Engine {
             })
             .collect();
         let mut collectors = self.build_collector_snapshots();
-        // Existing producers keep their spot; simultaneous arrivals use entity ID.
+        // Existing producers keep their spot. Waiting transport collectors go
+        // next in arrival order, then new arrivals in entity-ID order.
         collectors.sort_by_key(|collector| {
-            (
-                !self
-                    .collector_ui_state_by_entity
-                    .get(&collector.id)
-                    .is_some_and(|state| state.activity == COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
-                collector.id,
-            )
+            let activity = self
+                .collector_ui_state_by_entity
+                .get(&collector.id)
+                .map(|state| state.activity.as_str());
+            let waiting_since = self.transport_wait_since_tick_by_entity.get(&collector.id).copied();
+            collection_order_key(activity, waiting_since, collector.id)
         });
         let mut operating_collectors = HashSet::new();
+        let mut gathering_by_node = HashMap::new();
         let nodes = self.build_resource_node_snapshots();
         let refineries = self.build_refinery_snapshots();
         let collector_ids: HashSet<u64> = collectors.iter().map(|c| c.id).collect();
+        self.transport_node_by_entity.retain(|id, _| collector_ids.contains(id));
+        self.transport_wait_since_tick_by_entity.retain(|id, _| collector_ids.contains(id));
         let stale_carry_ids: Vec<u64> = self
             .carry_by_entity
             .keys()
@@ -2925,6 +3062,7 @@ impl Engine {
             // a maintained Collect intent is active for this entity.
             if !collect_active_entities.contains(&collector.id) {
                 self.collection_retry_tick_by_entity.remove(&collector.id);
+                self.transport_wait_since_tick_by_entity.remove(&collector.id);
                 if let Some(carry) = carry_snapshot.as_ref() {
                     self.set_collector_ui_state(
                         collector.id,
@@ -2958,6 +3096,7 @@ impl Engine {
                 let carry_is_full =
                     carry_capacity > 0.0 && carry.amount >= (carry_capacity - f32::EPSILON);
                 if carry.amount > 0.0 && carry_is_full {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     if let Some(refinery) = Self::pick_best_refinery(
                         &collector,
                         &refineries,
@@ -3046,41 +3185,42 @@ impl Engine {
                 .as_ref()
                 .filter(|c| c.amount > 0.0)
                 .map(|c| c.resource_type.as_str());
-            let node = if let Some(resource_type) = preferred_resource_type {
-                nodes
-                    .iter()
-                    .filter(|n| n.mode == CollectionMode::Transport)
-                    .filter(|n| n.resource_type == resource_type)
-                    .min_by(|a, b| {
-                        let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
-                        let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
-                        da.partial_cmp(&db)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                            .then_with(|| a.id.cmp(&b.id))
-                    })
-            } else if !*nearest_compatible {
-                nodes
-                    .iter()
-                    .filter(|n| n.mode == CollectionMode::Transport)
-                    .filter(|n| n.resource_type == *assigned_resource_type)
-                    .min_by(|a, b| {
-                        let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
-                        let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
-                        da.partial_cmp(&db)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                            .then_with(|| a.id.cmp(&b.id))
-                    })
-            } else {
-                Self::pick_best_node(
-                    &collector,
-                    &nodes,
-                    CollectionMode::Transport,
-                    &collector_def.collects,
-                )
-            };
+            let node = Self::pick_transport_node(
+                &collector,
+                &nodes,
+                self.transport_node_by_entity.get(&collector.id).copied(),
+                preferred_resource_type,
+                assigned_resource_type,
+                *nearest_compatible,
+                &collector_def.collects,
+            );
             if let Some(node) = node {
+                if self.transport_node_by_entity.get(&collector.id) != Some(&node.id) {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
+                }
+                self.transport_node_by_entity.insert(collector.id, node.id);
                 let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
                 if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
+                    if !claim_transport_slot(node, &mut gathering_by_node) {
+                        self.transport_wait_since_tick_by_entity
+                            .entry(collector.id)
+                            .or_insert(self.state.tick);
+                        self.set_collector_ui_state(
+                            collector.id,
+                            COLLECTOR_ACTIVITY_WAITING_FOR_TURN,
+                            &node.resource_type,
+                            carry_snapshot.as_ref().map(|c| c.amount).unwrap_or(0.0),
+                            carry_capacity,
+                            0.0,
+                        );
+                        if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
+                            let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+                            vel.x = 0.0;
+                            vel.y = 0.0;
+                        }
+                        continue;
+                    }
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     let gather = collector_def.transport_rate_per_second.max(0.0) * dt;
                     if gather > 0.0 {
                         let (resource_type, carry_amount) = {
@@ -3132,6 +3272,7 @@ impl Engine {
                     .iter_mut()
                     .find(|e| e.id == collector.id)
                 {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     Self::drive_velocity_to_band(
                         entity,
                         speed,
@@ -3150,6 +3291,9 @@ impl Engine {
                     );
                 }
                 handled_transport = true;
+            } else {
+                self.transport_node_by_entity.remove(&collector.id);
+                self.transport_wait_since_tick_by_entity.remove(&collector.id);
             }
 
             // Proximity mode only when not engaged in transport mode for this tick.
@@ -4388,6 +4532,7 @@ impl Engine {
 
         if let Some((entity_id, _)) = outcome.started {
             self.collection_retry_tick_by_entity.remove(&entity_id);
+            self.transport_wait_since_tick_by_entity.remove(&entity_id);
             if intent_kind == "upgrade" {
                 if let Some(entity) = self
                     .state

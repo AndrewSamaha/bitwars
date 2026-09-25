@@ -429,6 +429,9 @@ pub struct ResourceNodeDef {
     pub resource_type: String,
     /// Whether gathering fills cargo for delivery (transport) or credits resources directly (proximity).
     pub collection_mode: CollectionMode,
+    /// Maximum transport collectors gathering at this resource entity at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_simultaneous_collectors: Option<u32>,
     /// Inner center-to-center gathering distance in world units, inclusive. Defaults to 0.
     #[serde(default)]
     pub min_effective_distance: f32,
@@ -633,6 +636,15 @@ fn validate_technologies(
         }
     }
     for (entity_id, entity) in entity_types {
+        if let Some(node) = entity.resource_node.as_ref() {
+            if let Some(limit) = node.max_simultaneous_collectors {
+                if limit == 0 || node.collection_mode != CollectionMode::Transport {
+                    anyhow::bail!(
+                        "entity type {entity_id} needs a positive transport collector limit"
+                    );
+                }
+            }
+        }
         if let Some(requirement) = &entity.requires_technologies {
             validate_requirement(requirement, technologies)?;
         }

@@ -78,6 +78,7 @@ entity_types:
     resource_node:
       resource_type: food
       collection_mode: transport
+      max_simultaneous_collectors: 1
       min_effective_distance: 20
       max_effective_distance: 50
   star_yellow:
@@ -121,6 +122,7 @@ entity_types:
     resource_node:
       resource_type: minerals
       collection_mode: transport
+      max_simultaneous_collectors: 1
       min_effective_distance: 20
       max_effective_distance: 50
   collector_solar:
