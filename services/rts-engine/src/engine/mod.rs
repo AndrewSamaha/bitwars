@@ -12,7 +12,8 @@ use uuid::{Uuid, Version};
 use crate::combat::CombatSystem;
 use crate::config::GameConfig;
 use crate::content::{
-    CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef, RepairDef,
+    CollectionMode, ContentPack, EntityTypeDef, MinimumDistanceDef, RadiationShieldingDef,
+    RepairDef,
 };
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
@@ -177,6 +178,48 @@ mod maintenance_tests {
         debit_maintenance_without_debt(&mut ledger, &mut fractional, "player-1", "energy", 0.75);
         assert_eq!(ledger["player-1"]["energy"], 0);
         assert!(fractional.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod collection_distance_tests {
+    use super::*;
+
+    #[test]
+    fn proximity_collection_requires_distance_from_listed_same_owner_types() {
+        let collector = CollectorSnapshot {
+            id: 1,
+            entity_type_id: "collector_solar".to_string(),
+            owner_player_id: "p1".to_string(),
+            x: 0.0,
+            y: 0.0,
+        };
+        let rule = MinimumDistanceDef {
+            value: 250.0,
+            entity_types: vec!["collector_solar".to_string()],
+        };
+        let entity = |id, entity_type_id: &str, owner_player_id: &str, x| pb::Entity {
+            id,
+            entity_type_id: entity_type_id.to_string(),
+            owner_player_id: owner_player_id.to_string(),
+            pos: Some(pb::Vec2 { x, y: 0.0 }),
+            ..Default::default()
+        };
+
+        assert!(!Engine::meets_minimum_distance(
+            &collector,
+            &[entity(2, "collector_solar", "p1", 249.0)],
+            &rule,
+        ));
+        assert!(Engine::meets_minimum_distance(
+            &collector,
+            &[
+                entity(2, "collector_solar", "p2", 1.0),
+                entity(3, "worker", "p1", 1.0),
+                entity(4, "collector_solar", "p1", 250.0),
+            ],
+            &rule,
+        ));
     }
 }
 
@@ -2660,6 +2703,29 @@ impl Engine {
             })
     }
 
+    fn meets_minimum_distance(
+        collector: &CollectorSnapshot,
+        entities: &[pb::Entity],
+        minimum_distance: &MinimumDistanceDef,
+    ) -> bool {
+        let minimum_distance_sq = minimum_distance.value * minimum_distance.value;
+        entities
+            .iter()
+            .filter(|entity| {
+                entity.id != collector.id
+                    && entity.owner_player_id == collector.owner_player_id
+                    && minimum_distance
+                        .entity_types
+                        .iter()
+                        .any(|entity_type| entity_type == &entity.entity_type_id)
+            })
+            .filter_map(|entity| entity.pos.as_ref())
+            .all(|position| {
+                Self::distance_sq(collector.x, collector.y, position.x, position.y)
+                    >= minimum_distance_sq
+            })
+    }
+
     fn drive_velocity_toward(
         entity: &mut pb::Entity,
         speed: f32,
@@ -3047,7 +3113,19 @@ impl Engine {
             };
             if let Some(node) = proximity_node {
                 let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
-                if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
+                if dist >= node.min_effective_distance
+                    && dist <= node.max_effective_distance
+                    && collector_def
+                        .minimum_distance
+                        .as_ref()
+                        .is_none_or(|minimum_distance| {
+                            Self::meets_minimum_distance(
+                                &collector,
+                                &self.state.entities,
+                                minimum_distance,
+                            )
+                        })
+                {
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
                     self.credit_resource(&collector.owner_player_id, &node.resource_type, rate);
                     self.set_collector_ui_state(

@@ -404,6 +404,19 @@ pub struct CollectorDef {
     /// Empty means any refinery that accepts the resource.
     #[serde(default)]
     pub deposit_entity_types: Vec<String>,
+    /// Optional same-owner spacing required before proximity collection credits resources.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minimum_distance: Option<MinimumDistanceDef>,
+}
+
+/// Same-owner entity types a collector must remain away from while collecting.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MinimumDistanceDef {
+    /// Inclusive center-to-center distance in world units.
+    pub value: f32,
+    /// Entity types that participate in the same-owner distance check.
+    pub entity_types: Vec<String>,
 }
 
 /// Resource source profile for entity types that can be gathered from.
@@ -626,6 +639,25 @@ fn validate_technologies(
                 anyhow::bail!(
                     "entity type {entity_id} researches unknown technology {technology_id}"
                 );
+            }
+        }
+        if let Some(minimum_distance) = entity
+            .collector
+            .as_ref()
+            .and_then(|collector| collector.minimum_distance.as_ref())
+        {
+            if !minimum_distance.value.is_finite() || minimum_distance.value <= 0.0 {
+                anyhow::bail!("entity type {entity_id} has an invalid collector minimum distance");
+            }
+            if minimum_distance.entity_types.is_empty() {
+                anyhow::bail!("entity type {entity_id} minimum distance requires entity types");
+            }
+            for other_type in &minimum_distance.entity_types {
+                if !entity_types.contains_key(other_type) {
+                    anyhow::bail!(
+                        "entity type {entity_id} minimum distance references unknown entity type {other_type}"
+                    );
+                }
             }
         }
     }

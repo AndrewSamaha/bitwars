@@ -344,6 +344,17 @@
             "type": "string"
           }
         },
+        "minimum_distance": {
+          "description": "Optional same-owner spacing required before proximity collection credits resources.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MinimumDistanceDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "proximity_rate_per_second": {
           "description": "Units/second gathered in proximity mode while in effective band.",
           "type": "number",
@@ -410,6 +421,29 @@
           "type": "string",
           "const": "forget_when_hidden"
         }
+      ]
+    },
+    "MinimumDistanceDef": {
+      "description": "Same-owner entity types a collector must remain away from while collecting.",
+      "type": "object",
+      "properties": {
+        "entity_types": {
+          "description": "Entity types that participate in the same-owner distance check.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "value": {
+          "description": "Inclusive center-to-center distance in world units.",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "entity_types"
       ]
     },
     "NearEnemyStrategy": {

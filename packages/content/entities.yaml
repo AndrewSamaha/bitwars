@@ -148,6 +148,11 @@ entity_types:
       vfx: solar_proximity
       collects:
         - energy
+      minimum_distance:
+        value: 250
+        entity_types:
+          - collector_solar
+          - collector_solar_v2
       proximity_rate_per_second: 3
       transport_rate_per_second: 0
       carry_capacity: 0
@@ -470,6 +475,11 @@ entity_types:
       vfx: solar_proximity
       collects:
         - energy
+      minimum_distance:
+        value: 250
+        entity_types:
+          - collector_solar
+          - collector_solar_v2
       proximity_rate_per_second: 15
       transport_rate_per_second: 0
       carry_capacity: 0
