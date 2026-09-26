@@ -8,7 +8,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchBuildCompleted, dispatchEntityDetected, dispatchEntityExploded, dispatchGameStateUpdated } from "@/features/gamestate/events";
+import { dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -86,6 +86,7 @@ const LIFECYCLE_STATE_IN_PROGRESS = 3;
 const LIFECYCLE_STATE_FINISHED = 5;
 const LIFECYCLE_STATE_CANCELED = 6;
 const LIFECYCLE_STATE_REJECTED = 7;
+const LIFECYCLE_REASON_MINIMUM_DISTANCE_VIOLATION = 9;
 const DEBUG_LOG_GAMESTATE_ENTITIES =
   process.env.NEXT_PUBLIC_DEBUG_LOG_GAMESTATE_ENTITIES === "1";
 
@@ -408,7 +409,18 @@ export default function GameStateStreamBridge() {
       }
       for (const state of payload.collector_state_updates ?? []) {
         const existing = byId.get(normalizeId(state.entity_id));
-        if (existing) existing.collector_state = collectorStateFromStream(state);
+        if (existing) {
+          if (shouldNotifyCollectionWaiting(
+            existing.collector_state?.activity,
+            state.activity,
+            existing.entity_type_id,
+            existing.owner_player_id,
+            currentPlayerIdRef.current,
+          )) {
+            dispatchCollectionWaiting({ collectorEntityId: normalizeId(state.entity_id) });
+          }
+          existing.collector_state = collectorStateFromStream(state);
+        }
       }
       for (const state of payload.combat_effect_state_updates ?? []) {
         const existing = byId.get(normalizeId(state.entity_id));
@@ -495,6 +507,21 @@ export default function GameStateStreamBridge() {
               : Number(payload.serverTick ?? 0);
           const intentId = payload.intentId ?? "";
           const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
+          const reason = typeof payload.reason === "number" ? payload.reason : Number(payload.reason);
+          const minimumDistanceViolation = payload.minimumDistanceViolation;
+          if (
+            entityIdFromCmd != null
+            && (state === LIFECYCLE_STATE_CANCELED || state === LIFECYCLE_STATE_REJECTED)
+            && reason === LIFECYCLE_REASON_MINIMUM_DISTANCE_VIOLATION
+            && minimumDistanceViolation
+          ) {
+            dispatchMinimumDistanceViolation({
+              collectorEntityId: String(entityIdFromCmd),
+              blockingEntityId: String(minimumDistanceViolation.blockingEntityId),
+              requiredDistance: Number(minimumDistanceViolation.requiredDistance),
+              actualDistance: Number(minimumDistanceViolation.actualDistance),
+            });
+          }
           const isCompletedConstruction =
             state === LIFECYCLE_STATE_FINISHED &&
             ["build", "upgrade"].includes(intentQueue.getKindForClientCmd(clientCmdId) ?? "");
@@ -505,7 +532,7 @@ export default function GameStateStreamBridge() {
             playerId: payload.playerId ?? "",
             serverTick: payload.serverTick ?? "0",
             state,
-            reason: typeof payload.reason === "number" ? payload.reason : Number(payload.reason),
+            reason,
           });
 
           const entityKey =

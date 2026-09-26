@@ -12,7 +12,8 @@ use uuid::{Uuid, Version};
 use crate::combat::CombatSystem;
 use crate::config::GameConfig;
 use crate::content::{
-    CollectionMode, ContentPack, EntityTypeDef, RadiationShieldingDef, RepairDef,
+    CollectionMode, ContentPack, EntityTypeDef, MinimumDistanceDef, RadiationShieldingDef,
+    RepairDef,
 };
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
@@ -29,7 +30,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
 use prost::Message;
 use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 11;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 12;
 const TICK_TIMING_WINDOW_TICKS: usize = 600;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -39,7 +40,16 @@ const COLLECTOR_ACTIVITY_GATHERING: &str = "gathering";
 const COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF: &str = "moving_to_dropoff";
 const COLLECTOR_ACTIVITY_DELIVERING: &str = "delivering";
 const COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING: &str = "proximity_collecting";
+const COLLECTOR_ACTIVITY_WAITING_FOR_TURN: &str = "waiting_for_turn";
 const BUILD_SPAWN_RADIUS: f32 = 100.0;
+
+fn retry_delay_ticks(retry_after_ms: u64, tps: u32) -> u64 {
+    (retry_after_ms
+        .saturating_mul(tps as u64)
+        .saturating_add(999)
+        / 1000)
+        .max(1)
+}
 
 #[derive(Clone, Debug)]
 struct CarryState {
@@ -54,6 +64,7 @@ struct ResourceNodeSnapshot {
     y: f32,
     resource_type: String,
     mode: CollectionMode,
+    max_simultaneous_collectors: Option<u32>,
     min_effective_distance: f32,
     max_effective_distance: f32,
 }
@@ -75,6 +86,26 @@ struct CollectorSnapshot {
     owner_player_id: String,
     x: f32,
     y: f32,
+}
+
+fn claim_transport_slot(node: &ResourceNodeSnapshot, gathering_by_node: &mut HashMap<u64, u32>) -> bool {
+    let gathering = gathering_by_node.entry(node.id).or_default();
+    if node.max_simultaneous_collectors.is_some_and(|limit| *gathering >= limit) {
+        return false;
+    }
+    *gathering += 1;
+    true
+}
+
+fn collection_order_key(previous_activity: Option<&str>, waiting_since: Option<u64>, entity_id: u64) -> (u8, u64, u64) {
+    let priority = if matches!(previous_activity, Some(COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING | COLLECTOR_ACTIVITY_GATHERING)) {
+        0
+    } else if waiting_since.is_some() {
+        1
+    } else {
+        2
+    };
+    (priority, waiting_since.unwrap_or(u64::MAX), entity_id)
 }
 
 fn debit_maintenance_without_debt(
@@ -177,6 +208,143 @@ mod maintenance_tests {
         debit_maintenance_without_debt(&mut ledger, &mut fractional, "player-1", "energy", 0.75);
         assert_eq!(ledger["player-1"]["energy"], 0);
         assert!(fractional.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod collection_distance_tests {
+    use super::*;
+
+    #[test]
+    fn proximity_collection_requires_distance_from_listed_same_owner_types() {
+        let collector = CollectorSnapshot {
+            id: 1,
+            entity_type_id: "collector_solar".to_string(),
+            owner_player_id: "p1".to_string(),
+            x: 0.0,
+            y: 0.0,
+        };
+        let rule = MinimumDistanceDef {
+            value: 250.0,
+            entity_types: vec!["collector_solar".to_string()],
+            retry_after_ms: 1000,
+        };
+        let entity = |id, entity_type_id: &str, owner_player_id: &str, x| pb::Entity {
+            id,
+            entity_type_id: entity_type_id.to_string(),
+            owner_player_id: owner_player_id.to_string(),
+            pos: Some(pb::Vec2 { x, y: 0.0 }),
+            ..Default::default()
+        };
+
+        let violation = Engine::minimum_distance_violation(
+            &collector,
+            &[entity(2, "collector_solar", "p1", 249.0)],
+            &rule,
+            &HashSet::from([2]),
+        )
+        .expect("nearby same-owner collector should block collection");
+        assert_eq!(violation.blocking_entity_id, 2);
+        assert_eq!(violation.required_distance, 250.0);
+        assert_eq!(violation.actual_distance, 249.0);
+        assert!(Engine::minimum_distance_violation(
+            &collector,
+            &[
+                entity(2, "collector_solar", "p2", 1.0),
+                entity(3, "worker", "p1", 1.0),
+                entity(4, "collector_solar", "p1", 250.0),
+            ],
+            &rule,
+            &HashSet::from([2, 3, 4]),
+        )
+        .is_none());
+        assert!(Engine::minimum_distance_violation(
+            &collector,
+            &[entity(2, "collector_solar", "p1", 10.0)],
+            &rule,
+            &HashSet::new(),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn retry_delay_rounds_up_to_a_tick() {
+        assert_eq!(retry_delay_ticks(1000, 60), 60);
+        assert_eq!(retry_delay_ticks(1001, 60), 61);
+        assert_eq!(retry_delay_ticks(1, 60), 1);
+    }
+}
+
+#[cfg(test)]
+mod transport_capacity_tests {
+    use super::*;
+
+    #[test]
+    fn content_configures_transport_node_capacity() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml");
+        let content = ContentPack::load(&path).unwrap();
+        for entity_type in ["minerals", "planet_blue"] {
+            assert_eq!(content.get(entity_type).unwrap().resource_node.as_ref().unwrap().max_simultaneous_collectors, Some(1));
+        }
+    }
+
+    #[test]
+    fn capacity_is_per_resource_entity() {
+        let node = ResourceNodeSnapshot {
+            id: 10,
+            x: 0.0,
+            y: 0.0,
+            resource_type: "minerals".into(),
+            mode: CollectionMode::Transport,
+            max_simultaneous_collectors: Some(1),
+            min_effective_distance: 20.0,
+            max_effective_distance: 50.0,
+        };
+        let mut gathering = HashMap::new();
+        assert!(claim_transport_slot(&node, &mut gathering));
+        assert!(!claim_transport_slot(&node, &mut gathering));
+        assert!(claim_transport_slot(&ResourceNodeSnapshot { id: 11, ..node.clone() }, &mut gathering));
+        gathering.clear(); // A full worker has started its delivery trip.
+        assert!(claim_transport_slot(&node, &mut gathering));
+    }
+
+    #[test]
+    fn incumbent_then_longest_waiting_then_new_arrival() {
+        let mut workers = [
+            (1, None, None),
+            (7, Some("waiting_for_turn"), Some(3)),
+            (9, Some("gathering"), None),
+            (2, Some("waiting_for_turn"), Some(5)),
+            (4, Some("waiting_for_turn"), Some(3)),
+        ];
+        workers.sort_by_key(|(id, activity, since)| collection_order_key(*activity, *since, *id));
+        assert_eq!(workers.map(|(id, _, _)| id), [9, 4, 7, 2, 1]);
+    }
+
+    #[test]
+    fn collector_stays_bound_to_its_node_across_trips() {
+        let collector = CollectorSnapshot {
+            id: 1,
+            entity_type_id: "worker".into(),
+            owner_player_id: "p1".into(),
+            x: 0.0,
+            y: 0.0,
+        };
+        let far = ResourceNodeSnapshot {
+            id: 10,
+            x: 100.0,
+            y: 0.0,
+            resource_type: "minerals".into(),
+            mode: CollectionMode::Transport,
+            max_simultaneous_collectors: Some(1),
+            min_effective_distance: 20.0,
+            max_effective_distance: 50.0,
+        };
+        let nodes = [far.clone(), ResourceNodeSnapshot { id: 11, x: 10.0, ..far }];
+        let collects = vec!["minerals".to_string()];
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(10), None, "minerals", false, &collects).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(99), None, "minerals", false, &collects).unwrap().id, 11);
     }
 }
 
@@ -622,6 +790,10 @@ pub struct Engine {
     joined_players: HashSet<String>,
     /// M8: In-flight transport-mode carry amounts per collector entity.
     carry_by_entity: HashMap<u64, CarryState>,
+    /// Transport collectors stay bound to one resource entity across delivery trips.
+    transport_node_by_entity: HashMap<u64, u64>,
+    /// First tick spent waiting at a full resource entity; used for FIFO admission.
+    transport_wait_since_tick_by_entity: HashMap<u64, u64>,
     /// M8: Fractional per-player resources accumulated between integer ledger commits.
     resource_fractional: HashMap<(String, String), f32>,
     /// Fractional resource debits accumulated while construction channels run.
@@ -636,6 +808,8 @@ pub struct Engine {
     resource_gain_total: HashMap<(String, String), f64>,
     /// Per-collector runtime telemetry published through authoritative snapshots and deltas.
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
+    /// Next tick when a spacing-blocked collector may try gathering again.
+    collection_retry_tick_by_entity: HashMap<u64, u64>,
     /// Previous telemetry state used to emit sparse authoritative delta updates.
     prev_collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
     /// Per-attacker continuous combat effects, streamed for presentation.
@@ -1053,6 +1227,8 @@ impl Engine {
                     telemetry,
                     joined_players,
                     carry_by_entity: HashMap::new(),
+                    transport_node_by_entity: HashMap::new(),
+                    transport_wait_since_tick_by_entity: HashMap::new(),
                     resource_fractional: HashMap::new(),
                     build_spend_fractional: HashMap::new(),
                     repair_spend_fractional: HashMap::new(),
@@ -1060,6 +1236,7 @@ impl Engine {
                     resource_spend_total: HashMap::new(),
                     resource_gain_total: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
+                    collection_retry_tick_by_entity: HashMap::new(),
                     prev_collector_ui_state_by_entity: HashMap::new(),
                     combat_effect_ui_state_by_entity: HashMap::new(),
                     prev_combat_effect_ui_state_by_entity: HashMap::new(),
@@ -1141,6 +1318,8 @@ impl Engine {
             telemetry,
             joined_players: HashSet::new(),
             carry_by_entity: HashMap::new(),
+            transport_node_by_entity: HashMap::new(),
+            transport_wait_since_tick_by_entity: HashMap::new(),
             resource_fractional: HashMap::new(),
             build_spend_fractional: HashMap::new(),
             repair_spend_fractional: HashMap::new(),
@@ -1148,6 +1327,7 @@ impl Engine {
             resource_spend_total: HashMap::new(),
             resource_gain_total: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
+            collection_retry_tick_by_entity: HashMap::new(),
             prev_collector_ui_state_by_entity: HashMap::new(),
             combat_effect_ui_state_by_entity: HashMap::new(),
             prev_combat_effect_ui_state_by_entity: HashMap::new(),
@@ -1970,6 +2150,7 @@ impl Engine {
                 y: pos.y,
                 resource_type: node.resource_type.clone(),
                 mode: node.collection_mode.clone(),
+                max_simultaneous_collectors: node.max_simultaneous_collectors,
                 min_effective_distance: node.min_effective_distance.max(0.0),
                 max_effective_distance: node
                     .max_effective_distance
@@ -2635,6 +2816,37 @@ impl Engine {
             })
     }
 
+    fn pick_transport_node<'a>(
+        collector: &CollectorSnapshot,
+        nodes: &'a [ResourceNodeSnapshot],
+        bound_id: Option<u64>,
+        preferred_resource_type: Option<&str>,
+        assigned_resource_type: &str,
+        nearest_compatible: bool,
+        collects: &[String],
+    ) -> Option<&'a ResourceNodeSnapshot> {
+        let eligible = |node: &&ResourceNodeSnapshot| {
+            node.mode == CollectionMode::Transport
+                && if let Some(resource_type) = preferred_resource_type {
+                    node.resource_type == resource_type
+                } else if nearest_compatible {
+                    collects.contains(&node.resource_type)
+                } else {
+                    node.resource_type == assigned_resource_type
+                }
+        };
+        if let Some(node) = nodes.iter().filter(eligible).find(|node| Some(node.id) == bound_id) {
+            return Some(node);
+        }
+        nodes.iter().filter(eligible).min_by(|a, b| {
+            let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
+            let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
+            da.partial_cmp(&db)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.id.cmp(&b.id))
+        })
+    }
+
     fn pick_best_refinery<'a>(
         collector: &CollectorSnapshot,
         refineries: &'a [RefinerySnapshot],
@@ -2657,6 +2869,46 @@ impl Engine {
                 da.partial_cmp(&db)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| a.id.cmp(&b.id))
+            })
+    }
+
+    fn minimum_distance_violation(
+        collector: &CollectorSnapshot,
+        entities: &[pb::Entity],
+        minimum_distance: &MinimumDistanceDef,
+        operating_collectors: &HashSet<u64>,
+    ) -> Option<pb::MinimumDistanceViolation> {
+        let minimum_distance_sq = minimum_distance.value * minimum_distance.value;
+        entities
+            .iter()
+            .filter(|entity| {
+                entity.id != collector.id
+                    && operating_collectors.contains(&entity.id)
+                    && entity.owner_player_id == collector.owner_player_id
+                    && minimum_distance
+                        .entity_types
+                        .iter()
+                        .any(|entity_type| entity_type == &entity.entity_type_id)
+            })
+            .filter_map(|entity| {
+                entity.pos.as_ref().map(|position| {
+                    (
+                        entity.id,
+                        Self::distance_sq(collector.x, collector.y, position.x, position.y),
+                    )
+                })
+            })
+            .filter(|(_, distance_sq)| *distance_sq < minimum_distance_sq)
+            .min_by(|(a_id, a_distance_sq), (b_id, b_distance_sq)| {
+                a_distance_sq
+                    .partial_cmp(b_distance_sq)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a_id.cmp(b_id))
+            })
+            .map(|(blocking_entity_id, distance_sq)| pb::MinimumDistanceViolation {
+                blocking_entity_id,
+                required_distance: minimum_distance.value,
+                actual_distance: distance_sq.sqrt(),
             })
     }
 
@@ -2725,7 +2977,7 @@ impl Engine {
         }
     }
 
-    fn apply_resource_collection(&mut self, dt: f32) {
+    async fn apply_resource_collection(&mut self, dt: f32) {
         if self.content.is_none() {
             return;
         }
@@ -2752,10 +3004,24 @@ impl Engine {
                 _ => None,
             })
             .collect();
-        let collectors = self.build_collector_snapshots();
+        let mut collectors = self.build_collector_snapshots();
+        // Existing producers keep their spot. Waiting transport collectors go
+        // next in arrival order, then new arrivals in entity-ID order.
+        collectors.sort_by_key(|collector| {
+            let activity = self
+                .collector_ui_state_by_entity
+                .get(&collector.id)
+                .map(|state| state.activity.as_str());
+            let waiting_since = self.transport_wait_since_tick_by_entity.get(&collector.id).copied();
+            collection_order_key(activity, waiting_since, collector.id)
+        });
+        let mut operating_collectors = HashSet::new();
+        let mut gathering_by_node = HashMap::new();
         let nodes = self.build_resource_node_snapshots();
         let refineries = self.build_refinery_snapshots();
         let collector_ids: HashSet<u64> = collectors.iter().map(|c| c.id).collect();
+        self.transport_node_by_entity.retain(|id, _| collector_ids.contains(id));
+        self.transport_wait_since_tick_by_entity.retain(|id, _| collector_ids.contains(id));
         let stale_carry_ids: Vec<u64> = self
             .carry_by_entity
             .keys()
@@ -2773,6 +3039,7 @@ impl Engine {
             .collect();
         for id in stale_ui_ids {
             self.collector_ui_state_by_entity.remove(&id);
+            self.collection_retry_tick_by_entity.remove(&id);
         }
 
         for collector in collectors {
@@ -2794,6 +3061,8 @@ impl Engine {
             // M8 (collect-intent model): autonomous collection only runs while
             // a maintained Collect intent is active for this entity.
             if !collect_active_entities.contains(&collector.id) {
+                self.collection_retry_tick_by_entity.remove(&collector.id);
+                self.transport_wait_since_tick_by_entity.remove(&collector.id);
                 if let Some(carry) = carry_snapshot.as_ref() {
                     self.set_collector_ui_state(
                         collector.id,
@@ -2827,6 +3096,7 @@ impl Engine {
                 let carry_is_full =
                     carry_capacity > 0.0 && carry.amount >= (carry_capacity - f32::EPSILON);
                 if carry.amount > 0.0 && carry_is_full {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     if let Some(refinery) = Self::pick_best_refinery(
                         &collector,
                         &refineries,
@@ -2915,41 +3185,42 @@ impl Engine {
                 .as_ref()
                 .filter(|c| c.amount > 0.0)
                 .map(|c| c.resource_type.as_str());
-            let node = if let Some(resource_type) = preferred_resource_type {
-                nodes
-                    .iter()
-                    .filter(|n| n.mode == CollectionMode::Transport)
-                    .filter(|n| n.resource_type == resource_type)
-                    .min_by(|a, b| {
-                        let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
-                        let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
-                        da.partial_cmp(&db)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                            .then_with(|| a.id.cmp(&b.id))
-                    })
-            } else if !*nearest_compatible {
-                nodes
-                    .iter()
-                    .filter(|n| n.mode == CollectionMode::Transport)
-                    .filter(|n| n.resource_type == *assigned_resource_type)
-                    .min_by(|a, b| {
-                        let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
-                        let db = Self::distance_sq(collector.x, collector.y, b.x, b.y);
-                        da.partial_cmp(&db)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                            .then_with(|| a.id.cmp(&b.id))
-                    })
-            } else {
-                Self::pick_best_node(
-                    &collector,
-                    &nodes,
-                    CollectionMode::Transport,
-                    &collector_def.collects,
-                )
-            };
+            let node = Self::pick_transport_node(
+                &collector,
+                &nodes,
+                self.transport_node_by_entity.get(&collector.id).copied(),
+                preferred_resource_type,
+                assigned_resource_type,
+                *nearest_compatible,
+                &collector_def.collects,
+            );
             if let Some(node) = node {
+                if self.transport_node_by_entity.get(&collector.id) != Some(&node.id) {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
+                }
+                self.transport_node_by_entity.insert(collector.id, node.id);
                 let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
                 if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
+                    if !claim_transport_slot(node, &mut gathering_by_node) {
+                        self.transport_wait_since_tick_by_entity
+                            .entry(collector.id)
+                            .or_insert(self.state.tick);
+                        self.set_collector_ui_state(
+                            collector.id,
+                            COLLECTOR_ACTIVITY_WAITING_FOR_TURN,
+                            &node.resource_type,
+                            carry_snapshot.as_ref().map(|c| c.amount).unwrap_or(0.0),
+                            carry_capacity,
+                            0.0,
+                        );
+                        if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
+                            let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+                            vel.x = 0.0;
+                            vel.y = 0.0;
+                        }
+                        continue;
+                    }
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     let gather = collector_def.transport_rate_per_second.max(0.0) * dt;
                     if gather > 0.0 {
                         let (resource_type, carry_amount) = {
@@ -3001,6 +3272,7 @@ impl Engine {
                     .iter_mut()
                     .find(|e| e.id == collector.id)
                 {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     Self::drive_velocity_to_band(
                         entity,
                         speed,
@@ -3019,6 +3291,9 @@ impl Engine {
                     );
                 }
                 handled_transport = true;
+            } else {
+                self.transport_node_by_entity.remove(&collector.id);
+                self.transport_wait_since_tick_by_entity.remove(&collector.id);
             }
 
             // Proximity mode only when not engaged in transport mode for this tick.
@@ -3048,6 +3323,54 @@ impl Engine {
             if let Some(node) = proximity_node {
                 let dist = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
                 if dist >= node.min_effective_distance && dist <= node.max_effective_distance {
+                    let waiting_for_retry = self
+                        .collection_retry_tick_by_entity
+                        .get(&collector.id)
+                        .is_some_and(|next_tick| self.state.tick < *next_tick);
+                    let blocker = if waiting_for_retry {
+                        None
+                    } else {
+                        collector_def.minimum_distance.as_ref().and_then(|rule| {
+                            Self::minimum_distance_violation(
+                                &collector,
+                                &self.state.entities,
+                                rule,
+                                &operating_collectors,
+                            )
+                        })
+                    };
+                    if waiting_for_retry || blocker.is_some() {
+                        if let (Some(rule), Some(_)) =
+                            (collector_def.minimum_distance.as_ref(), blocker)
+                        {
+                            let retry_ticks = retry_delay_ticks(rule.retry_after_ms, self.cfg.tps);
+                            self.collection_retry_tick_by_entity.insert(
+                                collector.id,
+                                self.state.tick.saturating_add(retry_ticks),
+                            );
+                        }
+                        self.set_collector_ui_state(
+                            collector.id,
+                            COLLECTOR_ACTIVITY_WAITING_FOR_TURN,
+                            &node.resource_type,
+                            0.0,
+                            carry_capacity,
+                            0.0,
+                        );
+                        if let Some(entity) = self
+                            .state
+                            .entities
+                            .iter_mut()
+                            .find(|e| e.id == collector.id)
+                        {
+                            let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
+                            vel.x = 0.0;
+                            vel.y = 0.0;
+                        }
+                        continue;
+                    }
+                    self.collection_retry_tick_by_entity.remove(&collector.id);
+                    operating_collectors.insert(collector.id);
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
                     self.credit_resource(&collector.owner_player_id, &node.resource_type, rate);
                     self.set_collector_ui_state(
@@ -3074,6 +3397,7 @@ impl Engine {
                     .iter_mut()
                     .find(|e| e.id == collector.id)
                 {
+                    self.collection_retry_tick_by_entity.remove(&collector.id);
                     Self::drive_velocity_to_band(
                         entity,
                         speed,
@@ -3227,7 +3551,7 @@ impl Engine {
         self.emit_combat_destructions(&combat.destructions).await;
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_repairs(dt).await;
-        self.apply_resource_collection(dt);
+        self.apply_resource_collection(dt).await;
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
@@ -3443,7 +3767,7 @@ impl Engine {
                 &mut phase_started,
             );
             self.apply_repairs(dt).await;
-            self.apply_resource_collection(dt);
+            self.apply_resource_collection(dt).await;
             self.advance_builds(dt).await;
             self.advance_research(dt).await;
             self.apply_maintenance_costs(dt);
@@ -4207,6 +4531,8 @@ impl Engine {
         }
 
         if let Some((entity_id, _)) = outcome.started {
+            self.collection_retry_tick_by_entity.remove(&entity_id);
+            self.transport_wait_since_tick_by_entity.remove(&entity_id);
             if intent_kind == "upgrade" {
                 if let Some(entity) = self
                     .state
@@ -4321,6 +4647,18 @@ impl Engine {
         reason: pb::LifecycleReason,
         tick: u64,
     ) -> Result<()> {
+        self.emit_lifecycle_event_with_details(metadata, state, reason, tick, None)
+            .await
+    }
+
+    async fn emit_lifecycle_event_with_details(
+        &mut self,
+        metadata: &IntentMetadata,
+        state: pb::LifecycleState,
+        reason: pb::LifecycleReason,
+        tick: u64,
+        minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
+    ) -> Result<()> {
         if !self
             .lifecycle_emitted
             .insert((metadata.intent_id.clone(), state))
@@ -4335,6 +4673,7 @@ impl Engine {
             reason,
             tick,
             metadata.protocol_version,
+            minimum_distance_violation,
         )
         .await
     }
@@ -4348,6 +4687,7 @@ impl Engine {
         reason: pb::LifecycleReason,
         tick: u64,
         protocol_version: u32,
+        minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
     ) -> Result<()> {
         let event = pb::LifecycleEvent {
             intent_id: intent_id.to_vec(),
@@ -4357,6 +4697,7 @@ impl Engine {
             state: state as i32,
             reason: reason as i32,
             protocol_version,
+            minimum_distance_violation,
         };
         self.redis
             .publish_lifecycle_event(&event)

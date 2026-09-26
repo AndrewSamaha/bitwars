@@ -51,6 +51,13 @@ export async function emitEventFromBuffer(
         state: record.record.value.state,
         reason: record.record.value.reason,
         protocolVersion: record.record.value.protocolVersion,
+        minimumDistanceViolation: record.record.value.minimumDistanceViolation
+          ? {
+              blockingEntityId: record.record.value.minimumDistanceViolation.blockingEntityId.toString(),
+              requiredDistance: record.record.value.minimumDistanceViolation.requiredDistance,
+              actualDistance: record.record.value.minimumDistanceViolation.actualDistance,
+            }
+          : undefined,
       };
       await channel.write(sseFormat({ event: "lifecycle", id, data: payload }));
       break;

@@ -362,6 +362,17 @@ pub struct LifecycleEvent {
     pub reason: i32,
     #[prost(uint32, tag = "7")]
     pub protocol_version: u32,
+    #[prost(message, optional, tag = "8")]
+    pub minimum_distance_violation: ::core::option::Option<MinimumDistanceViolation>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct MinimumDistanceViolation {
+    #[prost(uint64, tag = "1")]
+    pub blocking_entity_id: u64,
+    #[prost(float, tag = "2")]
+    pub required_distance: f32,
+    #[prost(float, tag = "3")]
+    pub actual_distance: f32,
 }
 /// A server-authoritative firing decision. Damage is already resolved at this
 /// tick; clients use this only to render a directionally correct tracer.
@@ -586,6 +597,7 @@ pub enum LifecycleReason {
     EntityBusy = 7,
     /// M6: entity not owned by issuing player
     NotOwned = 8,
+    MinimumDistanceViolation = 9,
 }
 impl LifecycleReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -603,6 +615,7 @@ impl LifecycleReason {
             Self::ProtocolMismatch => "PROTOCOL_MISMATCH",
             Self::EntityBusy => "ENTITY_BUSY",
             Self::NotOwned => "NOT_OWNED",
+            Self::MinimumDistanceViolation => "MINIMUM_DISTANCE_VIOLATION",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -617,6 +630,7 @@ impl LifecycleReason {
             "PROTOCOL_MISMATCH" => Some(Self::ProtocolMismatch),
             "ENTITY_BUSY" => Some(Self::EntityBusy),
             "NOT_OWNED" => Some(Self::NotOwned),
+            "MINIMUM_DISTANCE_VIOLATION" => Some(Self::MinimumDistanceViolation),
             _ => None,
         }
     }

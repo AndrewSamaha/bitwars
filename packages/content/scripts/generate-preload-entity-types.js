@@ -43,7 +43,7 @@ function extractEntityTypes(yamlContent) {
   };
 
   for (const line of lines) {
-    if (/^\s*entity_types\s*:/.test(line)) {
+    if (/^entity_types\s*:/.test(line)) {
       inEntityTypes = true;
       continue;
     }

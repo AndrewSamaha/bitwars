@@ -14,7 +14,7 @@ import { intentQueue, type SendIntentParams } from "@/features/intent-queue/inte
 import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from "@/features/pixijs/effects/renderEffects";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
-import { BUILD_COMPLETED_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
+import { BUILD_COMPLETED_EVENT, CENTER_CAMERA_ON_ENTITY_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
 import {
   createGameEntityVisual,
   createGameWorldContainer,
@@ -323,6 +323,16 @@ export default function GameStage() {
         };
         window.addEventListener("bitwars:stream-open", requestRecenter as EventListener);
         window.addEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
+        const onCenterCameraOnEntity = (event: Event) => {
+          const entity = findLiveEntityById((event as CustomEvent<string>).detail);
+          if (!entity?.pos) return;
+          worldContainer.position.set(
+            app.screen.width / 2 - entity.pos.x * worldContainer.scale.x,
+            app.screen.height / 2 - entity.pos.y * worldContainer.scale.y,
+          );
+          setSelection([String(entity.id)]);
+        };
+        window.addEventListener(CENTER_CAMERA_ON_ENTITY_EVENT, onCenterCameraOnEntity);
 
         const centerCameraOnOwnedEntities = (): boolean => {
           const myId = myPlayerIdRef.current;
@@ -1352,6 +1362,7 @@ export default function GameStage() {
           }
           window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
           window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
+          window.removeEventListener(CENTER_CAMERA_ON_ENTITY_EVENT, onCenterCameraOnEntity);
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
           window.removeEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
           window.removeEventListener(BUILD_COMPLETED_EVENT, onEntityDetected);

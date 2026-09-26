@@ -78,6 +78,7 @@ entity_types:
     resource_node:
       resource_type: food
       collection_mode: transport
+      max_simultaneous_collectors: 1
       min_effective_distance: 20
       max_effective_distance: 50
   star_yellow:
@@ -121,6 +122,7 @@ entity_types:
     resource_node:
       resource_type: minerals
       collection_mode: transport
+      max_simultaneous_collectors: 1
       min_effective_distance: 20
       max_effective_distance: 50
   collector_solar:
@@ -148,6 +150,13 @@ entity_types:
       vfx: solar_proximity
       collects:
         - energy
+      minimum_distance:
+        value: 800
+        retry_after_ms: 1000
+        entity_types:
+          - collector_solar
+          - collector_solar_v2
+          - habitat
       proximity_rate_per_second: 3
       transport_rate_per_second: 0
       carry_capacity: 0
@@ -263,6 +272,13 @@ entity_types:
       proximity_rate_per_second: 5
       transport_rate_per_second: 0
       carry_capacity: 0
+      minimum_distance:
+        value: 800
+        retry_after_ms: 1000
+        entity_types:
+          - collector_solar
+          - collector_solar_v2
+          - habitat
     researches:
       - neutrino_sensors
   processor:
@@ -423,7 +439,7 @@ entity_types:
     stop_radius: 0.5
     mass: 1
     health: 500
-    hull_radius: 15
+    hull_radius: 150
     combat:
       acquisition_range: 500
       on_near_enemy_strategy: stay
@@ -470,6 +486,13 @@ entity_types:
       vfx: solar_proximity
       collects:
         - energy
+      minimum_distance:
+        value: 800
+        retry_after_ms: 1000
+        entity_types:
+          - collector_solar
+          - collector_solar_v2
+          - habitat
       proximity_rate_per_second: 15
       transport_rate_per_second: 0
       carry_capacity: 0
@@ -507,7 +530,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 60
-    hull_radius: 10
+    hull_radius: 100
     combat_targetable: true
     build_cost:
       minerals: 75
