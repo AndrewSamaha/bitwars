@@ -1,6 +1,6 @@
 "use client";
 
-import GameStage from "@/features/pixijs/components/GameStage";
+import dynamic from "next/dynamic";
 import AudioEventBridge from "@/features/audio/components/AudioEventBridge";
 import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge";
 import GameStreamGate from "@/features/gamestate/components/GameStreamGate";
@@ -12,6 +12,12 @@ import IntentQueuePanel from "@/features/intent-queue/IntentQueuePanel";
 import { ResourceHUD } from "@/features/hud/components/ResourceHUD";
 import LifecycleToasts from "@/features/hud/components/LifecycleToasts";
 import { SessionProvider, useSession } from "@/features/users/components/identity/SessionContext";
+
+// Pixi accesses browser globals while its modules are initialized, so it must
+// never be included in Next's server-rendered bundle.
+const GameStage = dynamic(() => import("@/features/pixijs/components/GameStage"), {
+  ssr: false,
+});
 
 /** Server passes serialized player (dates as ISO strings); PlayerProvider parses with PlayerSchema. */
 type ClientGamePageProps = {
