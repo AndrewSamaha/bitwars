@@ -1,4 +1,4 @@
-export const RESOURCE_TREND_WINDOW = 30;
+export const RESOURCE_TREND_WINDOW = 90;
 
 export type ResourceTrend = {
   changes: number[];
