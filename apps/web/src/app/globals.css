@@ -125,3 +125,35 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* The entity graph is a large two-dimensional workspace. Give its scrollbars
+ * an explicit, high-contrast treatment instead of relying on OS overlay bars. */
+.graph-scrollport {
+  scrollbar-color: #64748b #020617;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: auto;
+}
+
+.graph-scrollport::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.graph-scrollport::-webkit-scrollbar-track {
+  background: #020617;
+  border-radius: 0.5rem;
+}
+
+.graph-scrollport::-webkit-scrollbar-thumb {
+  background: #64748b;
+  border: 3px solid #020617;
+  border-radius: 9999px;
+}
+
+.graph-scrollport::-webkit-scrollbar-thumb:hover {
+  background: #22d3ee;
+}
+
+.graph-scrollport::-webkit-scrollbar-corner {
+  background: #020617;
+}

@@ -67,16 +67,16 @@ function visualScale(definition: string, fallback = 1): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
-function loadSpriteSize(src: string): Promise<SpriteSize> {
+function loadSpriteSize(src: string): Promise<SpriteSize | null> {
   return new Promise((resolve) => {
     const image = new Image();
     image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
-    image.onerror = () => resolve({ width: 48, height: 48 });
+    image.onerror = () => resolve(null);
     image.src = src;
   });
 }
 
-async function loadSpriteSizes(entities: readonly Entity[]) {
+async function loadSpriteSizes(entities: readonly Entity[]): Promise<Record<string, SpriteSize | null>> {
   return Object.fromEntries(await Promise.all(entities.map(async (entity) => [entity.id, await loadSpriteSize(`/assets/${entity.id}/idle.png`)] as const)));
 }
 
@@ -123,7 +123,7 @@ export default function ContentGraph() {
   const [drawToScale, setDrawToScale] = useState(true);
   const [drawToScaleReady, setDrawToScaleReady] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [spriteSizes, setSpriteSizes] = useState<Record<string, SpriteSize>>({});
+  const [spriteSizes, setSpriteSizes] = useState<Record<string, SpriteSize | null>>({});
   const [spriteMenuOpen, setSpriteMenuOpen] = useState(false);
   const graphRef = useRef<HTMLDivElement>(null);
   const assetInputRef = useRef<HTMLInputElement>(null);
@@ -143,6 +143,7 @@ export default function ContentGraph() {
     [links],
   );
   const selected = entities.find((entity) => entity.id === selectedId) ?? entities[0];
+  const selectedSpriteSize = selected ? spriteSizes[selected.id] : null;
   const graphWidth = drawToScale ? DRAW_TO_SCALE_GRAPH_SIZE : GRAPH_WIDTH;
   const graphHeight = drawToScale ? DRAW_TO_SCALE_GRAPH_SIZE : GRAPH_HEIGHT;
   const diagnosticStatusByEntity = useMemo(() => new Map(entities.map((entity) => [
@@ -316,6 +317,9 @@ export default function ContentGraph() {
       upgrades: entity.upgrades.map((id) => id === selected.id ? newId : id),
       definition: entity.id === selected.id ? definition : entity.definition,
     })));
+    if (newId !== selected.id) {
+      setSpriteSizes((current) => ({ ...current, [newId]: current[selected.id] ?? null }));
+    }
     setSelectedId(newId);
     setDraftDefinition(null);
     setDraftName(null);
@@ -336,7 +340,7 @@ export default function ContentGraph() {
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/techtree">Techtree</Link>
         </nav>
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
-          <div ref={graphRef} className="relative h-[calc(100vh-16.625rem-1px)] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
+          <div ref={graphRef} className="graph-scrollport relative h-[calc(100vh-16.625rem-1px)] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
             {loading ? <div aria-label="Loading entities" className="grid h-full grid-cols-4 gap-12 p-12" role="status">
               {Array.from({ length: 12 }, (_, index) => <div className="h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/60" key={index} />)}
             </div> : <>
@@ -441,18 +445,22 @@ export default function ContentGraph() {
       <aside className="w-[42rem] shrink-0 border-l border-slate-700 bg-slate-900 p-6">
         {selected && <>
           <div className="flex items-center gap-3 border-b border-slate-700 pb-5">
-            <div className="relative">
+            <div className="relative flex shrink-0 flex-col items-center">
             <button aria-expanded={spriteMenuOpen} aria-haspopup="menu" aria-label="Change sprite" className="relative" onClick={() => setSpriteMenuOpen((open) => !open)} type="button">
               <img alt="" className="size-14 object-contain" src={`/assets/${selected.id}/idle.png?v=${assetVersion}`} style={{ transform: `rotate(${visualRotateDeg(draftDefinition ?? selected.definition, selected.visual?.rotate_deg ?? 0)}deg)` }} />
               <Pencil className="absolute -right-1 -bottom-1 size-5 rounded-full bg-cyan-400 p-1 text-slate-950" />
             </button>
+            {selectedSpriteSize && <span className="mt-1 text-xs text-slate-400">{selectedSpriteSize.width} × {selectedSpriteSize.height} px</span>}
             {spriteMenuOpen && <div className="absolute left-0 top-full z-20 mt-2 w-44 rounded-md border border-slate-600 bg-slate-900 p-1 shadow-xl" role="menu">
               <button className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-800" onClick={() => { setSpriteMenuOpen(false); assetInputRef.current?.click(); }} role="menuitem" type="button">Upload from file</button>
               <Link className="block rounded px-3 py-2 text-sm hover:bg-slate-800" href={`/content/sprites/?entityId=${encodeURIComponent(selected.id)}`} role="menuitem">Generate new sprite</Link>
             </div>}
             </div>
             <input accept="image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadAsset(file); event.target.value = ""; }} ref={assetInputRef} type="file" />
-            <div><p className="text-sm text-slate-400">Entity definition</p><input className="w-full bg-transparent text-xl font-semibold outline-none" onChange={(event) => setDraftName(event.target.value)} value={draftName ?? selected.id} /></div>
+            <label className="flex min-w-0 flex-1 items-baseline gap-2">
+              <span className="shrink-0 text-sm text-slate-400">Entity ID:</span>
+              <input className="min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none" onChange={(event) => setDraftName(event.target.value)} value={draftName ?? selected.id} />
+            </label>
           </div>
           <div className="mt-5 flex items-center justify-between">
             <p className="text-sm font-medium text-slate-300">Fields</p>
