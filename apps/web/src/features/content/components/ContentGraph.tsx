@@ -353,6 +353,7 @@ export default function ContentGraph() {
         <nav aria-label="Content type" className="mb-3 flex gap-1 border-b border-slate-700">
           <Link className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" href="/content/entities">Entities</Link>
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/techtree">Techtree</Link>
+          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprite-library">Sprites</Link>
         </nav>
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
           <div ref={graphRef} className="graph-scrollport relative h-[calc(100vh-16.625rem-1px)] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
