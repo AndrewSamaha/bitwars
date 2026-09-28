@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type Entity = { id: string };
 type Candidate = { id: string; url: string; revisedPrompt?: string };
 type Generation = { entityId: string; requestId: string; count: number; finalPrompt: string; candidates: Candidate[] };
 type HistoryGeneration = { entityId: string; requestId: string; createdAt: string; provider: string; prompt: string; candidates: Candidate[] };
+type OutputSize = 192 | 512 | "original";
+type Front = "top" | "right" | "bottom" | "left";
+type Review = { candidate: Candidate; source: Pick<Generation, "entityId" | "requestId">; step: "size" | "front"; size: OutputSize | null; front: Front | null };
 type GenerationEvent =
   | { type: "start"; entityId: string; requestId: string; count: number; finalPrompt: string }
   | { type: "candidate"; candidate: Candidate }
@@ -14,6 +18,7 @@ type GenerationEvent =
   | { type: "error"; error: string };
 
 export default function SpriteGenerationPage() {
+  const router = useRouter();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [entityId, setEntityId] = useState("");
   const [provider, setProvider] = useState("openai");
@@ -29,6 +34,8 @@ export default function SpriteGenerationPage() {
   const [tab, setTab] = useState<"generate" | "history">("generate");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const [originalDimensions, setOriginalDimensions] = useState<string | null>(null);
 
   useEffect(() => {
     const requestedEntityId = new URLSearchParams(window.location.search).get("entityId");
@@ -58,6 +65,7 @@ export default function SpriteGenerationPage() {
   function selectEntity(id: string) {
     setEntityId(id);
     setTab("generate");
+    setReview(null);
     setReferences((current) => current.includes(id) ? current : [id, ...current].slice(0, 3));
   }
 
@@ -71,6 +79,7 @@ export default function SpriteGenerationPage() {
     setBusy(true);
     setMessage(null);
     setGeneration(null);
+    setReview(null);
     try {
       const response = await fetch("/api/content/sprites/generate", {
         method: "POST",
@@ -111,15 +120,27 @@ export default function SpriteGenerationPage() {
     }
   }
 
-  async function publish(candidate: Candidate, source: Pick<Generation, "entityId" | "requestId"> | null = generation) {
+  function startReview(candidate: Candidate, source: Pick<Generation, "entityId" | "requestId"> | null) {
     if (!source) return;
+    setMessage(null);
+    setOriginalDimensions(null);
+    setReview({ candidate, source, step: "size", size: null, front: null });
+  }
+
+  async function publish() {
+    if (!review?.size || !review.front) return;
     setBusy(true);
     setMessage(null);
     try {
-      const response = await fetch(`/api/content/sprites/${source.entityId}/${source.requestId}/${candidate.id}/publish`, { method: "POST" });
+      const response = await fetch(`/api/content/sprites/${review.source.entityId}/${review.source.requestId}/${review.candidate.id}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ size: review.size, front: review.front }),
+      });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Publishing failed.");
-      setMessage(`Published ${candidate.id} as ${source.entityId}/idle.png.`);
+      setReview(null);
+      router.push(`/content/entities?entityId=${encodeURIComponent(review.source.entityId)}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Publishing failed.");
     } finally {
@@ -150,6 +171,50 @@ export default function SpriteGenerationPage() {
     </div>
 
     {message && <p className="mb-5 rounded border border-cyan-500/50 bg-cyan-950/40 px-4 py-3 text-cyan-100">{message}</p>}
+    {review && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4">
+      <section aria-labelledby="sprite-review-title" aria-modal="true" className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-slate-600 bg-slate-900 p-6 shadow-2xl" role="dialog">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-cyan-300">{review.step === "size" ? "Step 1 of 2" : "Step 2 of 2"}</p>
+            <h2 className="mt-1 text-xl font-semibold" id="sprite-review-title">{review.step === "size" ? "Choose the saved resolution" : "Choose the entity’s front"}</h2>
+            <p className="mt-2 text-sm text-slate-400">{review.step === "size" ? "All previews appear at 192 × 192 on this screen. The label under each preview is the PNG size that will be saved." : "Select the side that is the front in the source image. The saved sprite will be rotated so that side faces right."}</p>
+          </div>
+          <button aria-label="Close sprite review" className="rounded border border-slate-600 px-3 py-1 text-sm hover:bg-slate-800" disabled={busy} onClick={() => setReview(null)} type="button">Close</button>
+        </div>
+        {message && <p className="mt-5 rounded border border-red-500/50 bg-red-950/40 px-4 py-3 text-sm text-red-200" role="alert">{message}</p>}
+        {review.step === "size" ? <div className="mt-6 grid gap-4 sm:grid-cols-3">
+          {([192, 512, "original"] as const).map((size) => <button className="flex flex-col items-center rounded-lg border border-slate-600 bg-slate-950 p-4 text-left hover:border-cyan-400 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-cyan-400" key={size} onClick={() => setReview({ ...review, step: "front", size, front: null })} type="button">
+            <span className="grid size-48 place-items-center rounded bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%),linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]">
+              <img alt="" className="size-48 object-contain" height={192} onLoad={size === "original" ? (event) => setOriginalDimensions(`${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight}`) : undefined} src={`${review.candidate.url}/preview?size=${size}`} width={192} />
+            </span>
+            <span className="mt-3 text-sm font-medium">{size === "original" ? "Original" : `${size} × ${size} px`}</span>
+            {size === "original" && <span className="text-xs text-slate-400">{originalDimensions ? `${originalDimensions} px` : "Reading source size…"}</span>}
+          </button>)}
+        </div> : <>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-8">
+            <div>
+              <p className="mb-3 text-center text-sm text-slate-300">Source: choose its front</p>
+              <div className="grid grid-cols-[5rem_12rem_5rem] grid-rows-[2.5rem_12rem_2.5rem] items-center justify-items-center">
+                <button aria-pressed={review.front === "top"} className={`col-start-2 row-start-1 rounded px-3 py-1 text-sm ${review.front === "top" ? "bg-cyan-400 text-slate-950" : "border border-slate-600 hover:border-cyan-400"}`} onClick={() => setReview({ ...review, front: "top" })} type="button">↑ Top</button>
+                <button aria-pressed={review.front === "left"} className={`col-start-1 row-start-2 rounded px-3 py-1 text-sm ${review.front === "left" ? "bg-cyan-400 text-slate-950" : "border border-slate-600 hover:border-cyan-400"}`} onClick={() => setReview({ ...review, front: "left" })} type="button">← Left</button>
+                <img alt="Unrotated sprite" className="col-start-2 row-start-2 size-48 rounded object-contain bg-slate-950" height={192} src={`${review.candidate.url}/preview?size=${review.size}`} width={192} />
+                <button aria-pressed={review.front === "right"} className={`col-start-3 row-start-2 rounded px-3 py-1 text-sm ${review.front === "right" ? "bg-cyan-400 text-slate-950" : "border border-slate-600 hover:border-cyan-400"}`} onClick={() => setReview({ ...review, front: "right" })} type="button">Right →</button>
+                <button aria-pressed={review.front === "bottom"} className={`col-start-2 row-start-3 rounded px-3 py-1 text-sm ${review.front === "bottom" ? "bg-cyan-400 text-slate-950" : "border border-slate-600 hover:border-cyan-400"}`} onClick={() => setReview({ ...review, front: "bottom" })} type="button">↓ Bottom</button>
+              </div>
+            </div>
+            <div>
+              <p className="mb-3 text-center text-sm text-slate-300">Final sprite: front faces right →</p>
+              {review.front ? <img alt="Sprite after rotation" className="size-48 rounded object-contain bg-slate-950" height={192} src={`${review.candidate.url}/preview?size=${review.size}&front=${review.front}`} width={192} /> : <div className="grid size-48 place-items-center rounded border border-dashed border-slate-600 text-center text-sm text-slate-400">Choose a front to preview the saved sprite</div>}
+              <p className="mt-3 text-center text-xs text-slate-400">Saved size: {review.size === "original" ? `${originalDimensions ?? "original resolution"} px` : `${review.size} × ${review.size} px`}</p>
+            </div>
+          </div>
+          <div className="mt-6 flex justify-between gap-3 border-t border-slate-700 pt-5">
+            <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800" disabled={busy} onClick={() => setReview({ ...review, step: "size", front: null })} type="button">Back to resolutions</button>
+            <button className="rounded bg-cyan-400 px-4 py-2 font-medium text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={busy || !review.front} onClick={publish} type="button">{busy ? "Publishing…" : "Publish sprite"}</button>
+          </div>
+        </>}
+      </section>
+    </div>}
     {tab === "generate" ? <>
     <section className="grid gap-6 rounded-xl border border-slate-700 bg-slate-900/70 p-6 md:grid-cols-2">
       <label className="grid gap-2 text-sm font-medium">Image provider
@@ -211,7 +276,7 @@ export default function SpriteGenerationPage() {
           </div>
           <p className="mt-3 text-sm font-medium">{candidate.id}</p>
           {candidate.revisedPrompt && <p className="mt-2 line-clamp-4 text-xs text-slate-400">{candidate.revisedPrompt}</p>}
-          <button className="mt-4 w-full rounded border border-cyan-500 px-3 py-2 text-sm text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50" disabled={busy} onClick={() => publish(candidate)} type="button">Use this sprite</button>
+          <button className="mt-4 w-full rounded border border-cyan-500 px-3 py-2 text-sm text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50" disabled={busy} onClick={() => startReview(candidate, generation)} type="button">Review this sprite</button>
         </article>)}
         {Array.from({ length: Math.max(0, generation.count - generation.candidates.length) }, (_, index) => <article className="animate-pulse rounded-xl border border-slate-700 bg-slate-900 p-4" key={`loading-${index}`}>
           <div className="aspect-square rounded-lg bg-slate-800" />
@@ -229,7 +294,7 @@ export default function SpriteGenerationPage() {
           <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {previous.candidates.map((candidate) => <article className="rounded-lg border border-slate-700 bg-slate-950 p-3" key={candidate.id}>
               <div className="grid aspect-square place-items-center rounded bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%),linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]"><img alt={`${candidate.id} for ${previous.entityId}`} className="max-h-full max-w-full object-contain" src={candidate.url} /></div>
-              <button className="mt-3 w-full rounded border border-cyan-500 px-3 py-2 text-sm text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50" disabled={busy} onClick={() => publish(candidate, previous)} type="button">Use this sprite</button>
+              <button className="mt-3 w-full rounded border border-cyan-500 px-3 py-2 text-sm text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50" disabled={busy} onClick={() => startReview(candidate, previous)} type="button">Review this sprite</button>
             </article>)}
           </div>
         </article>)}

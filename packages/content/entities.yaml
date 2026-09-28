@@ -738,3 +738,72 @@ entity_types:
         spend_rates:
           minerals: 2
           energy: 2
+      - entity_type_id: marine_worker
+        spend_rates:
+          minerals: 2
+          energy: 2
+  marine_worker:
+    fog_memory: forget_when_hidden
+    speed: 90
+    stop_radius: 0.75
+    mass: 1
+    health: 300
+    hull_radius: 50
+    combat_targetable: true
+    sensor:
+      range: 400
+      cost_per_minute:
+        energy: 0.1
+    combat:
+      acquisition_range: 250
+      on_near_enemy_strategy: approach
+      attacks:
+        - id: dismantle
+          type: dismantle
+          damage: 8
+          cooldown_ticks: 60
+          priority: 100
+          contact_tolerance: 2
+    build_cost:
+      minerals: 50
+      energy: 50
+    maintenance_cost_per_minute:
+      energy: 1
+      food: 2
+    collector:
+      vfx: mineral_transport
+      collects:
+        - minerals
+        - food
+      transport_rate_per_second: 8
+      carry_capacity: 40
+      deposit_entity_types:
+        - processor
+        - habitat
+    repair:
+      range: 150
+      cost_per_min:
+        energy: 80
+        minerals: 80
+      efficiency: 1
+    builds:
+      - entity_type_id: collector_solar
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2
+      - entity_type_id: habitat
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2
+      - entity_type_id: defense_pylon
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2
+      - entity_type_id: factory
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2
+      - entity_type_id: military_factory
+        spend_rates:
+          minerals: 1.2
+          energy: 1.2

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { resizeSprite, type SpriteSizeChoice } from "@/lib/content/spriteProcessing";
 
 const ENTITY_ID = /^[a-z][a-z0-9_]*$/;
 const REQUEST_ID = /^[a-f0-9-]{36}$/;
@@ -68,8 +69,11 @@ export async function appendSpriteCandidate(manifest: SpriteCandidateManifest, i
   const candidate = manifest.candidates.at(-1);
   if (!candidate) throw new Error("Cannot append a sprite without candidate metadata.");
   const directory = spriteCandidateDirectory(manifest.entityId, manifest.requestId);
+  const [small, medium] = await Promise.all([resizeSprite(image, 192), resizeSprite(image, 512)]);
   await Promise.all([
     writeFile(path.join(directory, `${candidate.id}.png`), image),
+    writeFile(path.join(directory, `${candidate.id}-192.png`), small),
+    writeFile(path.join(directory, `${candidate.id}-512.png`), medium),
     writeFile(path.join(directory, "request.json"), `${JSON.stringify(manifest, null, 2)}\n`),
   ]);
 }
@@ -81,4 +85,15 @@ export async function readSpriteCandidateRequest(entityId: string, requestId: st
 
 export async function readSpriteCandidate(entityId: string, requestId: string, candidateId: string) {
   return readFile(spriteCandidatePath(entityId, requestId, candidateId));
+}
+
+export async function readSpriteCandidateSize(entityId: string, requestId: string, candidateId: string, size: SpriteSizeChoice) {
+  if (size === "original") return readSpriteCandidate(entityId, requestId, candidateId);
+  const variantPath = spriteCandidatePath(entityId, requestId, candidateId).replace(/\.png$/, `-${size}.png`);
+  try {
+    return await readFile(variantPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return resizeSprite(await readSpriteCandidate(entityId, requestId, candidateId), size);
+  }
 }

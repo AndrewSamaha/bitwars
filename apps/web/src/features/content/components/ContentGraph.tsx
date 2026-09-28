@@ -153,6 +153,12 @@ export default function ContentGraph() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const requestedEntityId = new URLSearchParams(window.location.search).get("entityId");
+    const selectRequestedEntity = (loadedEntities: readonly Entity[]) => {
+      if (requestedEntityId && loadedEntities.some((entity) => entity.id === requestedEntityId)) {
+        setSelectedId(requestedEntityId);
+      }
+    };
     void (async () => {
       try {
         const response = await fetch("/api/content/entities", { signal: controller.signal });
@@ -162,6 +168,7 @@ export default function ContentGraph() {
         if (controller.signal.aborted) return;
         setSpriteSizes(sizes);
         setEntities(loadedEntities);
+        selectRequestedEntity(loadedEntities);
         setLoading(false);
       } catch {
         if (controller.signal.aborted) return;
@@ -169,6 +176,7 @@ export default function ContentGraph() {
         if (controller.signal.aborted) return;
         setSpriteSizes(sizes);
         setEntities(INITIAL_ENTITIES);
+        selectRequestedEntity(INITIAL_ENTITIES);
         setLoading(false);
       }
     })();
@@ -184,6 +192,13 @@ export default function ContentGraph() {
     setDrawToScale(enabled);
     const url = new URL(window.location.href);
     url.searchParams.set("drawToScale", enabled ? "1" : "0");
+    window.history.replaceState(null, "", url);
+  }
+
+  function selectEntity(id: string) {
+    setSelectedId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("entityId", id);
     window.history.replaceState(null, "", url);
   }
 
@@ -259,7 +274,7 @@ export default function ContentGraph() {
     setEntities((current) => current.flatMap((entity) => entity.id === parentId
       ? [{ ...entity, builds: [...entity.builds, childId], definition: addBuild(entity.definition, childId) }, { id: childId, builds: [...parent.builds], upgrades: [...parent.upgrades], definition }]
       : [entity]));
-    setSelectedId(childId);
+    selectEntity(childId);
     setMenu(null);
   }
 
@@ -320,7 +335,7 @@ export default function ContentGraph() {
     if (newId !== selected.id) {
       setSpriteSizes((current) => ({ ...current, [newId]: current[selected.id] ?? null }));
     }
-    setSelectedId(newId);
+    selectEntity(newId);
     setDraftDefinition(null);
     setDraftName(null);
   }
@@ -394,7 +409,7 @@ export default function ContentGraph() {
                 <button
                   className={`absolute flex min-h-28 w-24 -translate-x-1/2 -translate-y-1/2 touch-none flex-col items-center justify-center rounded-xl border bg-transparent p-2 text-center transition ${selectedId === entity.id ? "border-cyan-300 ring-2 ring-cyan-400/40" : "border-slate-700 hover:border-cyan-500"} ${diagnosticStatus === "error" ? "outline outline-2 outline-red-400" : diagnosticStatus === "warning" ? "outline outline-2 outline-yellow-400" : ""}`}
                   key={entity.id}
-                  onClick={() => { setSelectedId(entity.id); setDraftDefinition(null); setDraftName(null); setSaveError(null); }}
+                  onClick={() => { selectEntity(entity.id); setDraftDefinition(null); setDraftName(null); setSaveError(null); }}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     const bounds = graphRef.current?.getBoundingClientRect();
