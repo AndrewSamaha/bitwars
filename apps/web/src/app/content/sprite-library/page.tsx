@@ -18,11 +18,11 @@ async function spritePaths(directory = ""): Promise<string[]> {
   return paths.flat();
 }
 
-export default async function SpriteLibraryPage({ searchParams }: { searchParams: Promise<{ sprite?: string }> }) {
-  const [{ sprite }, paths] = await Promise.all([searchParams, spritePaths()]);
+export default async function SpriteLibraryPage({ searchParams }: { searchParams: Promise<{ sprite?: string; updated?: string }> }) {
+  const [{ sprite, updated }, paths] = await Promise.all([searchParams, spritePaths()]);
   const sprites = await Promise.all(paths.sort((a, b) => a.localeCompare(b)).map(async (relativePath) => {
     const metadata = await sharp(path.join(ASSET_ROOT, relativePath)).metadata().catch(() => null);
     return { path: relativePath, width: metadata?.width ?? null, height: metadata?.height ?? null };
   }));
-  return <SpriteCatalog initialPath={sprite} sprites={sprites} />;
+  return <SpriteCatalog assetVersion={updated} initialPath={sprite} sprites={sprites} />;
 }
