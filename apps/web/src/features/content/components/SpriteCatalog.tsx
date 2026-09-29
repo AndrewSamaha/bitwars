@@ -82,6 +82,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
         <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/entities">Entities</Link>
         <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/techtree">Techtree</Link>
         <Link className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" href="/content/sprite-library">Sprites</Link>
+        <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sfx">SFX</Link>
       </nav>
       <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900/60 shadow-2xl shadow-black/20">
         <div className="max-h-[calc(100vh-11rem)] overflow-auto">

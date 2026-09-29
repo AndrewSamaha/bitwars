@@ -1,0 +1,54 @@
+sound_effects:
+  entity-explosion:
+    name: Entity explosion
+    sources:
+      - sfx/explosion/DeathFlash.flac
+    volume: 0.7
+    pool: 8
+    attribution:
+      artist: Blender Foundation
+      source: https://opengameart.org/content/big-explosion
+      license: https://creativecommons.org/licenses/by/3.0/
+      changes: None.
+      retrieved: 2026-08-29
+  sonar-ping:
+    name: Sonar ping
+    sources:
+      - sfx/sonar_ping/sonarping-38269.mp3
+    volume: 0.65
+    pool: 2
+    attribution:
+      artist: Unknown (Pixabay contributor)
+      source: https://pixabay.com/sound-effects/film-special-effects-sonarping-38269/
+      license: https://pixabay.com/service/license-summary/
+      changes: File renamed.
+      retrieved: 2026-09-03
+  build-complete:
+    name: Build complete
+    sources:
+      - sfx/jobs_finished/jobs-finished-90258.mp3
+    volume: 0.7
+    pool: 4
+    attribution:
+      artist: Unknown (Pixabay contributor)
+      source: https://pixabay.com/sound-effects/film-special-effects-finished-90258/
+      license: https://pixabay.com/service/license-summary/
+      changes: File renamed.
+      retrieved: 2026-09-03
+  laser-shot:
+    name: Laser shot
+    sources:
+      - sfx/laser/laser_01.wav
+      - sfx/laser/laser_02.wav
+      - sfx/laser/laser_03.wav
+      - sfx/laser/laser_04.wav
+      - sfx/laser/laser_05.wav
+      - sfx/laser/laser_06.wav
+    volume: 0.65
+    pool: 6
+    attribution:
+      artist: Daleonfire (Freesound)
+      source: https://pixabay.com/sound-effects/film-special-effects-space-laser-38082/
+      license: https://pixabay.com/service/license-summary/
+      changes: Split into six clips and converted to WAV.
+      retrieved: 2026-09-07
