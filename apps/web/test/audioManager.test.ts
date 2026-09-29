@@ -20,6 +20,7 @@ vi.mock("howler", () => ({
 }));
 
 import { audio, SoundEffect } from "@/features/audio/audioManager";
+import { readSfxCatalog } from "@/lib/content/sfxCatalogFile";
 
 afterEach(() => {
   audio.unregisterSfx(SoundEffect.LaserShot);
@@ -27,9 +28,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("chooses a laser shot variant at random", () => {
+it("chooses a catalog laser shot variant at random", async () => {
   vi.spyOn(Math, "random").mockReturnValue(0.5);
-  audio.registerSoundEffect(SoundEffect.LaserShot);
+  const { definitions } = await readSfxCatalog();
+  audio.registerSoundEffect(SoundEffect.LaserShot, definitions[SoundEffect.LaserShot]);
   audio.playSfx(SoundEffect.LaserShot);
 
   expect(howls.map(({ src }) => src)).toEqual(

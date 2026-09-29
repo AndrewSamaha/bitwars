@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { SpriteFrontChoices, SpriteSizeChoices, type SpriteFrontChoice } from "@/features/content/components/SpriteReviewChoices";
 
 type Entity = { id: string };
 type Candidate = { id: string; url: string; revisedPrompt?: string };
 type Generation = { entityId: string; requestId: string; count: number; finalPrompt: string; candidates: Candidate[] };
 type HistoryGeneration = { entityId: string; requestId: string; createdAt: string; provider: string; prompt: string; candidates: Candidate[] };
 type OutputSize = 192 | 512 | "original";
-type Front = "top" | "right" | "bottom" | "left";
+type Front = SpriteFrontChoice;
 type Review = { candidate: Candidate; source: Pick<Generation, "entityId" | "requestId">; step: "size" | "front"; size: OutputSize | null; front: Front | null };
 type GenerationEvent =
   | { type: "start"; entityId: string; requestId: string; count: number; finalPrompt: string }
@@ -182,32 +183,14 @@ export default function SpriteGenerationPage() {
           <button aria-label="Close sprite review" className="rounded border border-slate-600 px-3 py-1 text-sm hover:bg-slate-800" disabled={busy} onClick={() => setReview(null)} type="button">Close</button>
         </div>
         {message && <p className="mt-5 rounded border border-red-500/50 bg-red-950/40 px-4 py-3 text-sm text-red-200" role="alert">{message}</p>}
-        {review.step === "size" ? <div className="mt-6 grid gap-4 sm:grid-cols-3">
-          {([192, 512, "original"] as const).map((size) => <button className="flex flex-col items-center rounded-lg border border-slate-600 bg-slate-950 p-4 text-left hover:border-cyan-400 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-cyan-400" key={size} onClick={() => setReview({ ...review, step: "front", size, front: null })} type="button">
-            <span className="grid size-48 place-items-center rounded bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%),linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]">
-              <img alt="" className="size-48 object-contain" height={192} onLoad={size === "original" ? (event) => setOriginalDimensions(`${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight}`) : undefined} src={`${review.candidate.url}/preview?size=${size}`} width={192} />
-            </span>
-            <span className="mt-3 text-sm font-medium">{size === "original" ? "Original" : `${size} × ${size} px`}</span>
-            {size === "original" && <span className="text-xs text-slate-400">{originalDimensions ? `${originalDimensions} px` : "Reading source size…"}</span>}
-          </button>)}
-        </div> : <>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-8">
-            <div>
-              <p className="mb-3 text-center text-sm text-slate-300">Source: choose its front</p>
-              <div className="grid grid-cols-[5rem_12rem_5rem] grid-rows-[2.5rem_12rem_2.5rem] items-center justify-items-center">
-                <button aria-pressed={review.front === "top"} className={`col-start-2 row-start-1 rounded px-3 py-1 text-sm ${review.front === "top" ? "bg-cyan-400 text-slate-950" : "border border-slate-600 hover:border-cyan-400"}`} onClick={() => setReview({ ...review, front: "top" })} type="button">↑ Top</button>
-                <button aria-pressed={review.front === "left"} className={`col-start-1 row-start-2 rounded px-3 py-1 text-sm ${review.front === "left" ? "bg-cyan-400 text-slate-950" : "border border-slate-600 hover:border-cyan-400"}`} onClick={() => setReview({ ...review, front: "left" })} type="button">← Left</button>
-                <img alt="Unrotated sprite" className="col-start-2 row-start-2 size-48 rounded object-contain bg-slate-950" height={192} src={`${review.candidate.url}/preview?size=${review.size}`} width={192} />
-                <button aria-pressed={review.front === "right"} className={`col-start-3 row-start-2 rounded px-3 py-1 text-sm ${review.front === "right" ? "bg-cyan-400 text-slate-950" : "border border-slate-600 hover:border-cyan-400"}`} onClick={() => setReview({ ...review, front: "right" })} type="button">Right →</button>
-                <button aria-pressed={review.front === "bottom"} className={`col-start-2 row-start-3 rounded px-3 py-1 text-sm ${review.front === "bottom" ? "bg-cyan-400 text-slate-950" : "border border-slate-600 hover:border-cyan-400"}`} onClick={() => setReview({ ...review, front: "bottom" })} type="button">↓ Bottom</button>
-              </div>
-            </div>
-            <div>
-              <p className="mb-3 text-center text-sm text-slate-300">Final sprite: front faces right →</p>
-              {review.front ? <img alt="Sprite after rotation" className="size-48 rounded object-contain bg-slate-950" height={192} src={`${review.candidate.url}/preview?size=${review.size}&front=${review.front}`} width={192} /> : <div className="grid size-48 place-items-center rounded border border-dashed border-slate-600 text-center text-sm text-slate-400">Choose a front to preview the saved sprite</div>}
-              <p className="mt-3 text-center text-xs text-slate-400">Saved size: {review.size === "original" ? `${originalDimensions ?? "original resolution"} px` : `${review.size} × ${review.size} px`}</p>
-            </div>
-          </div>
+        {review.step === "size" ? <SpriteSizeChoices options={([192, 512, "original"] as const).map((size) => ({
+          value: size,
+          imageUrl: `${review.candidate.url}/preview?size=${size}`,
+          label: size === "original" ? "Original" : `${size} × ${size} px`,
+          detail: size === "original" ? originalDimensions ? `${originalDimensions} px` : "Reading source size…" : undefined,
+          onLoad: size === "original" ? (image: HTMLImageElement) => setOriginalDimensions(`${image.naturalWidth} × ${image.naturalHeight}`) : undefined,
+        }))} onSelect={(size) => setReview({ ...review, step: "front", size: size as OutputSize, front: null })} /> : <>
+          <SpriteFrontChoices onSelect={(front) => setReview({ ...review, front })} previewUrl={(front) => `${review.candidate.url}/preview?size=${review.size}&front=${front}`} savedSizeLabel={review.size === "original" ? `${originalDimensions ?? "original resolution"} px` : `${review.size} × ${review.size} px`} selectedFront={review.front} sourceUrl={`${review.candidate.url}/preview?size=${review.size}`} />
           <div className="mt-6 flex justify-between gap-3 border-t border-slate-700 pt-5">
             <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800" disabled={busy} onClick={() => setReview({ ...review, step: "size", front: null })} type="button">Back to resolutions</button>
             <button className="rounded bg-cyan-400 px-4 py-2 font-medium text-slate-950 disabled:cursor-not-allowed disabled:opacity-50" disabled={busy || !review.front} onClick={publish} type="button">{busy ? "Publishing…" : "Publish sprite"}</button>

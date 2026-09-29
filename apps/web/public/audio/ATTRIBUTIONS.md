@@ -16,25 +16,9 @@ BitWars. It is deployed with the game at `/audio/ATTRIBUTIONS.md`.
 
 ## Sound effects
 
-### Sonar Ping
+<!-- BEGIN GENERATED SFX -->
 
-- Files: `sfx/sonar_ping/sonarping-38269.mp3`
-- Artist: Unknown (Pixabay contributor)
-- Source: https://pixabay.com/sound-effects/film-special-effects-sonarping-38269/
-- License: https://pixabay.com/service/license-summary/
-- Changes: File renamed.
-- Retrieved: 2026-09-03
-
-### Jobs Finished
-
-- Files: `sfx/jobs_finished/jobs-finished-90258.mp3`
-- Artist: Unknown (Pixabay contributor)
-- Source: https://pixabay.com/sound-effects/film-special-effects-finished-90258/
-- License: https://pixabay.com/service/license-summary/
-- Changes: File renamed.
-- Retrieved: 2026-09-03
-
-### Big Explosion
+### Entity explosion
 
 - Files: `sfx/explosion/DeathFlash.flac`
 - Artist: Blender Foundation
@@ -43,11 +27,31 @@ BitWars. It is deployed with the game at `/audio/ATTRIBUTIONS.md`.
 - Changes: None.
 - Retrieved: 2026-08-29
 
-### Space Laser
+### Sonar ping
 
-- Files: `sfx/laser/laser_01.wav` through `sfx/laser/laser_06.wav`
+- Files: `sfx/sonar_ping/sonarping-38269.mp3`
+- Artist: Unknown (Pixabay contributor)
+- Source: https://pixabay.com/sound-effects/film-special-effects-sonarping-38269/
+- License: https://pixabay.com/service/license-summary/
+- Changes: File renamed.
+- Retrieved: 2026-09-03
+
+### Build complete
+
+- Files: `sfx/jobs_finished/jobs-finished-90258.mp3`
+- Artist: Unknown (Pixabay contributor)
+- Source: https://pixabay.com/sound-effects/film-special-effects-finished-90258/
+- License: https://pixabay.com/service/license-summary/
+- Changes: File renamed.
+- Retrieved: 2026-09-03
+
+### Laser shot
+
+- Files: `sfx/laser/laser_01.wav`, `sfx/laser/laser_02.wav`, `sfx/laser/laser_03.wav`, `sfx/laser/laser_04.wav`, `sfx/laser/laser_05.wav`, `sfx/laser/laser_06.wav`
 - Artist: Daleonfire (Freesound)
 - Source: https://pixabay.com/sound-effects/film-special-effects-space-laser-38082/
 - License: https://pixabay.com/service/license-summary/
 - Changes: Split into six clips and converted to WAV.
 - Retrieved: 2026-09-07
+
+<!-- END GENERATED SFX -->

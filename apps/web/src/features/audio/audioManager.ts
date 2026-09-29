@@ -1,6 +1,9 @@
 "use client";
 
 import { Howl, Howler } from "howler";
+import { audioUrl, type SfxDefinition } from "@/features/audio/sfxCatalog";
+
+export { SoundEffect } from "@/features/audio/sfxCatalog";
 
 export type AudioSource = string | string[];
 
@@ -9,36 +12,8 @@ export enum BackgroundMusicState {
   Exploration = "exploration",
 }
 
-/** Semantic game events that have a registered sound effect. */
-export enum SoundEffect {
-  EntityExplosion = "entity-explosion",
-  SonarPing = "sonar-ping",
-  BuildComplete = "build-complete",
-  LaserShot = "laser-shot",
-}
-
 const backgroundMusicSources: Record<BackgroundMusicState, AudioSource> = {
   [BackgroundMusicState.Exploration]: "/audio/music/exploration_theme.ogg",
-};
-
-const soundEffectDefinitions: Record<SoundEffect, { sources: AudioSource[]; options: SfxOptions }> = {
-  [SoundEffect.EntityExplosion]: {
-    sources: ["/audio/sfx/explosion/DeathFlash.flac"],
-    options: { volume: 0.7, pool: 8 },
-  },
-  [SoundEffect.SonarPing]: {
-    sources: ["/audio/sfx/sonar_ping/sonarping-38269.mp3"],
-    options: { volume: 0.65, pool: 2 },
-  },
-  [SoundEffect.BuildComplete]: {
-    sources: ["/audio/sfx/jobs_finished/jobs-finished-90258.mp3"],
-    options: { volume: 0.7, pool: 4 },
-  },
-  [SoundEffect.LaserShot]: {
-    sources: [1, 2, 3, 4, 5, 6].map((number) =>
-      `/audio/sfx/laser/laser_${String(number).padStart(2, "0")}.wav`),
-    options: { volume: 0.65, pool: 6 },
-  },
 };
 
 type MusicOptions = {
@@ -69,7 +44,7 @@ const clampVolume = (volume: number) => Math.min(1, Math.max(0, volume));
 
 /**
  * Owns the client audio mix. Keep gameplay code semantic: register an effect once,
- * then call `playSfx("explosion")` instead of passing asset URLs around the game.
+ * then call `playSfx("entity-explosion")` instead of passing asset URLs around the game.
  *
  * Howler exposes one browser-level output. The music and SFX buses are logical
  * submixes whose levels are applied to their sounds before that master output.
@@ -204,10 +179,10 @@ class AudioManager {
     });
   }
 
-  /** Registers one of the sound effects declared by the game's audio catalog. */
-  registerSoundEffect(effect: SoundEffect): void {
-    const { sources, options } = soundEffectDefinitions[effect];
-    this.registerSfxSources(effect, sources, options);
+  /** Registers an effect loaded from the editable audio catalog. */
+  registerSoundEffect(effect: string, definition: SfxDefinition): void {
+    if (!definition.sources.length) return;
+    this.registerSfxSources(effect, definition.sources.map(audioUrl), { volume: definition.volume, pool: definition.pool });
   }
 
   unregisterSfx(name: string): void {
