@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { SpriteFrontChoices, SpriteSizeChoices, type SpriteFrontChoice } from "@/features/content/components/SpriteReviewChoices";
+import { PLAYER_PALETTES, type PlayerPalette } from "@/lib/playerPalettes";
 
-type Sprite = { path: string; width: number | null; height: number | null };
+type Sprite = { path: string; width: number | null; height: number | null; hasPlayerMasks: boolean };
 type Tool = "downsample" | "rotate";
 
 function spriteUrl(relativePath: string, assetVersion?: string) {
@@ -16,6 +17,29 @@ function resolution(sprite: Sprite) {
   return sprite.width && sprite.height ? `${sprite.width} × ${sprite.height} px` : "Unavailable";
 }
 
+function PlayerColorPreview({ sprite, palette, assetVersion, className }: {
+  sprite: Sprite;
+  palette: PlayerPalette;
+  assetVersion?: string;
+  className: string;
+}) {
+  const directory = sprite.path.slice(0, sprite.path.lastIndexOf("/"));
+  return <div aria-label={`${sprite.path} with ${palette.name} player colors`} className={`relative aspect-square ${className}`} role="img">
+    <img alt="" className="absolute inset-0 size-full object-contain" src={spriteUrl(sprite.path, assetVersion)} />
+    {(["primary", "secondary"] as const).map((part) => {
+      const mask = spriteUrl(`${directory}/${part}.png`, assetVersion);
+      return <div className="absolute inset-0" key={part} style={{
+        backgroundColor: palette[part],
+        maskImage: `url("${mask}")`,
+        WebkitMaskImage: `url("${mask}")`,
+        maskSize: "100% 100%",
+        WebkitMaskSize: "100% 100%",
+        maskMode: "alpha",
+      }} />;
+    })}
+  </div>;
+}
+
 export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { sprites: Sprite[]; initialPath?: string; assetVersion?: string }) {
   const [selectedPath, setSelectedPath] = useState(
     initialPath && sprites.some((sprite) => sprite.path === initialPath) ? initialPath : sprites[0]?.path ?? "",
@@ -25,7 +49,9 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
   const [selectedFront, setSelectedFront] = useState<SpriteFrontChoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedPaletteId, setSelectedPaletteId] = useState<string>(PLAYER_PALETTES[0].id);
   const selected = sprites.find((sprite) => sprite.path === selectedPath) ?? sprites[0];
+  const selectedPalette = PLAYER_PALETTES.find((palette) => palette.id === selectedPaletteId) ?? PLAYER_PALETTES[0];
   const availableSizes = ([192, 512] as const).filter((size) => selected && Math.max(selected.width ?? 0, selected.height ?? 0) > size);
   const canEdit = selected?.path.toLowerCase().endsWith(".png") ?? false;
   const selectedUrl = selected ? spriteUrl(selected.path, assetVersion) : "";
@@ -112,8 +138,29 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
           <p className="text-sm text-slate-400">Sprite</p>
           <h1 className="mt-1 break-all font-mono text-xl font-semibold">{selected.path}</h1>
         </div>
-        <div className="mt-6 grid size-72 place-items-center rounded-lg border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%),linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]">
-          <img alt={selected.path} className="size-full object-contain" src={selectedUrl} />
+        <div className="mt-6 flex flex-wrap gap-4">
+          <div className="grid size-72 shrink-0 place-items-center rounded-lg border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%),linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]">
+            {selected.hasPlayerMasks
+              ? <PlayerColorPreview assetVersion={assetVersion} className="size-full" palette={selectedPalette} sprite={selected} />
+              : <img alt={selected.path} className="size-full object-contain" src={selectedUrl} />}
+          </div>
+          {selected.hasPlayerMasks && <div className="min-w-0 flex-1">
+            <h2 className="mb-2 text-sm font-medium text-slate-200">Player colors</h2>
+            <div className="grid grid-cols-4 gap-2">
+              {PLAYER_PALETTES.map((palette) => <button
+                aria-label={`Preview ${palette.name} player colors`}
+                aria-pressed={selectedPalette.id === palette.id}
+                className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-3 hover:border-cyan-400 ${selectedPalette.id === palette.id ? "border-cyan-400 bg-cyan-400/10" : "border-slate-700"}`}
+                key={palette.id}
+                onClick={() => setSelectedPaletteId(palette.id)}
+                title={palette.name}
+                type="button"
+              >
+                <span className="size-5 rounded-full" style={{ backgroundColor: palette.primary }} />
+                <span className="size-5 rounded-full" style={{ backgroundColor: palette.secondary }} />
+              </button>)}
+            </div>
+          </div>}
         </div>
         <p className="mt-5 text-sm text-slate-300">Resolution: {resolution(selected)}</p>
         <p className="mt-2 break-all font-mono text-xs text-slate-400">{selected.path}</p>

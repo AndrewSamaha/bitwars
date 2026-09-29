@@ -8,7 +8,6 @@ import { PlayerLoginSchema, type PlayerLogin } from '@/features/users/schema/pla
 import { SuggestedLoginDetails } from '@/features/users/schema/player/suggestedLoginDetails';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import PlayerColorSelector from './PlayerColorSelector';
 import Username from './Username';
 import { SuggestedLoginDetailsContext } from './LoginFormContext';
 
@@ -22,7 +21,7 @@ export default function LoginForm({ suggestedLoginDetailsPromise }: { suggestedL
     resolver: zodResolver(PlayerLoginSchema),
     defaultValues: {
       name: suggestedLoginDetails?.suggestedName ?? '',
-      color: suggestedLoginDetails?.availableColors?.[0] ?? '',
+      color: '',
     },
   });
 
@@ -67,14 +66,10 @@ export default function LoginForm({ suggestedLoginDetailsPromise }: { suggestedL
         {/* Keep the form above the overlay so only the background is dimmed */}
         <div className="relative z-50">
           <form onSubmit={handleSubmit(onSubmit)}>
-            <div className="flex flex-row justify-between pb-4">
+            <div className="pb-4">
               <div className="space-y-2">
                 <Label htmlFor="username">Commander Name</Label>
                 <Username />
-              </div>
-              <div className="ml-4 space-y-2">
-                <Label htmlFor="color">Color</Label>
-                <PlayerColorSelector />
               </div>
             </div>
 

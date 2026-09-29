@@ -18,11 +18,12 @@ import { BUILD_COMPLETED_EVENT, CENTER_CAMERA_ON_ENTITY_EVENT, ENTITY_DETECTED_E
 import {
   createGameEntityVisual,
   createGameWorldContainer,
-  getGameEntityTexture,
   loadGameEntityTextures,
+  setGameEntityVisualType,
   updateGameEntityVisual,
   type EntityVisual,
 } from "@/features/pixijs/renderer/entityVisuals";
+import { PLAYER_PALETTES, paletteForOwner } from "@/lib/playerPalettes";
 import { gameEntityScale } from "@/features/pixijs/renderer/entityScale";
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
 import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog";
@@ -808,6 +809,27 @@ export default function GameStage() {
         app.canvas.addEventListener("wheel", onWheel, { passive: false });
 
         const textureCache = await loadGameEntityTextures();
+        const paletteIdByOwner = new Map<string, string>();
+        const requestedPaletteOwners = new Set<string>();
+
+        const requestOwnerPalettes = (ownerIds: string[]) => {
+          const unrequested = ownerIds.filter((id) => !requestedPaletteOwners.has(id));
+          if (unrequested.length === 0) return;
+          const batch = unrequested.slice(0, 100);
+          batch.forEach((id) => requestedPaletteOwners.add(id));
+          void fetch("/api/players/palettes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: batch }),
+          }).then(async (response) => {
+            if (!response.ok) throw new Error(`Player palette lookup failed (${response.status})`);
+            return response.json() as Promise<{ palettes: Record<string, string> }>;
+          }).then(({ palettes }) => {
+            for (const [ownerId, paletteId] of Object.entries(palettes)) paletteIdByOwner.set(ownerId, paletteId);
+          }).catch(() => {
+            // The stable owner-derived palette remains available if lookup fails.
+          });
+        };
 
         // M8c: Authoritative render index keyed by ECS entity id.
         const renderById = new Map<string, EntityVisual>();
@@ -877,6 +899,9 @@ export default function GameStage() {
               renderById.set(id, visual);
             }
           }
+          requestOwnerPalettes([...new Set([...liveById.values()]
+            .map((entity) => entity.owner_player_id)
+            .filter((ownerId): ownerId is string => typeof ownerId === "string" && ownerId !== "universe" && ownerId !== "raiders"))]);
 
           // Reconcile removed entities (prune stale render objects).
           for (const id of Array.from(renderById.keys())) {
@@ -905,8 +930,7 @@ export default function GameStage() {
               setHovered(null);
             }
             if (typeId !== ref.lastEntityTypeId) {
-              ref.sprite.texture = getGameEntityTexture(textureCache, typeId);
-              ref.lastEntityTypeId = typeId;
+              setGameEntityVisualType(ref, textureCache, typeId);
             }
             if (!remembered) updateGameEntityVisual(ref, nowMs);
             // Position: proto pos (already advanced by world.tick)
@@ -940,6 +964,16 @@ export default function GameStage() {
             const ownerId = (e as any).owner_player_id;
             const isOwned = myId != null && ownerId !== undefined && ownerId === myId;
             const isSystemOwner = ownerId === "universe" || ownerId === "raiders";
+            if (ref.playerColorSprites) {
+              const showPlayerColors = typeof ownerId === "string" && ownerId.length > 0 && !isSystemOwner;
+              ref.playerColorSprites.primary.visible = showPlayerColors;
+              ref.playerColorSprites.secondary.visible = showPlayerColors;
+              if (showPlayerColors) {
+                const palette = PLAYER_PALETTES.find((item) => item.id === paletteIdByOwner.get(ownerId)) ?? paletteForOwner(ownerId);
+                ref.playerColorSprites.primary.tint = remembered ? REMEMBERED_TINT : palette.primary;
+                ref.playerColorSprites.secondary.tint = remembered ? REMEMBERED_TINT : palette.secondary;
+              }
+            }
             const baseTint = remembered ? REMEMBERED_TINT : isOwned || isSystemOwner ? CLEAN_COLOR : NON_OWNED_TINT;
             const health = Number((e as Entity).health);
             const maxHealth = contentManager.getEntityType(typeId)?.health;

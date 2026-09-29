@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import path from "node:path";
 import sharp from "sharp";
 import { readLibrarySprite, saveLibrarySprite, transformLibrarySprite } from "@/lib/content/spriteLibraryAsset";
 import { parseSpriteFront, parseSpriteSize } from "@/lib/content/spriteProcessing";
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
     const original = await readLibrarySprite(relativePath);
 
     let transformed: Buffer;
+    let operation: { kind: "downsample"; size: 192 | 512 } | { kind: "rotate"; front: "top" | "right" | "bottom" | "left" };
     if (body?.kind === "downsample") {
       const size = parseSpriteSize(body?.size);
       if (size !== 192 && size !== 512) return NextResponse.json({ error: "Choose a valid output resolution." }, { status: 400 });
@@ -20,16 +22,46 @@ export async function POST(request: Request) {
       if (!metadata.width || !metadata.height || Math.max(metadata.width, metadata.height) <= size) {
         return NextResponse.json({ error: "Choose a resolution smaller than the current sprite." }, { status: 400 });
       }
-      transformed = await transformLibrarySprite(original, { kind: "downsample", size });
+      operation = { kind: "downsample", size };
+      transformed = await transformLibrarySprite(original, operation);
     } else if (body?.kind === "rotate") {
       const front = parseSpriteFront(body?.front);
       if (!front) return NextResponse.json({ error: "Choose the entity’s front." }, { status: 400 });
-      transformed = await transformLibrarySprite(original, { kind: "rotate", front });
+      operation = { kind: "rotate", front };
+      transformed = await transformLibrarySprite(original, operation);
     } else {
       return NextResponse.json({ error: "Choose a valid sprite tool." }, { status: 400 });
     }
 
-    await saveLibrarySprite(relativePath, transformed);
+    const maskPaths = path.posix.basename(relativePath) === "idle.png"
+      ? (["primary", "secondary"] as const).map((part) => `${path.posix.dirname(relativePath)}/${part}.png`)
+      : [];
+    const masks = await Promise.all(maskPaths.map(async (maskPath) => {
+      try {
+        return { path: maskPath, image: await readLibrarySprite(maskPath) };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      }
+    }));
+    if (masks.filter(Boolean).length === 1) {
+      return NextResponse.json({ error: "Both player masks are required to transform this sprite." }, { status: 400 });
+    }
+    if (masks[0] && masks[1]) {
+      const originalSize = await sharp(original).metadata();
+      for (const mask of masks) {
+        const size = await sharp(mask!.image).metadata();
+        if (size.width !== originalSize.width || size.height !== originalSize.height) {
+          return NextResponse.json({ error: "Player masks must match the sprite dimensions." }, { status: 400 });
+        }
+      }
+    }
+    const transformedMasks = await Promise.all(masks.filter((mask): mask is NonNullable<typeof mask> => mask !== null)
+      .map(async (mask) => ({ path: mask.path, image: await transformLibrarySprite(mask.image, operation) })));
+    await Promise.all([
+      saveLibrarySprite(relativePath, transformed),
+      ...transformedMasks.map((mask) => saveLibrarySprite(mask.path, mask.image)),
+    ]);
     const metadata = await sharp(transformed).metadata();
     return NextResponse.json({ ok: true, width: metadata.width, height: metadata.height });
   } catch (error) {

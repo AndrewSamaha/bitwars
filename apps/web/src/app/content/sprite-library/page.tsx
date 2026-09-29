@@ -20,9 +20,19 @@ async function spritePaths(directory = ""): Promise<string[]> {
 
 export default async function SpriteLibraryPage({ searchParams }: { searchParams: Promise<{ sprite?: string; updated?: string }> }) {
   const [{ sprite, updated }, paths] = await Promise.all([searchParams, spritePaths()]);
-  const sprites = await Promise.all(paths.sort((a, b) => a.localeCompare(b)).map(async (relativePath) => {
+  const pathSet = new Set(paths);
+  const spritePathsOnly = paths.filter((relativePath) => !/\/(primary|secondary)\.png$/i.test(relativePath));
+  const sprites = await Promise.all(spritePathsOnly.sort((a, b) => a.localeCompare(b)).map(async (relativePath) => {
     const metadata = await sharp(path.join(ASSET_ROOT, relativePath)).metadata().catch(() => null);
-    return { path: relativePath, width: metadata?.width ?? null, height: metadata?.height ?? null };
+    const directory = path.posix.dirname(relativePath);
+    return {
+      path: relativePath,
+      width: metadata?.width ?? null,
+      height: metadata?.height ?? null,
+      hasPlayerMasks: path.posix.basename(relativePath) === "idle.png"
+        && pathSet.has(`${directory}/primary.png`)
+        && pathSet.has(`${directory}/secondary.png`),
+    };
   }));
   return <SpriteCatalog assetVersion={updated} initialPath={sprite} sprites={sprites} />;
 }
