@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { SpriteFrontChoices, SpriteSizeChoices, type SpriteFrontChoice } from "@/features/content/components/SpriteReviewChoices";
 import { PLAYER_PALETTES, type PlayerPalette } from "@/lib/playerPalettes";
+import MaskedSpritePreview from "./MaskedSpritePreview";
+import MaskGenerationDialog from "./MaskGenerationDialog";
 
 type Sprite = { path: string; width: number | null; height: number | null; hasPlayerMasks: boolean };
 type Tool = "downsample" | "rotate";
@@ -24,20 +26,13 @@ function PlayerColorPreview({ sprite, palette, assetVersion, className }: {
   className: string;
 }) {
   const directory = sprite.path.slice(0, sprite.path.lastIndexOf("/"));
-  return <div aria-label={`${sprite.path} with ${palette.name} player colors`} className={`relative aspect-square ${className}`} role="img">
-    <img alt="" className="absolute inset-0 size-full object-contain" src={spriteUrl(sprite.path, assetVersion)} />
-    {(["primary", "secondary"] as const).map((part) => {
-      const mask = spriteUrl(`${directory}/${part}.png`, assetVersion);
-      return <div className="absolute inset-0" key={part} style={{
-        backgroundColor: palette[part],
-        maskImage: `url("${mask}")`,
-        WebkitMaskImage: `url("${mask}")`,
-        maskSize: "100% 100%",
-        WebkitMaskSize: "100% 100%",
-        maskMode: "alpha",
-      }} />;
-    })}
-  </div>;
+  return <MaskedSpritePreview
+    baseUrl={spriteUrl(sprite.path, assetVersion)}
+    className={className}
+    palette={palette}
+    primaryMaskUrl={spriteUrl(`${directory}/primary.png`, assetVersion)}
+    secondaryMaskUrl={spriteUrl(`${directory}/secondary.png`, assetVersion)}
+  />;
 }
 
 export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { sprites: Sprite[]; initialPath?: string; assetVersion?: string }) {
@@ -49,6 +44,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
   const [selectedFront, setSelectedFront] = useState<SpriteFrontChoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [maskWorkflow, setMaskWorkflow] = useState<{ path: string; sourceUrl: string; upscalePromise: Promise<{ requestId: string }> } | null>(null);
   const [selectedPaletteId, setSelectedPaletteId] = useState<string>(PLAYER_PALETTES[0].id);
   const selected = sprites.find((sprite) => sprite.path === selectedPath) ?? sprites[0];
   const selectedPalette = PLAYER_PALETTES.find((palette) => palette.id === selectedPaletteId) ?? PLAYER_PALETTES[0];
@@ -75,6 +71,21 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
     setSelectedSize(null);
     setSelectedFront(null);
     setError(null);
+  }
+
+  function startMaskWorkflow() {
+    if (!selected || selected.path.split("/").length !== 2 || !selected.path.endsWith("/idle.png")) return;
+    const sourcePath = selected.path;
+    const promise = fetch("/api/content/sprite-library/masks/upscale", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: sourcePath }),
+    }).then(async (response) => {
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Unable to upscale sprite.");
+      return payload as { requestId: string };
+    });
+    setMaskWorkflow({ path: sourcePath, sourceUrl: spriteUrl(sourcePath, assetVersion), upscalePromise: promise });
   }
 
   async function saveTransform() {
@@ -169,6 +180,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
           <div className="mt-3 flex gap-3">
             <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:border-cyan-400 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEdit || availableSizes.length === 0} onClick={() => openTool("downsample")} type="button">Downsample</button>
             <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:border-cyan-400 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEdit} onClick={() => openTool("rotate")} type="button">Rotate</button>
+            <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:border-cyan-400 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEdit || !/^[a-z][a-z0-9_]*\/idle\.png$/.test(selected.path)} onClick={startMaskWorkflow} type="button">Generate Masks</button>
           </div>
         </div>
       </>}
@@ -194,5 +206,17 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
         </div>
       </section>
     </div>}
+    {maskWorkflow && <MaskGenerationDialog
+      onClose={() => setMaskWorkflow(null)}
+      onSaved={() => {
+        const destination = new URL("/content/sprite-library/", window.location.origin);
+        destination.searchParams.set("sprite", maskWorkflow.path);
+        destination.searchParams.set("updated", String(Date.now()));
+        window.location.assign(destination.toString());
+      }}
+      sourcePath={maskWorkflow.path}
+      sourceUrl={maskWorkflow.sourceUrl}
+      upscalePromise={maskWorkflow.upscalePromise}
+    />}
   </main>;
 }
