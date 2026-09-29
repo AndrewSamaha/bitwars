@@ -607,7 +607,6 @@ entity_types:
         energy: 2.5
     visual:
       scale: 2.3
-      rotate_deg: 90
     requires_technologies:
       all:
         - space_age
@@ -638,7 +637,6 @@ entity_types:
       cost_per_minute:
         energy: 2.5
     visual:
-      rotate_deg: 90
       scale: 2.3
     researches:
       - neutrino_sensors
@@ -709,7 +707,7 @@ entity_types:
     hull_radius: 16
     combat_targetable: true
     visual:
-      scale: 0.4
+      scale: 2
     build_cost:
       minerals: 200
       energy: 200
