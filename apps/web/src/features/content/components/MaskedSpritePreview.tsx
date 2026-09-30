@@ -1,26 +1,49 @@
-import type { PlayerPalette } from "@/lib/playerPalettes";
+"use client";
 
-export default function MaskedSpritePreview({ baseUrl, primaryMaskUrl, secondaryMaskUrl, palette, className, showPrimary = true, showSecondary = true }: {
+import { useEffect, useState } from "react";
+import type { PlayerPalette } from "@/lib/playerPalettes";
+import { playerColorMaskCanvases } from "@/lib/playerColorMaskCanvas";
+import { DEFAULT_PRIMARY_OPACITY, DEFAULT_SECONDARY_OPACITY } from "@/lib/playerColorSettings";
+
+export default function MaskedSpritePreview({ baseUrl, primaryMaskUrl, palette, className, primaryOpacity = DEFAULT_PRIMARY_OPACITY, secondaryOpacity = DEFAULT_SECONDARY_OPACITY, showPrimary = true, showSecondary = true }: {
   baseUrl: string;
   primaryMaskUrl: string;
-  secondaryMaskUrl: string;
   palette: PlayerPalette;
   className: string;
+  primaryOpacity?: number;
+  secondaryOpacity?: number;
   showPrimary?: boolean;
   showSecondary?: boolean;
 }) {
+  const [secondaryMaskUrl, setSecondaryMaskUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    setSecondaryMaskUrl(null);
+    playerColorMaskCanvases(baseUrl, primaryMaskUrl).then(({ secondary }) => {
+      if (active) setSecondaryMaskUrl(secondary.toDataURL("image/png"));
+    }).catch((error) => console.warn("Unable to preview secondary player color", error));
+    return () => { active = false; };
+  }, [baseUrl, primaryMaskUrl]);
+
   return <div aria-label={`Sprite with ${palette.name} player colors`} className={`relative aspect-square ${className}`} role="img">
     <img alt="" className="absolute inset-0 size-full object-contain" src={baseUrl} />
-    {([
-      [primaryMaskUrl, palette.primary, showPrimary],
-      [secondaryMaskUrl, palette.secondary, showSecondary],
-    ] as const).map(([maskUrl, color, visible]) => visible && <div className="absolute inset-0" key={maskUrl} style={{
-      backgroundColor: color,
-      maskImage: `url("${maskUrl}")`,
-      WebkitMaskImage: `url("${maskUrl}")`,
+    {showSecondary && secondaryMaskUrl && <div className="absolute inset-0" style={{
+      backgroundColor: palette.secondary,
+      opacity: secondaryOpacity,
+      maskImage: `url("${secondaryMaskUrl}")`,
+      WebkitMaskImage: `url("${secondaryMaskUrl}")`,
       maskSize: "100% 100%",
       WebkitMaskSize: "100% 100%",
       maskMode: "alpha",
-    }} />)}
+    }} />}
+    {showPrimary && <div className="absolute inset-0" style={{
+      backgroundColor: palette.primary,
+      opacity: primaryOpacity,
+      maskImage: `url("${primaryMaskUrl}")`,
+      WebkitMaskImage: `url("${primaryMaskUrl}")`,
+      maskSize: "100% 100%",
+      WebkitMaskSize: "100% 100%",
+      maskMode: "alpha",
+    }} />}
   </div>;
 }

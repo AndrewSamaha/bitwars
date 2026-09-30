@@ -1,7 +1,8 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { generationSize } from "../src/lib/content/generatePlayerMasks";
-import { alignMaskToSprite, excludePrimaryRegion } from "../src/lib/content/maskCandidates";
+import { alignMaskToSprite } from "../src/lib/content/maskCandidates";
+import { secondaryCoverageAlpha } from "../src/lib/playerColorSettings";
 
 const WIDTH = 4;
 const HEIGHT = 4;
@@ -26,7 +27,7 @@ describe("player mask candidates", () => {
     expect(height! % 16).toBe(0);
   });
 
-  it("uses generated alpha while clipping to the original sprite", async () => {
+  it("uses generated alpha while clipping to the sprite being published", async () => {
     const source = await pngAt([[1, 1, 10, 20, 30, 255]]);
     const generated = await pngAt([[1, 1, 0, 0, 200, 128], [0, 0, 0, 0, 200, 255]]);
     const aligned = await alignMaskToSprite(generated, source, WIDTH, HEIGHT);
@@ -34,11 +35,10 @@ describe("player mask candidates", () => {
     expect(await rgba(aligned, 0, 0)).toEqual([255, 255, 255, 0]);
   });
 
-  it("keeps primary and secondary regions separate", async () => {
-    const primary = await pngAt([[1, 1, 255, 255, 255, 255]]);
-    const secondary = await pngAt([[1, 1, 255, 255, 255, 255], [2, 1, 255, 255, 255, 255]]);
-    const result = await excludePrimaryRegion(secondary, primary);
-    expect((await rgba(result, 1, 1))[3]).toBe(0);
-    expect((await rgba(result, 2, 1))[3]).toBe(255);
+  it("removes primary coverage from the secondary layer before opacity is applied", () => {
+    expect(secondaryCoverageAlpha(255, 255)).toBe(0);
+    expect(secondaryCoverageAlpha(255, 128)).toBe(127);
+    expect(secondaryCoverageAlpha(180, 70)).toBe(110);
+    expect(secondaryCoverageAlpha(180, 255)).toBe(0);
   });
 });

@@ -5,10 +5,10 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    const { path, requestId } = await request.json();
-    await publishMaskCandidate(path, requestId);
+    const { path, requestId, primaryOpacity, secondaryOpacity } = await request.json();
+    await publishMaskCandidate(path, requestId, primaryOpacity, secondaryOpacity);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to save player masks." }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to save sprite and player colors." }, { status: 400 });
   }
 }

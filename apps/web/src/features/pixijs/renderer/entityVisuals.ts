@@ -1,14 +1,15 @@
 import { Assets, Container, Sprite, Texture } from "pixi.js";
 import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
+import { playerColorMaskCanvases } from "@/lib/playerColorMaskCanvas";
+import { DEFAULT_PRIMARY_OPACITY, DEFAULT_SECONDARY_OPACITY, isPlayerColorOpacity } from "@/lib/playerColorSettings";
 import { createStarVisual } from "./entities/starVisual";
 import { GAME_WORLD_SCALE } from "./entityScale";
 
 export { GAME_WORLD_SCALE } from "./entityScale";
 export const DEFAULT_ENTITY_SCALE = 0.5;
 const DEFAULT_ENTITY_TYPE = "corvette";
-const PLAYER_MASK_ENTITY_TYPES = ["battleship"] as const;
 
-export type EntityTextureCache = Map<string, Texture>;
+export type EntityTextureCache = Map<string, Texture> & { primaryOpacityByType: Map<string, number>; secondaryOpacityByType: Map<string, number> };
 
 export type EntityVisual = {
   container: Container;
@@ -18,29 +19,7 @@ export type EntityVisual = {
   update?: (elapsedMs: number) => void;
 };
 
-/** A mask's alpha selects pixels; its painted RGB must not affect the player color. */
-async function loadPlayerMaskTexture(url: string): Promise<Texture> {
-  const image = new Image();
-  image.src = url;
-  await image.decode();
-  const canvas = document.createElement("canvas");
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error(`Unable to read player mask ${url}`);
-  context.drawImage(image, 0, 0);
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  for (let index = 0; index < pixels.data.length; index += 4) {
-    pixels.data[index] = 255;
-    pixels.data[index + 1] = 255;
-    pixels.data[index + 2] = 255;
-  }
-  context.putImageData(pixels, 0, 0);
-  return Texture.from(canvas);
-}
-
 function addPlayerColorSprites(visual: EntityVisual, textureCache: EntityTextureCache, typeId: string) {
-  if (!PLAYER_MASK_ENTITY_TYPES.some((id) => id === typeId)) return;
   const primaryTexture = textureCache.get(`${typeId}/primary`);
   const secondaryTexture = textureCache.get(`${typeId}/secondary`);
   if (!primaryTexture || !secondaryTexture) return;
@@ -50,7 +29,9 @@ function addPlayerColorSprites(visual: EntityVisual, textureCache: EntityTexture
   secondary.anchor.set(0.5);
   primary.eventMode = "none";
   secondary.eventMode = "none";
-  visual.container.addChild(primary, secondary);
+  primary.alpha = textureCache.primaryOpacityByType.get(typeId) ?? DEFAULT_PRIMARY_OPACITY;
+  secondary.alpha = textureCache.secondaryOpacityByType.get(typeId) ?? DEFAULT_SECONDARY_OPACITY;
+  visual.container.addChild(secondary, primary);
   visual.playerColorSprites = { primary, secondary };
 }
 
@@ -77,14 +58,24 @@ export async function loadGameEntityTextures(
       return [id, fallback] as const;
     }
   }));
-  const cache: EntityTextureCache = new Map(entries);
-  await Promise.all(PLAYER_MASK_ENTITY_TYPES.flatMap((id) => (["primary", "secondary"] as const).map(async (part) => {
+  const cache = new Map(entries) as EntityTextureCache;
+  cache.primaryOpacityByType = new Map();
+  cache.secondaryOpacityByType = new Map();
+  await Promise.all(ids.map(async (id) => {
     try {
-      cache.set(`${id}/${part}`, await loadPlayerMaskTexture(`/assets/${id}/${part}.png`));
+      const primaryResponse = await fetch(`/assets/${id}/primary.png`, { method: "HEAD" });
+      if (!primaryResponse.ok) return;
+      const response = await fetch(`/assets/${id}/player-colors.json`);
+      const settings = response.ok ? await response.json().catch(() => null) as { primaryOpacity?: unknown; secondaryOpacity?: unknown } | null : null;
+      const masks = await playerColorMaskCanvases(`/assets/${id}/idle.png`, `/assets/${id}/primary.png`);
+      cache.set(`${id}/primary`, Texture.from(masks.primary));
+      cache.set(`${id}/secondary`, Texture.from(masks.secondary));
+      if (isPlayerColorOpacity(settings?.primaryOpacity)) cache.primaryOpacityByType.set(id, settings.primaryOpacity);
+      if (isPlayerColorOpacity(settings?.secondaryOpacity)) cache.secondaryOpacityByType.set(id, settings.secondaryOpacity);
     } catch (error) {
-      console.warn(`Unable to load ${id} ${part} player mask`, error);
+      console.warn(`Unable to load ${id} player color overlay`, error);
     }
-  })));
+  }));
   return cache;
 }
 

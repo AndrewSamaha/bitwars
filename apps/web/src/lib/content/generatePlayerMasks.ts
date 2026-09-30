@@ -57,14 +57,12 @@ export const UPSCALE_PROMPT = [
   "Output one isolated sprite on a genuinely transparent background, aligned to the input image canvas.",
 ].join(" ");
 
-export function regionMaskPrompt(part: "primary" | "secondary") {
-  const region = part === "primary"
-    ? "the broad, clearly visible outer hull or armor panels suitable for a player's PRIMARY color"
-    : "smaller, distinct accent panels, trim, stripes, or details suitable for a player's SECONDARY color; avoid the broad primary hull panels";
+export function primaryMaskPrompt() {
   return [
     "Create a precise RGBA segmentation mask for this top-down game sprite, using its exact canvas and alignment.",
-    part === "secondary" ? "Image 1 is the sprite. Image 2 is the already selected primary region; keep your selection separate from it." : "",
-    `Select only ${region}.`,
+    "Select only 1 to 4 compact, distinctive features suitable for a player's PRIMARY color, such as a bridge, wing markings, or a few prominent armor panels. Aim to cover roughly 20-30% of the sprite's visible pixels.",
+    "Favor features that remain recognizable at small game size. Do not select the entire hull, all panels of one material, scattered single pixels, outlines, shadows, or texture.",
+    "Leave most of the visible sprite, including its main body and shading, unselected so its original artwork remains recognizable.",
     "Output the selected region as opaque white, with soft alpha only along its antialiased edges.",
     "Every unselected pixel, including the background, must be fully transparent.",
     "Do not draw or reproduce the sprite itself. Do not add shadows, borders, text, or a checkerboard.",

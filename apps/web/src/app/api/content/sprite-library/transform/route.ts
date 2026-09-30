@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     }
 
     const maskPaths = path.posix.basename(relativePath) === "idle.png"
-      ? (["primary", "secondary"] as const).map((part) => `${path.posix.dirname(relativePath)}/${part}.png`)
+      ? [`${path.posix.dirname(relativePath)}/primary.png`]
       : [];
     const masks = await Promise.all(maskPaths.map(async (maskPath) => {
       try {
@@ -44,10 +44,7 @@ export async function POST(request: Request) {
         throw error;
       }
     }));
-    if (masks.filter(Boolean).length === 1) {
-      return NextResponse.json({ error: "Both player masks are required to transform this sprite." }, { status: 400 });
-    }
-    if (masks[0] && masks[1]) {
+    if (masks[0]) {
       const originalSize = await sharp(original).metadata();
       for (const mask of masks) {
         const size = await sharp(mask!.image).metadata();

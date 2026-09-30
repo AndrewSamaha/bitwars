@@ -7,7 +7,7 @@ import { PLAYER_PALETTES, type PlayerPalette } from "@/lib/playerPalettes";
 import MaskedSpritePreview from "./MaskedSpritePreview";
 import MaskGenerationDialog from "./MaskGenerationDialog";
 
-type Sprite = { path: string; width: number | null; height: number | null; hasPlayerMasks: boolean };
+type Sprite = { path: string; width: number | null; height: number | null; hasPlayerMasks: boolean; primaryOpacity: number; secondaryOpacity: number };
 type Tool = "downsample" | "rotate";
 
 function spriteUrl(relativePath: string, assetVersion?: string) {
@@ -31,7 +31,8 @@ function PlayerColorPreview({ sprite, palette, assetVersion, className }: {
     className={className}
     palette={palette}
     primaryMaskUrl={spriteUrl(`${directory}/primary.png`, assetVersion)}
-    secondaryMaskUrl={spriteUrl(`${directory}/secondary.png`, assetVersion)}
+    primaryOpacity={sprite.primaryOpacity}
+    secondaryOpacity={sprite.secondaryOpacity}
   />;
 }
 
@@ -44,7 +45,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
   const [selectedFront, setSelectedFront] = useState<SpriteFrontChoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [maskWorkflow, setMaskWorkflow] = useState<{ path: string; sourceUrl: string; upscalePromise: Promise<{ requestId: string }> } | null>(null);
+  const [maskWorkflow, setMaskWorkflow] = useState<{ path: string; sourceUrl: string; upscalePromise: Promise<{ requestId: string; primaryPrompt: string }> } | null>(null);
   const [selectedPaletteId, setSelectedPaletteId] = useState<string>(PLAYER_PALETTES[0].id);
   const selected = sprites.find((sprite) => sprite.path === selectedPath) ?? sprites[0];
   const selectedPalette = PLAYER_PALETTES.find((palette) => palette.id === selectedPaletteId) ?? PLAYER_PALETTES[0];
@@ -83,7 +84,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
     }).then(async (response) => {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Unable to upscale sprite.");
-      return payload as { requestId: string };
+      return payload as { requestId: string; primaryPrompt: string };
     });
     setMaskWorkflow({ path: sourcePath, sourceUrl: spriteUrl(sourcePath, assetVersion), upscalePromise: promise });
   }
@@ -125,7 +126,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
         <div className="max-h-[calc(100vh-11rem)] overflow-auto">
           <table className="w-full border-collapse text-left text-sm">
             <thead className="sticky top-0 bg-slate-900 text-slate-300">
-              <tr><th className="px-4 py-3 font-medium" scope="col">File path</th><th className="whitespace-nowrap px-4 py-3 font-medium" scope="col">Resolution</th></tr>
+              <tr><th className="px-4 py-3 font-medium" scope="col">File path</th><th className="whitespace-nowrap px-4 py-3 font-medium" scope="col">Resolution</th><th className="px-4 py-3 text-center font-medium" scope="col">Masks</th></tr>
             </thead>
             <tbody>
               {sprites.map((sprite) => <tr className={`border-t border-slate-800 ${selected?.path === sprite.path ? "bg-cyan-400/10" : "hover:bg-slate-800/60"}`} key={sprite.path}>
@@ -136,6 +137,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
                   </button>
                 </td>
                 <td className="whitespace-nowrap px-4 py-2 text-slate-300">{resolution(sprite)}</td>
+                <td className="px-4 py-2 text-center text-cyan-400">{sprite.hasPlayerMasks && <span aria-label="Masks available" role="img">✓</span>}</td>
               </tr>)}
             </tbody>
           </table>

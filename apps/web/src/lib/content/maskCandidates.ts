@@ -2,9 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { isPlayerColorOpacity } from "@/lib/playerColorSettings";
 import { readLibrarySprite } from "./spriteLibraryAsset";
 
-export type MaskCandidatePart = "upscaled" | "primary" | "secondary";
+export type MaskCandidatePart = "upscaled" | "downscaled" | "primary" | "primary-upscaled";
 export type MaskCandidateManifest = {
   entityId: string;
   sourcePath: string;
@@ -16,7 +17,7 @@ export type MaskCandidateManifest = {
 
 const REQUEST_ID = /^[0-9a-f-]{36}$/i;
 const ENTITY_ID = /^[a-z][a-z0-9_]*$/;
-const PARTS = new Set<MaskCandidatePart>(["upscaled", "primary", "secondary"]);
+const PARTS = new Set<MaskCandidatePart>(["upscaled", "downscaled", "primary", "primary-upscaled"]);
 const CANDIDATE_ROOT = path.resolve(process.cwd(), "../../packages/content/mask-candidates");
 
 export function maskEntityId(sourcePath: unknown): string {
@@ -76,7 +77,7 @@ export async function writeMaskCandidateImage(entityId: string, requestId: strin
   await writeFile(candidateImagePath(entityId, requestId, part), image);
 }
 
-/** Resample a proposed transparent region to the original sprite's exact grid. */
+/** Resample a proposed transparent region to the target sprite's exact grid. */
 export async function alignMaskToSprite(image: Buffer, source: Buffer, width: number, height: number): Promise<Buffer> {
   const [{ data: mask, info }, { data: sprite }] = await Promise.all([
     sharp(image).ensureAlpha().resize(width, height, { fit: "fill" }).raw().toBuffer({ resolveWithObject: true }),
@@ -96,30 +97,27 @@ export async function alignMaskToSprite(image: Buffer, source: Buffer, width: nu
   return sharp(mask, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }
 
-/** Let the primary region win at edges where independently generated masks overlap. */
-export async function excludePrimaryRegion(secondary: Buffer, primary: Buffer): Promise<Buffer> {
-  const [{ data: secondaryPixels, info }, { data: primaryPixels }] = await Promise.all([
-    sharp(secondary).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
-    sharp(primary).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
-  ]);
-  if (secondaryPixels.length !== primaryPixels.length) throw new Error("Player masks have different dimensions.");
-  let selectedPixels = 0;
-  for (let offset = 3; offset < secondaryPixels.length; offset += 4) {
-    const alpha = Math.round(secondaryPixels[offset]! * (255 - primaryPixels[offset]!) / 255);
-    secondaryPixels[offset] = alpha;
-    if (alpha > 0) selectedPixels += 1;
+export async function publishMaskCandidate(sourcePath: string, requestId: string, primaryOpacity: number, secondaryOpacity: number) {
+  if (!isPlayerColorOpacity(primaryOpacity) || !isPlayerColorOpacity(secondaryOpacity)) {
+    throw new Error("Player color opacity must be between 0 and 1.");
   }
-  if (selectedPixels === 0) throw new Error("The secondary region overlaps the primary mask entirely. Generate masks again.");
-  return sharp(secondaryPixels, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
-}
-
-export async function publishMaskCandidate(sourcePath: string, requestId: string) {
   const { manifest } = await readMaskCandidate(sourcePath, requestId);
-  const parts = ["primary", "secondary"] as const;
+  const parts = ["downscaled", "primary"] as const;
   const images = await Promise.all(parts.map((part) => readFile(candidateImagePath(manifest.entityId, requestId, part))));
+  for (const image of images) {
+    const metadata = await sharp(image).metadata();
+    if (metadata.format !== "png" || metadata.width !== manifest.width || metadata.height !== manifest.height) {
+      throw new Error("The sprite and masks must match the original sprite dimensions.");
+    }
+  }
   const roots = [
     path.resolve(process.cwd(), "public/assets", manifest.entityId),
     path.resolve(process.cwd(), "../../packages/content/assets", manifest.entityId),
   ];
-  await Promise.all(roots.flatMap((root) => parts.map((part, index) => writeFile(path.join(root, `${part}.png`), images[index]!))));
+  const filenames = ["idle.png", "primary.png"] as const;
+  const settings = JSON.stringify({ primaryOpacity, secondaryOpacity }, null, 2) + "\n";
+  await Promise.all(roots.flatMap((root) => [
+    ...filenames.map((filename, index) => writeFile(path.join(root, filename), images[index]!)),
+    writeFile(path.join(root, "player-colors.json"), settings),
+  ]));
 }

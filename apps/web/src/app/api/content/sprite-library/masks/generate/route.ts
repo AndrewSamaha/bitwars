@@ -1,30 +1,30 @@
 import { readFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
-import { candidateImagePath, alignMaskToSprite, excludePrimaryRegion, readMaskCandidate, writeMaskCandidateImage } from "@/lib/content/maskCandidates";
-import { editSpriteWithOpenAI, generationSize, regionMaskPrompt } from "@/lib/content/generatePlayerMasks";
+import { candidateImagePath, alignMaskToSprite, readMaskCandidate, writeMaskCandidateImage } from "@/lib/content/maskCandidates";
+import { editSpriteWithOpenAI, generationSize } from "@/lib/content/generatePlayerMasks";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {
-    const { path, requestId, part } = await request.json();
-    if (part !== "primary" && part !== "secondary") {
-      return NextResponse.json({ error: "Choose a player color region." }, { status: 400 });
+    const { path, requestId, prompt } = await request.json();
+    if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 10_000) {
+      return NextResponse.json({ error: "Enter a mask prompt of up to 10,000 characters." }, { status: 400 });
     }
-    const { manifest, source } = await readMaskCandidate(path, requestId);
-    const upscaled = await readFile(candidateImagePath(manifest.entityId, requestId, "upscaled"));
+    const { manifest } = await readMaskCandidate(path, requestId);
+    const [upscaled, downscaled] = await Promise.all([
+      readFile(candidateImagePath(manifest.entityId, requestId, "upscaled")),
+      readFile(candidateImagePath(manifest.entityId, requestId, "downscaled")),
+    ]);
     const size = generationSize(manifest.width, manifest.height);
-    const primary = part === "secondary"
-      ? await readFile(candidateImagePath(manifest.entityId, requestId, "primary"))
-      : null;
-    const [outputWidth, outputHeight] = size.split("x").map(Number);
+    const upscaledMetadata = await sharp(upscaled).metadata();
+    if (!upscaledMetadata.width || !upscaledMetadata.height) throw new Error("The enlarged sprite has no readable dimensions.");
     const generated = await editSpriteWithOpenAI({
       image: upscaled,
-      referenceImage: primary ? await sharp(primary).resize(outputWidth, outputHeight).png().toBuffer() : undefined,
       model: "gpt-image-2.5-sunburst",
-      prompt: regionMaskPrompt(part),
+      prompt: prompt.trim(),
       size,
       quality: "high",
     });
@@ -34,11 +34,10 @@ export async function POST(request: Request) {
     if (transparentPixels < data.length / 4 * 0.05) {
       throw new Error("The model returned an opaque image instead of a transparent mask. Try generating this region again.");
     }
-    let aligned = await alignMaskToSprite(generated, source, manifest.width, manifest.height);
-    if (primary) {
-      aligned = await excludePrimaryRegion(aligned, primary);
-    }
-    await writeMaskCandidateImage(manifest.entityId, requestId, part, aligned);
+    const upscaledMask = await alignMaskToSprite(generated, upscaled, upscaledMetadata.width, upscaledMetadata.height);
+    const aligned = await alignMaskToSprite(upscaledMask, downscaled, manifest.width, manifest.height);
+    await writeMaskCandidateImage(manifest.entityId, requestId, "primary-upscaled", upscaledMask);
+    await writeMaskCandidateImage(manifest.entityId, requestId, "primary", aligned);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to generate player mask." }, { status: 400 });
