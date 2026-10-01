@@ -12,6 +12,11 @@ export function isSecondaryBrightnessThreshold(value: unknown): value is number 
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= MAX_SECONDARY_BRIGHTNESS_THRESHOLD;
 }
 
+/** Invariant coverage remains untinted, even when it intersects another mask. */
+export function tintableSpriteAlpha(spriteAlpha: number, invariantMaskAlpha: number): number {
+  return Math.max(0, spriteAlpha - Math.min(spriteAlpha, invariantMaskAlpha));
+}
+
 /** Primary coverage is removed before either color's opacity is applied. */
 export function secondaryCoverageAlpha(spriteAlpha: number, primaryMaskAlpha: number, brightness: number, threshold: number): number {
   const availableAlpha = Math.max(0, spriteAlpha - primaryMaskAlpha);

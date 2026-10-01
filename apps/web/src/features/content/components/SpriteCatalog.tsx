@@ -7,7 +7,7 @@ import { PLAYER_PALETTES, type PlayerPalette } from "@/lib/playerPalettes";
 import MaskedSpritePreview from "./MaskedSpritePreview";
 import MaskGenerationDialog from "./MaskGenerationDialog";
 
-type Sprite = { path: string; width: number | null; height: number | null; hasPlayerMasks: boolean; hasGraySprite: boolean; primaryOpacity: number; secondaryOpacity: number; secondaryBrightnessThreshold: number };
+type Sprite = { path: string; width: number | null; height: number | null; hasPlayerMasks: boolean; hasGraySprite: boolean; hasInvariantMask: boolean; hasInvariantColors: boolean; primaryOpacity: number; secondaryOpacity: number; secondaryBrightnessThreshold: number };
 type Tool = "downsample" | "rotate";
 
 function spriteUrl(relativePath: string, assetVersion?: string) {
@@ -31,6 +31,8 @@ function PlayerColorPreview({ sprite, palette, assetVersion, className }: {
     className={className}
     palette={palette}
     primaryMaskUrl={spriteUrl(`${directory}/primary.png`, assetVersion)}
+    invariantsMaskUrl={sprite.hasInvariantMask ? spriteUrl(`${directory}/invariants.png`, assetVersion) : null}
+    invariantColorsUrl={sprite.hasInvariantColors ? spriteUrl(`${directory}/invariant-colors.png`, assetVersion) : null}
     primaryOpacity={sprite.primaryOpacity}
     secondaryOpacity={sprite.secondaryOpacity}
     secondaryBrightnessThreshold={sprite.secondaryBrightnessThreshold}
@@ -46,7 +48,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
   const [selectedFront, setSelectedFront] = useState<SpriteFrontChoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [maskWorkflow, setMaskWorkflow] = useState<{ path: string; sourceUrl: string; upscalePromise: Promise<{ requestId: string; primaryPrompt: string }> } | null>(null);
+  const [maskWorkflow, setMaskWorkflow] = useState<{ path: string; sourceUrl: string; upscalePromise: Promise<{ requestId: string; primaryPrompt: string; invariantsPrompt: string }> } | null>(null);
   const [selectedPaletteId, setSelectedPaletteId] = useState<string>(PLAYER_PALETTES[0].id);
   const selected = sprites.find((sprite) => sprite.path === selectedPath) ?? sprites[0];
   const selectedPalette = PLAYER_PALETTES.find((palette) => palette.id === selectedPaletteId) ?? PLAYER_PALETTES[0];
@@ -85,7 +87,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
     }).then(async (response) => {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Unable to upscale sprite.");
-      return payload as { requestId: string; primaryPrompt: string };
+      return payload as { requestId: string; primaryPrompt: string; invariantsPrompt: string };
     });
     setMaskWorkflow({ path: sourcePath, sourceUrl: spriteUrl(sourcePath, assetVersion), upscalePromise: promise });
   }
@@ -178,6 +180,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
         </div>
         <p className="mt-5 text-sm text-slate-300">Resolution: {resolution(selected)}</p>
         {selected.hasGraySprite && <p className="mt-2 text-sm text-slate-400">Player colors use gray.png; idle.png remains the color reference.</p>}
+        {selected.hasInvariantColors && <p className="mt-2 text-sm text-slate-400">Invariant details keep their colors from the enlarged reference.</p>}
         <p className="mt-2 break-all font-mono text-xs text-slate-400">{selected.path}</p>
         <div className="mt-6 border-t border-slate-700 pt-5">
           <h2 className="text-sm font-medium text-slate-300">Tools</h2>

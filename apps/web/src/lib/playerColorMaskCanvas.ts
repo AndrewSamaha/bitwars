@@ -1,4 +1,4 @@
-import { DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD, secondaryCoverageAlpha } from "./playerColorSettings";
+import { DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD, secondaryCoverageAlpha, tintableSpriteAlpha } from "./playerColorSettings";
 
 async function loadImage(url: string): Promise<HTMLImageElement> {
   const image = new Image();
@@ -8,12 +8,12 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 /** Build color-only masks from the published sprite and its primary selection. */
-export async function playerColorMaskCanvases(baseUrl: string, primaryUrl: string, secondaryBrightnessThreshold = DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD) {
-  const [baseImage, primaryImage] = await Promise.all([loadImage(baseUrl), loadImage(primaryUrl)]);
+export async function playerColorMaskCanvases(baseUrl: string, primaryUrl: string, secondaryBrightnessThreshold = DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD, invariantsUrl?: string | null) {
+  const [baseImage, primaryImage, invariantsImage] = await Promise.all([loadImage(baseUrl), loadImage(primaryUrl), invariantsUrl ? loadImage(invariantsUrl) : Promise.resolve(null)]);
   const width = baseImage.naturalWidth;
   const height = baseImage.naturalHeight;
-  if (primaryImage.naturalWidth !== width || primaryImage.naturalHeight !== height) {
-    throw new Error("The primary mask must match the sprite dimensions.");
+  if (primaryImage.naturalWidth !== width || primaryImage.naturalHeight !== height || (invariantsImage && (invariantsImage.naturalWidth !== width || invariantsImage.naturalHeight !== height))) {
+    throw new Error("Player color masks must match the sprite dimensions.");
   }
 
   function pixelsFor(image: HTMLImageElement) {
@@ -28,11 +28,13 @@ export async function playerColorMaskCanvases(baseUrl: string, primaryUrl: strin
 
   const base = pixelsFor(baseImage);
   const primary = pixelsFor(primaryImage);
+  const invariants = invariantsImage ? pixelsFor(invariantsImage) : null;
   const secondary = pixelsFor(baseImage);
   for (let index = 0; index < primary.pixels.data.length; index += 4) {
-    const primaryAlpha = Math.min(base.pixels.data[index + 3]!, primary.pixels.data[index + 3]!);
+    const tintableAlpha = tintableSpriteAlpha(base.pixels.data[index + 3]!, invariants?.pixels.data[index + 3] ?? 0);
+    const primaryAlpha = Math.min(tintableAlpha, primary.pixels.data[index + 3]!);
     const brightness = base.pixels.data[index]! * 0.2126 + base.pixels.data[index + 1]! * 0.7152 + base.pixels.data[index + 2]! * 0.0722;
-    secondary.pixels.data[index + 3] = secondaryCoverageAlpha(base.pixels.data[index + 3]!, primaryAlpha, brightness, secondaryBrightnessThreshold);
+    secondary.pixels.data[index + 3] = secondaryCoverageAlpha(tintableAlpha, primaryAlpha, brightness, secondaryBrightnessThreshold);
     primary.pixels.data[index] = secondary.pixels.data[index] = 255;
     primary.pixels.data[index + 1] = secondary.pixels.data[index + 1] = 255;
     primary.pixels.data[index + 2] = secondary.pixels.data[index + 2] = 255;

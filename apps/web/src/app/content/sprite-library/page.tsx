@@ -22,13 +22,15 @@ async function spritePaths(directory = ""): Promise<string[]> {
 export default async function SpriteLibraryPage({ searchParams }: { searchParams: Promise<{ sprite?: string; updated?: string }> }) {
   const [{ sprite, updated }, paths] = await Promise.all([searchParams, spritePaths()]);
   const pathSet = new Set(paths);
-  const spritePathsOnly = paths.filter((relativePath) => !/\/(primary|secondary|gray)\.png$/i.test(relativePath));
+  const spritePathsOnly = paths.filter((relativePath) => !/\/(primary|secondary|gray|invariants|invariant-colors)\.png$/i.test(relativePath));
   const sprites = await Promise.all(spritePathsOnly.sort((a, b) => a.localeCompare(b)).map(async (relativePath) => {
     const metadata = await sharp(path.join(ASSET_ROOT, relativePath)).metadata().catch(() => null);
     const directory = path.posix.dirname(relativePath);
     const hasPlayerMasks = path.posix.basename(relativePath) === "idle.png"
       && pathSet.has(`${directory}/primary.png`);
     const hasGraySprite = hasPlayerMasks && pathSet.has(`${directory}/gray.png`);
+    const hasInvariantMask = hasPlayerMasks && pathSet.has(`${directory}/invariants.png`);
+    const hasInvariantColors = hasInvariantMask && pathSet.has(`${directory}/invariant-colors.png`);
     const settings = hasPlayerMasks
       ? await readFile(path.join(ASSET_ROOT, directory, "player-colors.json"), "utf8")
         .then((contents) => JSON.parse(contents) as { primaryOpacity?: unknown; secondaryOpacity?: unknown; secondaryBrightnessThreshold?: unknown })
@@ -40,6 +42,8 @@ export default async function SpriteLibraryPage({ searchParams }: { searchParams
       height: metadata?.height ?? null,
       hasPlayerMasks,
       hasGraySprite,
+      hasInvariantMask,
+      hasInvariantColors,
       primaryOpacity: isPlayerColorOpacity(settings?.primaryOpacity) ? settings.primaryOpacity : DEFAULT_PRIMARY_OPACITY,
       secondaryOpacity: isPlayerColorOpacity(settings?.secondaryOpacity) ? settings.secondaryOpacity : DEFAULT_SECONDARY_OPACITY,
       secondaryBrightnessThreshold: isSecondaryBrightnessThreshold(settings?.secondaryBrightnessThreshold) ? settings.secondaryBrightnessThreshold : 0,

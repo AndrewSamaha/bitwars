@@ -14,12 +14,21 @@ export type EntityTextureCache = Map<string, Texture> & { primaryOpacityByType: 
 export type EntityVisual = {
   container: Container;
   sprite: Sprite;
+  invariantColorSprite?: Sprite;
   playerColorSprites?: { primary: Sprite; secondary: Sprite };
   lastEntityTypeId: string;
   update?: (elapsedMs: number) => void;
 };
 
 function addPlayerColorSprites(visual: EntityVisual, textureCache: EntityTextureCache, typeId: string) {
+  const invariantColorTexture = textureCache.get(`${typeId}/invariant-colors`);
+  if (invariantColorTexture) {
+    const invariantColors = new Sprite(invariantColorTexture);
+    invariantColors.anchor.set(0.5);
+    invariantColors.eventMode = "none";
+    visual.container.addChild(invariantColors);
+    visual.invariantColorSprite = invariantColors;
+  }
   const primaryTexture = textureCache.get(`${typeId}/primary`);
   const secondaryTexture = textureCache.get(`${typeId}/secondary`);
   if (!primaryTexture || !secondaryTexture) return;
@@ -68,11 +77,20 @@ export async function loadGameEntityTextures(
       const grayUrl = `/assets/${id}/gray.png`;
       const grayResponse = await fetch(grayUrl, { method: "HEAD" });
       const baseUrl = grayResponse.ok ? grayUrl : `/assets/${id}/idle.png`;
+      const invariantsUrl = `/assets/${id}/invariants.png`;
+      const invariantsResponse = await fetch(invariantsUrl, { method: "HEAD" });
       const response = await fetch(`/assets/${id}/player-colors.json`);
       const settings = response.ok ? await response.json().catch(() => null) as { primaryOpacity?: unknown; secondaryOpacity?: unknown; secondaryBrightnessThreshold?: unknown } | null : null;
       const secondaryBrightnessThreshold = isSecondaryBrightnessThreshold(settings?.secondaryBrightnessThreshold) ? settings.secondaryBrightnessThreshold : 0;
-      const masks = await playerColorMaskCanvases(baseUrl, `/assets/${id}/primary.png`, secondaryBrightnessThreshold);
+      const masks = await playerColorMaskCanvases(baseUrl, `/assets/${id}/primary.png`, secondaryBrightnessThreshold, invariantsResponse.ok ? invariantsUrl : null);
       if (grayResponse.ok) cache.set(id, await Assets.load(grayUrl));
+      const invariantColorsUrl = `/assets/${id}/invariant-colors.png`;
+      try {
+        const invariantColorsResponse = await fetch(invariantColorsUrl, { method: "HEAD" });
+        if (invariantColorsResponse.ok) cache.set(`${id}/invariant-colors`, await Assets.load(invariantColorsUrl));
+      } catch (error) {
+        console.warn(`Unable to load ${id} invariant colors`, error);
+      }
       cache.set(`${id}/primary`, Texture.from(masks.primary));
       cache.set(`${id}/secondary`, Texture.from(masks.secondary));
       if (isPlayerColorOpacity(settings?.primaryOpacity)) cache.primaryOpacityByType.set(id, settings.primaryOpacity);
@@ -120,6 +138,10 @@ export function createGameEntityVisual(
 /** Keep overlays aligned when an entity changes type through an upgrade. */
 export function setGameEntityVisualType(visual: EntityVisual, textureCache: EntityTextureCache, typeId: string) {
   visual.sprite.texture = getGameEntityTexture(textureCache, typeId);
+  if (visual.invariantColorSprite) {
+    visual.invariantColorSprite.destroy();
+    visual.invariantColorSprite = undefined;
+  }
   if (visual.playerColorSprites) {
     visual.playerColorSprites.primary.destroy();
     visual.playerColorSprites.secondary.destroy();

@@ -998,6 +998,7 @@ export default function GameStage() {
               const existing = container.children.find((c) => c.label === 'hoverIndicator');
               if (existing) existing.parent?.removeChild(existing);
             }
+            if (ref.invariantColorSprite) ref.invariantColorSprite.tint = primary.tint;
 
             let healthArc = container.children.find((c) => c.label === "healthArc") as Graphics | undefined;
             if (shouldShowHealthArc && hasHealth) {

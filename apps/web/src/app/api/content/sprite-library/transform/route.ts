@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     }
 
     const companionPaths = path.posix.basename(relativePath) === "idle.png"
-      ? (["gray", "primary"] as const).map((part) => `${path.posix.dirname(relativePath)}/${part}.png`)
+      ? (["gray", "primary", "invariants", "invariant-colors"] as const).map((part) => `${path.posix.dirname(relativePath)}/${part}.png`)
       : [];
     const companions = await Promise.all(companionPaths.map(async (companionPath) => {
       try {
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
       for (const companion of companions.filter((item): item is NonNullable<typeof item> => item !== null)) {
         const size = await sharp(companion.image).metadata();
         if (size.width !== originalSize.width || size.height !== originalSize.height) {
-          return NextResponse.json({ error: "Gray sprite and player mask must match idle.png dimensions." }, { status: 400 });
+          return NextResponse.json({ error: "Gray sprite and player masks must match idle.png dimensions." }, { status: 400 });
         }
       }
     }

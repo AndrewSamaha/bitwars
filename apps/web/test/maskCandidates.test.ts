@@ -1,8 +1,8 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { generationSize } from "../src/lib/content/generatePlayerMasks";
-import { alignMaskToSprite } from "../src/lib/content/maskCandidates";
-import { secondaryCoverageAlpha } from "../src/lib/playerColorSettings";
+import { alignMaskToSprite, copyInvariantColors, cutOutInvariantRegions } from "../src/lib/content/maskCandidates";
+import { secondaryCoverageAlpha, tintableSpriteAlpha } from "../src/lib/playerColorSettings";
 
 const WIDTH = 4;
 const HEIGHT = 4;
@@ -33,6 +33,65 @@ describe("player mask candidates", () => {
     const aligned = await alignMaskToSprite(generated, source, WIDTH, HEIGHT);
     expect(await rgba(aligned, 1, 1)).toEqual([255, 255, 255, 128]);
     expect(await rgba(aligned, 0, 0)).toEqual([255, 255, 255, 0]);
+  });
+
+  it("accepts an empty invariant selection without inventing coverage", async () => {
+    const source = await pngAt([[1, 1, 10, 20, 30, 255]]);
+    const generated = await pngAt([]);
+    const aligned = await alignMaskToSprite(generated, source, WIDTH, HEIGHT, true);
+    expect(await rgba(aligned, 1, 1)).toEqual([255, 255, 255, 0]);
+  });
+
+  it("cuts invariant pixels out of the grayscale input and clips primary coverage", async () => {
+    const gray = await pngAt([
+      [0, 0, 40, 40, 40, 255],
+      [1, 0, 80, 80, 80, 255],
+      [2, 0, 120, 120, 120, 255],
+    ]);
+    const invariants = await pngAt([
+      [0, 0, 255, 255, 255, 255],
+      [1, 0, 255, 255, 255, 128],
+    ]);
+    const cutout = await cutOutInvariantRegions(gray, invariants);
+    expect(await rgba(cutout, 0, 0)).toEqual([40, 40, 40, 0]);
+    expect(await rgba(cutout, 1, 0)).toEqual([80, 80, 80, 127]);
+    expect(await rgba(cutout, 2, 0)).toEqual([120, 120, 120, 255]);
+
+    const generated = await pngAt([
+      [0, 0, 255, 255, 255, 255],
+      [1, 0, 255, 255, 255, 255],
+      [2, 0, 255, 255, 255, 255],
+    ]);
+    const primary = await alignMaskToSprite(generated, cutout, WIDTH, HEIGHT);
+    expect(await rgba(primary, 0, 0)).toEqual([255, 255, 255, 0]);
+    expect(await rgba(primary, 1, 0)).toEqual([255, 255, 255, 127]);
+    expect(await rgba(primary, 2, 0)).toEqual([255, 255, 255, 255]);
+  });
+
+  it("copies color only inside invariant coverage", async () => {
+    const color = await pngAt([
+      [0, 0, 12, 90, 210, 255],
+      [1, 0, 230, 80, 40, 255],
+      [2, 0, 20, 180, 60, 160],
+    ]);
+    const invariants = await pngAt([
+      [0, 0, 255, 255, 255, 255],
+      [1, 0, 255, 255, 255, 96],
+      [2, 0, 255, 255, 255, 220],
+    ]);
+    const cutout = await copyInvariantColors(color, invariants);
+    expect(await rgba(cutout, 0, 0)).toEqual([12, 90, 210, 255]);
+    expect(await rgba(cutout, 1, 0)).toEqual([230, 80, 40, 96]);
+    expect(await rgba(cutout, 2, 0)).toEqual([20, 180, 60, 160]);
+    expect(await rgba(cutout, 3, 0)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("reserves invariant coverage before applying either player color", () => {
+    const tintable = tintableSpriteAlpha(255, 255);
+    expect(tintable).toBe(0);
+    expect(secondaryCoverageAlpha(tintable, Math.min(tintable, 255), 255, 0)).toBe(0);
+    expect(tintableSpriteAlpha(255, 128)).toBe(127);
+    expect(tintableSpriteAlpha(128, 255)).toBe(0);
   });
 
   it("removes primary coverage from the secondary layer before opacity is applied", () => {
