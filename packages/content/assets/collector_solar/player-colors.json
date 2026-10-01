@@ -1,4 +1,5 @@
 {
   "primaryOpacity": 0.5,
-  "secondaryOpacity": 0.5
+  "secondaryOpacity": 0.9,
+  "secondaryBrightnessThreshold": 0.25
 }
