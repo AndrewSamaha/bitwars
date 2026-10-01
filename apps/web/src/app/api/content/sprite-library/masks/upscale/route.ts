@@ -18,10 +18,12 @@ export async function POST(request: Request) {
       size,
       quality: "medium",
     });
-    const downscaled = await sharp(upscaled).resize(manifest.width, manifest.height, { fit: "fill" }).png().toBuffer();
+    const grayUpscaled = await sharp(upscaled).greyscale().png().toBuffer();
+    const gray = await sharp(grayUpscaled).resize(manifest.width, manifest.height, { fit: "fill" }).png().toBuffer();
     await Promise.all([
       writeMaskCandidateImage(manifest.entityId, requestId, "upscaled", upscaled),
-      writeMaskCandidateImage(manifest.entityId, requestId, "downscaled", downscaled),
+      writeMaskCandidateImage(manifest.entityId, requestId, "gray-upscaled", grayUpscaled),
+      writeMaskCandidateImage(manifest.entityId, requestId, "gray", gray),
     ]);
     return NextResponse.json({ requestId, primaryPrompt: primaryMaskPrompt() });
   } catch (error) {

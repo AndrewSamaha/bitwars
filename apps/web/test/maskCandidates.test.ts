@@ -36,9 +36,18 @@ describe("player mask candidates", () => {
   });
 
   it("removes primary coverage from the secondary layer before opacity is applied", () => {
-    expect(secondaryCoverageAlpha(255, 255)).toBe(0);
-    expect(secondaryCoverageAlpha(255, 128)).toBe(127);
-    expect(secondaryCoverageAlpha(180, 70)).toBe(110);
-    expect(secondaryCoverageAlpha(180, 255)).toBe(0);
+    expect(secondaryCoverageAlpha(255, 255, 255, 0)).toBe(0);
+    expect(secondaryCoverageAlpha(255, 128, 255, 0)).toBe(127);
+    expect(secondaryCoverageAlpha(180, 70, 255, 0)).toBe(110);
+    expect(secondaryCoverageAlpha(180, 255, 255, 0)).toBe(0);
+  });
+
+  it("feathers secondary coverage above the grayscale brightness threshold", () => {
+    expect(secondaryCoverageAlpha(255, 0, 50, 0.25)).toBe(0);
+    expect(secondaryCoverageAlpha(255, 0, 83, 0.25)).toBeGreaterThan(0);
+    expect(secondaryCoverageAlpha(255, 0, 83, 0.25)).toBeLessThan(255);
+    expect(secondaryCoverageAlpha(255, 0, 128, 0.25)).toBe(255);
+    expect(secondaryCoverageAlpha(255, 128, 255, 0.25)).toBe(127);
+    expect(secondaryCoverageAlpha(255, 0, 0, 0)).toBe(255);
   });
 });

@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     const path = params.get("path");
     const requestId = params.get("requestId");
     const part = params.get("part");
-    if (!path || !requestId || (part !== "upscaled" && part !== "downscaled" && part !== "primary" && part !== "primary-upscaled")) {
+    if (!path || !requestId || (part !== "upscaled" && part !== "gray-upscaled" && part !== "gray" && part !== "primary" && part !== "primary-upscaled")) {
       return NextResponse.json({ error: "Invalid mask image request." }, { status: 400 });
     }
     const image = await readMaskCandidateImage(path, requestId, part as MaskCandidatePart);

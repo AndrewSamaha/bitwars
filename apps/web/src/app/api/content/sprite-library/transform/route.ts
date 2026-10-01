@@ -33,31 +33,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Choose a valid sprite tool." }, { status: 400 });
     }
 
-    const maskPaths = path.posix.basename(relativePath) === "idle.png"
-      ? [`${path.posix.dirname(relativePath)}/primary.png`]
+    const companionPaths = path.posix.basename(relativePath) === "idle.png"
+      ? (["gray", "primary"] as const).map((part) => `${path.posix.dirname(relativePath)}/${part}.png`)
       : [];
-    const masks = await Promise.all(maskPaths.map(async (maskPath) => {
+    const companions = await Promise.all(companionPaths.map(async (companionPath) => {
       try {
-        return { path: maskPath, image: await readLibrarySprite(maskPath) };
+        return { path: companionPath, image: await readLibrarySprite(companionPath) };
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
         throw error;
       }
     }));
-    if (masks[0]) {
+    if (companions.some(Boolean)) {
       const originalSize = await sharp(original).metadata();
-      for (const mask of masks) {
-        const size = await sharp(mask!.image).metadata();
+      for (const companion of companions.filter((item): item is NonNullable<typeof item> => item !== null)) {
+        const size = await sharp(companion.image).metadata();
         if (size.width !== originalSize.width || size.height !== originalSize.height) {
-          return NextResponse.json({ error: "Player masks must match the sprite dimensions." }, { status: 400 });
+          return NextResponse.json({ error: "Gray sprite and player mask must match idle.png dimensions." }, { status: 400 });
         }
       }
     }
-    const transformedMasks = await Promise.all(masks.filter((mask): mask is NonNullable<typeof mask> => mask !== null)
-      .map(async (mask) => ({ path: mask.path, image: await transformLibrarySprite(mask.image, operation) })));
+    const transformedCompanions = await Promise.all(companions.filter((companion): companion is NonNullable<typeof companion> => companion !== null)
+      .map(async (companion) => ({ path: companion.path, image: await transformLibrarySprite(companion.image, operation) })));
     await Promise.all([
       saveLibrarySprite(relativePath, transformed),
-      ...transformedMasks.map((mask) => saveLibrarySprite(mask.path, mask.image)),
+      ...transformedCompanions.map((companion) => saveLibrarySprite(companion.path, companion.image)),
     ]);
     const metadata = await sharp(transformed).metadata();
     return NextResponse.json({ ok: true, width: metadata.width, height: metadata.height });

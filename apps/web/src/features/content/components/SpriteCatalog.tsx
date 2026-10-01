@@ -7,7 +7,7 @@ import { PLAYER_PALETTES, type PlayerPalette } from "@/lib/playerPalettes";
 import MaskedSpritePreview from "./MaskedSpritePreview";
 import MaskGenerationDialog from "./MaskGenerationDialog";
 
-type Sprite = { path: string; width: number | null; height: number | null; hasPlayerMasks: boolean; primaryOpacity: number; secondaryOpacity: number };
+type Sprite = { path: string; width: number | null; height: number | null; hasPlayerMasks: boolean; hasGraySprite: boolean; primaryOpacity: number; secondaryOpacity: number; secondaryBrightnessThreshold: number };
 type Tool = "downsample" | "rotate";
 
 function spriteUrl(relativePath: string, assetVersion?: string) {
@@ -27,12 +27,13 @@ function PlayerColorPreview({ sprite, palette, assetVersion, className }: {
 }) {
   const directory = sprite.path.slice(0, sprite.path.lastIndexOf("/"));
   return <MaskedSpritePreview
-    baseUrl={spriteUrl(sprite.path, assetVersion)}
+    baseUrl={spriteUrl(sprite.hasGraySprite ? `${directory}/gray.png` : sprite.path, assetVersion)}
     className={className}
     palette={palette}
     primaryMaskUrl={spriteUrl(`${directory}/primary.png`, assetVersion)}
     primaryOpacity={sprite.primaryOpacity}
     secondaryOpacity={sprite.secondaryOpacity}
+    secondaryBrightnessThreshold={sprite.secondaryBrightnessThreshold}
   />;
 }
 
@@ -176,6 +177,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
           </div>}
         </div>
         <p className="mt-5 text-sm text-slate-300">Resolution: {resolution(selected)}</p>
+        {selected.hasGraySprite && <p className="mt-2 text-sm text-slate-400">Player colors use gray.png; idle.png remains the color reference.</p>}
         <p className="mt-2 break-all font-mono text-xs text-slate-400">{selected.path}</p>
         <div className="mt-6 border-t border-slate-700 pt-5">
           <h2 className="text-sm font-medium text-slate-300">Tools</h2>

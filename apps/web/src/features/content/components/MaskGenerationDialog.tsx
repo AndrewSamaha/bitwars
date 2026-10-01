@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PLAYER_PALETTES } from "@/lib/playerPalettes";
-import { DEFAULT_PRIMARY_OPACITY, DEFAULT_SECONDARY_OPACITY } from "@/lib/playerColorSettings";
+import { DEFAULT_PRIMARY_OPACITY, DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD, DEFAULT_SECONDARY_OPACITY, MAX_SECONDARY_BRIGHTNESS_THRESHOLD } from "@/lib/playerColorSettings";
 import MaskedSpritePreview from "./MaskedSpritePreview";
 
 type Phase = "upscaling" | "upscaled" | "generating" | "ready" | "saving" | "error";
@@ -20,8 +20,20 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return payload as T;
 }
 
-function candidateUrl(sourcePath: string, requestId: string, part: "upscaled" | "downscaled" | "primary" | "primary-upscaled", revision = 0) {
+function candidateUrl(sourcePath: string, requestId: string, part: "upscaled" | "gray-upscaled" | "gray" | "primary" | "primary-upscaled", revision = 0) {
   return `/api/content/sprite-library/masks/image?${new URLSearchParams({ path: sourcePath, requestId, part, revision: String(revision) })}`;
+}
+
+function GeneratedImage({ src, alt, size, failed }: { src: string | null; alt: string; size: "size-64" | "size-48"; failed?: boolean }) {
+  const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const pending = !failed && !loadFailed && !loaded;
+
+  return <div aria-busy={pending} className={`relative grid ${size} place-items-center overflow-hidden rounded border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px]`}>
+    {pending && <div className="absolute inset-4 animate-pulse rounded-lg bg-slate-700/70 motion-reduce:animate-none" role="status"><span className="sr-only">Preparing {alt.toLowerCase()}…</span></div>}
+    {src && <img alt={alt} className={`size-full object-contain ${loaded ? "" : "invisible"}`} onError={() => setLoadFailed(true)} onLoad={() => setLoaded(true)} src={src} />}
+    {(failed || loadFailed) && <span className="px-4 text-center text-sm text-slate-400">Image unavailable</span>}
+  </div>;
 }
 
 export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePromise, onClose, onSaved }: {
@@ -40,6 +52,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
   const [paletteId, setPaletteId] = useState<string>(PLAYER_PALETTES[0].id);
   const [primaryOpacity, setPrimaryOpacity] = useState(DEFAULT_PRIMARY_OPACITY);
   const [secondaryOpacity, setSecondaryOpacity] = useState(DEFAULT_SECONDARY_OPACITY);
+  const [secondaryBrightnessThreshold, setSecondaryBrightnessThreshold] = useState(DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD);
   const [visibleMasks, setVisibleMasks] = useState<VisibleMasks>("both");
   const [previewSprite, setPreviewSprite] = useState<PreviewSprite>("upscaled");
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +95,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
     setPhase("saving");
     setError(null);
     try {
-      await postJson("/api/content/sprite-library/masks/publish", { path: sourcePath, requestId, primaryOpacity, secondaryOpacity });
+      await postJson("/api/content/sprite-library/masks/publish", { path: sourcePath, requestId, primaryOpacity, secondaryOpacity, secondaryBrightnessThreshold });
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to save sprite and colors.");
@@ -91,7 +104,8 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
   }
 
   const upscaledUrl = requestId ? candidateUrl(sourcePath, requestId, "upscaled") : null;
-  const downscaledUrl = requestId ? candidateUrl(sourcePath, requestId, "downscaled") : null;
+  const grayUpscaledUrl = requestId ? candidateUrl(sourcePath, requestId, "gray-upscaled") : null;
+  const grayUrl = requestId ? candidateUrl(sourcePath, requestId, "gray") : null;
   const primaryUrl = requestId && primaryReady ? candidateUrl(sourcePath, requestId, "primary-upscaled", maskRevision) : null;
   const savedPrimaryUrl = requestId && primaryReady ? candidateUrl(sourcePath, requestId, "primary", maskRevision) : null;
   const busy = phase === "upscaling" || phase === "generating" || phase === "saving";
@@ -103,7 +117,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
         <div>
           <p className="text-sm text-cyan-300">Sprite tools</p>
           <h2 className="mt-1 text-xl font-semibold" id="generate-masks-title">Generate player color masks</h2>
-          <p className="mt-2 text-sm text-slate-400">Review the enlarged sprite, generate a primary region, then try player palettes and color opacity before saving.</p>
+          <p className="mt-2 text-sm text-slate-400">Review the color upscale and grayscale version, generate a primary region on grayscale, then try player palettes and opacity before saving.</p>
         </div>
         <button className="rounded border border-slate-600 px-3 py-1 text-sm hover:bg-slate-800" onClick={onClose} type="button">Close</button>
       </div>
@@ -116,13 +130,15 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
         </div>
         <div>
           <h3 className="mb-2 text-sm font-medium">Flare enlarged reference</h3>
-          <div className="grid size-64 place-items-center rounded border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px]">
-            {upscaledUrl ? <img alt="Enlarged sprite proposal" className="size-full object-contain" src={upscaledUrl} /> : <span className="px-4 text-center text-sm text-slate-400">{phase === "error" ? "Generation failed" : "Generating enlarged reference…"}</span>}
-          </div>
+          <GeneratedImage alt="Enlarged sprite proposal" failed={phase === "error"} key={upscaledUrl ?? "upscaling"} size="size-64" src={upscaledUrl} />
         </div>
-        {primaryUrl && <div>
+        <div>
+          <h3 className="mb-2 text-sm font-medium">Grayscale enlarged sprite</h3>
+          <GeneratedImage alt="Grayscale enlarged sprite" failed={phase === "error"} key={grayUpscaledUrl ?? "grayscaling"} size="size-64" src={grayUpscaledUrl} />
+        </div>
+        {(phase === "generating" || primaryUrl) && <div>
           <h3 className="mb-2 text-sm font-medium">Primary mask</h3>
-          <div className="grid size-48 place-items-center rounded border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px]"><img alt="Primary mask proposal" className="size-full object-contain" src={primaryUrl} /></div>
+          <GeneratedImage alt="Primary mask proposal" key={primaryUrl ?? "generating"} size="size-48" src={primaryUrl} />
         </div>}
       </div>
 
@@ -143,7 +159,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
         </div>
         <div className="mt-3 flex flex-wrap gap-5">
           <div className="grid size-72 place-items-center rounded border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px]">
-            <MaskedSpritePreview baseUrl={previewSprite === "upscaled" ? upscaledUrl! : downscaledUrl!} className="size-full" palette={palette} primaryMaskUrl={previewSprite === "upscaled" ? primaryUrl : savedPrimaryUrl!} primaryOpacity={primaryOpacity} secondaryOpacity={secondaryOpacity} showPrimary={visibleMasks !== "secondary"} showSecondary={visibleMasks !== "primary"} />
+            <MaskedSpritePreview baseUrl={previewSprite === "upscaled" ? grayUpscaledUrl! : grayUrl!} className="size-full" palette={palette} primaryMaskUrl={previewSprite === "upscaled" ? primaryUrl : savedPrimaryUrl!} primaryOpacity={primaryOpacity} secondaryOpacity={secondaryOpacity} secondaryBrightnessThreshold={secondaryBrightnessThreshold} showPrimary={visibleMasks !== "secondary"} showSecondary={visibleMasks !== "primary"} />
           </div>
           <div className="min-w-56 flex-1">
             <p className="mb-2 text-sm text-slate-300">Layers</p>
@@ -154,6 +170,9 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
             <input className="w-full accent-cyan-400" id="primary-opacity" max="1" min="0" onChange={(event) => setPrimaryOpacity(Number(event.target.value))} step="0.05" type="range" value={primaryOpacity} />
             <label className="mb-2 mt-5 flex items-center justify-between text-sm text-slate-300" htmlFor="secondary-opacity"><span>Secondary opacity</span><span>{Math.round(secondaryOpacity * 100)}%</span></label>
             <input className="w-full accent-cyan-400" id="secondary-opacity" max="1" min="0" onChange={(event) => setSecondaryOpacity(Number(event.target.value))} step="0.05" type="range" value={secondaryOpacity} />
+            <label className="mb-2 mt-5 flex items-center justify-between text-sm text-slate-300" htmlFor="secondary-brightness-threshold"><span>Secondary brightness threshold</span><span>{Math.round(secondaryBrightnessThreshold * 100)}%</span></label>
+            <input className="w-full accent-cyan-400" id="secondary-brightness-threshold" max={MAX_SECONDARY_BRIGHTNESS_THRESHOLD} min="0" onChange={(event) => setSecondaryBrightnessThreshold(Number(event.target.value))} step="0.05" type="range" value={secondaryBrightnessThreshold} />
+            <p className="mt-1 text-xs text-slate-400">Higher values keep secondary color on brighter areas. Pixels fade in over the next 15% of brightness; 0% covers all unselected pixels.</p>
             <p className="mt-2 text-xs text-slate-400">Primary regions stay clear of secondary color, even when primary opacity is lowered.</p>
             <p className="mb-2 mt-5 text-sm text-slate-300">Player palettes</p>
             <div className="grid grid-cols-4 gap-2">
@@ -169,7 +188,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
         {primaryReady && !busy && <button className="rounded bg-cyan-400 px-4 py-2 text-sm font-medium text-slate-950" onClick={saveMasks} type="button">Save sprite and colors</button>}
         {phase === "saving" && <span className="self-center text-sm text-cyan-300">Saving sprite and colors…</span>}
       </div>
-      <p className="mt-3 text-xs text-slate-500">Saving replaces idle.png with the downscaled Flare sprite, publishes the primary mask, and stores both color opacities. Check both preview sizes before saving.</p>
+      <p className="mt-3 text-xs text-slate-500">Saving keeps idle.png as the color reference and publishes gray.png, the primary mask, both color opacities, and the secondary brightness threshold. Check both preview sizes before saving.</p>
     </section>
   </div>;
 }

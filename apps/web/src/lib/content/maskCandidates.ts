@@ -2,10 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { isPlayerColorOpacity } from "@/lib/playerColorSettings";
+import { isPlayerColorOpacity, isSecondaryBrightnessThreshold } from "@/lib/playerColorSettings";
 import { readLibrarySprite } from "./spriteLibraryAsset";
 
-export type MaskCandidatePart = "upscaled" | "downscaled" | "primary" | "primary-upscaled";
+export type MaskCandidatePart = "upscaled" | "gray-upscaled" | "gray" | "primary" | "primary-upscaled";
 export type MaskCandidateManifest = {
   entityId: string;
   sourcePath: string;
@@ -17,7 +17,7 @@ export type MaskCandidateManifest = {
 
 const REQUEST_ID = /^[0-9a-f-]{36}$/i;
 const ENTITY_ID = /^[a-z][a-z0-9_]*$/;
-const PARTS = new Set<MaskCandidatePart>(["upscaled", "downscaled", "primary", "primary-upscaled"]);
+const PARTS = new Set<MaskCandidatePart>(["upscaled", "gray-upscaled", "gray", "primary", "primary-upscaled"]);
 const CANDIDATE_ROOT = path.resolve(process.cwd(), "../../packages/content/mask-candidates");
 
 export function maskEntityId(sourcePath: unknown): string {
@@ -97,12 +97,15 @@ export async function alignMaskToSprite(image: Buffer, source: Buffer, width: nu
   return sharp(mask, { raw: { width, height, channels: 4 } }).png().toBuffer();
 }
 
-export async function publishMaskCandidate(sourcePath: string, requestId: string, primaryOpacity: number, secondaryOpacity: number) {
+export async function publishMaskCandidate(sourcePath: string, requestId: string, primaryOpacity: number, secondaryOpacity: number, secondaryBrightnessThreshold: number) {
   if (!isPlayerColorOpacity(primaryOpacity) || !isPlayerColorOpacity(secondaryOpacity)) {
     throw new Error("Player color opacity must be between 0 and 1.");
   }
+  if (!isSecondaryBrightnessThreshold(secondaryBrightnessThreshold)) {
+    throw new Error("Secondary brightness threshold must be between 0 and 0.85.");
+  }
   const { manifest } = await readMaskCandidate(sourcePath, requestId);
-  const parts = ["downscaled", "primary"] as const;
+  const parts = ["gray", "primary"] as const;
   const images = await Promise.all(parts.map((part) => readFile(candidateImagePath(manifest.entityId, requestId, part))));
   for (const image of images) {
     const metadata = await sharp(image).metadata();
@@ -114,8 +117,8 @@ export async function publishMaskCandidate(sourcePath: string, requestId: string
     path.resolve(process.cwd(), "public/assets", manifest.entityId),
     path.resolve(process.cwd(), "../../packages/content/assets", manifest.entityId),
   ];
-  const filenames = ["idle.png", "primary.png"] as const;
-  const settings = JSON.stringify({ primaryOpacity, secondaryOpacity }, null, 2) + "\n";
+  const filenames = ["gray.png", "primary.png"] as const;
+  const settings = JSON.stringify({ primaryOpacity, secondaryOpacity, secondaryBrightnessThreshold }, null, 2) + "\n";
   await Promise.all(roots.flatMap((root) => [
     ...filenames.map((filename, index) => writeFile(path.join(root, filename), images[index]!)),
     writeFile(path.join(root, "player-colors.json"), settings),

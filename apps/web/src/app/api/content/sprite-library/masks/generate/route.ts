@@ -14,15 +14,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Enter a mask prompt of up to 10,000 characters." }, { status: 400 });
     }
     const { manifest } = await readMaskCandidate(path, requestId);
-    const [upscaled, downscaled] = await Promise.all([
-      readFile(candidateImagePath(manifest.entityId, requestId, "upscaled")),
-      readFile(candidateImagePath(manifest.entityId, requestId, "downscaled")),
+    const [grayUpscaled, gray] = await Promise.all([
+      readFile(candidateImagePath(manifest.entityId, requestId, "gray-upscaled")),
+      readFile(candidateImagePath(manifest.entityId, requestId, "gray")),
     ]);
     const size = generationSize(manifest.width, manifest.height);
-    const upscaledMetadata = await sharp(upscaled).metadata();
+    const upscaledMetadata = await sharp(grayUpscaled).metadata();
     if (!upscaledMetadata.width || !upscaledMetadata.height) throw new Error("The enlarged sprite has no readable dimensions.");
     const generated = await editSpriteWithOpenAI({
-      image: upscaled,
+      image: grayUpscaled,
       model: "gpt-image-2.5-sunburst",
       prompt: prompt.trim(),
       size,
@@ -34,8 +34,8 @@ export async function POST(request: Request) {
     if (transparentPixels < data.length / 4 * 0.05) {
       throw new Error("The model returned an opaque image instead of a transparent mask. Try generating this region again.");
     }
-    const upscaledMask = await alignMaskToSprite(generated, upscaled, upscaledMetadata.width, upscaledMetadata.height);
-    const aligned = await alignMaskToSprite(upscaledMask, downscaled, manifest.width, manifest.height);
+    const upscaledMask = await alignMaskToSprite(generated, grayUpscaled, upscaledMetadata.width, upscaledMetadata.height);
+    const aligned = await alignMaskToSprite(upscaledMask, gray, manifest.width, manifest.height);
     await writeMaskCandidateImage(manifest.entityId, requestId, "primary-upscaled", upscaledMask);
     await writeMaskCandidateImage(manifest.entityId, requestId, "primary", aligned);
     return NextResponse.json({ ok: true });

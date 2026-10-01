@@ -1,7 +1,7 @@
 import { Assets, Container, Sprite, Texture } from "pixi.js";
 import { PRELOAD_ENTITY_TYPES } from "@bitwars/content";
 import { playerColorMaskCanvases } from "@/lib/playerColorMaskCanvas";
-import { DEFAULT_PRIMARY_OPACITY, DEFAULT_SECONDARY_OPACITY, isPlayerColorOpacity } from "@/lib/playerColorSettings";
+import { DEFAULT_PRIMARY_OPACITY, DEFAULT_SECONDARY_OPACITY, isPlayerColorOpacity, isSecondaryBrightnessThreshold } from "@/lib/playerColorSettings";
 import { createStarVisual } from "./entities/starVisual";
 import { GAME_WORLD_SCALE } from "./entityScale";
 
@@ -65,9 +65,14 @@ export async function loadGameEntityTextures(
     try {
       const primaryResponse = await fetch(`/assets/${id}/primary.png`, { method: "HEAD" });
       if (!primaryResponse.ok) return;
+      const grayUrl = `/assets/${id}/gray.png`;
+      const grayResponse = await fetch(grayUrl, { method: "HEAD" });
+      const baseUrl = grayResponse.ok ? grayUrl : `/assets/${id}/idle.png`;
       const response = await fetch(`/assets/${id}/player-colors.json`);
-      const settings = response.ok ? await response.json().catch(() => null) as { primaryOpacity?: unknown; secondaryOpacity?: unknown } | null : null;
-      const masks = await playerColorMaskCanvases(`/assets/${id}/idle.png`, `/assets/${id}/primary.png`);
+      const settings = response.ok ? await response.json().catch(() => null) as { primaryOpacity?: unknown; secondaryOpacity?: unknown; secondaryBrightnessThreshold?: unknown } | null : null;
+      const secondaryBrightnessThreshold = isSecondaryBrightnessThreshold(settings?.secondaryBrightnessThreshold) ? settings.secondaryBrightnessThreshold : 0;
+      const masks = await playerColorMaskCanvases(baseUrl, `/assets/${id}/primary.png`, secondaryBrightnessThreshold);
+      if (grayResponse.ok) cache.set(id, await Assets.load(grayUrl));
       cache.set(`${id}/primary`, Texture.from(masks.primary));
       cache.set(`${id}/secondary`, Texture.from(masks.secondary));
       if (isPlayerColorOpacity(settings?.primaryOpacity)) cache.primaryOpacityByType.set(id, settings.primaryOpacity);
