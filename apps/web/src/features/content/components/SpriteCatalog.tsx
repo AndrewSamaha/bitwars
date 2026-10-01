@@ -132,9 +132,9 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
               <tr><th className="px-4 py-3 font-medium" scope="col">File path</th><th className="whitespace-nowrap px-4 py-3 font-medium" scope="col">Resolution</th><th className="px-4 py-3 text-center font-medium" scope="col">Masks</th></tr>
             </thead>
             <tbody>
-              {sprites.map((sprite) => <tr className={`border-t border-slate-800 ${selected?.path === sprite.path ? "bg-cyan-400/10" : "hover:bg-slate-800/60"}`} key={sprite.path}>
+              {sprites.map((sprite) => <tr className={`cursor-pointer border-t border-slate-800 ${selected?.path === sprite.path ? "bg-cyan-400/10" : "hover:bg-slate-800/60"}`} key={sprite.path} onClick={() => selectSprite(sprite.path)}>
                 <td className="min-w-0 px-4 py-2">
-                  <button aria-pressed={selected?.path === sprite.path} className="flex min-w-0 items-center gap-3 text-left text-slate-100 hover:text-cyan-300" onClick={() => selectSprite(sprite.path)} type="button">
+                  <button aria-pressed={selected?.path === sprite.path} className="flex min-w-0 items-center gap-3 text-left text-slate-100 hover:text-cyan-300" type="button">
                     <img alt="" className="size-10 shrink-0 object-contain" src={spriteUrl(sprite.path, assetVersion)} />
                     <span className="break-all font-mono text-xs">{sprite.path}</span>
                   </button>

@@ -5,7 +5,7 @@ import { PLAYER_PALETTES } from "@/lib/playerPalettes";
 import { DEFAULT_PRIMARY_OPACITY, DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD, DEFAULT_SECONDARY_OPACITY, MAX_SECONDARY_BRIGHTNESS_THRESHOLD } from "@/lib/playerColorSettings";
 import MaskedSpritePreview from "./MaskedSpritePreview";
 
-type Phase = "upscaling" | "upscaled" | "generating" | "generatingInvariants" | "ready" | "saving" | "error";
+type Phase = "upscaling" | "upscaled" | "generating" | "generatingInvariants" | "ready" | "saving" | "saved" | "error";
 type VisibleMasks = "both" | "primary" | "secondary";
 type PreviewSprite = "upscaled" | "published";
 type UpscaleResult = { requestId: string; primaryPrompt: string; invariantsPrompt: string };
@@ -61,11 +61,16 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
   const [error, setError] = useState<string | null>(null);
   const autoGenerationStarted = useRef<string | null>(null);
   const componentActive = useRef(true);
+  const saveInFlight = useRef(false);
+  const savedCloseTimer = useRef<number | null>(null);
   const palette = PLAYER_PALETTES.find((item) => item.id === paletteId) ?? PLAYER_PALETTES[0];
 
   useEffect(() => {
     componentActive.current = true;
-    return () => { componentActive.current = false; };
+    return () => {
+      componentActive.current = false;
+      if (savedCloseTimer.current !== null) window.clearTimeout(savedCloseTimer.current);
+    };
   }, []);
 
   const generateMasks = useCallback(async (candidateId: string, invariantPrompt: string, primaryMaskPrompt: string, isActive: () => boolean = () => true) => {
@@ -132,16 +137,29 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
   }
 
   async function saveMasks() {
-    if (!requestId || !primaryReady || !invariantsReady) return;
+    if (!requestId || !primaryReady || !invariantsReady || saveInFlight.current) return;
+    saveInFlight.current = true;
     setPhase("saving");
     setError(null);
     try {
       await postJson("/api/content/sprite-library/masks/publish", { path: sourcePath, requestId, primaryOpacity, secondaryOpacity, secondaryBrightnessThreshold });
-      onSaved();
+      if (!componentActive.current) return;
+      setPhase("saved");
+      savedCloseTimer.current = window.setTimeout(() => {
+        savedCloseTimer.current = null;
+        onClose();
+        onSaved();
+      }, 500);
     } catch (cause) {
+      saveInFlight.current = false;
+      if (!componentActive.current) return;
       setError(cause instanceof Error ? cause.message : "Unable to save sprite and colors.");
       setPhase("ready");
     }
+  }
+
+  function closeIfIdle() {
+    if (!saveInFlight.current) onClose();
   }
 
   const upscaledUrl = requestId ? candidateUrl(sourcePath, requestId, "upscaled") : null;
@@ -153,7 +171,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
   const savedInvariantsUrl = requestId && invariantsReady ? candidateUrl(sourcePath, requestId, "invariants", invariantsRevision) : null;
   const invariantColorsUrl = requestId && invariantsReady ? candidateUrl(sourcePath, requestId, "invariant-colors-upscaled", invariantsRevision) : null;
   const savedInvariantColorsUrl = requestId && invariantsReady ? candidateUrl(sourcePath, requestId, "invariant-colors", invariantsRevision) : null;
-  const busy = phase === "upscaling" || phase === "generating" || phase === "generatingInvariants" || phase === "saving";
+  const busy = phase === "upscaling" || phase === "generating" || phase === "generatingInvariants" || phase === "saving" || phase === "saved";
   const canGenerate = !busy && !!requestId && !!primaryPrompt.trim() && !!invariantsPrompt.trim();
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4">
@@ -164,7 +182,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
           <h2 className="mt-1 text-xl font-semibold" id="generate-masks-title">Generate player color masks</h2>
           <p className="mt-2 text-sm text-slate-400">The enlarged sprite is followed automatically by invariant and primary mask generation. Review the results, then try player palettes and opacity before saving.</p>
         </div>
-        <button className="rounded border border-slate-600 px-3 py-1 text-sm hover:bg-slate-800" onClick={onClose} type="button">Close</button>
+        <button className="rounded border border-slate-600 px-3 py-1 text-sm hover:bg-slate-800 disabled:opacity-50" disabled={phase === "saving" || phase === "saved"} onClick={closeIfIdle} type="button">Close</button>
       </div>
 
       {error && <p className="mt-5 rounded border border-red-500/50 bg-red-950/40 px-4 py-3 text-sm text-red-200" role="alert">{error}</p>}
@@ -243,11 +261,12 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
       </div>}
 
       <div className="mt-6 flex justify-end gap-3 border-t border-slate-700 pt-5">
-        <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800" onClick={onClose} type="button">Cancel</button>
+        <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-50" disabled={phase === "saving" || phase === "saved"} onClick={closeIfIdle} type="button">Cancel</button>
         {phase === "error" && <button className="rounded border border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" onClick={retryUpscale} type="button">Retry upscale</button>}
         {requestId && !busy && <button className="rounded border border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canGenerate} onClick={() => void generateMasks(requestId, invariantsPrompt, primaryPrompt, () => componentActive.current)} type="button">Re-generate masks</button>}
         {primaryReady && invariantsReady && !busy && <button className="rounded bg-cyan-400 px-4 py-2 text-sm font-medium text-slate-950" onClick={saveMasks} type="button">Save sprite and colors</button>}
         {phase === "saving" && <span className="self-center text-sm text-cyan-300">Saving sprite and colors…</span>}
+        {phase === "saved" && <span aria-live="polite" className="self-center text-sm text-cyan-300">Saved. Closing…</span>}
       </div>
       <p className="mt-3 text-xs text-slate-500">Saving keeps idle.png as the color reference and publishes gray.png, primary.png, invariants.png, invariant-colors.png, both color opacities, and the secondary brightness threshold. Check both preview sizes before saving.</p>
     </section>

@@ -152,6 +152,7 @@ export async function publishMaskCandidate(sourcePath: string, requestId: string
   ];
   const filenames = ["gray.png", "primary.png", "invariants.png", "invariant-colors.png"] as const;
   const settings = JSON.stringify({ primaryOpacity, secondaryOpacity, secondaryBrightnessThreshold }, null, 2) + "\n";
+  await Promise.all(roots.map((root) => mkdir(root, { recursive: true })));
   await Promise.all(roots.flatMap((root) => [
     ...filenames.map((filename, index) => writeFile(path.join(root, filename), images[index]!)),
     writeFile(path.join(root, "player-colors.json"), settings),
