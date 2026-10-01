@@ -68,6 +68,16 @@ describe("player mask candidates", () => {
     expect(await rgba(primary, 2, 0)).toEqual([255, 255, 255, 255]);
   });
 
+  it("keeps the entire grayscale sprite tintable when invariants are empty", async () => {
+    const gray = await pngAt([[1, 1, 80, 80, 80, 255]]);
+    const color = await pngAt([[1, 1, 200, 40, 20, 255]]);
+    const emptyInvariants = await pngAt([]);
+    const cutout = await cutOutInvariantRegions(gray, emptyInvariants);
+    const invariantColors = await copyInvariantColors(color, emptyInvariants);
+    expect(await rgba(cutout, 1, 1)).toEqual([80, 80, 80, 255]);
+    expect(await rgba(invariantColors, 1, 1)).toEqual([200, 40, 20, 0]);
+  });
+
   it("copies color only inside invariant coverage", async () => {
     const color = await pngAt([
       [0, 0, 12, 90, 210, 255],

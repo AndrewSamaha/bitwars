@@ -48,7 +48,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
   const [selectedFront, setSelectedFront] = useState<SpriteFrontChoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [maskWorkflow, setMaskWorkflow] = useState<{ path: string; sourceUrl: string; upscalePromise: Promise<{ requestId: string; primaryPrompt: string; invariantsPrompt: string }> } | null>(null);
+  const [maskWorkflow, setMaskWorkflow] = useState<{ path: string; sourceUrl: string } | null>(null);
   const [selectedPaletteId, setSelectedPaletteId] = useState<string>(PLAYER_PALETTES[0].id);
   const selected = sprites.find((sprite) => sprite.path === selectedPath) ?? sprites[0];
   const selectedPalette = PLAYER_PALETTES.find((palette) => palette.id === selectedPaletteId) ?? PLAYER_PALETTES[0];
@@ -79,17 +79,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
 
   function startMaskWorkflow() {
     if (!selected || selected.path.split("/").length !== 2 || !selected.path.endsWith("/idle.png")) return;
-    const sourcePath = selected.path;
-    const promise = fetch("/api/content/sprite-library/masks/upscale", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: sourcePath }),
-    }).then(async (response) => {
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "Unable to upscale sprite.");
-      return payload as { requestId: string; primaryPrompt: string; invariantsPrompt: string };
-    });
-    setMaskWorkflow({ path: sourcePath, sourceUrl: spriteUrl(sourcePath, assetVersion), upscalePromise: promise });
+    setMaskWorkflow({ path: selected.path, sourceUrl: spriteUrl(selected.path, assetVersion) });
   }
 
   async function saveTransform() {
@@ -223,7 +213,6 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
       }}
       sourcePath={maskWorkflow.path}
       sourceUrl={maskWorkflow.sourceUrl}
-      upscalePromise={maskWorkflow.upscalePromise}
     />}
   </main>;
 }

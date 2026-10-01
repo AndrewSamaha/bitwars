@@ -9,12 +9,15 @@ export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {
-    const { path, requestId, prompt, kind } = await request.json();
-    if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 10_000) {
-      return NextResponse.json({ error: "Enter a mask prompt of up to 10,000 characters." }, { status: 400 });
-    }
+    const { path, requestId, prompt, kind, skipInvariants } = await request.json();
     if (kind !== "primary" && kind !== "invariants") {
       return NextResponse.json({ error: "Choose a mask to generate." }, { status: 400 });
+    }
+    if (skipInvariants === true && kind !== "invariants") {
+      return NextResponse.json({ error: "Only invariant generation can be skipped." }, { status: 400 });
+    }
+    if (skipInvariants !== true && (typeof prompt !== "string" || !prompt.trim() || prompt.length > 10_000)) {
+      return NextResponse.json({ error: "Enter a mask prompt of up to 10,000 characters." }, { status: 400 });
     }
     const { manifest } = await readMaskCandidate(path, requestId);
     const [upscaled, grayUpscaled, gray] = await Promise.all([
@@ -25,6 +28,19 @@ export async function POST(request: Request) {
     const size = generationSize(manifest.width, manifest.height);
     const upscaledMetadata = await sharp(grayUpscaled).metadata();
     if (!upscaledMetadata.width || !upscaledMetadata.height) throw new Error("The enlarged sprite has no readable dimensions.");
+    if (skipInvariants === true) {
+      const [emptyUpscaled, emptyPublished] = await Promise.all([
+        sharp({ create: { width: upscaledMetadata.width, height: upscaledMetadata.height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer(),
+        sharp({ create: { width: manifest.width, height: manifest.height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer(),
+      ]);
+      await Promise.all([
+        writeMaskCandidateImage(manifest.entityId, requestId, "invariants-upscaled", emptyUpscaled),
+        writeMaskCandidateImage(manifest.entityId, requestId, "invariants", emptyPublished),
+        writeMaskCandidateImage(manifest.entityId, requestId, "invariant-colors-upscaled", emptyUpscaled),
+        writeMaskCandidateImage(manifest.entityId, requestId, "invariant-colors", emptyPublished),
+      ]);
+      return NextResponse.json({ ok: true });
+    }
     let generationSource = kind === "primary" ? grayUpscaled : upscaled;
     let publishedSource = gray;
     if (kind === "primary") {

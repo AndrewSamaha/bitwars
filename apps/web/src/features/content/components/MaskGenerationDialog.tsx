@@ -5,7 +5,7 @@ import { PLAYER_PALETTES } from "@/lib/playerPalettes";
 import { DEFAULT_PRIMARY_OPACITY, DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD, DEFAULT_SECONDARY_OPACITY, MAX_SECONDARY_BRIGHTNESS_THRESHOLD } from "@/lib/playerColorSettings";
 import MaskedSpritePreview from "./MaskedSpritePreview";
 
-type Phase = "upscaling" | "upscaled" | "generating" | "generatingInvariants" | "ready" | "saving" | "saved" | "error";
+type Phase = "idle" | "upscaling" | "upscaled" | "generating" | "generatingInvariants" | "ready" | "saving" | "saved" | "error";
 type VisibleMasks = "both" | "primary" | "secondary";
 type PreviewSprite = "upscaled" | "published";
 type UpscaleResult = { requestId: string; primaryPrompt: string; invariantsPrompt: string };
@@ -25,26 +25,27 @@ function candidateUrl(sourcePath: string, requestId: string, part: "upscaled" | 
   return `/api/content/sprite-library/masks/image?${new URLSearchParams({ path: sourcePath, requestId, part, revision: String(revision) })}`;
 }
 
-function GeneratedImage({ src, alt, size, failed }: { src: string | null; alt: string; size: "size-64" | "size-48"; failed?: boolean }) {
+function GeneratedImage({ src, alt, size, failed, idle }: { src: string | null; alt: string; size: "size-64" | "size-48"; failed?: boolean; idle?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
-  const pending = !failed && !loadFailed && !loaded;
+  const pending = !idle && !failed && !loadFailed && !loaded;
 
   return <div aria-busy={pending} className={`relative grid ${size} place-items-center overflow-hidden rounded border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px]`}>
     {pending && <div className="absolute inset-4 animate-pulse rounded-lg bg-slate-700/70 motion-reduce:animate-none" role="status"><span className="sr-only">Preparing {alt.toLowerCase()}…</span></div>}
+    {idle && !src && <span className="px-4 text-center text-sm text-slate-400">Select Generate to start</span>}
     {src && <img alt={alt} className={`size-full object-contain ${loaded ? "" : "invisible"}`} onError={() => setLoadFailed(true)} onLoad={() => setLoaded(true)} src={src} />}
     {(failed || loadFailed) && <span className="px-4 text-center text-sm text-slate-400">Image unavailable</span>}
   </div>;
 }
 
-export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePromise, onClose, onSaved }: {
+export default function MaskGenerationDialog({ sourcePath, sourceUrl, onClose, onSaved }: {
   sourcePath: string;
   sourceUrl: string;
-  upscalePromise: Promise<UpscaleResult>;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [phase, setPhase] = useState<Phase>("upscaling");
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [includeInvariants, setIncludeInvariants] = useState(true);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [primaryReady, setPrimaryReady] = useState(false);
   const [invariantsReady, setInvariantsReady] = useState(false);
@@ -59,7 +60,8 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
   const [visibleMasks, setVisibleMasks] = useState<VisibleMasks>("both");
   const [previewSprite, setPreviewSprite] = useState<PreviewSprite>("upscaled");
   const [error, setError] = useState<string | null>(null);
-  const autoGenerationStarted = useRef<string | null>(null);
+  const upscaleInFlight = useRef(false);
+  const masksInFlight = useRef(false);
   const componentActive = useRef(true);
   const saveInFlight = useRef(false);
   const savedCloseTimer = useRef<number | null>(null);
@@ -73,15 +75,16 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
     };
   }, []);
 
-  const generateMasks = useCallback(async (candidateId: string, invariantPrompt: string, primaryMaskPrompt: string, isActive: () => boolean = () => true) => {
-    if (!isActive()) return;
-    setPhase("generatingInvariants");
+  const generateMasks = useCallback(async (candidateId: string, invariantPrompt: string, primaryMaskPrompt: string, useInvariants: boolean, isActive: () => boolean = () => true) => {
+    if (!isActive() || masksInFlight.current) return;
+    masksInFlight.current = true;
+    setPhase(useInvariants ? "generatingInvariants" : "generating");
     setError(null);
     setPrimaryReady(false);
     setInvariantsReady(false);
     let invariantsGenerated = false;
     try {
-      await postJson("/api/content/sprite-library/masks/generate", { path: sourcePath, requestId: candidateId, kind: "invariants", prompt: invariantPrompt });
+      await postJson("/api/content/sprite-library/masks/generate", { path: sourcePath, requestId: candidateId, kind: "invariants", prompt: invariantPrompt, skipInvariants: !useInvariants });
       if (!isActive()) return;
       setInvariantsRevision((revision) => revision + 1);
       setInvariantsReady(true);
@@ -94,45 +97,43 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
       setPhase("ready");
     } catch (cause) {
       if (!isActive()) return;
-      setError(`${invariantsGenerated ? "Primary" : "Invariant"} mask: ${cause instanceof Error ? cause.message : "Unable to generate mask."}`);
+      setError(`${invariantsGenerated ? "Primary mask" : useInvariants ? "Invariant mask" : "Preparing transparent invariants"}: ${cause instanceof Error ? cause.message : "Unable to generate mask."}`);
       setPhase(invariantsGenerated ? "ready" : "upscaled");
+    } finally {
+      masksInFlight.current = false;
     }
   }, [sourcePath]);
 
-  useEffect(() => {
-    let mounted = true;
-    upscalePromise.then(({ requestId: generatedId, primaryPrompt: defaultPrompt, invariantsPrompt: defaultInvariantsPrompt }) => {
-      if (!mounted) return;
-      setRequestId(generatedId);
-      setPrimaryPrompt(defaultPrompt);
-      setInvariantsPrompt(defaultInvariantsPrompt);
-      if (autoGenerationStarted.current !== generatedId) {
-        autoGenerationStarted.current = generatedId;
-        void generateMasks(generatedId, defaultInvariantsPrompt, defaultPrompt, () => componentActive.current);
-      }
-    }).catch((cause) => {
-      if (!mounted) return;
-      setError(cause instanceof Error ? cause.message : "Unable to upscale sprite.");
-      setPhase("error");
-    });
-    return () => { mounted = false; };
-  }, [upscalePromise, generateMasks]);
-
-  async function retryUpscale() {
+  async function startGeneration() {
+    if (upscaleInFlight.current || masksInFlight.current || saveInFlight.current) return;
+    upscaleInFlight.current = true;
     setPhase("upscaling");
     setError(null);
+    setRequestId(null);
+    setPrimaryReady(false);
+    setInvariantsReady(false);
     try {
       const { requestId: generatedId, primaryPrompt: defaultPrompt, invariantsPrompt: defaultInvariantsPrompt } = await postJson<UpscaleResult>("/api/content/sprite-library/masks/upscale", { path: sourcePath });
       if (!componentActive.current) return;
       setRequestId(generatedId);
       setPrimaryPrompt(defaultPrompt);
       setInvariantsPrompt(defaultInvariantsPrompt);
-      autoGenerationStarted.current = generatedId;
-      void generateMasks(generatedId, defaultInvariantsPrompt, defaultPrompt, () => componentActive.current);
+      void generateMasks(generatedId, defaultInvariantsPrompt, defaultPrompt, includeInvariants, () => componentActive.current);
     } catch (cause) {
       if (!componentActive.current) return;
       setError(cause instanceof Error ? cause.message : "Unable to upscale sprite.");
       setPhase("error");
+    } finally {
+      upscaleInFlight.current = false;
+    }
+  }
+
+  function changeIncludeInvariants(checked: boolean) {
+    setIncludeInvariants(checked);
+    if (requestId) {
+      setPrimaryReady(false);
+      setInvariantsReady(false);
+      setPhase("upscaled");
     }
   }
 
@@ -172,7 +173,9 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
   const invariantColorsUrl = requestId && invariantsReady ? candidateUrl(sourcePath, requestId, "invariant-colors-upscaled", invariantsRevision) : null;
   const savedInvariantColorsUrl = requestId && invariantsReady ? candidateUrl(sourcePath, requestId, "invariant-colors", invariantsRevision) : null;
   const busy = phase === "upscaling" || phase === "generating" || phase === "generatingInvariants" || phase === "saving" || phase === "saved";
-  const canGenerate = !busy && !!requestId && !!primaryPrompt.trim() && !!invariantsPrompt.trim();
+  const canGenerate = !busy && !!requestId && !!primaryPrompt.trim() && (!includeInvariants || !!invariantsPrompt.trim());
+  const previewInvariantsUrl = includeInvariants ? (previewSprite === "upscaled" ? invariantsUrl : savedInvariantsUrl) : null;
+  const previewInvariantColorsUrl = includeInvariants ? (previewSprite === "upscaled" ? invariantColorsUrl : savedInvariantColorsUrl) : null;
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4">
     <section aria-labelledby="generate-masks-title" aria-modal="true" className="max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-slate-600 bg-slate-900 p-6 text-slate-100 shadow-2xl" role="dialog">
@@ -180,9 +183,18 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
         <div>
           <p className="text-sm text-cyan-300">Sprite tools</p>
           <h2 className="mt-1 text-xl font-semibold" id="generate-masks-title">Generate player color masks</h2>
-          <p className="mt-2 text-sm text-slate-400">The enlarged sprite is followed automatically by invariant and primary mask generation. Review the results, then try player palettes and opacity before saving.</p>
+          <p className="mt-2 text-sm text-slate-400">Select Generate to enlarge the sprite and create its masks. Review the results, then try player palettes and opacity before saving.</p>
         </div>
         <button className="rounded border border-slate-600 px-3 py-1 text-sm hover:bg-slate-800 disabled:opacity-50" disabled={phase === "saving" || phase === "saved"} onClick={closeIfIdle} type="button">Close</button>
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-5 rounded border border-slate-700 bg-slate-950/40 p-4">
+        <button className="rounded bg-cyan-400 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={busy} onClick={() => void startGeneration()} type="button">{requestId ? "Generate new upscale" : "Generate"}</button>
+        <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-200 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50" htmlFor="include-invariants">
+          <input aria-label="Generate invariant mask" checked={includeInvariants} className="peer sr-only" disabled={busy} id="include-invariants" onChange={(event) => changeIncludeInvariants(event.target.checked)} role="switch" type="checkbox" />
+          <span aria-hidden="true" className="relative h-6 w-11 rounded-full bg-slate-600 transition-colors peer-checked:bg-cyan-500 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-cyan-300 after:absolute after:left-1 after:top-1 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-5" />
+          Generate invariant mask <span className="text-slate-400">{includeInvariants ? "On" : "Off"}</span>
+        </label>
       </div>
 
       {error && <p className="mt-5 rounded border border-red-500/50 bg-red-950/40 px-4 py-3 text-sm text-red-200" role="alert">{error}</p>}
@@ -193,31 +205,33 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
         </div>
         <div>
           <h3 className="mb-2 text-sm font-medium">Flare enlarged reference</h3>
-          <GeneratedImage alt="Enlarged sprite proposal" failed={phase === "error"} key={upscaledUrl ?? "upscaling"} size="size-64" src={upscaledUrl} />
+          <GeneratedImage alt="Enlarged sprite proposal" failed={phase === "error"} idle={phase === "idle"} key={upscaledUrl ?? "upscaling"} size="size-64" src={upscaledUrl} />
         </div>
         <div>
           <h3 className="mb-2 text-sm font-medium">Grayscale enlarged sprite</h3>
-          <GeneratedImage alt="Grayscale enlarged sprite" failed={phase === "error"} key={grayUpscaledUrl ?? "grayscaling"} size="size-64" src={grayUpscaledUrl} />
+          <GeneratedImage alt="Grayscale enlarged sprite" failed={phase === "error"} idle={phase === "idle"} key={grayUpscaledUrl ?? "grayscaling"} size="size-64" src={grayUpscaledUrl} />
         </div>
       </div>
 
       {requestId && <details className="mt-5 rounded border border-slate-700 bg-slate-950/40">
         <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-200">Mask prompts</summary>
         <div className="border-t border-slate-700 p-4">
-          <label className="mb-2 block text-sm font-medium text-slate-300" htmlFor="invariants-mask-prompt">Invariant mask prompt</label>
-          <textarea className="min-h-56 w-full rounded border border-slate-600 bg-slate-900 p-3 font-mono text-xs text-slate-100 focus:border-cyan-400 focus:outline-none disabled:opacity-60" disabled={busy} id="invariants-mask-prompt" maxLength={10_000} onChange={(event) => setInvariantsPrompt(event.target.value)} spellCheck={false} value={invariantsPrompt} />
+          {includeInvariants && <>
+            <label className="mb-2 block text-sm font-medium text-slate-300" htmlFor="invariants-mask-prompt">Invariant mask prompt</label>
+            <textarea className="min-h-56 w-full rounded border border-slate-600 bg-slate-900 p-3 font-mono text-xs text-slate-100 focus:border-cyan-400 focus:outline-none disabled:opacity-60" disabled={busy} id="invariants-mask-prompt" maxLength={10_000} onChange={(event) => setInvariantsPrompt(event.target.value)} spellCheck={false} value={invariantsPrompt} />
+          </>}
           <label className="mb-2 mt-5 block text-sm font-medium text-slate-300" htmlFor="primary-mask-prompt">Primary mask prompt</label>
           <textarea className="min-h-56 w-full rounded border border-slate-600 bg-slate-900 p-3 font-mono text-xs text-slate-100 focus:border-cyan-400 focus:outline-none disabled:opacity-60" disabled={busy} id="primary-mask-prompt" maxLength={10_000} onChange={(event) => setPrimaryPrompt(event.target.value)} spellCheck={false} value={primaryPrompt} />
-          <p className="mt-2 text-xs text-slate-400">Prompt changes take effect when you generate both masks again.</p>
+          <p className="mt-2 text-xs text-slate-400">Prompt changes take effect when you re-generate the masks.</p>
         </div>
       </details>}
 
       {(phase === "generating" || primaryUrl || phase === "generatingInvariants" || invariantsUrl) && <div className="mt-5 flex flex-wrap gap-5">
-        {(phase === "generating" || phase === "generatingInvariants" || invariantsUrl) && <div>
+        {includeInvariants && (phase === "generating" || phase === "generatingInvariants" || invariantsUrl) && <div>
           <h3 className="mb-2 text-sm font-medium">Invariant mask</h3>
           <GeneratedImage alt="Invariant mask proposal" key={phase === "generatingInvariants" ? "generating-invariants" : invariantsUrl ?? "invariants"} size="size-48" src={phase === "generatingInvariants" ? null : invariantsUrl} />
         </div>}
-        {(phase === "generatingInvariants" || invariantColorsUrl) && <div>
+        {includeInvariants && (phase === "generatingInvariants" || invariantColorsUrl) && <div>
           <h3 className="mb-2 text-sm font-medium">Invariant colors</h3>
           <GeneratedImage alt="Invariant color cutout" key={phase === "generatingInvariants" ? "generating-invariant-colors" : invariantColorsUrl ?? "invariant-colors"} size="size-48" src={phase === "generatingInvariants" ? null : invariantColorsUrl} />
         </div>}
@@ -236,7 +250,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
         </div>
         <div className="mt-3 flex flex-wrap gap-5">
           <div className="grid size-72 place-items-center rounded border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px]">
-            <MaskedSpritePreview baseUrl={previewSprite === "upscaled" ? grayUpscaledUrl! : grayUrl!} className="size-full" invariantColorsUrl={previewSprite === "upscaled" ? invariantColorsUrl : savedInvariantColorsUrl} invariantsMaskUrl={previewSprite === "upscaled" ? invariantsUrl : savedInvariantsUrl} palette={palette} primaryMaskUrl={previewSprite === "upscaled" ? primaryUrl : savedPrimaryUrl!} primaryOpacity={primaryOpacity} secondaryOpacity={secondaryOpacity} secondaryBrightnessThreshold={secondaryBrightnessThreshold} showPrimary={visibleMasks !== "secondary"} showSecondary={visibleMasks !== "primary"} />
+            <MaskedSpritePreview baseUrl={previewSprite === "upscaled" ? grayUpscaledUrl! : grayUrl!} className="size-full" invariantColorsUrl={previewInvariantColorsUrl} invariantsMaskUrl={previewInvariantsUrl} palette={palette} primaryMaskUrl={previewSprite === "upscaled" ? primaryUrl : savedPrimaryUrl!} primaryOpacity={primaryOpacity} secondaryOpacity={secondaryOpacity} secondaryBrightnessThreshold={secondaryBrightnessThreshold} showPrimary={visibleMasks !== "secondary"} showSecondary={visibleMasks !== "primary"} />
           </div>
           <div className="min-w-56 flex-1">
             <p className="mb-2 text-sm text-slate-300">Layers</p>
@@ -251,7 +265,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
             <input className="w-full accent-cyan-400" id="secondary-brightness-threshold" max={MAX_SECONDARY_BRIGHTNESS_THRESHOLD} min="0" onChange={(event) => setSecondaryBrightnessThreshold(Number(event.target.value))} step="0.05" type="range" value={secondaryBrightnessThreshold} />
             <p className="mt-1 text-xs text-slate-400">Higher values keep secondary color on brighter areas. Pixels fade in over the next 15% of brightness; 0% covers all unselected pixels.</p>
             <p className="mt-2 text-xs text-slate-400">Primary regions stay clear of secondary color, even when primary opacity is lowered.</p>
-            <p className="mt-2 text-xs text-slate-400">Invariant regions stay clear of both player colors.</p>
+            {includeInvariants && <p className="mt-2 text-xs text-slate-400">Invariant regions stay clear of both player colors.</p>}
             <p className="mb-2 mt-5 text-sm text-slate-300">Player palettes</p>
             <div className="grid grid-cols-4 gap-2">
               {PLAYER_PALETTES.map((item) => <button aria-label={`Preview ${item.name} player colors`} aria-pressed={palette.id === item.id} className={`flex items-center justify-center gap-1.5 rounded border px-2 py-3 ${palette.id === item.id ? "border-cyan-400 bg-cyan-400/10" : "border-slate-600 hover:border-cyan-400"}`} key={item.id} onClick={() => setPaletteId(item.id)} title={item.name} type="button"><span className="size-5 rounded-full" style={{ backgroundColor: item.primary }} /><span className="size-5 rounded-full" style={{ backgroundColor: item.secondary }} /></button>)}
@@ -262,8 +276,7 @@ export default function MaskGenerationDialog({ sourcePath, sourceUrl, upscalePro
 
       <div className="mt-6 flex justify-end gap-3 border-t border-slate-700 pt-5">
         <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-50" disabled={phase === "saving" || phase === "saved"} onClick={closeIfIdle} type="button">Cancel</button>
-        {phase === "error" && <button className="rounded border border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" onClick={retryUpscale} type="button">Retry upscale</button>}
-        {requestId && !busy && <button className="rounded border border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canGenerate} onClick={() => void generateMasks(requestId, invariantsPrompt, primaryPrompt, () => componentActive.current)} type="button">Re-generate masks</button>}
+        {requestId && !busy && <button className="rounded border border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canGenerate} onClick={() => void generateMasks(requestId, invariantsPrompt, primaryPrompt, includeInvariants, () => componentActive.current)} type="button">Re-generate masks</button>}
         {primaryReady && invariantsReady && !busy && <button className="rounded bg-cyan-400 px-4 py-2 text-sm font-medium text-slate-950" onClick={saveMasks} type="button">Save sprite and colors</button>}
         {phase === "saving" && <span className="self-center text-sm text-cyan-300">Saving sprite and colors…</span>}
         {phase === "saved" && <span aria-live="polite" className="self-center text-sm text-cyan-300">Saved. Closing…</span>}
