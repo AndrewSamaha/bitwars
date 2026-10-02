@@ -133,7 +133,7 @@ entity_types:
     health: 100
     hull_radius: 12
     visual:
-      scale: 0.2
+      scale: 1.4
     combat_targetable: true
     sensor:
       range: 400
@@ -185,8 +185,8 @@ entity_types:
           priority: 100
           contact_tolerance: 2
     build_cost:
-      minerals: 50
-      energy: 50
+      minerals: 30
+      energy: 30
     maintenance_cost_per_minute:
       energy: 1
       food: 2
@@ -425,7 +425,7 @@ entity_types:
       cost_per_minute:
         energy: 2.5
     visual:
-      scale: 0.3
+      scale: 0.8
     upgrades:
       - entity_type_id: defense_pylon_v3
   defense_pylon:
@@ -455,7 +455,7 @@ entity_types:
       cost_per_minute:
         energy: 2.5
     visual:
-      scale: 0.25
+      scale: 0.8
     upgrades:
       - entity_type_id: defense_pylon_v2
   collector_solar_v2:
@@ -509,7 +509,7 @@ entity_types:
     health: 500
     hull_radius: 15
     visual:
-      scale: 0.3
+      scale: 0.8
     combat:
       acquisition_range: 700
       on_near_enemy_strategy: stay
@@ -677,7 +677,7 @@ entity_types:
     hull_radius: 75
     combat_targetable: true
     visual:
-      scale: 0.2
+      scale: 1.2
     sensor:
       range: 400
       cost_per_minute:
