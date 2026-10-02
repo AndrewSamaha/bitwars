@@ -1,13 +1,8 @@
+import { PLAYER_PALETTES } from "@/lib/playerPalettes";
+
 export const PLAYER_NAMESPACE = '20f3bcf2-e4c3-4589-a7b5-9697afe1b1a8';
 export const ENGINE_PROTOCOL_MAJOR = 12;
-export const PLAYER_COLORS = [
-  'bg-red-500',
-  'bg-green-500',
-  'bg-blue-500',
-  'bg-yellow-500',
-  'bg-purple-500',
-  'bg-orange-500',
-];
+export const PLAYER_COLORS = PLAYER_PALETTES.map((palette) => palette.id);
 export const PLAYER_NAME_PARTS = [
     "Grimm",
     "Alice",

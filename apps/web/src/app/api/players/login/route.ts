@@ -5,21 +5,21 @@ import type { PlayerLogin } from '@/features/users/schema/player/playerLogin';
 import { loginToPlayer, playerDocToPlayer } from '@/features/users/schema/player/mappers';
 import { createPlayer } from '@/features/users/queries/create';
 import { logger, withAxiom } from "@/lib/axiom/server";
-import { PLAYER_COLORS } from "@/lib/constants";
 import { getPlayerById } from "@/features/users/queries/read/getPlayerById";
+import { paletteForOwner } from "@/lib/playerPalettes";
 
 export const POST = withAxiom(async (request: Request) => {
   const body = (await request.json()) as PlayerLogin;
   logger.info("players/login", body);
   let player = loginToPlayer({
     ...body,
-    color: body.color || PLAYER_COLORS[0]!,
+    color: "",
   });
+  player.color = paletteForOwner(player.id).id;
   const existingPlayer = await getPlayerById(player.id);
   if (existingPlayer) {
     player = {
       ...player,
-      color: existingPlayer.color,
       createdAt: existingPlayer.createdAt,
       createdAtMs: existingPlayer.createdAtMs,
     };

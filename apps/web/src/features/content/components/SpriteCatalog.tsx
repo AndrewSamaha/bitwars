@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 import { SpriteFrontChoices, SpriteSizeChoices, type SpriteFrontChoice } from "@/features/content/components/SpriteReviewChoices";
+import { PLAYER_PALETTES, type PlayerPalette } from "@/lib/playerPalettes";
+import MaskedSpritePreview from "./MaskedSpritePreview";
+import MaskGenerationDialog from "./MaskGenerationDialog";
 
-type Sprite = { path: string; width: number | null; height: number | null };
+type Sprite = { path: string; width: number | null; height: number | null; hasPlayerMasks: boolean; hasGraySprite: boolean; hasInvariantMask: boolean; hasInvariantColors: boolean; primaryOpacity: number; secondaryOpacity: number; secondaryBrightnessThreshold: number };
 type Tool = "downsample" | "rotate";
 
 function spriteUrl(relativePath: string, assetVersion?: string) {
@@ -16,6 +19,26 @@ function resolution(sprite: Sprite) {
   return sprite.width && sprite.height ? `${sprite.width} × ${sprite.height} px` : "Unavailable";
 }
 
+function PlayerColorPreview({ sprite, palette, assetVersion, className }: {
+  sprite: Sprite;
+  palette: PlayerPalette;
+  assetVersion?: string;
+  className: string;
+}) {
+  const directory = sprite.path.slice(0, sprite.path.lastIndexOf("/"));
+  return <MaskedSpritePreview
+    baseUrl={spriteUrl(sprite.hasGraySprite ? `${directory}/gray.png` : sprite.path, assetVersion)}
+    className={className}
+    palette={palette}
+    primaryMaskUrl={spriteUrl(`${directory}/primary.png`, assetVersion)}
+    invariantsMaskUrl={sprite.hasInvariantMask ? spriteUrl(`${directory}/invariants.png`, assetVersion) : null}
+    invariantColorsUrl={sprite.hasInvariantColors ? spriteUrl(`${directory}/invariant-colors.png`, assetVersion) : null}
+    primaryOpacity={sprite.primaryOpacity}
+    secondaryOpacity={sprite.secondaryOpacity}
+    secondaryBrightnessThreshold={sprite.secondaryBrightnessThreshold}
+  />;
+}
+
 export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { sprites: Sprite[]; initialPath?: string; assetVersion?: string }) {
   const [selectedPath, setSelectedPath] = useState(
     initialPath && sprites.some((sprite) => sprite.path === initialPath) ? initialPath : sprites[0]?.path ?? "",
@@ -25,7 +48,10 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
   const [selectedFront, setSelectedFront] = useState<SpriteFrontChoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [maskWorkflow, setMaskWorkflow] = useState<{ path: string; sourceUrl: string } | null>(null);
+  const [selectedPaletteId, setSelectedPaletteId] = useState<string>(PLAYER_PALETTES[0].id);
   const selected = sprites.find((sprite) => sprite.path === selectedPath) ?? sprites[0];
+  const selectedPalette = PLAYER_PALETTES.find((palette) => palette.id === selectedPaletteId) ?? PLAYER_PALETTES[0];
   const availableSizes = ([192, 512] as const).filter((size) => selected && Math.max(selected.width ?? 0, selected.height ?? 0) > size);
   const canEdit = selected?.path.toLowerCase().endsWith(".png") ?? false;
   const selectedUrl = selected ? spriteUrl(selected.path, assetVersion) : "";
@@ -49,6 +75,11 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
     setSelectedSize(null);
     setSelectedFront(null);
     setError(null);
+  }
+
+  function startMaskWorkflow() {
+    if (!selected || selected.path.split("/").length !== 2 || !selected.path.endsWith("/idle.png")) return;
+    setMaskWorkflow({ path: selected.path, sourceUrl: spriteUrl(selected.path, assetVersion) });
   }
 
   async function saveTransform() {
@@ -88,17 +119,18 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
         <div className="max-h-[calc(100vh-11rem)] overflow-auto">
           <table className="w-full border-collapse text-left text-sm">
             <thead className="sticky top-0 bg-slate-900 text-slate-300">
-              <tr><th className="px-4 py-3 font-medium" scope="col">File path</th><th className="whitespace-nowrap px-4 py-3 font-medium" scope="col">Resolution</th></tr>
+              <tr><th className="px-4 py-3 font-medium" scope="col">File path</th><th className="whitespace-nowrap px-4 py-3 font-medium" scope="col">Resolution</th><th className="px-4 py-3 text-center font-medium" scope="col">Masks</th></tr>
             </thead>
             <tbody>
-              {sprites.map((sprite) => <tr className={`border-t border-slate-800 ${selected?.path === sprite.path ? "bg-cyan-400/10" : "hover:bg-slate-800/60"}`} key={sprite.path}>
+              {sprites.map((sprite) => <tr className={`cursor-pointer border-t border-slate-800 ${selected?.path === sprite.path ? "bg-cyan-400/10" : "hover:bg-slate-800/60"}`} key={sprite.path} onClick={() => selectSprite(sprite.path)}>
                 <td className="min-w-0 px-4 py-2">
-                  <button aria-pressed={selected?.path === sprite.path} className="flex min-w-0 items-center gap-3 text-left text-slate-100 hover:text-cyan-300" onClick={() => selectSprite(sprite.path)} type="button">
+                  <button aria-pressed={selected?.path === sprite.path} className="flex min-w-0 items-center gap-3 text-left text-slate-100 hover:text-cyan-300" type="button">
                     <img alt="" className="size-10 shrink-0 object-contain" src={spriteUrl(sprite.path, assetVersion)} />
                     <span className="break-all font-mono text-xs">{sprite.path}</span>
                   </button>
                 </td>
                 <td className="whitespace-nowrap px-4 py-2 text-slate-300">{resolution(sprite)}</td>
+                <td className="px-4 py-2 text-center text-cyan-400">{sprite.hasPlayerMasks && <span aria-label="Masks available" role="img">✓</span>}</td>
               </tr>)}
             </tbody>
           </table>
@@ -112,16 +144,40 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
           <p className="text-sm text-slate-400">Sprite</p>
           <h1 className="mt-1 break-all font-mono text-xl font-semibold">{selected.path}</h1>
         </div>
-        <div className="mt-6 grid size-72 place-items-center rounded-lg border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%),linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]">
-          <img alt={selected.path} className="size-full object-contain" src={selectedUrl} />
+        <div className="mt-6 flex flex-wrap gap-4">
+          <div className="grid size-72 shrink-0 place-items-center rounded-lg border border-slate-700 bg-[linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%),linear-gradient(45deg,#182235_25%,transparent_25%,transparent_75%,#182235_75%)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]">
+            {selected.hasPlayerMasks
+              ? <PlayerColorPreview assetVersion={assetVersion} className="size-full" palette={selectedPalette} sprite={selected} />
+              : <img alt={selected.path} className="size-full object-contain" src={selectedUrl} />}
+          </div>
+          {selected.hasPlayerMasks && <div className="min-w-0 flex-1">
+            <h2 className="mb-2 text-sm font-medium text-slate-200">Player colors</h2>
+            <div className="grid grid-cols-4 gap-2">
+              {PLAYER_PALETTES.map((palette) => <button
+                aria-label={`Preview ${palette.name} player colors`}
+                aria-pressed={selectedPalette.id === palette.id}
+                className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-3 hover:border-cyan-400 ${selectedPalette.id === palette.id ? "border-cyan-400 bg-cyan-400/10" : "border-slate-700"}`}
+                key={palette.id}
+                onClick={() => setSelectedPaletteId(palette.id)}
+                title={palette.name}
+                type="button"
+              >
+                <span className="size-5 rounded-full" style={{ backgroundColor: palette.primary }} />
+                <span className="size-5 rounded-full" style={{ backgroundColor: palette.secondary }} />
+              </button>)}
+            </div>
+          </div>}
         </div>
         <p className="mt-5 text-sm text-slate-300">Resolution: {resolution(selected)}</p>
+        {selected.hasGraySprite && <p className="mt-2 text-sm text-slate-400">Player colors use gray.png; idle.png remains the color reference.</p>}
+        {selected.hasInvariantColors && <p className="mt-2 text-sm text-slate-400">Invariant details keep their colors from the enlarged reference.</p>}
         <p className="mt-2 break-all font-mono text-xs text-slate-400">{selected.path}</p>
         <div className="mt-6 border-t border-slate-700 pt-5">
           <h2 className="text-sm font-medium text-slate-300">Tools</h2>
           <div className="mt-3 flex gap-3">
             <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:border-cyan-400 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEdit || availableSizes.length === 0} onClick={() => openTool("downsample")} type="button">Downsample</button>
             <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:border-cyan-400 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEdit} onClick={() => openTool("rotate")} type="button">Rotate</button>
+            <button className="rounded border border-slate-600 px-4 py-2 text-sm hover:border-cyan-400 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEdit || !/^[a-z][a-z0-9_]*\/idle\.png$/.test(selected.path)} onClick={startMaskWorkflow} type="button">Generate Masks</button>
           </div>
         </div>
       </>}
@@ -147,5 +203,16 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
         </div>
       </section>
     </div>}
+    {maskWorkflow && <MaskGenerationDialog
+      onClose={() => setMaskWorkflow(null)}
+      onSaved={() => {
+        const destination = new URL("/content/sprite-library/", window.location.origin);
+        destination.searchParams.set("sprite", maskWorkflow.path);
+        destination.searchParams.set("updated", String(Date.now()));
+        window.location.assign(destination.toString());
+      }}
+      sourcePath={maskWorkflow.path}
+      sourceUrl={maskWorkflow.sourceUrl}
+    />}
   </main>;
 }

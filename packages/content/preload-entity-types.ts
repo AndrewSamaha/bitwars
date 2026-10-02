@@ -177,20 +177,18 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {
-      "scale": 2.3,
-      "rotate_deg": 90
+      "scale": 2.3
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 2000\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 2005\n  energy: 2000\ncombat:\n  acquisition_range: 5000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 2500\n      damage: 25\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\n  rotate_deg: 90\nrequires_technologies:\n  all:\n    - space_age\n    - neutrino_sensors"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 2000\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 2005\n  energy: 2000\ncombat:\n  acquisition_range: 5000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 2500\n      damage: 25\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\nrequires_technologies:\n  all:\n    - space_age\n    - neutrino_sensors"
   },
   {
     "id": "science_vessel",
     "builds": [],
     "upgrades": [],
     "visual": {
-      "scale": 2.3,
-      "rotate_deg": 90
+      "scale": 2.3
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 400\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  rotate_deg: 90\n  scale: 2.3\nresearches:\n  - neutrino_sensors\n  - solar_efficiency_1"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 400\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\nresearches:\n  - neutrino_sensors\n  - solar_efficiency_1"
   },
   {
     "id": "scout_long_range",
@@ -222,9 +220,9 @@ export const ENTITY_CONTENT = [
     ],
     "upgrades": [],
     "visual": {
-      "scale": 0.4
+      "scale": 2
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 16\ncombat_targetable: true\nvisual:\n  scale: 0.4\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: fighter_v1\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: heavy_fighter\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: battleship\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: marine_worker\n    spend_rates:\n      minerals: 2\n      energy: 2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 16\ncombat_targetable: true\nvisual:\n  scale: 2\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: fighter_v1\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: heavy_fighter\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: battleship\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: marine_worker\n    spend_rates:\n      minerals: 2\n      energy: 2"
   },
   {
     "id": "marine_worker",
@@ -237,6 +235,6 @@ export const ENTITY_CONTENT = [
     ],
     "upgrades": [],
     "visual": {},
-    "definition": "fog_memory: forget_when_hidden\nspeed: 90\nstop_radius: 0.75\nmass: 1\nhealth: 200\nhull_radius: 50\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat:\n  acquisition_range: 250\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: dismantle\n      type: dismantle\n      damage: 4\n      cooldown_ticks: 60\n      priority: 100\n      contact_tolerance: 2\nbuild_cost:\n  minerals: 50\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  food: 2\ncollector:\n  vfx: mineral_transport\n  collects:\n    - minerals\n    - food\n  transport_rate_per_second: 8\n  carry_capacity: 50\n  deposit_entity_types:\n    - processor\n    - habitat\nrepair:\n  range: 150\n  cost_per_min:\n    energy: 60\n    minerals: 60\n  efficiency: 0.5\nbuilds:\n  - entity_type_id: collector_solar\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: factory\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: military_factory\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 90\nstop_radius: 0.75\nmass: 1\nhealth: 300\nhull_radius: 50\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat:\n  acquisition_range: 250\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: dismantle\n      type: dismantle\n      damage: 8\n      cooldown_ticks: 60\n      priority: 100\n      contact_tolerance: 2\nbuild_cost:\n  minerals: 50\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  food: 2\ncollector:\n  vfx: mineral_transport\n  collects:\n    - minerals\n    - food\n  transport_rate_per_second: 8\n  carry_capacity: 40\n  deposit_entity_types:\n    - processor\n    - habitat\nrepair:\n  range: 150\n  cost_per_min:\n    energy: 80\n    minerals: 80\n  efficiency: 1\nbuilds:\n  - entity_type_id: collector_solar\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: factory\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2\n  - entity_type_id: military_factory\n    spend_rates:\n      minerals: 1.2\n      energy: 1.2"
   }
 ] as const;
