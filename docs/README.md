@@ -9,6 +9,7 @@ This directory contains specifications, designs, and decision records for the pr
 - Requirements
   - [Entity Intent System Requirements](./requirements/entity-intents.md)
   - [Entities and Abilities Requirements](./requirements/entities-and-abilities.md)
+  - [Localized Resources](./requirements/localized_resources.md)
 - Architecture Decision Records (ADRs)
   - See [docs/adr/](./adr/)
 - Glossary
