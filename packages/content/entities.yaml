@@ -265,6 +265,10 @@ entity_types:
         spend_rates:
           minerals: 0.8
           energy: 0.8
+      - entity_type_id: scout
+        spend_rates:
+          minerals: 0.8
+          energy: 0.8
     collector:
       vfx: solar_proximity
       collects:

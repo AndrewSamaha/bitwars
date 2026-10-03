@@ -1225,9 +1225,47 @@ impl Engine {
                         })
                     })
                     .collect();
+                let restored_builds: Vec<_> = tracking
+                    .active_intents
+                    .iter()
+                    .filter_map(|entry| {
+                        if entry.intent_kind != "build" {
+                            return None;
+                        }
+                        let blueprint_id = entry.blueprint_id.clone()?;
+                        let progress = entry.snapshot_progress.unwrap_or(0.0);
+                        if !progress.is_finite() || !(0.0..=1.0).contains(&progress) {
+                            return None;
+                        }
+                        let entity = state
+                            .entities
+                            .iter()
+                            .find(|entity| entity.id == entry.entity_id)?;
+                        if entity.owner_player_id != entry.player_id {
+                            return None;
+                        }
+                        let content = content.as_ref()?;
+                        let builder = content.get(&entity.entity_type_id)?;
+                        if !builder.builds.iter().any(|build| build.entity_type_id == blueprint_id)
+                            || content.get(&blueprint_id).is_none()
+                            || entry.build_location.as_ref().is_some_and(|point| {
+                                !point.x.is_finite() || !point.y.is_finite()
+                            })
+                        {
+                            return None;
+                        }
+                        Some((
+                            entry.clone(),
+                            blueprint_id,
+                            progress,
+                            entity.entity_type_id.clone(),
+                        ))
+                    })
+                    .collect();
                 let restored_ids: HashSet<_> = restored_collects
                     .iter()
                     .map(|(entry, ..)| entry.entity_id)
+                    .chain(restored_builds.iter().map(|(entry, ..)| entry.entity_id))
                     .collect();
                 for entry in &tracking.active_intents {
                     if !restored_ids.contains(&entry.entity_id) {
@@ -1326,6 +1364,56 @@ impl Engine {
                             "collect",
                             None,
                             Some((resource_type_id, nearest_compatible)),
+                            None,
+                            engine.cfg.tracking_ttl_secs,
+                        )
+                        .await?;
+                }
+                for (entry, blueprint_id, progress, entity_type_id) in restored_builds {
+                    let (Ok(intent_id), Ok(client_cmd_id)) = (
+                        Uuid::parse_str(&entry.intent_id),
+                        Uuid::parse_str(&entry.client_cmd_id),
+                    ) else {
+                        engine.redis.clear_active_intent(entry.entity_id).await?;
+                        continue;
+                    };
+                    let intent = pb::Intent {
+                        kind: Some(pb::intent::Kind::Build(pb::BuildIntent {
+                            entity_id: entry.entity_id,
+                            blueprint_id: blueprint_id.clone(),
+                            location: entry.build_location.as_ref().map(|point| pb::Vec2 {
+                                x: point.x,
+                                y: point.y,
+                            }),
+                            client_cmd_id: String::new(),
+                            player_id: String::new(),
+                        })),
+                    };
+                    let metadata = IntentMetadata {
+                        intent_id: intent_id.into_bytes().to_vec(),
+                        client_cmd_id: client_cmd_id.into_bytes().to_vec(),
+                        player_id: entry.player_id,
+                        protocol_version: ENGINE_PROTOCOL_MAJOR,
+                        server_tick: entry.started_tick,
+                        policy: pb::IntentPolicy::ReplaceActive,
+                    };
+                    engine
+                        .intents
+                        .try_activate(intent, metadata.clone(), &entity_type_id);
+                    if let Some(active) = engine.intents.active_intents_mut().get_mut(&entry.entity_id) {
+                        if let Some(pb::action_state::Exec::Build(build)) = active.action.exec.as_mut() {
+                            build.progress = progress;
+                        }
+                    }
+                    engine
+                        .redis
+                        .persist_active_intent(
+                            entry.entity_id,
+                            &metadata,
+                            "build",
+                            None,
+                            None,
+                            Some((blueprint_id.clone(), entry.build_location.clone(), progress)),
                             engine.cfg.tracking_ttl_secs,
                         )
                         .await?;
@@ -1343,6 +1431,11 @@ impl Engine {
                         engine.collector_states_for_stream(),
                         engine.combat_effect_states_for_stream(),
                     )
+                    .await?;
+                let build_progress = engine.construction_progress_for_snapshot();
+                engine
+                    .redis
+                    .checkpoint_construction_progress(&build_progress)
                     .await?;
 
                 // M4: Publish content hash + definitions in restore path too
@@ -3547,6 +3640,17 @@ impl Engine {
         states
     }
 
+    fn construction_progress_for_snapshot(&self) -> HashMap<u64, f32> {
+        self.intents
+            .active_intents()
+            .iter()
+            .filter_map(|(entity_id, active)| match active.action.exec.as_ref() {
+                Some(pb::action_state::Exec::Build(build)) => Some((*entity_id, build.progress)),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn combat_effect_states_for_stream(&self) -> Vec<pb::CombatEffectState> {
         let mut states: Vec<pb::CombatEffectState> = self
             .combat_effect_ui_state_by_entity
@@ -3676,7 +3780,8 @@ impl Engine {
             let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
             let collector_states = self.collector_states_for_stream();
             let combat_effect_states = self.combat_effect_states_for_stream();
-            let _ = self
+            let build_progress = self.construction_progress_for_snapshot();
+            if self
                 .redis
                 .publish_snapshot(
                     &self.state,
@@ -3686,7 +3791,17 @@ impl Engine {
                     collector_states,
                     combat_effect_states,
                 )
-                .await;
+                .await
+                .is_ok()
+            {
+                if let Err(error) = self
+                    .redis
+                    .checkpoint_construction_progress(&build_progress)
+                    .await
+                {
+                    warn!(?error, "failed to checkpoint construction progress");
+                }
+            }
         }
         if self.state.tick % (self.cfg.tps as u64) == 0 {
             log_sample(&self.state);
@@ -3926,6 +4041,7 @@ impl Engine {
                 let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
                 let collector_states = self.collector_states_for_stream();
                 let combat_effect_states = self.combat_effect_states_for_stream();
+                let build_progress = self.construction_progress_for_snapshot();
                 if let Err(e) = self
                     .redis
                     .publish_snapshot(
@@ -3939,6 +4055,12 @@ impl Engine {
                     .await
                 {
                     error!(?e, "snapshot publish failed");
+                } else if let Err(e) = self
+                    .redis
+                    .checkpoint_construction_progress(&build_progress)
+                    .await
+                {
+                    error!(?e, "construction progress checkpoint failed");
                 }
             }
             record_tick_phase(
@@ -4568,23 +4690,34 @@ impl Engine {
 
         // M4: Look up entity_type_id for per-type stat resolution.
         let entity_type_id = self.resolve_entity_type_id(&payload_intent);
-        let (intent_kind, move_target, collect_assignment) = match payload_intent.kind.as_ref() {
+        let (intent_kind, move_target, collect_assignment, construction) = match payload_intent.kind.as_ref() {
             Some(pb::intent::Kind::Move(m)) => (
                 "move",
                 m.target.as_ref().map(|t| IntentPoint { x: t.x, y: t.y }),
                 None,
+                None,
             ),
-            Some(pb::intent::Kind::Attack(_)) => ("attack", None, None),
-            Some(pb::intent::Kind::Build(_)) => ("build", None, None),
+            Some(pb::intent::Kind::Attack(_)) => ("attack", None, None, None),
+            Some(pb::intent::Kind::Build(build)) => (
+                "build",
+                None,
+                None,
+                Some((
+                    build.blueprint_id.clone(),
+                    build.location.as_ref().map(|point| IntentPoint { x: point.x, y: point.y }),
+                    0.0,
+                )),
+            ),
             Some(pb::intent::Kind::Collect(collect)) => (
                 "collect",
                 None,
                 Some((collect.resource_type_id.clone(), collect.nearest_compatible)),
+                None,
             ),
-            Some(pb::intent::Kind::Repair(_)) => ("repair", None, None),
-            Some(pb::intent::Kind::Upgrade(_)) => ("upgrade", None, None),
-            Some(pb::intent::Kind::Research(_)) => ("research", None, None),
-            None => ("unknown", None, None),
+            Some(pb::intent::Kind::Repair(_)) => ("repair", None, None, None),
+            Some(pb::intent::Kind::Upgrade(_)) => ("upgrade", None, None, None),
+            Some(pb::intent::Kind::Research(_)) => ("research", None, None, None),
+            None => ("unknown", None, None, None),
         };
 
         // M1: Try to activate immediately (no server-side queue).
@@ -4644,6 +4777,7 @@ impl Engine {
                     intent_kind,
                     move_target,
                     collect_assignment,
+                    construction,
                     self.cfg.tracking_ttl_secs,
                 )
                 .await?;
