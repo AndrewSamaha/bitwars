@@ -1158,7 +1158,9 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((mut state, boundary)) = redis.read_latest_snapshot().await? {
+            if let Some((mut state, boundary, snapshot_collector_states)) =
+                redis.read_latest_snapshot().await?
+            {
                 info!(
                     tick = state.tick,
                     boundary = %boundary,
@@ -1166,25 +1168,70 @@ impl Engine {
                     "restored world from snapshot"
                 );
 
-                // M2: Restore per-player last-processed seq from Redis so that
-                // client_seq validation works correctly after restart.  Active
-                // intents are NOT restored into IntentManager (they are lost on
-                // restart); clear the tracking hash so the reconnect handshake
-                // reports entities as idle.
+                // Restore per-player sequence numbers and maintained collection orders.
                 let tracking = redis.read_all_tracking().await?;
                 let mut player_last_seq = HashMap::new();
                 for (pid, seq) in &tracking.player_seqs {
                     info!(player_id = %pid, last_seq = seq, "restored player_last_seq");
                     player_last_seq.insert(pid.clone(), *seq);
                 }
-                if !tracking.active_intents.is_empty() {
-                    info!(
-                        count = tracking.active_intents.len(),
-                        "clearing stale active_intents (intents lost on restart)"
-                    );
-                    // Clear each entry so reconnect handshake sees entities as idle
-                    for entry in &tracking.active_intents {
-                        let _ = redis.clear_active_intent(entry.entity_id).await;
+                let restored_collects: Vec<_> = tracking
+                    .active_intents
+                    .iter()
+                    .filter_map(|entry| {
+                        if entry.intent_kind != "collect" {
+                            return None;
+                        }
+                        let snapshot_assignment = snapshot_collector_states
+                            .iter()
+                            .find(|state| state.entity_id == entry.entity_id)
+                            .map(|state| {
+                                (
+                                    state.assigned_resource_type.clone(),
+                                    state.assigned_nearest_compatible,
+                                )
+                            });
+                        let assignment = entry
+                            .collect_resource_type_id
+                            .clone()
+                            .zip(entry.collect_nearest_compatible)
+                            .or(snapshot_assignment);
+                        let Some((resource_type_id, nearest_compatible)) = assignment else {
+                            return None;
+                        };
+                        let entity = state
+                            .entities
+                            .iter()
+                            .find(|entity| entity.id == entry.entity_id)?;
+                        if entity.owner_player_id != entry.player_id {
+                            return None;
+                        }
+                        let content = content.as_ref()?;
+                        let collector = content.get(&entity.entity_type_id)?.collector.as_ref()?;
+                        let valid_assignment = if nearest_compatible {
+                            resource_type_id.is_empty()
+                        } else {
+                            !resource_type_id.is_empty()
+                                && content.get_resource_type(&resource_type_id).is_some()
+                                && collector.collects.iter().any(|id| id == &resource_type_id)
+                        };
+                        valid_assignment.then(|| {
+                            (
+                                entry.clone(),
+                                resource_type_id,
+                                nearest_compatible,
+                                entity.entity_type_id.clone(),
+                            )
+                        })
+                    })
+                    .collect();
+                let restored_ids: HashSet<_> = restored_collects
+                    .iter()
+                    .map(|(entry, ..)| entry.entity_id)
+                    .collect();
+                for entry in &tracking.active_intents {
+                    if !restored_ids.contains(&entry.entity_id) {
+                        redis.clear_active_intent(entry.entity_id).await?;
                     }
                 }
 
@@ -1243,6 +1290,46 @@ impl Engine {
                     combat: CombatSystem::default(),
                     raider_script: RaiderScript::new()?,
                 };
+                for (entry, resource_type_id, nearest_compatible, entity_type_id) in restored_collects {
+                    let (Ok(intent_id), Ok(client_cmd_id)) = (
+                        Uuid::parse_str(&entry.intent_id),
+                        Uuid::parse_str(&entry.client_cmd_id),
+                    ) else {
+                        engine.redis.clear_active_intent(entry.entity_id).await?;
+                        continue;
+                    };
+                    let intent = pb::Intent {
+                        kind: Some(pb::intent::Kind::Collect(pb::CollectIntent {
+                            entity_id: entry.entity_id,
+                            client_cmd_id: String::new(),
+                            player_id: String::new(),
+                            resource_type_id: resource_type_id.clone(),
+                            nearest_compatible,
+                        })),
+                    };
+                    let metadata = IntentMetadata {
+                        intent_id: intent_id.into_bytes().to_vec(),
+                        client_cmd_id: client_cmd_id.into_bytes().to_vec(),
+                        player_id: entry.player_id,
+                        protocol_version: ENGINE_PROTOCOL_MAJOR,
+                        server_tick: entry.started_tick,
+                        policy: pb::IntentPolicy::ReplaceActive,
+                    };
+                    engine
+                        .intents
+                        .try_activate(intent, metadata.clone(), &entity_type_id);
+                    engine
+                        .redis
+                        .persist_active_intent(
+                            entry.entity_id,
+                            &metadata,
+                            "collect",
+                            None,
+                            Some((resource_type_id, nearest_compatible)),
+                            engine.cfg.tracking_ttl_secs,
+                        )
+                        .await?;
+                }
                 engine.hydrate_entity_health_if_missing();
                 // Publish a fresh snapshot so newly connecting clients see current state
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
@@ -4481,18 +4568,23 @@ impl Engine {
 
         // M4: Look up entity_type_id for per-type stat resolution.
         let entity_type_id = self.resolve_entity_type_id(&payload_intent);
-        let (intent_kind, move_target) = match payload_intent.kind.as_ref() {
+        let (intent_kind, move_target, collect_assignment) = match payload_intent.kind.as_ref() {
             Some(pb::intent::Kind::Move(m)) => (
                 "move",
                 m.target.as_ref().map(|t| IntentPoint { x: t.x, y: t.y }),
+                None,
             ),
-            Some(pb::intent::Kind::Attack(_)) => ("attack", None),
-            Some(pb::intent::Kind::Build(_)) => ("build", None),
-            Some(pb::intent::Kind::Collect(_)) => ("collect", None),
-            Some(pb::intent::Kind::Repair(_)) => ("repair", None),
-            Some(pb::intent::Kind::Upgrade(_)) => ("upgrade", None),
-            Some(pb::intent::Kind::Research(_)) => ("research", None),
-            None => ("unknown", None),
+            Some(pb::intent::Kind::Attack(_)) => ("attack", None, None),
+            Some(pb::intent::Kind::Build(_)) => ("build", None, None),
+            Some(pb::intent::Kind::Collect(collect)) => (
+                "collect",
+                None,
+                Some((collect.resource_type_id.clone(), collect.nearest_compatible)),
+            ),
+            Some(pb::intent::Kind::Repair(_)) => ("repair", None, None),
+            Some(pb::intent::Kind::Upgrade(_)) => ("upgrade", None, None),
+            Some(pb::intent::Kind::Research(_)) => ("research", None, None),
+            None => ("unknown", None, None),
         };
 
         // M1: Try to activate immediately (no server-side queue).
@@ -4551,6 +4643,7 @@ impl Engine {
                     &metadata,
                     intent_kind,
                     move_target,
+                    collect_assignment,
                     self.cfg.tracking_ttl_secs,
                 )
                 .await?;

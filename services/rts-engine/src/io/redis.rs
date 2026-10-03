@@ -43,6 +43,11 @@ pub struct EntityActiveIntent {
     pub blueprint_id: Option<String>,
     #[serde(default)]
     pub progress: Option<f32>,
+    /// Parameters needed to reconstruct a maintained collection order.
+    #[serde(default)]
+    pub collect_resource_type_id: Option<String>,
+    #[serde(default)]
+    pub collect_nearest_compatible: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -573,8 +578,10 @@ impl RedisClient {
     }
 
     /// Read the latest snapshot and its boundary stream ID from Redis.
-    /// Returns (GameState, boundary_stream_id) or None if no snapshot exists.
-    pub async fn read_latest_snapshot(&mut self) -> anyhow::Result<Option<(GameState, String)>> {
+    /// Returns state, boundary stream ID, and collector state or None if absent.
+    pub async fn read_latest_snapshot(
+        &mut self,
+    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>)>> {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
@@ -626,7 +633,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary)))
+        Ok(Some((state, boundary, snapshot.collector_states)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -727,6 +734,7 @@ impl RedisClient {
         metadata: &IntentMetadata,
         intent_kind: &str,
         move_target: Option<IntentPoint>,
+        collect_assignment: Option<(String, bool)>,
         ttl_secs: u64,
     ) -> anyhow::Result<()> {
         let entry = EntityActiveIntent {
@@ -739,6 +747,10 @@ impl RedisClient {
             move_target,
             blueprint_id: None,
             progress: None,
+            collect_resource_type_id: collect_assignment
+                .as_ref()
+                .map(|(resource, _)| resource.clone()),
+            collect_nearest_compatible: collect_assignment.map(|(_, nearest)| nearest),
         };
         let json = serde_json::to_string(&entry)?;
         let key = self.active_intents_key();
