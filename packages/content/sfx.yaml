@@ -52,3 +52,15 @@ sound_effects:
       license: https://pixabay.com/service/license-summary/
       changes: Split into six clips and converted to WAV.
       retrieved: 2026-09-07
+  under-attack:
+    name: under attack
+    sources:
+      - sfx/under-attack/underattack.wav
+    volume: 0.7
+    pool: 5
+    attribution:
+      artist: Andrew Samaha
+      source: self
+      license: none
+      changes: none
+      retrieved: created 2026-10-02

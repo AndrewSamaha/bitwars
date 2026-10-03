@@ -8,6 +8,7 @@ export const BUILD_COMPLETED_EVENT = "bitwars:build-completed";
 export const MINIMUM_DISTANCE_VIOLATION_EVENT = "bitwars:minimum-distance-violation";
 export const COLLECTION_WAITING_EVENT = "bitwars:collection-waiting";
 export const CENTER_CAMERA_ON_ENTITY_EVENT = "bitwars:center-camera-on-entity";
+export const ENTITY_UNDER_ATTACK_EVENT = "bitwars:entity-under-attack";
 
 export type GameStateUpdatedDetail = { entityIds?: string[] };
 export type MinimumDistanceViolationDetail = {
@@ -43,6 +44,10 @@ export function dispatchGameStateUpdated(entityIds?: string[]) {
 /** Emitted when an authoritative removal should be presented as an entity explosion. */
 export function dispatchEntityExploded(entity: Entity) {
   window.dispatchEvent(new CustomEvent<Entity>(ENTITY_EXPLODED_EVENT, { detail: entity }));
+}
+
+export function dispatchEntityUnderAttack(entity: Entity) {
+  window.dispatchEvent(new CustomEvent<Entity>(ENTITY_UNDER_ATTACK_EVENT, { detail: entity }));
 }
 
 /** Emitted when a non-owned entity enters this client's sensor coverage. */
