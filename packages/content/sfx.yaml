@@ -56,6 +56,8 @@ sound_effects:
     name: under attack
     sources:
       - sfx/under-attack/underattack.wav
+      - sfx/under-attack/mayday2.wav
+      - sfx/under-attack/mayday3.wav
     volume: 0.7
     pool: 5
     attribution:

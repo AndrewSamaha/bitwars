@@ -56,7 +56,7 @@ BitWars. It is deployed with the game at `/audio/ATTRIBUTIONS.md`.
 
 ### under attack
 
-- Files: `sfx/under-attack/underattack.wav`
+- Files: `sfx/under-attack/underattack.wav`, `sfx/under-attack/mayday2.wav`, `sfx/under-attack/mayday3.wav`
 - Artist: Andrew Samaha
 - Source: self
 - License: none
