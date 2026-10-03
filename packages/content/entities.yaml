@@ -133,7 +133,7 @@ entity_types:
     health: 100
     hull_radius: 12
     visual:
-      scale: 0.2
+      scale: 1.4
     combat_targetable: true
     sensor:
       range: 400
@@ -185,8 +185,8 @@ entity_types:
           priority: 100
           contact_tolerance: 2
     build_cost:
-      minerals: 50
-      energy: 50
+      minerals: 30
+      energy: 30
     maintenance_cost_per_minute:
       energy: 1
       food: 2
@@ -211,6 +211,10 @@ entity_types:
         spend_rates:
           minerals: 1.2
           energy: 1.2
+      - entity_type_id: waypoint
+        spend_rates:
+          minerals: 1
+          energy: 1
       - entity_type_id: habitat
         spend_rates:
           minerals: 1.2
@@ -262,6 +266,10 @@ entity_types:
         energy: 5
     builds:
       - entity_type_id: worker
+        spend_rates:
+          minerals: 0.8
+          energy: 0.8
+      - entity_type_id: scout
         spend_rates:
           minerals: 0.8
           energy: 0.8
@@ -425,7 +433,7 @@ entity_types:
       cost_per_minute:
         energy: 2.5
     visual:
-      scale: 0.3
+      scale: 0.8
     upgrades:
       - entity_type_id: defense_pylon_v3
   defense_pylon:
@@ -455,9 +463,11 @@ entity_types:
       cost_per_minute:
         energy: 2.5
     visual:
-      scale: 0.25
+      scale: 0.8
     upgrades:
       - entity_type_id: defense_pylon_v2
+    builds:
+      - entity_type_id: waypoint
   collector_solar_v2:
     fog_memory: forget_when_hidden
     speed: 20
@@ -509,7 +519,7 @@ entity_types:
     health: 500
     hull_radius: 15
     visual:
-      scale: 0.3
+      scale: 0.8
     combat:
       acquisition_range: 700
       on_near_enemy_strategy: stay
@@ -677,7 +687,7 @@ entity_types:
     hull_radius: 75
     combat_targetable: true
     visual:
-      scale: 0.2
+      scale: 1.2
     sensor:
       range: 400
       cost_per_minute:
@@ -789,6 +799,10 @@ entity_types:
         spend_rates:
           minerals: 1.2
           energy: 1.2
+      - entity_type_id: waypoint
+        spend_rates:
+          minerals: 1
+          energy: 1
       - entity_type_id: habitat
         spend_rates:
           minerals: 1.2
@@ -805,3 +819,22 @@ entity_types:
         spend_rates:
           minerals: 1.2
           energy: 1.2
+  waypoint:
+    fog_memory: forget_when_hidden
+    build_cost:
+      minerals: 20
+      energy: 25
+    maintenance_cost_per_minute:
+      energy: 10
+    speed: 5
+    stop_radius: 0.5
+    mass: 1
+    health: 500
+    hull_radius: 150
+    sensor:
+      range: 1
+      cost_per_minute:
+        energy: 2.5
+    visual:
+      scale: 0.8
+    visibility_range: 10000

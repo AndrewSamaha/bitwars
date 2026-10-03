@@ -8,7 +8,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
+import { dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -120,6 +120,7 @@ export default function GameStateStreamBridge() {
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
   const knownEntityIdsRef = useRef<Set<string>>(new Set());
+  const underAttackEntityIdsRef = useRef<Set<string>>(new Set());
   const streamIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
   const firstDeltaLoggedRef = useRef<number>(0);
   const mountedAtRef = useRef<number>(Date.now());
@@ -374,6 +375,13 @@ export default function GameStateStreamBridge() {
           }
           if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
           if (u.health !== undefined) {
+            const playerId = currentPlayerIdRef.current;
+            if (existing.health !== undefined && u.health < existing.health
+              && existing.owner_player_id === playerId && playerId
+              && !underAttackEntityIdsRef.current.has(key)) {
+              underAttackEntityIdsRef.current.add(key);
+              dispatchEntityUnderAttack(existing);
+            }
             // Health decreases arrive every engine tick. Refresh liveness, but
             // only start a new particle timeline after the prior plume expires.
             if (existing.health !== undefined && u.health < existing.health && isWithinRadiationRange(existing)) {

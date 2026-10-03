@@ -3,6 +3,7 @@ export enum SoundEffect {
   SonarPing = "sonar-ping",
   BuildComplete = "build-complete",
   LaserShot = "laser-shot",
+  UnderAttack = "under-attack",
 }
 
 export const GAMEPLAY_SOUND_EFFECTS = Object.values(SoundEffect);

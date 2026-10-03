@@ -43,6 +43,17 @@ pub struct EntityActiveIntent {
     pub blueprint_id: Option<String>,
     #[serde(default)]
     pub progress: Option<f32>,
+    /// Progress represented by the most recently saved world/resource snapshot.
+    #[serde(default)]
+    pub snapshot_progress: Option<f32>,
+    /// Parameters needed to reconstruct a maintained collection order.
+    #[serde(default)]
+    pub collect_resource_type_id: Option<String>,
+    #[serde(default)]
+    pub collect_nearest_compatible: Option<bool>,
+    /// Placement point for an in-progress build.
+    #[serde(default)]
+    pub build_location: Option<IntentPoint>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -573,8 +584,10 @@ impl RedisClient {
     }
 
     /// Read the latest snapshot and its boundary stream ID from Redis.
-    /// Returns (GameState, boundary_stream_id) or None if no snapshot exists.
-    pub async fn read_latest_snapshot(&mut self) -> anyhow::Result<Option<(GameState, String)>> {
+    /// Returns state, boundary stream ID, and collector state or None if absent.
+    pub async fn read_latest_snapshot(
+        &mut self,
+    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>)>> {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
@@ -626,7 +639,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary)))
+        Ok(Some((state, boundary, snapshot.collector_states)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -727,6 +740,8 @@ impl RedisClient {
         metadata: &IntentMetadata,
         intent_kind: &str,
         move_target: Option<IntentPoint>,
+        collect_assignment: Option<(String, bool)>,
+        construction: Option<(String, Option<IntentPoint>, f32)>,
         ttl_secs: u64,
     ) -> anyhow::Result<()> {
         let entry = EntityActiveIntent {
@@ -737,8 +752,14 @@ impl RedisClient {
             started_tick: metadata.server_tick,
             intent_kind: intent_kind.to_string(),
             move_target,
-            blueprint_id: None,
-            progress: None,
+            blueprint_id: construction.as_ref().map(|(target, _, _)| target.clone()),
+            progress: construction.as_ref().map(|(_, _, progress)| *progress),
+            snapshot_progress: construction.as_ref().map(|(_, _, progress)| *progress),
+            collect_resource_type_id: collect_assignment
+                .as_ref()
+                .map(|(resource, _)| resource.clone()),
+            collect_nearest_compatible: collect_assignment.map(|(_, nearest)| nearest),
+            build_location: construction.and_then(|(_, location, _)| location),
         };
         let json = serde_json::to_string(&entry)?;
         let key = self.active_intents_key();
@@ -776,6 +797,26 @@ impl RedisClient {
         entry.progress = Some(progress.clamp(0.0, 1.0));
         let json = serde_json::to_string(&entry)?;
         let _: () = self.conn.hset(&key, &field, json).await?;
+        Ok(())
+    }
+
+    /// Tie restored construction progress to the ledger saved in the same world snapshot.
+    pub async fn checkpoint_construction_progress(
+        &mut self,
+        progress_by_entity: &HashMap<u64, f32>,
+    ) -> anyhow::Result<()> {
+        // ponytail: checkpoint after snapshot; a failed hash update may roll back build progress, but cannot restore unpaid progress. Use one Redis transaction if exact atomicity becomes necessary.
+        let key = self.active_intents_key();
+        for (entity_id, progress) in progress_by_entity {
+            let field = entity_id.to_string();
+            let Some(json) = self.conn.hget::<_, _, Option<String>>(&key, &field).await? else {
+                continue;
+            };
+            let mut entry: EntityActiveIntent = serde_json::from_str(&json)?;
+            entry.snapshot_progress = Some(progress.clamp(0.0, 1.0));
+            let json = serde_json::to_string(&entry)?;
+            let _: () = self.conn.hset(&key, &field, json).await?;
+        }
         Ok(())
     }
 
