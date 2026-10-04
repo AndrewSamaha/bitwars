@@ -468,6 +468,7 @@ impl RaiderScript {
             force: Some(Vec2 { x: 0.0, y: 0.0 }),
             owner_player_id: RAIDERS_OWNER.into(),
             health,
+            resources: None,
         });
     }
 }

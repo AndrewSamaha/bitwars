@@ -108,6 +108,8 @@ export function TooltipOverlay() {
   const health = Number((hoveredEntity as any).health);
   const maxHealth = contentManager.getEntityType(entityTypeId)?.health;
   const healthFraction = typeof maxHealth === "number" && maxHealth > 0 ? health / maxHealth : null;
+  const inventory = ownerPlayerId === player?.id ? ((hoveredEntity as any).resources as Array<{resource_type: string; amount: number}> | undefined) : undefined;
+  const capacities = (contentManager.getEntityType(entityTypeId) as any)?.max_capacity as Record<string, number> | undefined;
   const rememberedAt = (hoveredEntity as any).remembered?.last_seen_at as number | undefined;
 
   return (
@@ -136,6 +138,10 @@ export function TooltipOverlay() {
             : ""}
         </div>
       )}
+      {inventory?.map(({ resource_type, amount }) => {
+        const capacity = capacities?.[resource_type] ?? 0;
+        return <div key={resource_type}><b>{resource_type}:</b> {Number(amount).toFixed(1)} / {capacity}</div>;
+      })}
       <div><b>pos:</b> {Math.round(hoveredEntity.pos?.x ?? 0)}, {Math.round(hoveredEntity.pos?.y ?? 0)}</div>
       <div><b>vel:</b> {Math.round(hoveredEntity.vel?.x ?? 0)}, {Math.round(hoveredEntity.vel?.y ?? 0)}</div>
       {collectorState && <div><b>collector:</b> {activity}{resourceType ? ` (${resourceType})` : ""}</div>}

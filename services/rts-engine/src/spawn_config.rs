@@ -59,6 +59,10 @@ pub type Loadout = HashMap<String, usize>;
 /// M7: Starting resources per player (resource_type_id → amount). Applied when a player spawns.
 pub type StartingResources = HashMap<String, i64>;
 
+fn default_starting_resources_recipient_type() -> String {
+    "habitat".to_string()
+}
+
 /// Root spawn config: celestial field, global neutral fields, loadout options, and optional per-player neutrals.
 #[derive(Clone, Debug, Deserialize)]
 pub struct SpawnConfig {
@@ -79,6 +83,9 @@ pub struct SpawnConfig {
     /// M7: Starting resources granted to each player on spawn (resource_type_id → amount).
     #[serde(default)]
     pub starting_resources: StartingResources,
+    /// Entity type that receives the player's starting resource stock.
+    #[serde(default = "default_starting_resources_recipient_type")]
+    pub starting_resources_recipient_type: String,
     /// Maximum number of living raiders. Defaults to unlimited for existing configs.
     #[serde(default = "default_max_raiders")]
     pub max_raiders: usize,

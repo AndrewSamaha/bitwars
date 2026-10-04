@@ -11,4 +11,14 @@ message Entity {
   Vec2   force            = 5;
   string owner_player_id  = 6;  // M6: empty = unowned/legacy, else player or registered system owner
   float  health           = 7;  // current health; max health is defined by content
+  ResourceInventory resources = 8; // local inventory; omitted from client projections for non-owned entities
+}
+
+message ResourceAmount {
+  string resource_type = 1;
+  double amount = 2;
+}
+
+message ResourceInventory {
+  repeated ResourceAmount resources = 1;
 }

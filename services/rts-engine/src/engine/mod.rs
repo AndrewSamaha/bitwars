@@ -28,7 +28,7 @@ use crate::physics::integrate;
 use crate::spatial::SpatialIndex;
 use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
 use prost::Message;
-use state::{init_world, log_sample, on_player_spawn, spawn_celestial_field, GameState};
+use state::{init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
 pub const ENGINE_PROTOCOL_MAJOR: u32 = 12;
 const TICK_TIMING_WINDOW_TICKS: usize = 600;
@@ -77,6 +77,7 @@ struct RefinerySnapshot {
     x: f32,
     y: f32,
     accepts: Vec<String>,
+    max_capacity: HashMap<String, f32>,
 }
 
 #[derive(Clone)]
@@ -1570,6 +1571,21 @@ impl Engine {
 
         let loadout_idx = rand::thread_rng().gen_range(0..sc.loadouts.len());
         let loadout = &sc.loadouts[loadout_idx];
+        if !sc.starting_resources.is_empty() {
+            let recipient_type = &sc.starting_resources_recipient_type;
+            if loadout.get(recipient_type).copied().unwrap_or(0) != 1 {
+                anyhow::bail!("starting resource recipient {recipient_type} must appear exactly once in the selected loadout");
+            }
+            let definition = _content
+                .get(recipient_type)
+                .ok_or_else(|| anyhow!("unknown starting resource recipient type {recipient_type}"))?;
+            for (resource_type, amount) in &sc.starting_resources {
+                let capacity = definition.max_capacity.get(resource_type).copied().unwrap_or(0.0);
+                if *amount < 0 || *amount as f32 > capacity {
+                    anyhow::bail!("starting {resource_type} amount exceeds {recipient_type} capacity");
+                }
+            }
+        }
 
         let next_id = self.state.entities.iter().map(|e| e.id).max().unwrap_or(0) + 1;
 
@@ -1603,11 +1619,15 @@ impl Engine {
             "spawned on join"
         );
 
-        // M7: Grant starting resources from spawn config (deterministic).
+        // Grant starting stock to the configured player-owned entity.
         if !sc.starting_resources.is_empty() {
-            let resources = self.state.ledger.entry(player_id.to_string()).or_default();
+            let recipient_type = &sc.starting_resources_recipient_type;
+            let recipient = self.state.entities[entity_count_before..]
+                .iter_mut()
+                .find(|entity| entity.entity_type_id == *recipient_type && entity.owner_player_id == player_id)
+                .expect("validated starting resource recipient is spawned");
             for (resource_type, amount) in &sc.starting_resources {
-                *resources.entry(resource_type.clone()).or_insert(0) += amount;
+                set_resource_amount(recipient, resource_type, *amount as f64);
             }
         }
         if let Some(content) = self.content.as_ref() {
@@ -1691,6 +1711,7 @@ impl Engine {
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: crate::spawn_config::RAIDERS_OWNER.to_string(),
                 health,
+                resources: None,
             });
         }
         info!(
@@ -1860,17 +1881,19 @@ impl Engine {
             return;
         }
 
-        let mut totals: HashMap<(String, String), f32> = HashMap::new();
-        for entity in &self.state.entities {
+        let upgrading: HashSet<u64> = self.intents.active_intents().iter().filter_map(|(id, active)| matches!(active.action.exec, Some(pb::action_state::Exec::Upgrade(_))).then_some(*id)).collect();
+        let mut spends = Vec::new();
+        for entity in &mut self.state.entities {
             if !is_player_owner(&entity.owner_player_id)
                 || entity.health <= 0.0
-                || self.is_upgrading(entity.id)
+                || upgrading.contains(&entity.id)
             {
                 continue;
             }
             let Some(def) = content.get(&entity.entity_type_id) else {
                 continue;
             };
+            let mut missing = false;
             for costs in std::iter::once(&def.maintenance_cost_per_minute)
                 .chain(def.sensor.iter().map(|sensor| &sensor.cost_per_minute))
             {
@@ -1878,15 +1901,60 @@ impl Engine {
                     if !per_minute.is_finite() || *per_minute <= 0.0 {
                         continue;
                     }
-                    *totals
-                        .entry((entity.owner_player_id.clone(), resource_type.clone()))
-                        .or_insert(0.0) += per_minute * dt / 60.0;
+                    let amount = per_minute * dt / 60.0;
+                    let key = (format!("entity:{}", entity.id), resource_type.clone());
+                    let total = self.maintenance_spend_fractional.get(&key).copied().unwrap_or(0.0) + amount;
+                    let whole = total.floor();
+                    let available = resource_amount(entity, resource_type);
+                    if available + f64::EPSILON < amount as f64 { missing = true; }
+                    let paid = available.min(whole as f64);
+                    set_resource_amount(entity, resource_type, available - paid);
+                    if paid == whole as f64 && total > whole { self.maintenance_spend_fractional.insert(key, total - whole); }
+                    else { self.maintenance_spend_fractional.remove(&key); }
+                    if paid > 0.0 { spends.push((entity.owner_player_id.clone(), resource_type.clone(), paid as f32)); }
                 }
             }
+            if missing { entity.health = (entity.health - 1.0).max(0.0); }
         }
+        for (player_id, resource, amount) in spends { self.record_resource_spend(&player_id, &resource, amount); }
+    }
 
-        for ((player_id, resource_type), amount) in totals {
-            self.spend_maintenance_resource(&player_id, &resource_type, amount);
+    fn share_resources(&mut self) {
+        let Some(content) = self.content.as_ref() else { return; };
+        let entities: Vec<_> = self.state.entities.iter().filter_map(|e| {
+            let def = content.get(&e.entity_type_id)?;
+            let share = def.resource_sharing.as_ref()?;
+            let pos = e.pos.as_ref()?;
+            Some((e.id, e.owner_player_id.clone(), e.entity_type_id.clone(), pos.x, pos.y, share.range))
+        }).collect();
+        let upkeep_types: HashMap<u64, HashSet<String>> = self.state.entities.iter().filter_map(|e| {
+            let def = content.get(&e.entity_type_id)?;
+            let types = def.maintenance_cost_per_minute.keys().chain(def.sensor.iter().flat_map(|s| s.cost_per_minute.keys())).cloned().collect::<HashSet<_>>();
+            Some((e.id, types))
+        }).collect();
+        for (donor_id, owner, _, x, y, range) in entities {
+            let donor_types: Vec<String> = self.state.entities.iter().find(|e| e.id == donor_id).map(|e| e.resources.as_ref().into_iter().flat_map(|i| i.resources.iter().map(|r| r.resource_type.clone())).collect()).unwrap_or_default();
+            for resource in donor_types {
+                let mut recipients: Vec<u64> = self.state.entities.iter().filter(|e| {
+                    if e.id == donor_id || e.owner_player_id != owner || !upkeep_types.get(&e.id).is_some_and(|types| types.contains(&resource)) { return false; }
+                    let Some(pos) = e.pos.as_ref() else { return false; };
+                    let dx = pos.x - x; let dy = pos.y - y;
+                    dx * dx + dy * dy <= range * range
+                }).map(|e| e.id).collect();
+                recipients.sort_unstable();
+                let mut donor_stock = self.state.entities.iter().find(|e| e.id == donor_id).map(|e| resource_amount(e, &resource)).unwrap_or(0.0);
+                for recipient_id in recipients {
+                    if donor_stock <= f64::EPSILON { break; }
+                    let Some(target) = self.state.entities.iter_mut().find(|e| e.id == recipient_id) else { continue; };
+                    let capacity = resource_capacity(content, &target.entity_type_id, &resource);
+                    let amount = donor_stock.min((capacity - resource_amount(target, &resource)).max(0.0));
+                    if amount > 0.0 {
+                        set_resource_amount(target, &resource, resource_amount(target, &resource) + amount);
+                        donor_stock -= amount;
+                    }
+                }
+                if let Some(donor) = self.state.entities.iter_mut().find(|e| e.id == donor_id) { set_resource_amount(donor, &resource, donor_stock); }
+            }
         }
     }
 
@@ -2116,6 +2184,7 @@ impl Engine {
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: player_id,
                 health,
+                resources: None,
             });
             if let Some(metadata) = self.intents.finish(builder_id) {
                 let _ = self.redis.clear_active_intent(builder_id).await;
@@ -2370,6 +2439,7 @@ impl Engine {
                 x: pos.x,
                 y: pos.y,
                 accepts: refinery.accepts.clone(),
+                max_capacity: entity_type.max_capacity.clone(),
             });
         }
         refineries.sort_by_key(|r| r.id);
@@ -3287,11 +3357,15 @@ impl Engine {
                             Self::distance_sq(collector.x, collector.y, refinery.x, refinery.y)
                                 .sqrt();
                         if dist <= DEPOSIT_DISTANCE {
-                            self.credit_resource(
-                                &collector.owner_player_id,
-                                &carry.resource_type,
-                                carry.amount,
-                            );
+                            if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == refinery.id) {
+                                let current = resource_amount(entity, &carry.resource_type);
+                                let capacity = refinery.max_capacity.get(&carry.resource_type).copied().unwrap_or(0.0) as f64;
+                                let delivered = (carry.amount as f64).min((capacity - current).max(0.0));
+                                set_resource_amount(entity, &carry.resource_type, current + delivered);
+                            }
+                            if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
+                                set_resource_amount(entity, &carry.resource_type, 0.0);
+                            }
                             self.carry_by_entity.remove(&collector.id);
                             self.set_collector_ui_state(
                                 collector.id,
@@ -3416,6 +3490,9 @@ impl Engine {
                                 carry.amount = 0.0;
                             }
                             carry.amount = (carry.amount + gather).min(carry_capacity);
+                            if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
+                                set_resource_amount(entity, &carry.resource_type, carry.amount as f64);
+                            }
                             (carry.resource_type.clone(), carry.amount)
                         };
                         self.set_collector_ui_state(
@@ -3552,7 +3629,12 @@ impl Engine {
                     self.collection_retry_tick_by_entity.remove(&collector.id);
                     operating_collectors.insert(collector.id);
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
-                    self.credit_resource(&collector.owner_player_id, &node.resource_type, rate);
+                    if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
+                        let current = resource_amount(entity, &node.resource_type);
+                        let capacity = resource_capacity(self.content.as_ref().unwrap(), &collector.entity_type_id, &node.resource_type);
+                        let amount = (rate as f64).min((capacity - current).max(0.0));
+                        set_resource_amount(entity, &node.resource_type, current + amount);
+                    }
                     self.set_collector_ui_state(
                         collector.id,
                         COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING,
@@ -3743,6 +3825,8 @@ impl Engine {
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_repairs(dt).await;
         self.apply_resource_collection(dt).await;
+        self.apply_maintenance_costs(dt);
+        self.share_resources();
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
@@ -3973,6 +4057,7 @@ impl Engine {
             self.advance_builds(dt).await;
             self.advance_research(dt).await;
             self.apply_maintenance_costs(dt);
+            self.share_resources();
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,

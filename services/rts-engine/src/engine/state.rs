@@ -9,6 +9,35 @@ use crate::spawn_config::{
     is_system_owner, Loadout, NeutralNearSpawn, SpawnConfig, UNIVERSE_OWNER,
 };
 
+pub fn resource_amount(entity: &Entity, resource_type: &str) -> f64 {
+    entity
+        .resources
+        .as_ref()
+        .and_then(|inventory| inventory.resources.iter().find(|entry| entry.resource_type == resource_type))
+        .map(|entry| entry.amount)
+        .unwrap_or(0.0)
+}
+
+pub fn set_resource_amount(entity: &mut Entity, resource_type: &str, amount: f64) {
+    let inventory = entity.resources.get_or_insert_with(Default::default);
+    inventory.resources.retain(|entry| entry.resource_type != resource_type);
+    if amount > f64::EPSILON {
+        inventory.resources.push(crate::pb::ResourceAmount {
+            resource_type: resource_type.to_string(),
+            amount,
+        });
+        inventory.resources.sort_by(|left, right| left.resource_type.cmp(&right.resource_type));
+    }
+}
+
+pub fn resource_capacity(content: &ContentPack, entity_type_id: &str, resource_type: &str) -> f64 {
+    content
+        .get(entity_type_id)
+        .and_then(|definition| definition.max_capacity.get(resource_type))
+        .copied()
+        .unwrap_or(0.0) as f64
+}
+
 const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
 const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
 // Keep planets well outside a star's 1,200-unit radiation range while leaving
@@ -139,6 +168,7 @@ fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &Conte
             .get(entity_type_id)
             .map(|def| def.health.max(0.0))
             .unwrap_or(0.0),
+        resources: None,
     }
 }
 
@@ -186,6 +216,7 @@ pub fn on_player_spawn(
                     .get(type_id)
                     .map(|def| def.health.max(0.0))
                     .unwrap_or(0.0),
+                resources: Some(Default::default()),
             });
             placed_player_positions.push(Vec2 { x, y });
             id += 1;
@@ -227,6 +258,7 @@ pub fn on_player_spawn(
                     .get(&neutral.entity_type_id)
                     .map(|def| def.health.max(0.0))
                     .unwrap_or(0.0),
+                resources: None,
             });
             id += 1;
         }

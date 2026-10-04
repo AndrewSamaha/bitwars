@@ -37,6 +37,11 @@ pub struct EntityTypeDef {
     pub mass: f32,
     /// Hull hit points before the entity is destroyed.
     pub health: f32,
+    /// Maximum local inventory by resource type. Required for every entity type.
+    pub max_capacity: HashMap<String, f32>,
+    /// Shares upkeep resources with nearby same-owner entities.
+    #[serde(default)]
+    pub resource_sharing: Option<ResourceSharingDef>,
     /// Physical hull radius in world units used by contact attacks. Defaults to 0.
     /// Independent of visual scale and movement-order stop radius.
     #[serde(default)]
@@ -103,6 +108,13 @@ pub struct EntityTypeDef {
     /// Technology IDs this entity can research. Omitted or empty means it cannot perform research.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub researches: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceSharingDef {
+    /// Maximum distance to entities that may receive shared resources.
+    pub range: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -547,6 +559,7 @@ impl ContentPack {
         let file: ContentFile = serde_yaml::from_str(&raw)
             .with_context(|| format!("failed to parse content pack YAML: {}", path.display()))?;
 
+        validate_resource_content(&file.entity_types)?;
         validate_upgrades(&file.entity_types)?;
         validate_technologies(&file.entity_types, &file.technologies)?;
 
@@ -580,6 +593,20 @@ impl ContentPack {
     pub fn get_resource_type(&self, resource_type_id: &str) -> Option<&ResourceTypeDef> {
         self.resource_types.get(resource_type_id)
     }
+}
+
+fn validate_resource_content(entity_types: &HashMap<String, EntityTypeDef>) -> Result<()> {
+    for (id, def) in entity_types {
+        if def.max_capacity.values().any(|capacity| !capacity.is_finite() || *capacity < 0.0) {
+            anyhow::bail!("entity type {id} has an invalid max_capacity");
+        }
+        if let Some(sharing) = &def.resource_sharing {
+            if !sharing.range.is_finite() || sharing.range < 0.0 {
+                anyhow::bail!("entity type {id} has an invalid resource_sharing.range");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_requirement(

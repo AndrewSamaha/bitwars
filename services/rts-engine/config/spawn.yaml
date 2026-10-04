@@ -33,3 +33,4 @@ starting_resources:
   food: 500
   minerals: 500
   energy: 500
+starting_resources_recipient_type: habitat

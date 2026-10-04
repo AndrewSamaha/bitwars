@@ -24,6 +24,21 @@ pub struct Entity {
     /// current health; max health is defined by content
     #[prost(float, tag = "7")]
     pub health: f32,
+    /// local inventory; omitted from client projections for non-owned entities
+    #[prost(message, optional, tag = "8")]
+    pub resources: ::core::option::Option<ResourceInventory>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResourceAmount {
+    #[prost(string, tag = "1")]
+    pub resource_type: ::prost::alloc::string::String,
+    #[prost(double, tag = "2")]
+    pub amount: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResourceInventory {
+    #[prost(message, repeated, tag = "1")]
+    pub resources: ::prost::alloc::vec::Vec<ResourceAmount>,
 }
 /// Sparse delta: only include fields that changed meaningfully.
 /// proto3 'optional' yields Option<T> in Rust (prost) and presence in TS.
@@ -46,6 +61,9 @@ pub struct EntityDelta {
     /// set when current health changes
     #[prost(float, optional, tag = "7")]
     pub health: ::core::option::Option<f32>,
+    /// set when local inventory changes
+    #[prost(message, optional, tag = "8")]
+    pub resources: ::core::option::Option<ResourceInventory>,
 }
 /// Authoritative collector telemetry for one entity. This travels with the
 /// normal snapshot/delta stream instead of a separately polled UI side channel.

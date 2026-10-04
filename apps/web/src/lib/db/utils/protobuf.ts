@@ -23,6 +23,7 @@ export const mapDeltaToJson = (d: Delta) => ({
       ...(u.force ? { force: { x: u.force.x, y: u.force.y } } : {}),
       ...(uAny.ownerPlayerId !== undefined ? { owner_player_id: uAny.ownerPlayerId } : {}),
       ...(uAny.health !== undefined ? { health: uAny.health } : {}),
+      ...(u.resources ? { resources: u.resources.resources.map((r) => ({ resource_type: r.resourceType, amount: r.amount })) } : {}),
     };
   }),
   collector_state_updates: (d.collectorStateUpdates ?? []).map((state) => ({
@@ -54,6 +55,7 @@ export const mapEntityToJson = (e: Entity) => {
     ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
     ...(eAny.ownerPlayerId !== undefined ? { owner_player_id: eAny.ownerPlayerId } : {}),
     ...(eAny.health !== undefined ? { health: eAny.health } : {}),
+    ...(e.resources ? { resources: e.resources.resources.map((r) => ({ resource_type: r.resourceType, amount: r.amount })) } : {}),
   };
 };
 

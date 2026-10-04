@@ -316,8 +316,14 @@ impl RedisClient {
         collector_states: Vec<CollectorState>,
         combat_effect_states: Vec<CombatEffectState>,
     ) -> anyhow::Result<()> {
-        let player_ledgers = state
-            .ledger
+        let mut inventory_totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
+        for entity in &state.entities {
+            if !crate::spawn_config::is_player_owner(&entity.owner_player_id) { continue; }
+            for entry in entity.resources.as_ref().into_iter().flat_map(|inventory| &inventory.resources) {
+                *inventory_totals.entry(entity.owner_player_id.clone()).or_default().entry(entry.resource_type.clone()).or_default() += entry.amount.floor() as i64;
+            }
+        }
+        let player_ledgers = inventory_totals
             .iter()
             .map(|(player_id, resources)| {
                 let mut entries: Vec<ResourceEntry> = resources

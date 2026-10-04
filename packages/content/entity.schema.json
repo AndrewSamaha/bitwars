@@ -75,6 +75,14 @@
       "type": "number",
       "format": "float"
     },
+    "max_capacity": {
+      "description": "Maximum local inventory by resource type. Required for every entity type.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "format": "float"
+      }
+    },
     "radiation_shielding": {
       "description": "Shielding keyed by radiation type ID. Missing types use zero distance offset and a damage multiplier of 1.",
       "type": "object",
@@ -144,6 +152,18 @@
       ],
       "default": null
     },
+    "resource_sharing": {
+      "description": "Shares upkeep resources with nearby same-owner entities.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResourceSharingDef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "sensor": {
       "description": "Optional area sensor. Its operating costs are charged continuously.",
       "anyOf": [
@@ -200,7 +220,8 @@
     "speed",
     "stop_radius",
     "mass",
-    "health"
+    "health",
+    "max_capacity"
   ],
   "$defs": {
     "AttackDef": {
@@ -654,6 +675,20 @@
       "required": [
         "resource_type",
         "collection_mode"
+      ]
+    },
+    "ResourceSharingDef": {
+      "type": "object",
+      "properties": {
+        "range": {
+          "description": "Maximum distance to entities that may receive shared resources.",
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "range"
       ]
     },
     "SensorDef": {

@@ -30,6 +30,7 @@ pub fn compute_delta(
             owner_player_id: None,
             entity_type_id: None,
             health: None,
+            resources: None,
         };
 
         if let Some(pe) = prev_by_id.get(&ce.id) {
@@ -41,6 +42,9 @@ pub fn compute_delta(
             }
             if (pe.health - ce.health).abs() > f32::EPSILON {
                 ed.health = Some(ce.health);
+            }
+            if pe.resources != ce.resources {
+                ed.resources = ce.resources.clone();
             }
             if let (Some(cp), Some(pp)) = (&ce.pos, &pe.pos) {
                 if (cp.x - pp.x).abs() > eps_pos || (cp.y - pp.y).abs() > eps_pos {
@@ -71,6 +75,7 @@ pub fn compute_delta(
                 ed.owner_player_id = Some(ce.owner_player_id.clone());
             }
             ed.health = Some(ce.health);
+            ed.resources = ce.resources.clone();
         }
 
         if ed.pos.is_some()
@@ -79,6 +84,7 @@ pub fn compute_delta(
             || ed.owner_player_id.is_some()
             || ed.entity_type_id.is_some()
             || ed.health.is_some()
+            || ed.resources.is_some()
         {
             updates.push(ed);
         }

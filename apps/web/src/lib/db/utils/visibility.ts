@@ -8,6 +8,7 @@ export type StreamEntity = {
   pos?: Pos;
   vel?: Pos;
   force?: Pos;
+  resources?: Array<{ resource_type: string; amount: number }>;
 };
 
 type EntityType = {
@@ -40,6 +41,8 @@ type DeltaPayload = {
 const idOf = (id: number | string) => String(id);
 const hasPosition = (entity: StreamEntity): entity is StreamEntity & { pos: Pos } =>
   Number.isFinite(entity.pos?.x) && Number.isFinite(entity.pos?.y);
+const forClient = (entity: StreamEntity, playerId: string): StreamEntity =>
+  entity.owner_player_id === playerId ? entity : (({ resources: _resources, ...visible }) => visible)(entity);
 
 /** Projects authoritative state into one player's visible world. */
 export class VisibilityFilter {
@@ -58,7 +61,7 @@ export class VisibilityFilter {
     this.visible = this.currentlyVisible();
     return {
       ...snapshot,
-      entities: snapshot.entities.filter((entity) => this.visible.has(idOf(entity.id))),
+      entities: snapshot.entities.filter((entity) => this.visible.has(idOf(entity.id))).map((entity) => forClient(entity, this.playerId)),
       player_ledgers: snapshot.player_ledgers?.filter((ledger) => ledger.player_id === this.playerId),
       collector_states: snapshot.collector_states?.filter((state) => this.visible.has(idOf(state.entity_id))),
       combat_effect_states: snapshot.combat_effect_states?.filter((state) => this.visible.has(idOf(state.entity_id))),
@@ -84,14 +87,14 @@ export class VisibilityFilter {
     const updates: StreamEntity[] = [];
     for (const [key, entity] of this.entities) {
       if (!wasVisible.has(key) && nowVisible.has(key)) {
-        updates.push(entity);
+        updates.push(forClient(entity, this.playerId));
       } else if (wasVisible.has(key) && !nowVisible.has(key)) {
         hidden.push(entity.id);
       }
     }
     for (const update of delta.updates) {
       const key = idOf(update.id);
-      if (wasVisible.has(key) && nowVisible.has(key)) updates.push(update);
+      if (wasVisible.has(key) && nowVisible.has(key)) updates.push(forClient(update, this.playerId));
     }
     this.visible = nowVisible;
 

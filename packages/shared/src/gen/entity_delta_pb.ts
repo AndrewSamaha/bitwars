@@ -6,6 +6,7 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Vec2 } from "./vec2_pb.js";
 import { file_vec2 } from "./vec2_pb.js";
+import type { ResourceInventory } from "./entity_pb.js";
 import { file_entity } from "./entity_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -13,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity_delta.proto.
  */
 export const file_entity_delta: GenFile = /*@__PURE__*/
-  fileDesc("ChJlbnRpdHlfZGVsdGEucHJvdG8SB2JpdHdhcnMimgIKC0VudGl0eURlbHRhEgoKAmlkGAEgASgEEh8KA3BvcxgCIAEoCzINLmJpdHdhcnMuVmVjMkgAiAEBEh8KA3ZlbBgDIAEoCzINLmJpdHdhcnMuVmVjMkgBiAEBEiEKBWZvcmNlGAQgASgLMg0uYml0d2Fycy5WZWMySAKIAQESHAoPb3duZXJfcGxheWVyX2lkGAUgASgJSAOIAQESGwoOZW50aXR5X3R5cGVfaWQYBiABKAlIBIgBARITCgZoZWFsdGgYByABKAJIBYgBAUIGCgRfcG9zQgYKBF92ZWxCCAoGX2ZvcmNlQhIKEF9vd25lcl9wbGF5ZXJfaWRCEQoPX2VudGl0eV90eXBlX2lkQgkKB19oZWFsdGhiBnByb3RvMw", [file_vec2, file_entity]);
+  fileDesc("ChJlbnRpdHlfZGVsdGEucHJvdG8SB2JpdHdhcnMi3AIKC0VudGl0eURlbHRhEgoKAmlkGAEgASgEEh8KA3BvcxgCIAEoCzINLmJpdHdhcnMuVmVjMkgAiAEBEh8KA3ZlbBgDIAEoCzINLmJpdHdhcnMuVmVjMkgBiAEBEiEKBWZvcmNlGAQgASgLMg0uYml0d2Fycy5WZWMySAKIAQESHAoPb3duZXJfcGxheWVyX2lkGAUgASgJSAOIAQESGwoOZW50aXR5X3R5cGVfaWQYBiABKAlIBIgBARITCgZoZWFsdGgYByABKAJIBYgBARIyCglyZXNvdXJjZXMYCCABKAsyGi5iaXR3YXJzLlJlc291cmNlSW52ZW50b3J5SAaIAQFCBgoEX3Bvc0IGCgRfdmVsQggKBl9mb3JjZUISChBfb3duZXJfcGxheWVyX2lkQhEKD19lbnRpdHlfdHlwZV9pZEIJCgdfaGVhbHRoQgwKCl9yZXNvdXJjZXNiBnByb3RvMw", [file_vec2, file_entity]);
 
 /**
  * Sparse delta: only include fields that changed meaningfully.
@@ -62,6 +63,13 @@ export type EntityDelta = Message<"bitwars.EntityDelta"> & {
    * @generated from field: optional float health = 7;
    */
   health?: number;
+
+  /**
+   * set when local inventory changes
+   *
+   * @generated from field: optional bitwars.ResourceInventory resources = 8;
+   */
+  resources?: ResourceInventory;
 };
 
 /**

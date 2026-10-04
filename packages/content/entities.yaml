@@ -41,6 +41,7 @@ technologies:
       energy: 1
 entity_types:
   theta:
+    max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
     z_index: -10
@@ -66,6 +67,7 @@ entity_types:
       min_effective_distance: 350
       max_effective_distance: 1600
   planet_blue:
+    max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
     z_index: -2
@@ -82,6 +84,7 @@ entity_types:
       min_effective_distance: 20
       max_effective_distance: 50
   star_yellow:
+    max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
     visibility_range: 40000
@@ -110,6 +113,7 @@ entity_types:
       min_effective_distance: 10
       max_effective_distance: 1500
   minerals:
+    max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
     z_index: -1
@@ -126,6 +130,8 @@ entity_types:
       min_effective_distance: 20
       max_effective_distance: 50
   collector_solar:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     speed: 20
     stop_radius: 1
@@ -163,6 +169,10 @@ entity_types:
     upgrades:
       - entity_type_id: collector_solar_v2
   worker:
+    max_capacity:
+      energy: 50
+      food: 50
+      minerals: 50
     fog_memory: forget_when_hidden
     speed: 90
     stop_radius: 0.75
@@ -232,6 +242,12 @@ entity_types:
           minerals: 1.2
           energy: 1.2
   habitat:
+    max_capacity:
+      energy: 5000
+      food: 5000
+      minerals: 5000
+    resource_sharing:
+      range: 500
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -290,6 +306,10 @@ entity_types:
     researches:
       - neutrino_sensors
   processor:
+    max_capacity:
+      energy: 500
+      food: 500
+      minerals: 10000
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -313,6 +333,8 @@ entity_types:
       accepts:
         - minerals
   factory:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -355,6 +377,8 @@ entity_types:
           minerals: 2
           energy: 2
   scout:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 500
     stop_radius: 0.5
@@ -382,6 +406,7 @@ entity_types:
     builds:
       - entity_type_id: scout_long_range
   raider:
+    max_capacity: {}
     fog_memory: forget_when_hidden
     speed: 110
     stop_radius: 0.5
@@ -407,6 +432,8 @@ entity_types:
       cost_per_minute:
         energy: 2.5
   defense_pylon_v2:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     build_cost:
       minerals: 100
@@ -437,6 +464,8 @@ entity_types:
     upgrades:
       - entity_type_id: defense_pylon_v3
   defense_pylon:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     build_cost:
       minerals: 100
@@ -469,6 +498,8 @@ entity_types:
     builds:
       - entity_type_id: waypoint
   collector_solar_v2:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     speed: 20
     stop_radius: 1
@@ -507,6 +538,8 @@ entity_types:
       transport_rate_per_second: 0
       carry_capacity: 0
   defense_pylon_v3:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     build_cost:
       minerals: 100
@@ -535,6 +568,8 @@ entity_types:
       cost_per_minute:
         energy: 2.5
   fighter_v1:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 400
     stop_radius: 0.5
@@ -563,6 +598,8 @@ entity_types:
       scale: 1
       rotate_deg: 90
   heavy_fighter:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 400
     stop_radius: 0.5
@@ -591,6 +628,8 @@ entity_types:
       scale: 1
       rotate_deg: 90
   battleship:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     speed: 400
     stop_radius: 0.5
@@ -622,6 +661,8 @@ entity_types:
         - space_age
         - neutrino_sensors
   science_vessel:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 500
     stop_radius: 0.5
@@ -652,6 +693,8 @@ entity_types:
       - neutrino_sensors
       - solar_efficiency_1
   scout_long_range:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 500
     stop_radius: 0.5
@@ -679,6 +722,10 @@ entity_types:
       cost_per_minute:
         energy: 2.5
   resource_transport:
+    max_capacity:
+      energy: 90
+      food: 90
+      minerals: 90
     fog_memory: forget_when_hidden
     speed: 80
     stop_radius: 2
@@ -709,6 +756,8 @@ entity_types:
         - processor
         - habitat
   military_factory:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -751,6 +800,10 @@ entity_types:
           minerals: 2
           energy: 2
   marine_worker:
+    max_capacity:
+      energy: 40
+      food: 40
+      minerals: 40
     fog_memory: forget_when_hidden
     speed: 90
     stop_radius: 0.75
@@ -820,6 +873,7 @@ entity_types:
           minerals: 1.2
           energy: 1.2
   waypoint:
+    max_capacity: {}
     fog_memory: forget_when_hidden
     build_cost:
       minerals: 20
