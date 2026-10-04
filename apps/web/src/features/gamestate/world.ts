@@ -12,6 +12,7 @@ export type EntityId = { id: number | string };
 export type EntityTypeId = { entity_type_id?: string };
 export type OwnerPlayerId = { owner_player_id?: string };
 export type Health = { health?: number };
+export type ResourceAmountView = { resource_type: string; amount: number };
 /** Client-only radiation presentation state. */
 export type RadiationDamagePresentation = {
   radiation_damage_last_at?: number;
@@ -56,6 +57,7 @@ export type Entity = Partial<
   EntityTypeId &
   OwnerPlayerId &
   Health &
+  { resources?: ResourceAmountView[] } &
   FogMemoryView &
   RadiationDamagePresentation &
   ActiveIntentView &

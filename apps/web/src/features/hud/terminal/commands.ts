@@ -1,4 +1,5 @@
 import { game } from "@/features/gamestate/world";
+import { contentManager } from "@/features/content/contentManager";
 import type { SessionStatus } from "@/features/users/components/identity/SessionContext";
 
 const SYSTEM_OWNERS = [
@@ -152,6 +153,34 @@ const commands: TerminalCommand[] = [
     description: "List your units",
     requiresAuth: true,
     run: (_args, context) => ({ output: listOwnedEntities(context.effectivePlayerId) }),
+  },
+  {
+    name: "desc",
+    description: "Show an entity's resources: desc <entity_id>",
+    requiresAuth: true,
+    run: (args, context) => {
+      if (args.length !== 1 || !/^\d+$/.test(args[0])) {
+        return { output: "usage: desc <entity_id>" };
+      }
+      const entity = [...game.world.with("id")].find((candidate) => String(candidate.id) === args[0]);
+      if (!entity) return { output: `desc: entity ${args[0]} not found in your visible world` };
+      if (entity.owner_player_id !== context.realPlayerId) {
+        return { output: "desc: resource inventory is only available for entities you own" };
+      }
+
+      const amounts = new Map((entity.resources ?? []).map(({ resource_type, amount }) => [resource_type, amount]));
+      const resourceTypes = contentManager.getContent()?.resource_types ?? {};
+      const resourceIds = [...new Set([...Object.keys(resourceTypes), ...amounts.keys()])].sort((a, b) =>
+        (resourceTypes[a]?.order ?? Number.MAX_SAFE_INTEGER) - (resourceTypes[b]?.order ?? Number.MAX_SAFE_INTEGER)
+        || a.localeCompare(b),
+      );
+      const lines = resourceIds.map((id) => `${id}: ${Number((amounts.get(id) ?? 0).toFixed(3))}`);
+      const cargo = entity.collector_state;
+      if (cargo?.resource_type && cargo.carry_amount > 0) {
+        lines.push(`transport cargo (${cargo.resource_type}): ${Number(cargo.carry_amount.toFixed(3))}`);
+      }
+      return { output: [`Entity ${args[0]} (${entity.entity_type_id ?? "unknown"})`, ...lines].join("\n") };
+    },
   },
   {
     name: "who",

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     io::redis::{CollectorUiState, CombatEffectUiState},
@@ -14,6 +14,8 @@ pub fn compute_delta(
     curr_combat_effect_states: &HashMap<u64, CombatEffectUiState>,
     eps_pos: f32,
     eps_vel: f32,
+    resource_starvation_damaged_entities: &HashSet<u64>,
+    radiation_damaged_entities: &HashSet<u64>,
 ) -> Delta {
     let mut prev_by_id: HashMap<u64, &Entity> = HashMap::with_capacity(prev.entities.len());
     for e in &prev.entities {
@@ -31,6 +33,7 @@ pub fn compute_delta(
             entity_type_id: None,
             health: None,
             resources: None,
+            damage_type: None,
         };
 
         if let Some(pe) = prev_by_id.get(&ce.id) {
@@ -42,6 +45,11 @@ pub fn compute_delta(
             }
             if (pe.health - ce.health).abs() > f32::EPSILON {
                 ed.health = Some(ce.health);
+                if resource_starvation_damaged_entities.contains(&ce.id) {
+                    ed.damage_type = Some("resource_starvation".to_string());
+                } else if radiation_damaged_entities.contains(&ce.id) {
+                    ed.damage_type = Some("radiation".to_string());
+                }
             }
             if pe.resources != ce.resources {
                 ed.resources = ce.resources.clone();
@@ -75,6 +83,11 @@ pub fn compute_delta(
                 ed.owner_player_id = Some(ce.owner_player_id.clone());
             }
             ed.health = Some(ce.health);
+            if resource_starvation_damaged_entities.contains(&ce.id) {
+                ed.damage_type = Some("resource_starvation".to_string());
+            } else if radiation_damaged_entities.contains(&ce.id) {
+                ed.damage_type = Some("radiation".to_string());
+            }
             ed.resources = ce.resources.clone();
         }
 
@@ -188,6 +201,8 @@ mod tests {
             &HashMap::new(),
             0.01,
             0.01,
+            &HashSet::new(),
+            &HashSet::new(),
         );
         assert!(delta.updates.is_empty());
         assert_eq!(delta.removed_entity_ids, vec![2, 9]);
@@ -224,6 +239,8 @@ mod tests {
             &combat_states,
             0.01,
             0.01,
+            &HashSet::new(),
+            &HashSet::new(),
         );
         assert!(unchanged.collector_state_updates.is_empty());
 
@@ -237,6 +254,8 @@ mod tests {
             &combat_states,
             0.01,
             0.01,
+            &HashSet::new(),
+            &HashSet::new(),
         );
         assert_eq!(changed.collector_state_updates.len(), 1);
         assert_eq!(changed.collector_state_updates[0].entity_id, 4);

@@ -8,7 +8,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
+import { dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -50,6 +50,7 @@ type SnapshotPayload = {
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
+    resources?: Array<{ resource_type: string; amount: number }>;
   }>;
   player_ledgers?: PlayerLedgerPayload[];
   collector_states?: StreamCollectorStatePayload[];
@@ -66,6 +67,8 @@ type DeltaPayload = {
     entity_type_id?: string;
     owner_player_id?: string;
     health?: number;
+    damage_type?: string;
+    resources?: Array<{ resource_type: string; amount: number }>;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -266,6 +269,7 @@ export default function GameStateStreamBridge() {
           if (s.entity_type_id !== undefined) remembered.entity_type_id = s.entity_type_id;
           if (s.owner_player_id !== undefined) remembered.owner_player_id = s.owner_player_id;
           if (s.health !== undefined) remembered.health = s.health;
+          if (s.resources !== undefined) remembered.resources = s.resources;
           if (s.pos) remembered.pos = { x: s.pos.x, y: s.pos.y };
           if (s.vel) remembered.vel = { x: s.vel.x, y: s.vel.y };
           if (collectorState) remembered.collector_state = collectorStateFromStream(collectorState);
@@ -277,6 +281,7 @@ export default function GameStateStreamBridge() {
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
           ...(s.owner_player_id !== undefined ? { owner_player_id: s.owner_player_id } : {}),
           ...(s.health !== undefined ? { health: s.health } : {}),
+          ...(s.resources !== undefined ? { resources: s.resources } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
           ...(collectorState ? { collector_state: collectorStateFromStream(collectorState) } : {}),
@@ -374,13 +379,19 @@ export default function GameStateStreamBridge() {
             else { existing.vel.x = u.vel.x; existing.vel.y = u.vel.y; }
           }
           if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
+          if (u.resources !== undefined) existing.resources = u.resources;
           if (u.health !== undefined) {
             const playerId = currentPlayerIdRef.current;
             if (existing.health !== undefined && u.health < existing.health
-              && existing.owner_player_id === playerId && playerId
-              && !underAttackEntityIdsRef.current.has(key)) {
-              underAttackEntityIdsRef.current.add(key);
-              dispatchEntityUnderAttack(existing);
+              && existing.owner_player_id === playerId && playerId) {
+              if (u.damage_type === "resource_starvation") {
+                dispatchEntityResourceStarvation({ ...existing, health: u.health });
+              } else if (u.damage_type === "radiation") {
+                dispatchEntityRadiationDamage({ ...existing, health: u.health });
+              } else if (!underAttackEntityIdsRef.current.has(key)) {
+                underAttackEntityIdsRef.current.add(key);
+                dispatchEntityUnderAttack(existing);
+              }
             }
             // Health decreases arrive every engine tick. Refresh liveness, but
             // only start a new particle timeline after the prior plume expires.
@@ -404,6 +415,7 @@ export default function GameStateStreamBridge() {
             ...(u.entity_type_id ? { entity_type_id: u.entity_type_id } : {}),
             ...(u.owner_player_id !== undefined ? { owner_player_id: u.owner_player_id } : {}),
             ...(u.health !== undefined ? { health: u.health } : {}),
+            ...(u.resources !== undefined ? { resources: u.resources } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
           };

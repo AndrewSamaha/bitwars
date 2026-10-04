@@ -5,6 +5,7 @@ export type StreamEntity = {
   entity_type_id?: string;
   owner_player_id?: string;
   health?: number;
+  damage_type?: string;
   pos?: Pos;
   vel?: Pos;
   force?: Pos;
@@ -94,7 +95,15 @@ export class VisibilityFilter {
     }
     for (const update of delta.updates) {
       const key = idOf(update.id);
-      if (wasVisible.has(key) && nowVisible.has(key)) updates.push(forClient(update, this.playerId));
+      if (!wasVisible.has(key) || !nowVisible.has(key)) continue;
+      // Sparse deltas usually omit owner_player_id, so use the merged entity
+      // state above when deciding whether this client may receive inventory.
+      if (this.entities.get(key)?.owner_player_id === this.playerId) {
+        updates.push(update);
+      } else {
+        const { resources: _resources, ...visible } = update;
+        updates.push(visible);
+      }
     }
     this.visible = nowVisible;
 

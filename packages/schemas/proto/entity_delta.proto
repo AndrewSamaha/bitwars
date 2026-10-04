@@ -15,4 +15,5 @@ message EntityDelta {
   optional string entity_type_id = 6;   // set on creation and when type changes
   optional float health      = 7;       // set when current health changes
   optional ResourceInventory resources = 8; // set when local inventory changes
+  optional string damage_type = 9; // e.g. resource_starvation
 }

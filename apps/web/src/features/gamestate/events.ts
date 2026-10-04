@@ -9,6 +9,8 @@ export const MINIMUM_DISTANCE_VIOLATION_EVENT = "bitwars:minimum-distance-violat
 export const COLLECTION_WAITING_EVENT = "bitwars:collection-waiting";
 export const CENTER_CAMERA_ON_ENTITY_EVENT = "bitwars:center-camera-on-entity";
 export const ENTITY_UNDER_ATTACK_EVENT = "bitwars:entity-under-attack";
+export const ENTITY_RESOURCE_STARVATION_EVENT = "bitwars:entity-resource-starvation";
+export const ENTITY_RADIATION_DAMAGE_EVENT = "bitwars:entity-radiation-damage";
 
 export type GameStateUpdatedDetail = { entityIds?: string[] };
 export type MinimumDistanceViolationDetail = {
@@ -48,6 +50,14 @@ export function dispatchEntityExploded(entity: Entity) {
 
 export function dispatchEntityUnderAttack(entity: Entity) {
   window.dispatchEvent(new CustomEvent<Entity>(ENTITY_UNDER_ATTACK_EVENT, { detail: entity }));
+}
+
+export function dispatchEntityResourceStarvation(entity: Entity) {
+  window.dispatchEvent(new CustomEvent<Entity>(ENTITY_RESOURCE_STARVATION_EVENT, { detail: entity }));
+}
+
+export function dispatchEntityRadiationDamage(entity: Entity) {
+  window.dispatchEvent(new CustomEvent<Entity>(ENTITY_RADIATION_DAMAGE_EVENT, { detail: entity }));
 }
 
 /** Emitted when a non-owned entity enters this client's sensor coverage. */

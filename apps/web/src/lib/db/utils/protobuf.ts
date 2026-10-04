@@ -23,6 +23,7 @@ export const mapDeltaToJson = (d: Delta) => ({
       ...(u.force ? { force: { x: u.force.x, y: u.force.y } } : {}),
       ...(uAny.ownerPlayerId !== undefined ? { owner_player_id: uAny.ownerPlayerId } : {}),
       ...(uAny.health !== undefined ? { health: uAny.health } : {}),
+      ...(u.damageType ? { damage_type: u.damageType } : {}),
       ...(u.resources ? { resources: u.resources.resources.map((r) => ({ resource_type: r.resourceType, amount: r.amount })) } : {}),
     };
   }),

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,9 @@ export default function TerminalPanel() {
   const { terminalRef, inputRef } = refs;
   const realPlayerId = player?.id ?? null;
   const [commandRunning, setCommandRunning] = useState(false);
+  const submittedCommandsRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const historyDraftRef = useRef("");
 
   // Scroll to bottom when history changes
   useEffect(() => {
@@ -43,6 +46,8 @@ export default function TerminalPanel() {
       const cmd = currentCommand.trim();
       if (!cmd || commandRunning) return;
 
+      if (status !== "logged-out") submittedCommandsRef.current.push(cmd);
+      historyIndexRef.current = -1;
       actions.setTerminalInput("");
       setCommandRunning(true);
       try {
@@ -141,6 +146,28 @@ export default function TerminalPanel() {
                 autoComplete="off"
                 readOnly={commandRunning || status === "logging-out" || status === "logging-in"}
                 onKeyDown={(e) => {
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    const history = submittedCommandsRef.current;
+                    if (history.length === 0) return;
+                    if (historyIndexRef.current === -1) {
+                      historyDraftRef.current = currentCommand;
+                      historyIndexRef.current = history.length;
+                    }
+                    historyIndexRef.current = Math.max(0, historyIndexRef.current - 1);
+                    actions.setTerminalInput(history[historyIndexRef.current]);
+                  } else if (e.key === "ArrowDown") {
+                    if (historyIndexRef.current === -1) return;
+                    e.preventDefault();
+                    const nextIndex = historyIndexRef.current + 1;
+                    if (nextIndex >= submittedCommandsRef.current.length) {
+                      historyIndexRef.current = -1;
+                      actions.setTerminalInput(historyDraftRef.current);
+                    } else {
+                      historyIndexRef.current = nextIndex;
+                      actions.setTerminalInput(submittedCommandsRef.current[nextIndex]);
+                    }
+                  }
                   if (e.key === "Escape") e.currentTarget.blur();
                 }}
               />

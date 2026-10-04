@@ -1820,6 +1820,54 @@ impl Engine {
         true
     }
 
+    fn build_donor_ids(&self, builder_id: u64, player_id: &str) -> Vec<u64> {
+        let Some(builder) = self.state.entities.iter().find(|entity| entity.id == builder_id) else {
+            return Vec::new();
+        };
+        let Some(builder_pos) = builder.pos.as_ref() else { return vec![builder_id]; };
+        let mut donors: Vec<_> = self.state.entities.iter().filter_map(|entity| {
+            if entity.owner_player_id != player_id { return None; }
+            if entity.id == builder_id { return Some(entity.id); }
+            let definition = self.content.as_ref()?.get(&entity.entity_type_id)?;
+            let range = definition.resource_sharing.as_ref()?.range;
+            let pos = entity.pos.as_ref()?;
+            let dx = pos.x - builder_pos.x;
+            let dy = pos.y - builder_pos.y;
+            (dx * dx + dy * dy <= range * range).then_some(entity.id)
+        }).collect();
+        donors.sort_unstable();
+        donors
+    }
+
+    fn available_build_resource(&self, builder_id: u64, player_id: &str, resource: &str) -> f64 {
+        let donor_ids = self.build_donor_ids(builder_id, player_id);
+        self.state.entities.iter().filter(|entity| donor_ids.binary_search(&entity.id).is_ok())
+            .map(|entity| resource_amount(entity, resource)).sum()
+    }
+
+    fn spend_build_resources(&mut self, builder_id: u64, player_id: &str, costs: &HashMap<String, f32>) -> bool {
+        let donor_ids = self.build_donor_ids(builder_id, player_id);
+        if costs.iter().any(|(resource, amount)| {
+            self.state.entities.iter().filter(|entity| donor_ids.binary_search(&entity.id).is_ok())
+                .map(|entity| resource_amount(entity, resource)).sum::<f64>() + f64::EPSILON < *amount as f64
+        }) { return false; }
+        for (resource, amount) in costs {
+            let mut remaining = *amount as f64;
+            for donor_id in &donor_ids {
+                let Some(entity) = self.state.entities.iter_mut().find(|entity| entity.id == *donor_id) else { continue; };
+                let available = resource_amount(entity, resource);
+                let spent = available.min(remaining);
+                if spent > 0.0 {
+                    set_resource_amount(entity, resource, available - spent);
+                    remaining -= spent;
+                }
+                if remaining <= f64::EPSILON { break; }
+            }
+            self.record_resource_spend(player_id, resource, *amount);
+        }
+        true
+    }
+
     /// Atomically charge all resources for one repair tick.
     fn spend_repair_resources(&mut self, player_id: &str, costs: &HashMap<String, f32>) -> bool {
         let charges: Vec<_> = costs
@@ -1873,12 +1921,13 @@ impl Engine {
         );
     }
 
-    fn apply_maintenance_costs(&mut self, dt: f32) {
+    fn apply_maintenance_costs(&mut self, dt: f32) -> HashSet<u64> {
+        let mut starvation_damage = HashSet::new();
         let Some(content) = self.content.as_ref() else {
-            return;
+            return starvation_damage;
         };
         if !dt.is_finite() || dt <= 0.0 {
-            return;
+            return starvation_damage;
         }
 
         let upgrading: HashSet<u64> = self.intents.active_intents().iter().filter_map(|(id, active)| matches!(active.action.exec, Some(pb::action_state::Exec::Upgrade(_))).then_some(*id)).collect();
@@ -1914,9 +1963,13 @@ impl Engine {
                     if paid > 0.0 { spends.push((entity.owner_player_id.clone(), resource_type.clone(), paid as f32)); }
                 }
             }
-            if missing { entity.health = (entity.health - 1.0).max(0.0); }
+            if missing {
+                entity.health = (entity.health - 1.0).max(0.0);
+                starvation_damage.insert(entity.id);
+            }
         }
         for (player_id, resource, amount) in spends { self.record_resource_spend(&player_id, &resource, amount); }
+        starvation_damage
     }
 
     fn share_resources(&mut self) {
@@ -2066,6 +2119,7 @@ impl Engine {
             let new_progress = (old_progress + dt / duration).min(1.0);
             let old_elapsed = old_progress * duration;
             let new_elapsed = new_progress * duration;
+            let mut tick_costs = HashMap::new();
             let mut can_spend = true;
             for (resource, cost) in &costs {
                 if *cost <= 0.0 {
@@ -2074,7 +2128,16 @@ impl Engine {
                 let rate = rates.get(resource).copied().unwrap_or(1.0);
                 let amount =
                     ((new_elapsed * rate).min(*cost) - (old_elapsed * rate).min(*cost)).max(0.0);
-                can_spend &= self.spend_resource(&player_id, resource, amount);
+                if amount > 0.0 {
+                    if is_upgrade {
+                        can_spend &= self.spend_resource(&player_id, resource, amount);
+                    } else {
+                        tick_costs.insert(resource.clone(), amount);
+                    }
+                }
+            }
+            if !is_upgrade {
+                can_spend &= self.spend_build_resources(entity_id, &player_id, &tick_costs);
             }
             if !can_spend {
                 continue;
@@ -2613,12 +2676,13 @@ impl Engine {
         damage_by_entity
     }
 
-    fn apply_radiation_damage(&mut self, dt: f32) {
+    fn apply_radiation_damage(&mut self, dt: f32) -> HashSet<u64> {
+        let mut damaged_entities = HashSet::new();
         let Some(content) = self.content.as_ref() else {
-            return;
+            return damaged_entities;
         };
         if dt <= 0.0 {
-            return;
+            return damaged_entities;
         }
         let upgrading_ids: HashSet<u64> = self
             .intents
@@ -2638,8 +2702,13 @@ impl Engine {
             let Some(damage_per_second) = damage_by_entity.get(&entity.id).copied() else {
                 continue;
             };
-            entity.health = (entity.health - damage_per_second * dt).max(0.0);
+            let health = (entity.health - damage_per_second * dt).max(0.0);
+            if health < entity.health {
+                damaged_entities.insert(entity.id);
+                entity.health = health;
+            }
         }
+        damaged_entities
     }
 
     /// Removes every entity whose authoritative health has reached zero.
@@ -3363,9 +3432,8 @@ impl Engine {
                                 let delivered = (carry.amount as f64).min((capacity - current).max(0.0));
                                 set_resource_amount(entity, &carry.resource_type, current + delivered);
                             }
-                            if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
-                                set_resource_amount(entity, &carry.resource_type, 0.0);
-                            }
+                            // Transport cargo is tracked in CarryState; depositing it must not
+                            // erase the collector's separate maintenance inventory.
                             self.carry_by_entity.remove(&collector.id);
                             self.set_collector_ui_state(
                                 collector.id,
@@ -3490,9 +3558,7 @@ impl Engine {
                                 carry.amount = 0.0;
                             }
                             carry.amount = (carry.amount + gather).min(carry_capacity);
-                            if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
-                                set_resource_amount(entity, &carry.resource_type, carry.amount as f64);
-                            }
+                            // Keep transport cargo separate from the entity's usable inventory.
                             (carry.resource_type.clone(), carry.amount)
                         };
                         self.set_collector_ui_state(
@@ -3825,17 +3891,17 @@ impl Engine {
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_repairs(dt).await;
         self.apply_resource_collection(dt).await;
-        self.apply_maintenance_costs(dt);
+        let starvation_damage = self.apply_maintenance_costs(dt);
         self.share_resources();
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
-        self.apply_radiation_damage(dt);
+        let radiation_damaged_entities = self.apply_radiation_damage(dt);
         let radiation_victims: Vec<pb::Entity> = self
             .state
             .entities
             .iter()
-            .filter(|entity| entity.health <= 0.0)
+            .filter(|entity| entity.health <= 0.0 && radiation_damaged_entities.contains(&entity.id))
             .cloned()
             .collect();
         let radiation_dead_entity_ids = self.remove_zero_health_entities();
@@ -3854,6 +3920,8 @@ impl Engine {
             &self.combat_effect_ui_state_by_entity,
             self.cfg.eps_pos,
             self.cfg.eps_vel,
+            &starvation_damage,
+            &radiation_damaged_entities,
         );
         if should_publish_delta(&delta) {
             if let Ok(id) = self.redis.publish_delta(&delta).await {
@@ -4056,7 +4124,7 @@ impl Engine {
             self.apply_resource_collection(dt).await;
             self.advance_builds(dt).await;
             self.advance_research(dt).await;
-            self.apply_maintenance_costs(dt);
+            let starvation_damage = self.apply_maintenance_costs(dt);
             self.share_resources();
             record_tick_phase(
                 phase_durations.as_mut(),
@@ -4071,12 +4139,12 @@ impl Engine {
                 "physics",
                 &mut phase_started,
             );
-            self.apply_radiation_damage(dt);
+            let radiation_damaged_entities = self.apply_radiation_damage(dt);
             let radiation_victims: Vec<pb::Entity> = self
                 .state
                 .entities
                 .iter()
-                .filter(|entity| entity.health <= 0.0)
+                .filter(|entity| entity.health <= 0.0 && radiation_damaged_entities.contains(&entity.id))
                 .cloned()
                 .collect();
             let radiation_dead_entity_ids = self.remove_zero_health_entities();
@@ -4108,6 +4176,8 @@ impl Engine {
                 &self.combat_effect_ui_state_by_entity,
                 self.cfg.eps_pos,
                 self.cfg.eps_vel,
+                &starvation_damage,
+                &radiation_damaged_entities,
             );
             if should_publish_delta(&delta) {
                 match self.redis.publish_delta(&delta).await {
@@ -4585,17 +4655,13 @@ impl Engine {
             if product.build_cost.is_empty() {
                 return Err(anyhow!("build product has no build_cost"));
             }
-            let ledger = self.state.ledger.get(&player_id);
             for (resource, cost) in &product.build_cost {
                 let rate = option.spend_rates.get(resource).copied().unwrap_or(1.0);
                 if *cost <= 0.0 || !rate.is_finite() || rate <= 0.0 {
                     return Err(anyhow!("invalid build cost or spend rate for {resource}"));
                 }
-                let available = ledger
-                    .and_then(|resources| resources.get(resource))
-                    .copied()
-                    .unwrap_or(0);
-                if available < cost.ceil() as i64 {
+                let available = self.available_build_resource(entity_id, &player_id, resource);
+                if available + f64::EPSILON < *cost as f64 {
                     return Err(anyhow!("insufficient {resource} for build"));
                 }
             }

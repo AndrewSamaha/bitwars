@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity_delta.proto.
  */
 export const file_entity_delta: GenFile = /*@__PURE__*/
-  fileDesc("ChJlbnRpdHlfZGVsdGEucHJvdG8SB2JpdHdhcnMi3AIKC0VudGl0eURlbHRhEgoKAmlkGAEgASgEEh8KA3BvcxgCIAEoCzINLmJpdHdhcnMuVmVjMkgAiAEBEh8KA3ZlbBgDIAEoCzINLmJpdHdhcnMuVmVjMkgBiAEBEiEKBWZvcmNlGAQgASgLMg0uYml0d2Fycy5WZWMySAKIAQESHAoPb3duZXJfcGxheWVyX2lkGAUgASgJSAOIAQESGwoOZW50aXR5X3R5cGVfaWQYBiABKAlIBIgBARITCgZoZWFsdGgYByABKAJIBYgBARIyCglyZXNvdXJjZXMYCCABKAsyGi5iaXR3YXJzLlJlc291cmNlSW52ZW50b3J5SAaIAQFCBgoEX3Bvc0IGCgRfdmVsQggKBl9mb3JjZUISChBfb3duZXJfcGxheWVyX2lkQhEKD19lbnRpdHlfdHlwZV9pZEIJCgdfaGVhbHRoQgwKCl9yZXNvdXJjZXNiBnByb3RvMw", [file_vec2, file_entity]);
+  fileDesc("ChJlbnRpdHlfZGVsdGEucHJvdG8SB2JpdHdhcnMihgMKC0VudGl0eURlbHRhEgoKAmlkGAEgASgEEh8KA3BvcxgCIAEoCzINLmJpdHdhcnMuVmVjMkgAiAEBEh8KA3ZlbBgDIAEoCzINLmJpdHdhcnMuVmVjMkgBiAEBEiEKBWZvcmNlGAQgASgLMg0uYml0d2Fycy5WZWMySAKIAQESHAoPb3duZXJfcGxheWVyX2lkGAUgASgJSAOIAQESGwoOZW50aXR5X3R5cGVfaWQYBiABKAlIBIgBARITCgZoZWFsdGgYByABKAJIBYgBARIyCglyZXNvdXJjZXMYCCABKAsyGi5iaXR3YXJzLlJlc291cmNlSW52ZW50b3J5SAaIAQESGAoLZGFtYWdlX3R5cGUYCSABKAlIB4gBAUIGCgRfcG9zQgYKBF92ZWxCCAoGX2ZvcmNlQhIKEF9vd25lcl9wbGF5ZXJfaWRCEQoPX2VudGl0eV90eXBlX2lkQgkKB19oZWFsdGhCDAoKX3Jlc291cmNlc0IOCgxfZGFtYWdlX3R5cGViBnByb3RvMw", [file_vec2, file_entity]);
 
 /**
  * Sparse delta: only include fields that changed meaningfully.
@@ -70,6 +70,13 @@ export type EntityDelta = Message<"bitwars.EntityDelta"> & {
    * @generated from field: optional bitwars.ResourceInventory resources = 8;
    */
   resources?: ResourceInventory;
+
+  /**
+   * e.g. resource_starvation
+   *
+   * @generated from field: optional string damage_type = 9;
+   */
+  damageType?: string;
 };
 
 /**

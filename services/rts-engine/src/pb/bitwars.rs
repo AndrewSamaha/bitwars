@@ -64,6 +64,9 @@ pub struct EntityDelta {
     /// set when local inventory changes
     #[prost(message, optional, tag = "8")]
     pub resources: ::core::option::Option<ResourceInventory>,
+    /// e.g. resource_starvation
+    #[prost(string, optional, tag = "9")]
+    pub damage_type: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Authoritative collector telemetry for one entity. This travels with the
 /// normal snapshot/delta stream instead of a separately polled UI side channel.

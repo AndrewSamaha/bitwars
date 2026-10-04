@@ -247,7 +247,7 @@ entity_types:
       food: 5000
       minerals: 5000
     resource_sharing:
-      range: 500
+      range: 4000
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
