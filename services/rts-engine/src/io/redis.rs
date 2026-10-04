@@ -102,6 +102,10 @@ pub struct GameplayEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attacker: Option<GameplayEntityRef>,
     pub cause: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub damage_amount: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_entity_id: Option<u64>,
     pub position: IntentPoint,
     /// Internal delivery policy; the web API removes this before responding.
     pub recipients: Vec<String>,
@@ -273,19 +277,34 @@ impl RedisClient {
         &mut self,
         event: &GameplayEvent,
     ) -> anyhow::Result<String> {
-        let data = serde_json::to_vec(event)?;
+        self.publish_gameplay_events(std::slice::from_ref(event))
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("gameplay event batch returned no stream ID"))
+    }
+
+    pub async fn publish_gameplay_events(
+        &mut self,
+        events: &[GameplayEvent],
+    ) -> anyhow::Result<Vec<String>> {
+        if events.is_empty() {
+            return Ok(Vec::new());
+        }
         let stream = self.gameplay_events_stream();
-        let id: String = redis::cmd("XADD")
-            .arg(&stream)
-            .arg("MAXLEN")
-            .arg("~")
-            .arg(100_000)
-            .arg("*")
-            .arg("data")
-            .arg(data)
-            .query_async(&mut self.conn)
-            .await?;
-        Ok(id)
+        let mut pipeline = redis::pipe();
+        for event in events {
+            pipeline
+                .cmd("XADD")
+                .arg(&stream)
+                .arg("MAXLEN")
+                .arg("~")
+                .arg(100_000)
+                .arg("*")
+                .arg("data")
+                .arg(serde_json::to_vec(event)?);
+        }
+        Ok(pipeline.query_async(&mut self.conn).await?)
     }
 
     pub async fn publish_event_record(

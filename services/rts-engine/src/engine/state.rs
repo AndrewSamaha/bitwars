@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::{bail, Result};
 use rand::seq::SliceRandom;
 use tracing::debug;
 
@@ -40,6 +41,8 @@ pub fn resource_capacity(content: &ContentPack, entity_type_id: &str, resource_t
 
 const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
 const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
+const MAX_MINERAL_SPAWN_ATTEMPTS: usize = 256;
+const PLAYER_MINERAL_SEARCH_RADIUS: f32 = 4_000.0;
 // Keep planets well outside a star's 1,200-unit radiation range while leaving
 // room for a player loadout to spawn 200–800 units from the planet.
 const PLANET_MIN_DISTANCE_FROM_STAR: f32 = 3_000.0;
@@ -136,6 +139,57 @@ pub fn spawn_celestial_field(
             next_id += 1;
         }
     }
+}
+
+/// Ensures a player spawn has a mineral node within 4,000 units.
+/// Returns the next free entity ID.
+pub fn ensure_minerals_near_spawn(
+    entities: &mut Vec<Entity>,
+    next_id: u64,
+    spawn_x: f32,
+    spawn_y: f32,
+    content: &ContentPack,
+    rng: &mut impl rand::Rng,
+) -> Result<u64> {
+    if entities.iter().any(|entity| {
+        entity.entity_type_id == "minerals"
+            && entity.pos.as_ref().is_some_and(|pos| {
+                squared_distance(spawn_x, spawn_y, pos.x, pos.y)
+                    <= PLAYER_MINERAL_SEARCH_RADIUS.powi(2)
+            })
+    }) {
+        return Ok(next_id);
+    }
+
+    let Some(mineral_type) = content.get("minerals") else {
+        bail!("cannot ensure nearby minerals: content pack has no minerals entity type");
+    };
+    if !mineral_type.resource_node.as_ref().is_some_and(|node| node.resource_type == "minerals") {
+        bail!("cannot ensure nearby minerals: minerals entity type is not a mineral resource node");
+    }
+
+    for _ in 0..MAX_MINERAL_SPAWN_ATTEMPTS {
+        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+        let distance = rng.gen_range(0.0_f32..1.0).sqrt() * PLAYER_MINERAL_SEARCH_RADIUS;
+        let (x, y) = (spawn_x + angle.cos() * distance, spawn_y + angle.sin() * distance);
+        let in_radiation = entities.iter().any(|entity| {
+            let Some(pos) = entity.pos.as_ref() else { return false };
+            content.get(&entity.entity_type_id).is_some_and(|definition| {
+                definition.radiation_sources.iter().any(|source| {
+                    if source.damage_per_second <= 0.0 { return false }
+                    let d = squared_distance(x, y, pos.x, pos.y).sqrt();
+                    d >= source.min_effective_distance.max(0.0)
+                        && d <= source.max_effective_distance.max(0.0)
+                })
+            })
+        });
+        if !in_radiation {
+            entities.push(neutral_entity(next_id, "minerals", x, y, content));
+            return Ok(next_id + 1);
+        }
+    }
+
+    bail!("cannot ensure nearby minerals: no radiation-free spawn point found within 4,000 units")
 }
 
 /// Samples independent normal X/Y coordinates around an origin using Box-Muller.

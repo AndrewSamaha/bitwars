@@ -15,6 +15,8 @@ type StoredGameplayEvent = {
   victim: { entity_id: number; entity_type_id: string; owner_player_id: string };
   attacker?: { entity_id: number; entity_type_id: string; owner_player_id: string };
   cause: string;
+  damage_amount?: number;
+  source_entity_id?: number;
   position: { x: number; y: number };
   recipients: string[];
 };

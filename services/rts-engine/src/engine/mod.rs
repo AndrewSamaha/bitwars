@@ -28,7 +28,7 @@ use crate::physics::integrate;
 use crate::spatial::SpatialIndex;
 use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
 use prost::Message;
-use state::{init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
+use state::{ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
 pub const ENGINE_PROTOCOL_MAJOR: u32 = 12;
 const TICK_TIMING_WINDOW_TICKS: usize = 600;
@@ -1587,11 +1587,20 @@ impl Engine {
             }
         }
 
-        let next_id = self.state.entities.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+        let mut next_id = self.state.entities.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+
+        let mut rng = rand::thread_rng();
+        next_id = ensure_minerals_near_spawn(
+            &mut self.state.entities,
+            next_id,
+            spawn_x,
+            spawn_y,
+            _content,
+            &mut rng,
+        )?;
 
         let entity_count_before = self.state.entities.len();
 
-        let mut rng = rand::thread_rng();
         on_player_spawn(
             &mut self.state.entities,
             next_id,
@@ -2599,6 +2608,17 @@ impl Engine {
         content: &ContentPack,
         disabled_source_ids: &HashSet<u64>,
     ) -> HashMap<u64, f32> {
+        Self::compute_radiation_damage_and_sources(state, content, disabled_source_ids)
+            .into_iter()
+            .map(|(entity_id, (damage, _))| (entity_id, damage))
+            .collect()
+    }
+
+    fn compute_radiation_damage_and_sources(
+        state: &GameState,
+        content: &ContentPack,
+        disabled_source_ids: &HashSet<u64>,
+    ) -> HashMap<u64, (f32, u64)> {
         let mut damage_by_entity = HashMap::new();
         let mut sources = Vec::new();
         for entity in &state.entities {
@@ -2655,29 +2675,33 @@ impl Engine {
             let Some(entity_type) = content.get(&entity.entity_type_id) else {
                 continue;
             };
-            let total = sources_by_cell
+            let contributions: Vec<(u64, f32)> = sources_by_cell
                 .at(pos.x, pos.y)
                 .map(|index| &sources[index])
                 .filter(|source| source.entity_id != entity.id)
-                .map(|source| {
+                .filter_map(|source| {
                     let distance_sq = Self::distance_sq(pos.x, pos.y, source.x, source.y);
                     if distance_sq > source.max_effective_distance.powi(2) {
-                        return 0.0;
+                        return None;
                     }
                     let actual_distance = distance_sq.sqrt();
-                    Self::radiation_damage_per_second(source, entity_type, actual_distance)
+                    let damage = Self::radiation_damage_per_second(source, entity_type, actual_distance);
+                    (damage > 0.0).then_some((source.entity_id, damage))
                 })
-                .sum::<f32>();
-            if total > 0.0 {
-                damage_by_entity.insert(entity.id, total);
+                .collect();
+            if let Some((source_id, _)) = contributions.iter().max_by(|a, b| {
+                a.1.total_cmp(&b.1).then_with(|| b.0.cmp(&a.0))
+            }) {
+                let total = contributions.iter().map(|(_, damage)| damage).sum();
+                damage_by_entity.insert(entity.id, (total, *source_id));
             }
         }
 
         damage_by_entity
     }
 
-    fn apply_radiation_damage(&mut self, dt: f32) -> HashSet<u64> {
-        let mut damaged_entities = HashSet::new();
+    fn apply_radiation_damage(&mut self, dt: f32) -> HashMap<u64, u64> {
+        let mut damaged_entities = HashMap::new();
         let Some(content) = self.content.as_ref() else {
             return damaged_entities;
         };
@@ -2697,14 +2721,14 @@ impl Engine {
             })
             .collect();
         let damage_by_entity =
-            Self::compute_radiation_damage_excluding_sources(&self.state, content, &upgrading_ids);
+            Self::compute_radiation_damage_and_sources(&self.state, content, &upgrading_ids);
         for entity in &mut self.state.entities {
-            let Some(damage_per_second) = damage_by_entity.get(&entity.id).copied() else {
+            let Some((damage_per_second, source_id)) = damage_by_entity.get(&entity.id).copied() else {
                 continue;
             };
             let health = (entity.health - damage_per_second * dt).max(0.0);
             if health < entity.health {
-                damaged_entities.insert(entity.id);
+                damaged_entities.insert(entity.id, source_id);
                 entity.health = health;
             }
         }
@@ -3050,6 +3074,8 @@ impl Engine {
                     crate::content::AttackType::Laser => "laser".to_string(),
                     crate::content::AttackType::Dismantle => "dismantle".to_string(),
                 },
+                damage_amount: None,
+                source_entity_id: None,
                 position: entity_position(&destruction.victim),
                 recipients,
             };
@@ -3063,7 +3089,11 @@ impl Engine {
         }
     }
 
-    async fn emit_radiation_destructions(&mut self, victims: &[pb::Entity]) {
+    async fn emit_radiation_destructions(
+        &mut self,
+        victims: &[pb::Entity],
+        source_entity_ids: &HashMap<u64, u64>,
+    ) {
         for victim in victims {
             let recipients = gameplay_event_recipients(&victim.owner_player_id, "");
             if recipients.is_empty() {
@@ -3076,6 +3106,8 @@ impl Engine {
                 victim: gameplay_entity_ref(victim),
                 attacker: None,
                 cause: "radiation".to_string(),
+                damage_amount: None,
+                source_entity_id: source_entity_ids.get(&victim.id).copied(),
                 position: entity_position(victim),
                 recipients,
             };
@@ -3086,6 +3118,55 @@ impl Engine {
                     "failed to publish gameplay radiation-destruction event"
                 );
             }
+        }
+    }
+
+    async fn emit_starvation_events(&mut self, damaged_entity_ids: &HashSet<u64>) {
+        let mut victims: Vec<pb::Entity> = self
+            .state
+            .entities
+            .iter()
+            .filter(|entity| damaged_entity_ids.contains(&entity.id))
+            .cloned()
+            .collect();
+        victims.sort_by_key(|entity| entity.id);
+
+        let mut events = Vec::with_capacity(victims.len() * 2);
+        for victim in victims {
+            let recipients = gameplay_event_recipients(&victim.owner_player_id, "");
+            if recipients.is_empty() {
+                continue;
+            }
+            events.push(GameplayEvent {
+                event_type: "entity_damaged".to_string(),
+                server_tick: self.state.tick,
+                occurred_at_ms: unix_time_ms(),
+                victim: gameplay_entity_ref(&victim),
+                attacker: None,
+                cause: "resource_starvation".to_string(),
+                damage_amount: Some(1.0),
+                source_entity_id: None,
+                position: entity_position(&victim),
+                recipients: recipients.clone(),
+            });
+            if victim.health <= 0.0 {
+                events.push(GameplayEvent {
+                    event_type: "entity_destroyed".to_string(),
+                    server_tick: self.state.tick,
+                    occurred_at_ms: unix_time_ms(),
+                    victim: gameplay_entity_ref(&victim),
+                    attacker: None,
+                    cause: "resource_starvation".to_string(),
+                    damage_amount: None,
+                    source_entity_id: None,
+                    position: entity_position(&victim),
+                    recipients,
+                });
+            }
+        }
+
+        if let Err(error) = self.redis.publish_gameplay_events(&events).await {
+            warn!(?error, count = events.len(), "failed to publish resource starvation events");
         }
     }
 
@@ -3892,11 +3973,13 @@ impl Engine {
         self.apply_repairs(dt).await;
         self.apply_resource_collection(dt).await;
         let starvation_damage = self.apply_maintenance_costs(dt);
+        self.emit_starvation_events(&starvation_damage).await;
         self.share_resources();
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
-        let radiation_damaged_entities = self.apply_radiation_damage(dt);
+        let radiation_source_by_victim = self.apply_radiation_damage(dt);
+        let radiation_damaged_entities: HashSet<u64> = radiation_source_by_victim.keys().copied().collect();
         let radiation_victims: Vec<pb::Entity> = self
             .state
             .entities
@@ -3905,7 +3988,7 @@ impl Engine {
             .cloned()
             .collect();
         let radiation_dead_entity_ids = self.remove_zero_health_entities();
-        self.emit_radiation_destructions(&radiation_victims).await;
+        self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
         self.cancel_destroyed_intents(&radiation_dead_entity_ids)
             .await;
         self.publish_script_debug().await;
@@ -4125,6 +4208,7 @@ impl Engine {
             self.advance_builds(dt).await;
             self.advance_research(dt).await;
             let starvation_damage = self.apply_maintenance_costs(dt);
+            self.emit_starvation_events(&starvation_damage).await;
             self.share_resources();
             record_tick_phase(
                 phase_durations.as_mut(),
@@ -4139,7 +4223,8 @@ impl Engine {
                 "physics",
                 &mut phase_started,
             );
-            let radiation_damaged_entities = self.apply_radiation_damage(dt);
+            let radiation_source_by_victim = self.apply_radiation_damage(dt);
+            let radiation_damaged_entities: HashSet<u64> = radiation_source_by_victim.keys().copied().collect();
             let radiation_victims: Vec<pb::Entity> = self
                 .state
                 .entities
@@ -4148,7 +4233,7 @@ impl Engine {
                 .cloned()
                 .collect();
             let radiation_dead_entity_ids = self.remove_zero_health_entities();
-            self.emit_radiation_destructions(&radiation_victims).await;
+            self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
             self.cancel_destroyed_intents(&radiation_dead_entity_ids)
                 .await;
             record_tick_phase(
