@@ -122,16 +122,20 @@ fn deliver_resources(
     }
 }
 
-/// Shipment inventory shares the collector's carry limit; unrelated upkeep stock stays aboard.
-fn load_transfer_resources(actor: &mut pb::Entity, donor: &mut pb::Entity, recipient: &pb::Entity,
-    actor_def: &EntityTypeDef, recipient_def: &EntityTypeDef, resources: &[String], existing_cargo: Option<&CarryState>) {
-    let limit = actor_def.collector.as_ref().map_or(0.0, |collector| collector.carry_capacity as f64);
+fn transport_carry_used(actor: &pb::Entity, actor_def: &EntityTypeDef, cargo: Option<&CarryState>) -> f64 {
     // Upkeep buffers have their own per-resource capacities, separate from the shipment carry quota.
     let held: f64 = actor.resources.as_ref().into_iter().flat_map(|inventory| &inventory.resources)
         .filter(|entry| actor_def.maintenance_cost_per_minute.get(&entry.resource_type).copied().unwrap_or(0.0) <= 0.0
             && actor_def.sensor.as_ref().and_then(|sensor| sensor.cost_per_minute.get(&entry.resource_type)).copied().unwrap_or(0.0) <= 0.0)
         .map(|entry| entry.amount).sum();
-    let mut room = (limit - held - existing_cargo.map_or(0.0, |cargo| cargo.amount as f64)).max(0.0);
+    held + cargo.map_or(0.0, |cargo| cargo.amount as f64)
+}
+
+/// Shipment inventory shares the collector's carry limit; unrelated upkeep stock stays aboard.
+fn load_transfer_resources(actor: &mut pb::Entity, donor: &mut pb::Entity, recipient: &pb::Entity,
+    actor_def: &EntityTypeDef, recipient_def: &EntityTypeDef, resources: &[String], existing_cargo: Option<&CarryState>) {
+    let limit = actor_def.collector.as_ref().map_or(0.0, |collector| collector.carry_capacity as f64);
+    let mut room = (limit - transport_carry_used(actor, actor_def, existing_cargo)).max(0.0);
     for resource in resources {
         let aboard = resource_amount(actor, resource);
         let carrier_room = (actor_def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64 - aboard).max(0.0);
@@ -3185,6 +3189,9 @@ impl Engine {
             load_transfer_resources(&mut actor, &mut donor, &recipient, &actor_def, &recipient_def,
                 &delivery.resource_type_ids, cargo.as_ref());
             if held(&actor, cargo.as_ref()) > f64::EPSILON { returning = false; activity = "moving_to_recipient"; }
+            else if transport_carry_used(&actor, &actor_def, cargo.as_ref()) >= capacity as f64 {
+                activity = "waiting_for_cargo_space";
+            }
             else if delivery.resource_type_ids.iter().all(|resource| resource_amount(&donor, resource) <= f64::EPSILON) {
                 activity = "waiting_for_resources";
             } else { activity = "waiting_for_capacity"; }
@@ -3888,6 +3895,11 @@ impl Engine {
             if !collect_active_entities.contains(&collector.id) {
                 self.collection_retry_tick_by_entity.remove(&collector.id);
                 self.transport_wait_since_tick_by_entity.remove(&collector.id);
+                // Maintained transport owns its telemetry, including between retries.
+                if self.intents.active_intents().get(&collector.id).is_some_and(|active|
+                    matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Deliver(state)) if state.donor_id != 0)) {
+                    continue;
+                }
                 if let Some(carry) = carry_snapshot.as_ref() {
                     self.set_collector_ui_state(
                         collector.id,

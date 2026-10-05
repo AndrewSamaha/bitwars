@@ -553,11 +553,11 @@ export default function EntityDetailPanel() {
                     )}
                     {activeIntent?.transfer && <span className="font-mono text-muted-foreground">{activeIntent.transfer.donorId} → {activeIntent.transfer.targetId} ({activeIntent.transfer.resourceTypeIds.join(", ")})</span>}
                     {activeIntent?.kind === "transport" && collectorState && (
-                      <span className="font-mono text-muted-foreground">{collectorState.activity.replaceAll("_", " ")}</span>
+                      <span className="font-mono text-muted-foreground">{collectorState.activity === "waiting_for_cargo_space" ? "Carry hold full; deliver existing cargo first" : collectorState.activity.replaceAll("_", " ")}</span>
                     )}
                     {collectorState && collectorState.carry_capacity > 0 && (
                       <span className="font-mono text-muted-foreground">
-                        {activeIntent?.kind === "transport" ? "collection cargo" : "carry"}: {collectorState.carry_amount.toFixed(1)} / {collectorState.carry_capacity.toFixed(1)}
+                        {activeIntent?.kind === "transport" ? "collection cargo" : "carry"}{collectorState.carry_amount > 0 && collectorState.resource_type ? ` (${collectorState.resource_type})` : ""}: {collectorState.carry_amount.toFixed(1)} / {collectorState.carry_capacity.toFixed(1)}
                       </span>
                     )}
                     {collectorState && (collectorState.assigned_nearest_compatible || collectorState.assigned_resource_type) && (

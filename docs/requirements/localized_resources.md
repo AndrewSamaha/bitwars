@@ -130,6 +130,9 @@ food/energy upkeep buffers do not consume the shipment quota. Resource choices
 are deduplicated and loaded in resource-ID order, with workers processed in entity
 ID order. Existing collection cargo consumes carry room and is unloaded first if
 its type is selected. Partial unloading retains leftovers and waits at the recipient.
+Unselected collection cargo stays aboard and can fill the carry hold, blocking
+pickup. The details bar reports this wait; use Deliver to unload that cargo before
+reassigning the transport route.
 There are no capacity reservations between workers; a recipient that fills while
 a worker is traveling makes that worker wait, preserving its inventory.
 
