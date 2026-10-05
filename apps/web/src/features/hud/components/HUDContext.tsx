@@ -98,6 +98,7 @@ type Action =
   | { type: "HOVER_SET"; entity: Entity | null }
   | { type: "TOOLTIP_SET"; text: string | null }
   | { type: "APP_SET"; app: Application | null }
+  | { type: "APP_CLEAR"; app: Application }
   | { type: "CAMERA_SET"; camera: Container | null }
   // Terminal actions
   | { type: "TERMINAL_SET_OPEN"; open: boolean }
@@ -187,6 +188,9 @@ function reducer(state: HUDState, action: Action): HUDState {
     case "APP_SET":
       return { ...state, app: action.app };
 
+    case "APP_CLEAR":
+      return state.app === action.app ? { ...state, app: null, camera: null, hoveredEntity: null } : state;
+
     case "CAMERA_SET":
       return { ...state, camera: action.camera };
 
@@ -233,6 +237,7 @@ type HUDContextValue = {
     setTerminalInput: (value: string) => void;
     pushCommandHistory: (entry: CommandHistory) => void;
     setApp: (app: Application | null) => void;
+    clearApp: (app: Application) => void;
     setCamera: (camera: Container | null) => void;
   };
   selectors: {
@@ -323,6 +328,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       setHovered: (entity: Entity | null) => dispatch({ type: "HOVER_SET", entity }),
       setTooltip: (text: string | null) => dispatch({ type: "TOOLTIP_SET", text }),
       setApp: (app: Application | null) => dispatch({ type: "APP_SET", app }),
+      clearApp: (app: Application) => dispatch({ type: "APP_CLEAR", app }),
       setCamera: (camera: Container | null) => dispatch({ type: "CAMERA_SET", camera }),
 
       // Terminal

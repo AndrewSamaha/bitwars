@@ -79,7 +79,7 @@ export default function GameStage() {
   const [moveDebug, setMoveDebug] = useState<string>("idle");
   const { effectivePlayerId } = useSession();
   const {
-    actions: { setHovered, setApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction, setTerminalOpen },
+    actions: { setHovered, setApp, clearApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction, setTerminalOpen },
     selectors,
     refs: { inputRef },
   } = useHUD();
@@ -160,7 +160,10 @@ export default function GameStage() {
       });
     });
 
+    let cancelled = false;
     const initWorld = async () => {
+        const textureCache = await loadGameEntityTextures();
+        if (cancelled) return;
         const updateMoveDebug = (message: string, payload?: Record<string, unknown>) => {
           if (!DEBUG_MOVE_INPUT) return;
           const suffix = payload ? ` ${JSON.stringify(payload)}` : "";
@@ -174,6 +177,10 @@ export default function GameStage() {
             resolution: window.devicePixelRatio || 1,
             autoDensity: true,
         });
+        if (cancelled) {
+          app.destroy({ removeView: true }, { children: true, texture: false });
+          return;
+        }
         setApp(app);
         ref.current!.appendChild(app.canvas);
 
@@ -808,7 +815,6 @@ export default function GameStage() {
         };
         app.canvas.addEventListener("wheel", onWheel, { passive: false });
 
-        const textureCache = await loadGameEntityTextures();
         const paletteIdByOwner = new Map<string, string>();
         const requestedPaletteOwners = new Set<string>();
 
@@ -1392,6 +1398,7 @@ export default function GameStage() {
         return () => {
           if (destroyed) return;
           destroyed = true;
+          app.canvas.removeEventListener("wheel", onWheel);
           for (const id of Array.from(renderById.keys())) {
             destroyRenderRef(id);
           }
@@ -1408,19 +1415,16 @@ export default function GameStage() {
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });
           }
-          setApp(null);
-          setCamera(null);
+          clearApp(app);
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
-          app.canvas.removeEventListener("wheel", onWheel);
         };
     }
     let cleanup: (() => void) | undefined;
-    let cancelled = false;
     (async () => {
       cleanup = await initWorld();
       if (cancelled && cleanup) cleanup();
-    })();
+    })().catch((error) => console.error("Failed to initialize game renderer", error));
     return () => {
       cancelled = true;
       if (cleanup) cleanup();
