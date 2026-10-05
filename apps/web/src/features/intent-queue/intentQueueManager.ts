@@ -48,6 +48,7 @@ export type PerEntityState = {
 };
 
 type PersistedState = {
+  runId?: string;
   clientSeq: number;
   entities: Record<string, PerEntityState>;
 };
@@ -118,6 +119,7 @@ type StateChangeListener = () => void;
 // ── M2: Reconnect handshake response shape ─────────────────────────────────
 
 export type ReconnectHandshake = {
+  run_id?: string;
   server_tick: number;
   protocol_version: number;
   content_version: string;          // M4: xxh3 hex hash of server content pack
@@ -149,6 +151,8 @@ const LIFECYCLE_REASON_ENTITY_BUSY = 7;
 
 class IntentQueueManager {
   private clientSeq = 0;
+  private runId = "";
+  private worldGeneration = 0;
   private entities = new Map<string, PerEntityState>();
   private storageKey: string;
   private sendCallback: SendCallback | null = null;
@@ -159,6 +163,18 @@ class IntentQueueManager {
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
     this.restore();
+  }
+
+  resetForWorld(runId?: string) {
+    if (runId && runId === this.runId) return;
+    this.runId = runId ?? "";
+    this.worldGeneration++;
+    this.clientSeq = 0;
+    this.entities.clear();
+    this.cmdToEntity.clear();
+    this.cmdToKind.clear();
+    this.persist();
+    this.notify();
   }
 
   // ── Wiring ─────────────────────────────────────────────────────────────
@@ -344,6 +360,7 @@ class IntentQueueManager {
    * protocol_version, or null if the fetch failed.
    */
   async reconcileWithServer(): Promise<ReconnectHandshake | null> {
+    const generation = this.worldGeneration;
     let handshake: ReconnectHandshake;
     try {
       const resp = await fetch("/api/v2/reconnect");
@@ -356,6 +373,9 @@ class IntentQueueManager {
       console.warn("[IntentQueue] reconnect handshake error:", err);
       return null;
     }
+
+    if (generation !== this.worldGeneration) return null;
+    if (handshake.run_id && handshake.run_id !== this.runId) this.resetForWorld(handshake.run_id);
 
     // 1. Advance clientSeq so future sends aren't rejected as out-of-order
     if (handshake.last_processed_client_seq > this.clientSeq) {
@@ -647,6 +667,7 @@ class IntentQueueManager {
     try {
       const data: PersistedState = {
         clientSeq: this.clientSeq,
+        runId: this.runId,
         entities: Object.fromEntries(this.entities),
       };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
@@ -660,6 +681,7 @@ class IntentQueueManager {
       if (!raw) return;
       const data = JSON.parse(raw) as PersistedState;
       this.clientSeq = data.clientSeq || 0;
+      this.runId = data.runId || "";
       this.entities = new Map(
         Object.entries(data.entities || {}).map(([entityId, state]) => {
           const active = state.active;

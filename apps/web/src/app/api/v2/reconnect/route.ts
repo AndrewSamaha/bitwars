@@ -51,6 +51,9 @@ export async function GET() {
 
     const GAME_ID = getEnv("GAME_ID", DEFAULT_GAME_ID);
 
+    const runtimeValue = await redis.get(`rts:match:${GAME_ID}:runtime`);
+    const gameRuntime = runtimeValue ? JSON.parse(runtimeValue) : {};
+
     // Read server_tick from the latest snapshot metadata
     const snapshotMetaKey = `snapshot_meta:${GAME_ID}`;
     const meta: Record<string, string> = await (redis as any).hgetall(snapshotMetaKey) ?? {};
@@ -106,6 +109,7 @@ export async function GET() {
     }
 
     return NextResponse.json({
+      run_id: gameRuntime.run_id ?? "",
       server_tick: serverTick,
       protocol_version: ENGINE_PROTOCOL_MAJOR,
       content_version: contentVersion,

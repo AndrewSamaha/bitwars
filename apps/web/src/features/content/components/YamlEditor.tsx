@@ -37,7 +37,7 @@ const configureYaml: BeforeMount = (monaco) => {
   });
   monaco.languages.registerHoverProvider("yaml", {
     provideHover(model: editor.ITextModel, position: Position) {
-      if (!model.uri.toString().includes("file:///bitwars/")) return null;
+      if (!model.uri.toString().includes("file:///bitwars/") || model.uri.toString().endsWith(".scenario.yaml")) return null;
       const kind = model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
       const description = hoverHelp(model.getValue(), model.getOffsetAt(position), kind);
       return description ? { contents: [{ value: description }] } : null;
@@ -46,7 +46,7 @@ const configureYaml: BeforeMount = (monaco) => {
   monaco.languages.registerCompletionItemProvider("yaml", {
     triggerCharacters: [":", " ", "."],
     async provideCompletionItems(model: editor.ITextModel, position: Position) {
-      if (!model.uri.toString().includes("file:///bitwars/")) return { suggestions: [] };
+      if (!model.uri.toString().includes("file:///bitwars/") || model.uri.toString().endsWith(".scenario.yaml")) return { suggestions: [] };
       const segment = model.getLineContent(position.lineNumber).slice(0, position.column - 1).match(/[a-z0-9_-]*$/i)?.[0] ?? "";
       const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: position.column - segment.length, endColumn: position.column };
       const kind = model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
@@ -156,7 +156,7 @@ export default function YamlEditor({ id, value, onChange, kind = "entity" }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
-  kind?: "entity" | "technology";
+  kind?: "entity" | "technology" | "scenario";
 }) {
   return <Editor
     beforeMount={configureYaml}

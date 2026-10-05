@@ -115,6 +115,11 @@ export async function POST(req: NextRequest) {
 
     const gameId = process.env.GAME_ID || "demo-001";
     const stream = `rts:match:${gameId}:intents`;
+    const runtimeValue = await redis.get(`rts:match:${gameId}:runtime`);
+    const gameRuntime = runtimeValue ? JSON.parse(runtimeValue) : null;
+    if (gameRuntime?.run_id && body.run_id !== gameRuntime.run_id) {
+      return NextResponse.json({ error: "world changed; wait for the new snapshot" }, { status: 409 });
+    }
 
     const t = (body?.type ?? "").toString();
     if (t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver") {
@@ -276,7 +281,7 @@ export async function POST(req: NextRequest) {
       bytes = toBinary(IntentEnvelopeSchema, envelope);
     }
 
-    const id = await (redis as any).xaddBuffer(stream, "MAXLEN", "~", 10000, "*", "data", Buffer.from(bytes));
+    const id = await (redis as any).xaddBuffer(stream, "MAXLEN", "~", 10000, "*", "data", Buffer.from(bytes), "run_id", body.run_id || "");
 
     return NextResponse.json({ ok: true, id: id?.toString?.() ?? String(id) });
   } catch (e: any) {

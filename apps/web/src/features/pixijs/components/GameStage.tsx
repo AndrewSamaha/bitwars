@@ -164,7 +164,7 @@ export default function GameStage() {
       await fetch('/api/v1/intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, as_player_id: myPlayerIdRef.current }),
+        body: JSON.stringify({ ...payload, run_id: game.runId, as_player_id: myPlayerIdRef.current }),
       });
     });
 

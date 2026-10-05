@@ -1,5 +1,6 @@
 pub mod intent;
 pub mod state;
+mod scenario;
 
 use std::collections::{HashMap, HashSet};
 
@@ -898,6 +899,8 @@ pub struct Engine {
     /// Runtime-only cooldown tracking for autonomous combatants.
     combat: CombatSystem,
     raider_script: RaiderScript,
+    scenario_runtime: scenario::ScenarioRuntime,
+    loaded_scenario: Option<(scenario::Scenario, std::collections::BTreeMap<String, String>)>,
 }
 
 #[cfg(test)]
@@ -1407,6 +1410,8 @@ impl Engine {
                     prev_combat_effect_ui_state_by_entity: HashMap::new(),
                     combat: CombatSystem::default(),
                     raider_script: RaiderScript::new()?,
+                    scenario_runtime: Default::default(),
+                    loaded_scenario: None,
                 };
                 for (entry, resource_type_id, nearest_compatible, entity_type_id) in restored_collects {
                     let (Ok(intent_id), Ok(client_cmd_id)) = (
@@ -1528,6 +1533,7 @@ impl Engine {
                     engine.redis.publish_content_defs(&json).await?;
                 }
 
+                engine.initialize_runtime(true).await?;
                 return Ok(engine);
             }
 
@@ -1593,6 +1599,8 @@ impl Engine {
             prev_combat_effect_ui_state_by_entity: HashMap::new(),
             combat: CombatSystem::default(),
             raider_script: RaiderScript::new()?,
+            scenario_runtime: Default::default(),
+            loaded_scenario: None,
         };
         engine
             .redis
@@ -1609,11 +1617,13 @@ impl Engine {
             engine.redis.publish_content_defs(&json).await?;
         }
 
+        engine.initialize_runtime(false).await?;
         Ok(engine)
     }
 
     /// M6: Spawn for one player on join (idempotent), near a random planet.
     fn ensure_spawned(&mut self, player_id: &str) -> Result<()> {
+        if self.scenario_runtime.scenario_id.is_some() { return Ok(()); }
         if self.joined_players.contains(player_id) {
             return Ok(());
         }
@@ -1816,7 +1826,7 @@ impl Engine {
 
     async fn process_pending_raider_spawns(&mut self) {
         while let Ok(Some(count)) = self.redis.pop_next_pending_raider_spawn().await {
-            self.spawn_raiders_at_random_map_locations(count);
+            if self.scenario_runtime.scenario_id.is_none() { self.spawn_raiders_at_random_map_locations(count); }
         }
     }
 
@@ -2951,7 +2961,7 @@ impl Engine {
             content,
             self.state.tick,
             self.cfg.tps,
-            self.spawn_config.max_raiders,
+            if self.scenario_runtime.scenario_id.is_some() { 0 } else { self.spawn_config.max_raiders },
             self.cfg
                 .raider_ai_spatial_index_mode
                 .enabled_at(self.state.tick),
@@ -4161,6 +4171,7 @@ impl Engine {
 
     /// Run one tick (for tests). Does not wait for ticker.
     pub async fn run_one_tick(&mut self) -> Result<()> {
+        if !self.process_scenario_controls().await? { return Ok(()); }
         let dt = 1.0 / self.cfg.tps as f32;
         let snapshot_interval = (self.cfg.tps as u64) * self.cfg.snapshot_every_secs;
 
@@ -4304,6 +4315,7 @@ impl Engine {
             log_sample(&self.state);
         }
         self.prev_state = self.state.clone();
+        self.finish_scenario_tick().await?;
         self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
         self.prev_combat_effect_ui_state_by_entity = self.combat_effect_ui_state_by_entity.clone();
         Ok(())
@@ -4331,6 +4343,7 @@ impl Engine {
 
         loop {
             ticker.tick().await;
+            if !self.process_scenario_controls().await? { continue; }
             let raider_ai_spatial_index_enabled = self
                 .cfg
                 .raider_ai_spatial_index_mode
@@ -4577,6 +4590,7 @@ impl Engine {
             }
 
             self.prev_state = self.state.clone();
+            self.finish_scenario_tick().await?;
             self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
             self.prev_combat_effect_ui_state_by_entity =
                 self.combat_effect_ui_state_by_entity.clone();
@@ -4663,6 +4677,7 @@ impl Engine {
     }
 
     async fn process_raw_intent(&mut self, bytes: &[u8]) -> Result<()> {
+        if bytes.is_empty() { return Ok(()); } // Stale world commands still advance the stream cursor.
         match pb::IntentEnvelope::decode(bytes) {
             Ok(envelope) => self.handle_envelope(envelope).await,
             Err(_) => {

@@ -93,6 +93,50 @@ async function resolveSuTarget(input: string): Promise<{ id: string; name: strin
 
 const commands: TerminalCommand[] = [
   {
+    name: "scenario",
+    description: "scenario list|status|validate <id>|load <id>|reload|pause|resume|step [ticks]|bookmark <id> [tags...] [--entities=1,2]",
+    requiresAuth: true,
+    run: async (args) => {
+      const [action = "status", id, ...rest] = args;
+      if (["list", "status"].includes(action)) {
+        const response = await fetch("/api/content/scenarios", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) return { output: data.error ?? "Unable to access scenarios" };
+        return { output: action === "status" ? JSON.stringify(data.runtime, null, 2)
+          : data.scenarios.map((item: { id: string; name: string; tags?: string[] }) => `${item.id}: ${item.name} [${(item.tags ?? []).join(", ")}]`).join("\n") || "No scenarios" };
+      }
+      if (!["validate", "load", "reload", "pause", "resume", "step", "bookmark"].includes(action)
+        || (["validate", "load", "bookmark"].includes(action) && !id)
+        || (["reload", "pause", "resume"].includes(action) && args.length > 1)
+        || (["validate", "load"].includes(action) && args.length > 2)
+        || (action === "step" && (args.length > 2 || (id !== undefined && !/^\d+$/.test(id)))))
+        return { output: "usage: scenario list|status|validate <id>|load <id>|reload|pause|resume|step [ticks]|bookmark <id> [tags...] [--entities=1,2]" };
+      const body: Record<string, unknown> = { action, run_id: game.runId || undefined };
+      if (["validate", "load", "bookmark"].includes(action)) body.id = id;
+      if (action === "step") body.ticks = id === undefined ? 1 : Number(id);
+      if (action === "bookmark") {
+        body.tags = rest.filter(tag => !tag.startsWith("--entities="));
+        const selected = rest.find(argument => argument.startsWith("--entities="));
+        if (selected) body.entity_ids = selected.slice("--entities=".length).split(",").map(Number);
+      }
+      const response = await fetch("/api/content/scenarios", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      let data = await response.json();
+      if (!response.ok && response.status !== 202) return { output: `scenario: ${data.error ?? "Command failed"}` };
+      const requestId = data.request_id;
+      const deadline = Date.now() + 10_000;
+      while (data.pending && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        const result = await fetch(`/api/content/scenarios?request_id=${encodeURIComponent(requestId)}`, { cache: "no-store" });
+        data = await result.json();
+        if (!result.ok && result.status !== 202) return { output: `scenario: ${data.error ?? "Could not read result"}` };
+      }
+      if (data.pending) return { output: `scenario: request ${requestId} is pending; check that the engine is running.` };
+      if (!data.ok) return { output: `scenario: ${data.error}` };
+      return { output: data.result?.saved_id ? `Bookmark saved: ${data.result.saved_id}`
+        : `${action} accepted. ${JSON.stringify(data.result?.runtime ?? {})}` };
+    },
+  },
+  {
     name: "debug",
     description: "Lua capture: debug <on|off|state> [owner id] (defaults to current owner)",
     requiresAuth: true,

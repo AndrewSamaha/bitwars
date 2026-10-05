@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_GAME_ID = "demo-001";
 const HEARTBEAT_INTERVAL_MS = 10_000;
-const XREAD_BLOCK_MS = 15_000; // as per spec
+const XREAD_BLOCK_MS = 1_000; // Also publish pause/resume controls while the simulation is idle.
 const XRANGE_BATCH_COUNT = 512;
 const SNAPSHOT_RETRY_MS = 250;
 
@@ -64,6 +64,7 @@ export const GET = withAxiom(async (req: Request) => {
       const entityTypes = parsedContent.entity_types ?? {};
       const visibility = new VisibilityFilter(actingAsId ?? playerId ?? "", entityTypes, parsedContent.technologies ?? {});
       let lastId: string | undefined;
+      let previousRuntime = await redis.get(`rts:match:${GAME_ID}:runtime`);
 
       // Visibility state is connection-local, so every connection starts from
       // a filtered snapshot rather than replaying an unfiltered cursor.
@@ -102,6 +103,17 @@ export const GET = withAxiom(async (req: Request) => {
       while (!channel.isClosed()) {
         try {
           const entries = await xReadWithBuffers(streamEvents, lastId, XREAD_BLOCK_MS, XRANGE_BATCH_COUNT);
+          const runtime = await redis.get(`rts:match:${GAME_ID}:runtime`);
+          if (runtime && runtime !== previousRuntime) {
+            const next = JSON.parse(runtime);
+            const previous = previousRuntime ? JSON.parse(previousRuntime) : {};
+            if (previous.run_id && next.run_id !== previous.run_id) {
+              await channel.write(`event: world-reset\ndata: ${JSON.stringify(next)}\n\n`);
+              break;
+            }
+            await channel.write(`event: runtime\ndata: ${runtime}\n\n`);
+            previousRuntime = runtime;
+          }
           if (!entries || entries.length === 0) {
             // timeout, emit heartbeat has already been doing pings
             continue;

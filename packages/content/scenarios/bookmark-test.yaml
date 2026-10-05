@@ -1,0 +1,183 @@
+version: 1
+id: bookmark-test
+name: bookmark-test
+tags: []
+players:
+- player1
+technologies:
+  player1:
+  - space_age
+entities:
+- id: 39
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -92104.625
+    y: 67521.57
+  health: 100.0
+  resources: {}
+- id: 106
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -91579.15
+    y: 70826.48
+  health: 100.0
+  resources: {}
+- id: 476
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -89441.56
+    y: 74426.29
+  health: 100.0
+  resources: {}
+- id: 477
+  entity_type: habitat
+  owner: player1
+  position:
+    x: -91594.53
+    y: 68908.234
+  health: 400.0
+  resources:
+    energy: 3022.4194968268275
+    food: 657.0
+    minerals: 270.0
+- id: 478
+  entity_type: scout
+  owner: player1
+  position:
+    x: -91698.086
+    y: 70882.12
+  health: 60.0
+  resources:
+    energy: 100.0
+- id: 479
+  entity_type: worker
+  owner: player1
+  position:
+    x: -90168.1
+    y: 72566.01
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+- id: 480
+  entity_type: worker
+  owner: player1
+  position:
+    x: -91584.78
+    y: 70109.43
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+- id: 482
+  entity_type: worker
+  owner: player1
+  position:
+    x: -92002.06
+    y: 66140.92
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+- id: 483
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -91023.41
+    y: 68241.46
+  health: 100.0
+  resources:
+    energy: 0.8621382713317871
+- id: 486
+  entity_type: worker
+  owner: player1
+  position:
+    x: -91579.54
+    y: 70777.11
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+  cargo:
+    resource: food
+    amount: 7.466665
+- id: 487
+  entity_type: worker
+  owner: player1
+  position:
+    x: -91311.06
+    y: 69634.05
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+  cargo:
+    resource: minerals
+    amount: 50.0
+- id: 488
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -90794.65
+    y: 67351.54
+  health: 100.0
+  resources:
+    energy: 0.4246422052383423
+- id: 489
+  entity_type: worker
+  owner: player1
+  position:
+    x: -91580.41
+    y: 70694.375
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+  cargo:
+    resource: food
+    amount: 50.0
+- id: 491
+  entity_type: worker
+  owner: player1
+  position:
+    x: -90371.76
+    y: 72044.555
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+- id: 492
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -91061.78
+    y: 66557.46
+  health: 100.0
+  resources:
+    energy: 0.24696063995361328
+- id: 493
+  entity_type: worker
+  owner: player1
+  position:
+    x: -91584.95
+    y: 70127.945
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+  cargo:
+    resource: food
+    amount: 50.0
+- id: 494
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -92024.45
+    y: 66083.11
+  health: 100.0
+  resources:
+    energy: 0.08033382147550583
+captured_tick: 47085

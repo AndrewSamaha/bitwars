@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useLogger } from "@/lib/axiom/client";
 import { game, RADIATION_DAMAGE_VISUAL_LINGER_MS, type Entity } from "../world";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
@@ -8,7 +8,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
+import { dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -116,6 +116,7 @@ function isWithinRadiationRange(target: Entity): boolean {
 // - On snapshot: clears previously-streamed entities and repopulates them
 // - On delta: upserts entities by id and patches provided components
 export default function GameStateStreamBridge() {
+  const [worldGeneration, setWorldGeneration] = useState(0);
   const log = useLogger();
   const hud = useHUD();
   const { player } = usePlayer();
@@ -241,10 +242,24 @@ export default function GameStateStreamBridge() {
       console.log(`[GameState] ${label}`, { myPlayerId, entityCount: entities.length, entities });
     };
 
-    const applySnapshot = (payload: SnapshotPayload) => {
+    const applySnapshot = (payload: SnapshotPayload & { run_id?: string; paused?: boolean }) => {
+      const worldChanged = !!payload.run_id && payload.run_id !== game.runId;
+      if (worldChanged) {
+        intentQueue.resetForWorld(payload.run_id);
+        hud.actions.clearSelection();
+        hud.actions.setSelectedAction(null);
+        underAttackEntityIdsRef.current.clear();
+        game.runId = payload.run_id!;
+        knownEntityIdsRef.current.clear();
+        activeIntentByEntityRef.current.clear();
+        hud.actions.setHovered(null);
+        hud.actions.setTooltip(null);
+        hud.actions.setResources(Object.fromEntries(Object.keys((contentManager.getContent()?.resource_types ?? {})).map(resource => [resource, 0])));
+      }
+      game.paused = !!payload.paused;
       // Remove old streamed entities (and destroy any attached sprites)
       for (const [id, ent] of byId) {
-        if (ent.remembered) continue;
+        if (ent.remembered && !worldChanged) continue;
         try {
           // @ts-ignore - sprite is optional
           ent.sprite?.destroy?.();
@@ -324,6 +339,10 @@ export default function GameStateStreamBridge() {
       if (!game.ready) {
         game.ready = true;
         log.info("GameStateStreamBridge:world:ready", { streamId: streamIdRef.current });
+      }
+      if (worldChanged) {
+        const owned = payload.entities.find(entity => entity.owner_player_id === effectivePlayerId);
+        if (owned) dispatchCenterCameraOnEntity(normalizeId(owned.id));
       }
       if (DEBUG_LOG_GAMESTATE_ENTITIES) logEntitiesAndOwnership("after snapshot");
     };
@@ -624,7 +643,7 @@ export default function GameStateStreamBridge() {
       // M2: On every open (initial + reconnect), reconcile the intent queue
       // with the server's tracking state so we don't duplicate or skip intents.
       intentQueue.reconcileWithServer().then(async (handshake) => {
-        if (handshake) {
+        if (handshake && es.readyState !== EventSource.CLOSED) {
           if (!effectivePlayerId && handshake.player_id) currentPlayerIdRef.current = handshake.player_id;
           log.info("GameStateStreamBridge:reconnect:ok", {
             streamId: streamIdRef.current,
@@ -685,6 +704,23 @@ export default function GameStateStreamBridge() {
       log.warn("GameStateStreamBridge:es:error", { streamId: streamIdRef.current, readyState: rs });
     };
 
+    const onWorldReset = (event: MessageEvent) => {
+      const payload = JSON.parse(event.data);
+      if (payload.run_id === game.runId) return;
+      es.close();
+      intentQueue.resetForWorld(payload.run_id);
+      hud.actions.clearSelection();
+      hud.actions.setSelectedAction(null);
+      game.ready = false;
+      setWorldGeneration(generation => generation + 1);
+    };
+    const onRuntime = (event: MessageEvent) => {
+      const payload = JSON.parse(event.data);
+      if (payload.run_id && payload.run_id !== game.runId) { onWorldReset(event); return; }
+      game.paused = !!payload.paused;
+    };
+    es.addEventListener("world-reset", onWorldReset as EventListener);
+    es.addEventListener("runtime", onRuntime as EventListener);
     es.addEventListener("snapshot", onSnapshot as EventListener);
     es.addEventListener("delta", onDelta as EventListener);
     es.addEventListener("laser-shot", onLaserShot as EventListener);
@@ -700,6 +736,8 @@ export default function GameStateStreamBridge() {
       es.removeEventListener("lifecycle", onLifecycle as EventListener);
       es.removeEventListener("open", onOpen as EventListener);
       es.removeEventListener("error", onError as EventListener);
+      es.removeEventListener("world-reset", onWorldReset as EventListener);
+      es.removeEventListener("runtime", onRuntime as EventListener);
       es.close();
 
       // Clean up streamed entities we created (and destroy sprites)
@@ -719,7 +757,7 @@ export default function GameStateStreamBridge() {
         log.info("GameStateStreamBridge:world:not-ready", { streamId: streamIdRef.current });
       }
     };
-  }, [actingAsId, effectivePlayerId]);
+  }, [actingAsId, effectivePlayerId, worldGeneration]);
 
   // This component does not render anything; it just wires data into the ECS.
   return null;

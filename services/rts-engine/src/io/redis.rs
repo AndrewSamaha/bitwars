@@ -140,6 +140,8 @@ pub struct AllTrackingState {
 
 pub struct RedisClient {
     pub game_id: String,
+    pub run_id: String,
+    pub scenario_mode: bool,
     conn: redis::aio::MultiplexedConnection,
 }
 
@@ -250,7 +252,7 @@ impl RedisClient {
         let client = redis::Client::open(url.to_string())?;
         let conn = client.get_multiplexed_async_connection().await?;
         info!("Connected to Redis at {}", url);
-        Ok(Self { game_id, conn })
+        Ok(Self { game_id, conn, run_id: String::new(), scenario_mode: false })
     }
 
     pub async fn publish_delta(&mut self, delta: &Delta) -> anyhow::Result<String> {
@@ -400,20 +402,22 @@ impl RedisClient {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
-        let _: () = self.conn.set(&snap_key, bytes.clone()).await?;
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64;
 
-        let _: () = redis::cmd("HSET")
-            .arg(&meta_key)
+        let _: () = redis::pipe().atomic()
+            .cmd("SET").arg(&snap_key).arg(&bytes).ignore()
+            .cmd("HSET").arg(&meta_key)
             .arg("tick")
             .arg(state.tick as i64)
             .arg("boundary_stream_id")
             .arg(boundary_stream_id)
+            .arg("run_id")
+            .arg(&self.run_id)
             .arg("updated_at_ms")
-            .arg(now_ms)
+            .arg(now_ms).ignore()
             .query_async(&mut self.conn)
             .await?;
 
@@ -492,6 +496,43 @@ impl RedisClient {
         Ok(())
     }
 
+
+    pub async fn pop_scenario_command(&mut self) -> anyhow::Result<Option<String>> {
+        Ok(self.conn.lpop(format!("rts:match:{}:scenario_commands", self.game_id), None).await?)
+    }
+    pub async fn publish_scenario_result(&mut self, request_id: &str, value: &str) -> anyhow::Result<()> {
+        let _: () = self.conn.set_ex(format!("rts:match:{}:scenario_result:{}", self.game_id, request_id), value, 300).await?;
+        Ok(())
+    }
+    pub async fn publish_runtime(&mut self, value: &str) -> anyhow::Result<()> {
+        let _: () = self.conn.set(format!("rts:match:{}:runtime", self.game_id), value).await?;
+        Ok(())
+    }
+    pub async fn read_runtime(&mut self) -> anyhow::Result<Option<String>> {
+        Ok(self.conn.get(format!("rts:match:{}:runtime", self.game_id)).await?)
+    }
+    pub async fn save_scenario_template(&mut self, value: &str) -> anyhow::Result<()> {
+        let _: () = self.conn.set(format!("rts:match:{}:scenario_template", self.game_id), value).await?;
+        Ok(())
+    }
+    pub async fn read_scenario_template(&mut self) -> anyhow::Result<Option<String>> {
+        Ok(self.conn.get(format!("rts:match:{}:scenario_template", self.game_id)).await?)
+    }
+    pub async fn publish_world_reset(&mut self, run_id: &str) -> anyhow::Result<String> {
+        let data = serde_json::json!({ "type": "world-reset", "run_id": run_id }).to_string();
+        Ok(redis::cmd("XADD").arg(self.events_stream()).arg("*").arg("data").arg(data).query_async(&mut self.conn).await?)
+    }
+    pub async fn reset_scenario_tracking(&mut self) -> anyhow::Result<()> {
+        // Keep the events stream: existing SSE readers need the world-reset marker.
+        let keys = vec![self.intents_stream(), self.gameplay_events_stream(), self.snapshots_stream(),
+            self.player_seq_key(), self.active_intents_key(), self.pending_joins_key(),
+            self.pending_raider_spawns_key(), self.join_requested_key(), self.legacy_collector_state_key()];
+        let _: () = redis::cmd("DEL").arg(keys).query_async(&mut self.conn).await?;
+        let dedupe: Vec<String> = redis::cmd("KEYS").arg(format!("rts:match:{}:dedupe:*", self.game_id)).query_async(&mut self.conn).await?;
+        if !dedupe.is_empty() { let _: () = redis::cmd("DEL").arg(dedupe).query_async(&mut self.conn).await?; }
+        Ok(())
+    }
+
     /// Read new intent entries from the intents stream without blocking the caller.
     /// Returns a Vec of (stream_entry_id, payload_bytes) pairs so the caller can
     /// advance the cursor entry-by-entry (needed for tick-bounded ingress in M1).
@@ -536,6 +577,11 @@ impl RedisClient {
                                         continue;
                                     };
                                     if let RedisValue::Bulk(fieldvals) = &parts[1] {
+                                        let epoch = fieldvals.chunks_exact(2).find_map(|pair| match (&pair[0], &pair[1]) {
+                                            (RedisValue::Data(key), RedisValue::Data(value)) if key == b"run_id" => Some(value.as_slice()),
+                                            _ => None,
+                                        });
+                                        let valid = epoch.map_or(!self.scenario_mode, |epoch| epoch == self.run_id.as_bytes());
                                         let mut i = 0;
                                         while i + 1 < fieldvals.len() {
                                             let field = &fieldvals[i];
@@ -545,7 +591,7 @@ impl RedisClient {
                                                     if let RedisValue::Data(payload) = value {
                                                         out.push((
                                                             entry_id.clone(),
-                                                            payload.clone(),
+                                                            if valid { payload.clone() } else { Vec::new() },
                                                         ));
                                                     }
                                                 }
@@ -584,6 +630,9 @@ impl RedisClient {
             self.pending_raider_spawns_key(),
             self.join_requested_key(),
             self.legacy_collector_state_key(),
+            format!("rts:match:{}:runtime", self.game_id),
+            format!("rts:match:{}:scenario_template", self.game_id),
+            format!("rts:match:{}:scenario_commands", self.game_id),
         ];
         info!(game_id = %self.game_id, keys = ?keys, "flushing game streams (clean start)");
         for key in &keys {
@@ -707,6 +756,11 @@ impl RedisClient {
                                         }
                                     }
                                     if let RedisValue::Bulk(fieldvals) = &parts[1] {
+                                        let epoch = fieldvals.chunks_exact(2).find_map(|pair| match (&pair[0], &pair[1]) {
+                                            (RedisValue::Data(key), RedisValue::Data(value)) if key == b"run_id" => Some(value.as_slice()),
+                                            _ => None,
+                                        });
+                                        let valid = epoch.map_or(!self.scenario_mode, |epoch| epoch == self.run_id.as_bytes());
                                         let mut i = 0;
                                         while i + 1 < fieldvals.len() {
                                             let field = &fieldvals[i];

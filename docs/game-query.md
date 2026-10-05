@@ -52,3 +52,14 @@ available briefly after stopping, so it can be inspected.
 Do not add a generic Redis query or write endpoint. Add an explicit operation
 to `apps/web/src/lib/game-query/` and expose only that operation through a
 purpose-specific route.
+
+## Scenario status
+
+```bash
+curl http://localhost:3000/api/v2/game-query/scenarios
+```
+
+Returns the active run ID, scenario ID, pause state, tick and remaining step
+count, plus saved scenario metadata. This is read-only. Authenticated scenario
+controls and YAML management are documented in
+[scenarios.md](requirements/scenarios.md).

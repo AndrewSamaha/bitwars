@@ -23,9 +23,11 @@ export async function bootstrapAndCatchUp(
 
   let lastId: string | undefined = undefined;
 
-  const meta = await (redis as any).hgetall(keySnapshotMeta);
+  const reads = await (redis as any).multi().hgetall(keySnapshotMeta).getBuffer(keySnapshot).exec();
+  if (reads?.[0]?.[0] || reads?.[1]?.[0]) throw reads[0][0] || reads[1][0];
+  const meta = reads?.[0]?.[1];
   const boundaryId = meta?.["boundary_stream_id"] as string | undefined;
-  const snapshotBuf: Buffer | null = (await (redis as any).getBuffer?.(keySnapshot)) ?? null;
+  const snapshotBuf: Buffer | null = reads?.[1]?.[1] ?? null;
 
   if (!snapshotBuf) {
     logger.warn("v2/bootstrap:snapshot:missing", { GAME_ID: gameId });
@@ -39,7 +41,9 @@ export async function bootstrapAndCatchUp(
 
   try {
     const snapshot = decodeSnapshotBinary(snapshotBuf);
-    const payload = mapSnapshotToJson(snapshot as any);
+    const runtimeValue = await redis.get(`rts:match:${gameId}:runtime`);
+    const runtime = runtimeValue ? JSON.parse(runtimeValue) : {};
+    const payload = { ...mapSnapshotToJson(snapshot as any), run_id: meta?.run_id || runtime.run_id || "", paused: !!runtime.paused, scenario_id: runtime.scenario_id ?? null };
     const visiblePayload = visibility ? visibility.filterSnapshot(payload) : payload;
     const entCount = Array.isArray((payload as any)?.entities) ? (payload as any).entities.length : 0;
     let concerningEntities = 0;
