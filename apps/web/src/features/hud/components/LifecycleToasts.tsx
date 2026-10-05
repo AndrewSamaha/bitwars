@@ -4,6 +4,7 @@ import { AlertTriangle, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   COLLECTION_WAITING_EVENT,
+  TRANSFER_ENDPOINT_LOST_EVENT,
   dispatchCenterCameraOnEntity,
   ENTITY_RESOURCE_STARVATION_EVENT,
   MINIMUM_DISTANCE_VIOLATION_EVENT,
@@ -70,6 +71,10 @@ export default function LifecycleToasts() {
       const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
       if (detail) showToast("Collection blocked", `${COLLECTION_WAITING_MESSAGE} Click to focus it.`, detail.collectorEntityId);
     };
+    const onTransferEndpointLost = (event: Event) => {
+      const detail = (event as CustomEvent<{ carrierEntityId: string }>).detail;
+      if (detail) showToast("Resource transport canceled", "The donor or recipient is no longer available or compatible. Resources still aboard the worker are retained. Click to focus it.", detail.carrierEntityId);
+    };
     const onResourceStarvation = (event: Event) => {
       const entity = (event as CustomEvent<{ id?: number | string; entity_type_id?: string }>).detail;
       if (entity?.id == null) return;
@@ -85,10 +90,12 @@ export default function LifecycleToasts() {
     };
     window.addEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
     window.addEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
+    window.addEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
     window.addEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
     return () => {
       window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
       window.removeEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
+      window.removeEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
       window.removeEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
     };
   }, [dismiss]);

@@ -8,7 +8,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
+import { dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -548,6 +548,9 @@ export default function GameStateStreamBridge() {
           const intentId = payload.intentId ?? "";
           const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
           const reason = typeof payload.reason === "number" ? payload.reason : Number(payload.reason);
+          if (entityIdFromCmd != null && state === LIFECYCLE_STATE_CANCELED && reason === 10) {
+            dispatchTransferEndpointLost(String(entityIdFromCmd));
+          }
           const minimumDistanceViolation = payload.minimumDistanceViolation;
           if (
             entityIdFromCmd != null

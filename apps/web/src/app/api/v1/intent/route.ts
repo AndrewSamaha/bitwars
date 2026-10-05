@@ -122,8 +122,8 @@ export async function POST(req: NextRequest) {
     }
 
     const t = (body?.type ?? "").toString();
-    if (t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver") {
-      return NextResponse.json({ error: "unsupported type; expected Move, Collect, Build, Upgrade, Repair, Research, or Deliver" }, { status: 400 });
+    if (t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport") {
+      return NextResponse.json({ error: "unsupported type; expected Move, Collect, Build, Upgrade, Repair, Research, Deliver, or Transport" }, { status: 400 });
     }
 
     const entityIdVal = body?.entity_id;
@@ -146,13 +146,16 @@ export async function POST(req: NextRequest) {
     if (t === "Research" && !String(body?.technology_id ?? "").trim()) {
       return NextResponse.json({ error: "missing required field for Research: technology_id" }, { status: 400 });
     }
-    if ((t === "Repair" || t === "Deliver") && (!Number.isInteger(Number(body?.target_id)) || Number(body.target_id) <= 0)) {
+    if ((t === "Repair" || t === "Deliver" || t === "Transport") && (!Number.isInteger(Number(body?.target_id)) || Number(body.target_id) <= 0)) {
       return NextResponse.json({ error: `target_id must be a positive integer for ${t}` }, { status: 400 });
     }
-    if (t === "Deliver" && (!Array.isArray(body.resource_type_ids)
+    if ((t === "Deliver" || t === "Transport") && (!Array.isArray(body.resource_type_ids)
       || body.resource_type_ids.length === 0 || body.resource_type_ids.length > 64
       || body.resource_type_ids.some((id: unknown) => typeof id !== "string" || !id.trim()))) {
       return NextResponse.json({ error: "Deliver requires at least one resource_type_ids entry" }, { status: 400 });
+    }
+    if (t === "Transport" && (!Number.isSafeInteger(Number(body?.donor_id)) || Number(body.donor_id) <= 0)) {
+      return NextResponse.json({ error: "Transport requires a positive donor_id" }, { status: 400 });
     }
     const resourceTypeId = typeof body?.resource_type_id === "string" ? body.resource_type_id.trim() : "";
     const nearestCompatible = body?.nearest_compatible === true;
@@ -244,9 +247,10 @@ export async function POST(req: NextRequest) {
         payload: { case: "upgrade", value: upgrade },
       });
       bytes = toBinary(IntentEnvelopeSchema, envelope);
-    } else if (t === "Deliver") {
+    } else if (t === "Deliver" || t === "Transport") {
       const delivery = create(DeliverIntentSchema, {
         entityId, targetId: BigInt(body.target_id),
+        donorId: t === "Transport" ? BigInt(body.donor_id) : 0n,
         resourceTypeIds: [...new Set<string>(body.resource_type_ids)],
       });
       const envelope = create(IntentEnvelopeSchema, {

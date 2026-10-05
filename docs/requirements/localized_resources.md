@@ -111,3 +111,38 @@ collection cargo first and then local inventory up to the recipient's per-resour
 and finishes. Incompatible resources and excess stock remain on the carrier. Missing/dead or
 newly hostile endpoints cancel through the existing intent lifecycle notification. New orders
 replace delivery normally; canceled trips preserve inventory and cargo.
+
+## Maintained resource transport (implemented)
+
+Select one movable worker/collector with a positive `carry_capacity`, then choose
+`[s] Transport Resources`. Click a friendly donor, select one or more of its
+available compatible resources (`[A]ll` selects the displayed choices), then click
+a different friendly recipient. The recipient must have capacity for every
+selected resource; it may already be full. Open space, clicking the carrier again,
+or Escape cancels the picker. A new command replaces the active route.
+
+The maintained route reuses the Deliver wire payload with a nonzero `donor_id`;
+ordinary Deliver has `donor_id = 0` and remains a single trip. Both endpoints follow
+moving entities to hull contact distance. Loading immediately debits the donor
+and credits local carrier inventory. Pickup uses per-resource capacity, recipient
+free space, and the shared `carry_capacity`. Unrelated upkeep stock is retained;
+food/energy upkeep buffers do not consume the shipment quota. Resource choices
+are deduplicated and loaded in resource-ID order, with workers processed in entity
+ID order. Existing collection cargo consumes carry room and is unloaded first if
+its type is selected. Partial unloading retains leftovers and waits at the recipient.
+There are no capacity reservations between workers; a recipient that fills while
+a worker is traveling makes that worker wait, preserving its inventory.
+
+An empty donor or full recipient retries every second without finishing the
+intent. The details bar shows the route, resource types and travel/wait phase.
+A missing, dead, hostile or incompatible endpoint cancels with the authoritative
+`TRANSFER_ENDPOINT_LOST` lifecycle reason and the UI's
+`TRANSFER_ENDPOINT_LOST_EVENT` toast. Stock still on a surviving worker remains
+there. Routes reconnect normally and restore from tracking when server snapshot
+restore is enabled; carried inventory determines the initial restore phase.
+
+For a small runnable check, load the `resource-transport` scenario, select worker
+3, choose Transport Resources, select processor 1, choose minerals, and select
+habitat 2. Resume: the worker should repeatedly move at most 50 minerals from
+processor to habitat each trip. When the processor empties, the worker remains
+assigned and waits there. Refilling it should resume deliveries automatically.

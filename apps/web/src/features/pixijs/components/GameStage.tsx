@@ -144,8 +144,9 @@ export default function GameStage() {
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
-            } : params.kind === "Deliver" ? {
-              type: "Deliver",
+            } : params.kind === "Deliver" || params.kind === "Transport" ? {
+              type: params.kind,
+              donor_id: params.donorId,
               entity_id: params.entityId,
               target_id: params.targetId,
               resource_type_ids: params.resourceTypeIds,
@@ -1188,15 +1189,26 @@ export default function GameStage() {
           const delivery = typeof sel.selectedAction === "object" ? sel.selectedAction : null;
           if (!delivery) return;
           if (targetId === sel.firstSelectedId) { setSelectedAction(null); return; }
-          if (!delivery.resourceTypeIds.length) return;
           const target = findLiveEntityById(targetId);
+          if (delivery.kind === "Transport" && !delivery.donorId) {
+            const carrier = findLiveEntityById(sel.firstSelectedId ?? "");
+            const capacity = contentManager.getEntityType(carrier?.entity_type_id ?? "")?.max_capacity ?? {};
+            const targetCapacity = contentManager.getEntityType(target?.entity_type_id ?? "")?.max_capacity ?? {};
+            if (!target || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
+              || !Object.keys(targetCapacity).some(resource => targetCapacity[resource] > 0 && (capacity[resource] ?? 0) > 0)) return;
+            setSelectedAction({ kind: "Transport", donorId: targetId, resourceTypeIds: [] });
+            return;
+          }
+          if (!delivery.resourceTypeIds.length) return;
           const definition = contentManager.getEntityType(target?.entity_type_id ?? "");
           if (!target || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
-            || !delivery.resourceTypeIds.some((r) => (definition?.max_capacity?.[r] ?? 0)
-              > (target.resources?.find((entry: { resource_type: string; amount: number }) => entry.resource_type === r)?.amount ?? 0))) return;
+            || (delivery.kind === "Transport" ? targetId === delivery.donorId
+                || !delivery.resourceTypeIds.every(resource => (definition?.max_capacity?.[resource] ?? 0) > 0)
+              : !delivery.resourceTypeIds.some((r) => (definition?.max_capacity?.[r] ?? 0)
+                > (target.resources?.find((entry: { resource_type: string; amount: number }) => entry.resource_type === r)?.amount ?? 0)))) return;
           const entityId = Number(sel.firstSelectedId);
           if (Number.isSafeInteger(entityId) && Number.isSafeInteger(Number(targetId))) {
-            intentQueue.handleDeliverCommand(entityId, Number(targetId), delivery.resourceTypeIds);
+            intentQueue.handleDeliverCommand(entityId, Number(targetId), delivery.resourceTypeIds, delivery.kind === "Transport" ? Number(delivery.donorId) : undefined);
           }
           setSelectedAction(null);
         };

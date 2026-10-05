@@ -33,6 +33,7 @@ enum LifecycleReason {
   ENTITY_BUSY = 7;
   NOT_OWNED = 8;  // M6: entity not owned by issuing player
   MINIMUM_DISTANCE_VIOLATION = 9;
+  TRANSFER_ENDPOINT_LOST = 10;
 }
 
 // Represents an in-flight destination for an entity (server-side).
@@ -104,6 +105,8 @@ message DeliverIntent {
   uint64 entity_id = 1;
   uint64 target_id = 2;
   repeated string resource_type_ids = 3;
+  // Nonzero starts a maintained donor-to-recipient transport loop.
+  uint64 donor_id = 4;
 }
 
 // Transport envelope that wraps all intent payloads and carries authoritative metadata.
@@ -237,6 +240,9 @@ message RepairState {
 message DeliverState {
   uint64 target_id = 1;
   repeated string resource_type_ids = 2;
+  uint64 donor_id = 3;
+  bool returning_to_donor = 4;
+  uint64 retry_tick = 5;
 }
 
 // Unified per-entity execution container (one active at a time).

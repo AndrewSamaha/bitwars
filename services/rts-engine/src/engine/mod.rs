@@ -122,6 +122,31 @@ fn deliver_resources(
     }
 }
 
+/// Shipment inventory shares the collector's carry limit; unrelated upkeep stock stays aboard.
+fn load_transfer_resources(actor: &mut pb::Entity, donor: &mut pb::Entity, recipient: &pb::Entity,
+    actor_def: &EntityTypeDef, recipient_def: &EntityTypeDef, resources: &[String], existing_cargo: Option<&CarryState>) {
+    let limit = actor_def.collector.as_ref().map_or(0.0, |collector| collector.carry_capacity as f64);
+    // Upkeep buffers have their own per-resource capacities, separate from the shipment carry quota.
+    let held: f64 = actor.resources.as_ref().into_iter().flat_map(|inventory| &inventory.resources)
+        .filter(|entry| actor_def.maintenance_cost_per_minute.get(&entry.resource_type).copied().unwrap_or(0.0) <= 0.0
+            && actor_def.sensor.as_ref().and_then(|sensor| sensor.cost_per_minute.get(&entry.resource_type)).copied().unwrap_or(0.0) <= 0.0)
+        .map(|entry| entry.amount).sum();
+    let mut room = (limit - held - existing_cargo.map_or(0.0, |cargo| cargo.amount as f64)).max(0.0);
+    for resource in resources {
+        let aboard = resource_amount(actor, resource);
+        let carrier_room = (actor_def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64 - aboard).max(0.0);
+        let recipient_room = (recipient_def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64
+            - resource_amount(recipient, resource) - aboard
+            - existing_cargo.filter(|cargo| cargo.resource_type == *resource).map_or(0.0, |cargo| cargo.amount as f64)).max(0.0);
+        let amount = resource_amount(donor, resource).min(room).min(carrier_room).min(recipient_room);
+        if amount > 0.0 {
+            set_resource_amount(donor, resource, resource_amount(donor, resource) - amount);
+            set_resource_amount(actor, resource, aboard + amount);
+            room -= amount;
+        }
+    }
+}
+
 #[derive(Clone)]
 struct ResourceNodeSnapshot {
     id: u64,
@@ -1345,10 +1370,17 @@ impl Engine {
                         ))
                     })
                     .collect();
+                let restored_transfers: Vec<_> = tracking.active_intents.iter().filter_map(|entry| {
+                    if entry.intent_kind != "transport" { return None; }
+                    let route = entry.transfer_route.as_ref()?;
+                    let actor = state.entities.iter().find(|entity| entity.id == entry.entity_id && entity.owner_player_id == entry.player_id)?;
+                    Some((entry.clone(), route.clone(), actor.entity_type_id.clone()))
+                }).collect();
                 let restored_ids: HashSet<_> = restored_collects
                     .iter()
                     .map(|(entry, ..)| entry.entity_id)
                     .chain(restored_builds.iter().map(|(entry, ..)| entry.entity_id))
+                    .chain(restored_transfers.iter().map(|(entry, ..)| entry.entity_id))
                     .collect();
                 for entry in &tracking.active_intents {
                     if !restored_ids.contains(&entry.entity_id) {
@@ -1413,6 +1445,31 @@ impl Engine {
                     scenario_runtime: Default::default(),
                     loaded_scenario: None,
                 };
+                for state in &snapshot_collector_states {
+                    if state.carry_amount > 0.0 && engine.state.entities.iter().any(|entity| entity.id == state.entity_id) {
+                        engine.carry_by_entity.insert(state.entity_id, CarryState { resource_type: state.resource_type.clone(), amount: state.carry_amount });
+                    }
+                }
+                for (entry, route, entity_type_id) in restored_transfers {
+                    let (Ok(intent_id), Ok(client_cmd_id)) = (Uuid::parse_str(&entry.intent_id), Uuid::parse_str(&entry.client_cmd_id)) else {
+                        engine.redis.clear_active_intent(entry.entity_id).await?; continue;
+                    };
+                    let delivery = pb::DeliverIntent { entity_id: entry.entity_id, target_id: route.target_id,
+                        donor_id: route.donor_id, resource_type_ids: route.resource_type_ids };
+                    let loaded = engine.state.entities.iter().find(|entity| entity.id == entry.entity_id).is_some_and(|entity|
+                        delivery.resource_type_ids.iter().any(|resource| resource_amount(entity, resource) > 0.0))
+                        || engine.carry_by_entity.get(&entry.entity_id).is_some_and(|cargo| delivery.resource_type_ids.contains(&cargo.resource_type));
+                    let metadata = IntentMetadata { intent_id: intent_id.into_bytes().to_vec(), client_cmd_id: client_cmd_id.into_bytes().to_vec(),
+                        player_id: entry.player_id, protocol_version: ENGINE_PROTOCOL_MAJOR, server_tick: entry.started_tick, policy: pb::IntentPolicy::ReplaceActive };
+                    engine.intents.try_activate(pb::Intent { kind: Some(pb::intent::Kind::Deliver(delivery.clone())) }, metadata.clone(), &entity_type_id);
+                    if loaded {
+                        if let Some(active) = engine.intents.active_intents_mut().get_mut(&entry.entity_id) {
+                            if let Some(pb::action_state::Exec::Deliver(state)) = active.action.exec.as_mut() { state.returning_to_donor = false; }
+                        }
+                    }
+                    engine.redis.persist_active_intent(entry.entity_id, &metadata, "transport", None, None, None, engine.cfg.tracking_ttl_secs).await?;
+                    engine.redis.persist_transfer_route(entry.entity_id, &delivery).await?;
+                }
                 for (entry, resource_type_id, nearest_compatible, entity_type_id) in restored_collects {
                     let (Ok(intent_id), Ok(client_cmd_id)) = (
                         Uuid::parse_str(&entry.intent_id),
@@ -3066,6 +3123,94 @@ impl Engine {
         }
     }
 
+    async fn advance_resource_transport(&mut self, id: u64, delivery: &pb::DeliverState, dt: f32) {
+        let actor = self.state.entities.iter().find(|entity| entity.id == id).cloned();
+        let donor = self.state.entities.iter().find(|entity| entity.id == delivery.donor_id).cloned();
+        let recipient = self.state.entities.iter().find(|entity| entity.id == delivery.target_id).cloned();
+        let valid = actor.zip(donor).zip(recipient).and_then(|((actor, donor), recipient)| {
+            let content = self.content.as_ref()?;
+            let actor_def = content.get(&actor.entity_type_id)?;
+            let donor_def = content.get(&donor.entity_type_id)?;
+            let recipient_def = content.get(&recipient.entity_type_id)?;
+            (actor.health > 0.0 && donor.health > 0.0 && recipient.health > 0.0
+                && self.intents.active_intents().get(&id).is_some_and(|active| active.metadata.player_id == actor.owner_player_id)
+                && actor.id != donor.id && actor.id != recipient.id && donor.id != recipient.id
+                && actor.owner_player_id == donor.owner_player_id && actor.owner_player_id == recipient.owner_player_id
+                && actor.pos.is_some() && donor.pos.is_some() && recipient.pos.is_some()
+                && actor_def.speed > 0.0 && actor_def.collector.as_ref().is_some_and(|collector| collector.carry_capacity > 0.0)
+                && delivery.resource_type_ids.iter().all(|resource|
+                    actor_def.max_capacity.get(resource).copied().unwrap_or(0.0) > 0.0
+                    && donor_def.max_capacity.get(resource).copied().unwrap_or(0.0) > 0.0
+                    && recipient_def.max_capacity.get(resource).copied().unwrap_or(0.0) > 0.0))
+                .then_some((actor, donor, recipient, actor_def.clone(), donor_def.clone(), recipient_def.clone()))
+        });
+        let Some((mut actor, mut donor, mut recipient, actor_def, donor_def, recipient_def)) = valid else {
+            if let Some(actor) = self.state.entities.iter_mut().find(|entity| entity.id == id) {
+                actor.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+            }
+            if let Some(metadata) = self.intents.finish(id) {
+                self.redis.clear_active_intent(id).await.ok();
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Canceled,
+                    pb::LifecycleReason::TransferEndpointLost, self.state.tick).await.ok();
+            }
+            return;
+        };
+        if self.state.tick < delivery.retry_tick {
+            if let Some(entity) = self.state.entities.iter_mut().find(|entity| entity.id == id) { entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 }); }
+            return;
+        }
+        let (endpoint, endpoint_def) = if delivery.returning_to_donor { (&donor, &donor_def) } else { (&recipient, &recipient_def) };
+        let pos = actor.pos.as_ref().unwrap();
+        let to = endpoint.pos.as_ref().unwrap();
+        let distance = Self::distance_sq(pos.x, pos.y, to.x, to.y).sqrt();
+        let range = actor_def.hull_radius + endpoint_def.hull_radius + actor_def.stop_radius.max(1.0);
+        let capacity = actor_def.collector.as_ref().unwrap().carry_capacity;
+        if !Self::reached_contact(pos, to, range) {
+            if let Some(entity) = self.state.entities.iter_mut().find(|entity| entity.id == id) {
+                Self::drive_velocity_toward(entity, actor_def.speed.min((distance-range)/dt), to.x, to.y, range);
+            }
+            let cargo = self.carry_by_entity.get(&id).cloned();
+            self.set_collector_ui_state(id, if delivery.returning_to_donor { "moving_to_donor" } else { "moving_to_recipient" },
+                cargo.as_ref().map_or("", |cargo| cargo.resource_type.as_str()), cargo.as_ref().map_or(0.0, |cargo| cargo.amount), capacity, 0.0);
+            return;
+        }
+        let cargo = self.carry_by_entity.get(&id).cloned();
+        let mut returning = delivery.returning_to_donor;
+        let held = |actor: &pb::Entity, cargo: Option<&CarryState>| -> f64 {
+            delivery.resource_type_ids.iter().map(|resource| resource_amount(actor, resource)).sum::<f64>()
+                + cargo.filter(|cargo| delivery.resource_type_ids.contains(&cargo.resource_type)).map_or(0.0, |cargo| cargo.amount as f64)
+        };
+        let activity;
+        if returning {
+            load_transfer_resources(&mut actor, &mut donor, &recipient, &actor_def, &recipient_def,
+                &delivery.resource_type_ids, cargo.as_ref());
+            if held(&actor, cargo.as_ref()) > f64::EPSILON { returning = false; activity = "moving_to_recipient"; }
+            else if delivery.resource_type_ids.iter().all(|resource| resource_amount(&donor, resource) <= f64::EPSILON) {
+                activity = "waiting_for_resources";
+            } else { activity = "waiting_for_capacity"; }
+        } else {
+            deliver_resources(&mut actor, &mut recipient, &recipient_def, &delivery.resource_type_ids, self.carry_by_entity.get_mut(&id));
+            if held(&actor, self.carry_by_entity.get(&id)) <= f64::EPSILON { returning = true; activity = "moving_to_donor"; }
+            else { activity = "waiting_for_capacity"; }
+        }
+        for entity in &mut self.state.entities {
+            if entity.id == id { entity.resources = actor.resources.clone(); entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 }); }
+            if entity.id == donor.id { entity.resources = donor.resources.clone(); }
+            if entity.id == recipient.id { entity.resources = recipient.resources.clone(); }
+        }
+        if let Some(active) = self.intents.active_intents_mut().get_mut(&id) {
+            if let Some(pb::action_state::Exec::Deliver(state)) = active.action.exec.as_mut() {
+                state.returning_to_donor = returning;
+                state.retry_tick = if activity.starts_with("waiting") { self.state.tick + self.cfg.tps as u64 } else { 0 };
+            }
+        }
+        let cargo = self.carry_by_entity.get(&id);
+        // Shipment amounts are already in entity inventory; retain the separate collection-cargo view.
+        let cargo_resource = cargo.map_or(String::new(), |cargo| cargo.resource_type.clone());
+        let cargo_amount = cargo.map_or(0.0, |cargo| cargo.amount);
+        self.set_collector_ui_state(id, activity, &cargo_resource, cargo_amount, capacity, 0.0);
+    }
+
     /// Follow a friendly recipient and complete a single delivery trip.
     async fn advance_deliveries(&mut self, dt: f32) {
         let mut deliveries: Vec<_> = self.intents.active_intents().iter()
@@ -3075,6 +3220,7 @@ impl Engine {
             }).collect();
         deliveries.sort_by_key(|(id, _)| *id);
         for (id, delivery) in deliveries {
+            if delivery.donor_id != 0 { self.advance_resource_transport(id, &delivery, dt).await; continue; }
             let actor = self.state.entities.iter().find(|e| e.id == id).cloned();
             let target = self.state.entities.iter().find(|e| e.id == delivery.target_id).cloned();
             let valid = actor.zip(target).and_then(|(actor, target)| {
@@ -3090,7 +3236,7 @@ impl Engine {
                 if let (Some(pos), Some(to)) = (actor.pos.as_ref(), target.pos.as_ref()) {
                     let distance = Self::distance_sq(pos.x, pos.y, to.x, to.y).sqrt();
                     let range = actor_def.hull_radius + target_def.hull_radius + actor_def.stop_radius.max(1.0);
-                    if distance > range {
+                    if !Self::reached_contact(pos, to, range) {
                         if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == id) {
                             let speed = actor_def.speed.min((distance - range) / dt);
                             Self::drive_velocity_toward(entity, speed, to.x, to.y, range);
@@ -3582,6 +3728,13 @@ impl Engine {
                 required_distance: minimum_distance.value,
                 actual_distance: distance_sq.sqrt(),
             })
+    }
+
+    /// Large f32 world coordinates cannot represent the last fraction of a capped approach step.
+    fn reached_contact(pos: &pb::Vec2, target: &pb::Vec2, range: f32) -> bool {
+        let scale = pos.x.abs().max(pos.y.abs()).max(target.x.abs()).max(target.y.abs()).max(1.0);
+        let tolerance = 2.0 * f32::EPSILON * scale;
+        Self::distance_sq(pos.x, pos.y, target.x, target.y) <= (range + tolerance).powi(2)
     }
 
     fn drive_velocity_toward(
@@ -4811,7 +4964,7 @@ impl Engine {
             .store_client_cmd(&player_id, &client_cmd_id, &intent_id, DEDUPE_TTL_SECS)
             .await?;
 
-        let payload_intent = match envelope.payload {
+        let mut payload_intent = match envelope.payload {
             Some(intent_envelope::Payload::Move(m)) => {
                 info!(entity_id = m.entity_id, intent_id = %format_uuid(&intent_id), player = %player_id, "accept intent=Move");
                 pb::Intent {
@@ -4853,7 +5006,12 @@ impl Engine {
                 }
             }
             Some(intent_envelope::Payload::Deliver(d)) => {
-                info!(entity_id = d.entity_id, target_id = d.target_id, player = %player_id, "accept intent=Deliver");
+                if d.donor_id == 0 {
+                    info!(entity_id = d.entity_id, target_id = d.target_id, player = %player_id, "accept intent=Deliver");
+                } else {
+                    info!(entity_id = d.entity_id, donor_id = d.donor_id, target_id = d.target_id, resources = ?d.resource_type_ids,
+                        player = %player_id, "accept intent=Transport");
+                }
                 pb::Intent { kind: Some(pb::intent::Kind::Deliver(d)) }
             }
             Some(intent_envelope::Payload::Repair(r)) => {
@@ -5159,6 +5317,9 @@ impl Engine {
             }
         }
 
+        if let Some(pb::intent::Kind::Deliver(delivery)) = payload_intent.kind.as_mut() {
+            delivery.resource_type_ids.sort(); delivery.resource_type_ids.dedup();
+        }
         if let Some(pb::intent::Kind::Deliver(delivery)) = payload_intent.kind.as_ref() {
             let valid = self.state.entities.iter().find(|e| e.id == entity_id)
                 .zip(self.state.entities.iter().find(|e| e.id == delivery.target_id))
@@ -5170,12 +5331,21 @@ impl Engine {
                         && actor.owner_player_id == target.owner_player_id && actor_def.speed > 0.0
                         && actor.pos.is_some() && target.pos.is_some()
                         && !delivery.resource_type_ids.is_empty()
-                        && delivery.resource_type_ids.iter().any(|r| resource_capacity(content, &target.entity_type_id, r) > resource_amount(target, r))
+                        && (if delivery.donor_id == 0 {
+                            delivery.resource_type_ids.iter().any(|r| resource_capacity(content, &target.entity_type_id, r) > resource_amount(target, r))
+                        } else {
+                            actor_def.collector.as_ref().is_some_and(|collector| collector.carry_capacity > 0.0)
+                                && self.state.entities.iter().find(|entity| entity.id == delivery.donor_id).is_some_and(|donor|
+                                    donor.id != actor.id && donor.id != target.id && donor.health > 0.0
+                                    && donor.owner_player_id == actor.owner_player_id && donor.pos.is_some()
+                                    && delivery.resource_type_ids.iter().all(|resource| resource_capacity(content, &donor.entity_type_id, resource) > 0.0))
+                        })
                         && delivery.resource_type_ids.iter().all(|resource| {
                             let cargo = self.carry_by_entity.get(&entity_id)
                                 .filter(|c| c.resource_type == *resource).map(|c| c.amount).unwrap_or(0.0);
                             content.get_resource_type(resource).is_some()
-                                && resource_amount(actor, resource) + cargo as f64 > 0.0
+                                && (if delivery.donor_id == 0 { resource_amount(actor, resource) + cargo as f64 > 0.0 }
+                                    else { resource_capacity(content, &actor.entity_type_id, resource) > 0.0 && resource_capacity(content, &target.entity_type_id, resource) > 0.0 })
                         }))
                 }).unwrap_or(false);
             if !valid {
@@ -5260,10 +5430,14 @@ impl Engine {
             Some(pb::intent::Kind::Repair(_)) => ("repair", None, None, None),
             Some(pb::intent::Kind::Upgrade(_)) => ("upgrade", None, None, None),
             Some(pb::intent::Kind::Research(_)) => ("research", None, None, None),
-            Some(pb::intent::Kind::Deliver(_)) => ("deliver", None, None, None),
+            Some(pb::intent::Kind::Deliver(delivery)) => (if delivery.donor_id == 0 { "deliver" } else { "transport" }, None, None, None),
             None => ("unknown", None, None, None),
         };
 
+        let transfer = match payload_intent.kind.as_ref() {
+            Some(pb::intent::Kind::Deliver(delivery)) if delivery.donor_id != 0 => Some(delivery.clone()),
+            _ => None,
+        };
         // M1: Try to activate immediately (no server-side queue).
         let outcome = self
             .intents
@@ -5326,6 +5500,7 @@ impl Engine {
                 )
                 .await?;
 
+            if let Some(transfer) = &transfer { self.redis.persist_transfer_route(entity_id, transfer).await?; }
             // Emit ACCEPTED then immediately IN_PROGRESS (M1: no intermediate queue)
             self.emit_lifecycle_event(
                 &metadata,

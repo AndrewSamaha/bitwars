@@ -30,7 +30,7 @@ export type QueuedMoveIntent = {
   createdAt: number;
 };
 
-export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "unknown";
+export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "unknown";
 
 export type ActiveIntentInfo = {
   clientCmdId: string;
@@ -38,6 +38,7 @@ export type ActiveIntentInfo = {
   /** Collect intents keep an entity busy but do not have a location to render. */
   kind: ActiveIntentKind;
   target?: { x: number; y: number };
+  transfer?: { donorId: number; targetId: number; resourceTypeIds: string[] };
   intentId?: string;      // server-assigned, set on ACCEPTED
   serverTick?: string;    // set on ACCEPTED
 };
@@ -55,7 +56,8 @@ type PersistedState = {
 
 export type SendIntentParams =
   | {
-      kind: "Deliver";
+      kind: "Deliver" | "Transport";
+      donorId?: number;
       entityId: number;
       targetId: number;
       resourceTypeIds: string[];
@@ -132,6 +134,7 @@ export type ReconnectHandshake = {
     player_id: string;
     started_tick: number;
     intent_kind?: string;
+    transfer_route?: { donor_id: number; target_id: number; resource_type_ids: string[] };
     move_target?: { x: number; y: number };
     blueprint_id?: string;
     progress?: number;
@@ -158,7 +161,7 @@ class IntentQueueManager {
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
-  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver">();
+  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
@@ -250,17 +253,17 @@ class IntentQueueManager {
   }
 
   /** Deliver currently held resources in one trip. */
-  handleDeliverCommand(entityId: number, targetId: number, resourceTypeIds: string[]) {
+  handleDeliverCommand(entityId: number, targetId: number, resourceTypeIds: string[], donorId?: number) {
     const clientCmdId = uuidv7();
     const state = this.getOrCreate(entityId);
     state.queue = [];
-    state.active = { clientCmdId, entityId, kind: "deliver" };
+    state.active = { clientCmdId, entityId, kind: donorId ? "transport" : "deliver", ...(donorId ? { transfer: { donorId, targetId, resourceTypeIds } } : {}) };
     this.clientSeq++;
     this.cmdToEntity.set(clientCmdId, entityId);
-    this.cmdToKind.set(clientCmdId, "deliver");
+    this.cmdToKind.set(clientCmdId, donorId ? "transport" : "deliver");
     this.persist();
     this.notify();
-    void this.sendCallback?.({ kind: "Deliver", entityId, targetId, resourceTypeIds,
+    void this.sendCallback?.({ kind: donorId ? "Transport" : "Deliver", donorId, entityId, targetId, resourceTypeIds,
       clientCmdId, clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
@@ -396,7 +399,7 @@ class IntentQueueManager {
       serverActive: (typeof handshake.active_intents)[0],
     ): ActiveIntentInfo => {
       const intentKind = serverActive.intent_kind?.toLowerCase() ?? "";
-      const kind: ActiveIntentKind = ["move", "collect", "build", "repair", "upgrade", "research", "deliver"].includes(intentKind)
+      const kind: ActiveIntentKind = ["move", "collect", "build", "repair", "upgrade", "research", "deliver", "transport"].includes(intentKind)
         ? intentKind as ActiveIntentKind : "unknown";
       const moveTarget = serverActive.move_target;
       const target =
@@ -407,11 +410,14 @@ class IntentQueueManager {
           ? { x: moveTarget.x, y: moveTarget.y }
           : undefined;
 
+      this.cmdToEntity.set(serverActive.client_cmd_id, entityId);
+      if (kind !== "unknown") this.cmdToKind.set(serverActive.client_cmd_id, kind);
       return {
         clientCmdId: serverActive.client_cmd_id,
         entityId,
         kind,
         ...(target ? { target } : {}),
+        ...(serverActive.transfer_route ? { transfer: { donorId: serverActive.transfer_route.donor_id, targetId: serverActive.transfer_route.target_id, resourceTypeIds: serverActive.transfer_route.resource_type_ids } } : {}),
         intentId: serverActive.intent_id,
         serverTick: String(serverActive.started_tick),
       };
@@ -543,7 +549,7 @@ class IntentQueueManager {
     return typeof v === "number" ? v : null;
   }
 
-  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | null {
+  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | null {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 
@@ -687,7 +693,7 @@ class IntentQueueManager {
           const active = state.active;
           // Old persisted active intents did not record their kind. Leave them
           // target-less until reconnect reconciliation classifies them.
-          if (active && !["move", "collect", "build", "upgrade", "repair", "research", "deliver"].includes(active.kind)) {
+          if (active && !["move", "collect", "build", "upgrade", "repair", "research", "deliver", "transport"].includes(active.kind)) {
             return [entityId, { ...state, active: { ...active, kind: "unknown", target: undefined } }];
           }
           return [entityId, state];

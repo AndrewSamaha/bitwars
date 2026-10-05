@@ -6,6 +6,7 @@ export const ENTITY_EXPLODED_EVENT = "bitwars:entity-exploded";
 export const ENTITY_DETECTED_EVENT = "bitwars:entity-detected";
 export const BUILD_COMPLETED_EVENT = "bitwars:build-completed";
 export const MINIMUM_DISTANCE_VIOLATION_EVENT = "bitwars:minimum-distance-violation";
+export const TRANSFER_ENDPOINT_LOST_EVENT = "bitwars:transfer-endpoint-lost";
 export const COLLECTION_WAITING_EVENT = "bitwars:collection-waiting";
 export const CENTER_CAMERA_ON_ENTITY_EVENT = "bitwars:center-camera-on-entity";
 export const ENTITY_UNDER_ATTACK_EVENT = "bitwars:entity-under-attack";
@@ -82,4 +83,8 @@ export function dispatchCollectionWaiting(detail: CollectionWaitingDetail) {
 
 export function dispatchCenterCameraOnEntity(entityId: string) {
   window.dispatchEvent(new CustomEvent<string>(CENTER_CAMERA_ON_ENTITY_EVENT, { detail: entityId }));
+}
+
+export function dispatchTransferEndpointLost(carrierEntityId: string) {
+  window.dispatchEvent(new CustomEvent(TRANSFER_ENDPOINT_LOST_EVENT, { detail: { carrierEntityId } }));
 }

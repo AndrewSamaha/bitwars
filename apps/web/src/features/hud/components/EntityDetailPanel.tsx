@@ -26,6 +26,7 @@ export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
   const { selectedEntities, selectedAction } = selectors;
   const selectedIdsKey = selectedEntities.join(",");
+  const donorId = typeof selectedAction === "object" && selectedAction?.kind === "Transport" ? selectedAction.donorId : undefined;
   const statusBarRef = useRef<HTMLDivElement>(null);
   const [, forceRerender] = useState(0);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
@@ -64,7 +65,7 @@ export default function EntityDetailPanel() {
     };
     const onGameStateUpdated = (event: Event) => {
       const changedIds = (event as CustomEvent<GameStateUpdatedDetail>).detail?.entityIds;
-      if (changedIds && !selectedEntities.some((id) => changedIds.includes(id))) return;
+      if (changedIds && !selectedEntities.some((id) => changedIds.includes(id)) && !(donorId && changedIds.includes(donorId))) return;
       const remaining = GAMESTATE_UI_REFRESH_INTERVAL_MS - (performance.now() - lastRefreshAt);
       if (remaining <= 0) {
         refresh();
@@ -77,7 +78,7 @@ export default function EntityDetailPanel() {
       window.removeEventListener(GAMESTATE_UPDATED_EVENT, onGameStateUpdated);
       if (trailingRefresh !== undefined) window.clearTimeout(trailingRefresh);
     };
-  }, [selectedEntities, selectedIdsKey]);
+  }, [selectedEntities, selectedIdsKey, donorId]);
 
   useEffect(() => {
     setBuildMenuOpen(false);
@@ -98,6 +99,7 @@ export default function EntityDetailPanel() {
       intentId?: string;
       startedTick?: number;
       moveTarget?: { x: number; y: number };
+      transfer?: { donorId: number; targetId: number; resourceTypeIds: string[] };
     }
   >();
   const idToCollectorState = new Map<
@@ -148,6 +150,7 @@ export default function EntityDetailPanel() {
               intentId: activeIntentId,
               startedTick: activeIntentStartedTick,
               moveTarget: activeIntentMoveTarget,
+              transfer: intentQueue.getEntityState(Number(id))?.active?.transfer,
             });
           }
           if (collectorState) {
@@ -189,6 +192,7 @@ export default function EntityDetailPanel() {
       { key: "m", name: "move", enabled: true, value: "Move" },
       { key: "c", name: "collect", enabled: canCollect, value: "Collect" },
       ...(canDeliver ? [{ key: "d", name: "deliver", value: "Deliver" as const }] : []),
+      ...(canTransport ? [{ key: "s", name: "transport resources", value: "Transport" as const }] : []),
       { key: "b", name: "build", enabled: canBuild, value: "Build" },
       { key: "u", name: "upgrade", enabled: canUpgrade, value: "Upgrade" },
       { key: "t", name: "research", enabled: canResearch, value: "Research" },
@@ -198,23 +202,34 @@ export default function EntityDetailPanel() {
   // Intersect actions across all selected entities (simple approach: show those enabled for first)
   const firstId = selectedEntities[0] ?? "";
   const deliverySelection = typeof selectedAction === "object" ? selectedAction : null;
-  const deliveryEntity = Array.from(game.world.with("id")).find((e) => String(e.id) === firstId);
+  const carrierEntity = Array.from(game.world.with("id")).find((e) => String(e.id) === firstId);
+  const carrierDef = contentManager.getEntityType(idToType.get(firstId) ?? "");
+  const canTransport = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0 && (carrierDef?.collector?.carry_capacity ?? 0) > 0;
+  const transportSelection = deliverySelection?.kind === "Transport" ? deliverySelection : null;
+  const deliveryEntity = transportSelection
+    ? Array.from(game.world.with("id")).find((e) => String(e.id) === transportSelection.donorId) : carrierEntity;
   const deliveryAmounts = new Map<string, number>();
   for (const entry of deliveryEntity?.resources ?? []) {
-    if (entry.amount > 0) deliveryAmounts.set(entry.resource_type, entry.amount);
+    if (entry.amount > 0 && (!transportSelection || (carrierDef?.max_capacity?.[entry.resource_type] ?? 0) > 0)) deliveryAmounts.set(entry.resource_type, entry.amount);
+  }
+  if (transportSelection) {
+    for (const resource of transportSelection.resourceTypeIds) {
+      if (!deliveryAmounts.has(resource)) deliveryAmounts.set(resource, 0);
+    }
   }
   const cargo = deliveryEntity?.collector_state;
-  if (cargo?.resource_type && cargo.carry_amount > 0) {
+  if (!transportSelection && cargo?.resource_type && cargo.carry_amount > 0) {
     deliveryAmounts.set(cargo.resource_type, (deliveryAmounts.get(cargo.resource_type) ?? 0) + cargo.carry_amount);
   }
   const deliveryOptions = [...deliveryAmounts.keys()].sort((a, b) =>
     (contentManager.getResourceType(a)?.order ?? 0) - (contentManager.getResourceType(b)?.order ?? 0)
     || a.localeCompare(b));
-  const canDeliver = selectedEntities.length === 1 && deliveryOptions.length > 0
-    && (contentManager.getEntityType(idToType.get(firstId) ?? "")?.speed ?? 0) > 0;
+  const canDeliver = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0
+    && ((carrierEntity?.resources ?? []).some(resource => resource.amount > 0)
+      || (carrierEntity?.collector_state?.carry_amount ?? 0) > 0);
   const toggleDeliveryResource = (resource: string) => {
     const current = deliverySelection?.resourceTypeIds ?? [];
-    actions.setSelectedAction({ kind: "Deliver", resourceTypeIds: current.includes(resource)
+    actions.setSelectedAction({ ...deliverySelection, kind: deliverySelection?.kind ?? "Deliver", resourceTypeIds: current.includes(resource)
       ? current.filter((id) => id !== resource) : [...current, resource] });
   };
   const availableActions = getActionsForEntity(firstId);
@@ -262,8 +277,8 @@ export default function EntityDetailPanel() {
     };
   }, [firstId, isSelectedEntityBuilding]);
 
-  const onClickAction = (val: "Move" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research" | "Deliver") => {
-    if (val !== "Deliver" && deliverySelection) actions.setSelectedAction(null);
+  const onClickAction = (val: "Move" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research" | "Deliver" | "Transport") => {
+    if (val !== "Deliver" && val !== "Transport" && deliverySelection) actions.setSelectedAction(null);
     if (val === "Build") {
       setBuildMenuOpen((open) => !open);
       setUpgradeMenuOpen(false);
@@ -284,8 +299,8 @@ export default function EntityDetailPanel() {
       openCollectPicker();
       return;
     }
-    if (val === "Deliver") {
-      actions.setSelectedAction(deliverySelection ? null : { kind: "Deliver", resourceTypeIds: [] });
+    if (val === "Deliver" || val === "Transport") {
+      actions.setSelectedAction(deliverySelection?.kind === val ? null : { kind: val, resourceTypeIds: [] });
       setCollectMenuOpen(false);
       setBuildMenuOpen(false);
       setUpgradeMenuOpen(false);
@@ -451,15 +466,15 @@ export default function EntityDetailPanel() {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable=true]")) return;
       const key = event.key.toLowerCase();
-      if (key === "d" && canDeliver && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
+      if (((key === "d" && canDeliver) || (key === "s" && canTransport)) && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (!event.repeat) onClickAction("Deliver");
+        if (!event.repeat) onClickAction(key === "s" ? "Transport" : "Deliver");
       } else if (deliverySelection && (key === "a" || key === "escape" || /^[1-9]$/.test(key))) {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (key === "escape") actions.setSelectedAction(null);
-        else if (key === "a") actions.setSelectedAction({ kind: "Deliver", resourceTypeIds: deliveryOptions });
+        else if (key === "a") actions.setSelectedAction({ ...deliverySelection!, kind: deliverySelection?.kind ?? "Deliver", resourceTypeIds: deliveryOptions });
         else {
           const resource = deliveryOptions[Number(key) - 1];
           if (resource) toggleDeliveryResource(resource);
@@ -536,9 +551,13 @@ export default function EntityDetailPanel() {
                         {activeIntent?.kind === "upgrade" ? "upgrading to" : activeIntent?.kind === "research" ? "researching" : "building"} {buildState?.blueprint_id ?? ""} {typeof buildState?.progress === "number" ? `${(buildState.progress * 100).toFixed(0)}%` : ""}
                       </span>
                     )}
+                    {activeIntent?.transfer && <span className="font-mono text-muted-foreground">{activeIntent.transfer.donorId} → {activeIntent.transfer.targetId} ({activeIntent.transfer.resourceTypeIds.join(", ")})</span>}
+                    {activeIntent?.kind === "transport" && collectorState && (
+                      <span className="font-mono text-muted-foreground">{collectorState.activity.replaceAll("_", " ")}</span>
+                    )}
                     {collectorState && collectorState.carry_capacity > 0 && (
                       <span className="font-mono text-muted-foreground">
-                        carry: {collectorState.carry_amount.toFixed(1)} / {collectorState.carry_capacity.toFixed(1)}
+                        {activeIntent?.kind === "transport" ? "collection cargo" : "carry"}: {collectorState.carry_amount.toFixed(1)} / {collectorState.carry_capacity.toFixed(1)}
                       </span>
                     )}
                     {collectorState && (collectorState.assigned_nearest_compatible || collectorState.assigned_resource_type) && (
@@ -567,8 +586,8 @@ export default function EntityDetailPanel() {
                   key={a.value}
                   action={a}
                   active={
-                    a.value === "Deliver"
-                      ? Boolean(deliverySelection)
+                    a.value === "Deliver" || a.value === "Transport"
+                      ? deliverySelection?.kind === a.value
                       : a.value === "Move"
                       ? selectedAction === "Move"
                       : a.value === "Collect"
@@ -589,9 +608,9 @@ export default function EntityDetailPanel() {
             </div>
             {deliverySelection && (
               <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
-                <span className="text-muted-foreground">Deliver:</span>
-                <button type="button" className="rounded border border-border bg-muted px-2 py-1 hover:bg-accent"
-                  onClick={() => actions.setSelectedAction({ kind: "Deliver", resourceTypeIds: deliveryOptions })}>
+                <span className="text-muted-foreground">{transportSelection ? `Transport${transportSelection.donorId ? ` from ${transportSelection.donorId}` : ""}:` : "Deliver:"}</span>
+                <button type="button" disabled={!!transportSelection && !transportSelection.donorId} className="rounded border border-border bg-muted px-2 py-1 hover:bg-accent disabled:opacity-40"
+                  onClick={() => actions.setSelectedAction({ ...deliverySelection!, kind: deliverySelection?.kind ?? "Deliver", resourceTypeIds: deliveryOptions })}>
                   [A]ll
                 </button>
                 {deliveryOptions.map((resource, index) => (
@@ -604,8 +623,8 @@ export default function EntityDetailPanel() {
                     {` (${(deliveryAmounts.get(resource) ?? 0).toFixed(1)})`}
                   </button>
                 ))}
-                <span className="text-muted-foreground">{deliverySelection.resourceTypeIds.length
-                  ? "Click a friendly recipient" : "Select resources first"} · [Esc] cancel</span>
+                <span className="text-muted-foreground">{transportSelection && !transportSelection.donorId ? "Click a friendly donor"
+                  : deliverySelection.resourceTypeIds.length ? "Click a friendly recipient" : deliveryOptions.length ? "Select resources first" : "Donor has no compatible resources available"} · [Esc] cancel</span>
               </div>
             )}
             {collectMenuOpen && (

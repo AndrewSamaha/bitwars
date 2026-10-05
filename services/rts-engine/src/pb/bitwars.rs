@@ -304,6 +304,9 @@ pub struct DeliverIntent {
     pub target_id: u64,
     #[prost(string, repeated, tag = "3")]
     pub resource_type_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Nonzero starts a maintained donor-to-recipient transport loop.
+    #[prost(uint64, tag = "4")]
+    pub donor_id: u64,
 }
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -522,6 +525,12 @@ pub struct DeliverState {
     pub target_id: u64,
     #[prost(string, repeated, tag = "2")]
     pub resource_type_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "3")]
+    pub donor_id: u64,
+    #[prost(bool, tag = "4")]
+    pub returning_to_donor: bool,
+    #[prost(uint64, tag = "5")]
+    pub retry_tick: u64,
 }
 /// Unified per-entity execution container (one active at a time).
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -644,6 +653,7 @@ pub enum LifecycleReason {
     /// M6: entity not owned by issuing player
     NotOwned = 8,
     MinimumDistanceViolation = 9,
+    TransferEndpointLost = 10,
 }
 impl LifecycleReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -662,6 +672,7 @@ impl LifecycleReason {
             Self::EntityBusy => "ENTITY_BUSY",
             Self::NotOwned => "NOT_OWNED",
             Self::MinimumDistanceViolation => "MINIMUM_DISTANCE_VIOLATION",
+            Self::TransferEndpointLost => "TRANSFER_ENDPOINT_LOST",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -677,6 +688,7 @@ impl LifecycleReason {
             "ENTITY_BUSY" => Some(Self::EntityBusy),
             "NOT_OWNED" => Some(Self::NotOwned),
             "MINIMUM_DISTANCE_VIOLATION" => Some(Self::MinimumDistanceViolation),
+            "TRANSFER_ENDPOINT_LOST" => Some(Self::TransferEndpointLost),
             _ => None,
         }
     }

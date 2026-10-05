@@ -54,6 +54,15 @@ pub struct EntityActiveIntent {
     /// Placement point for an in-progress build.
     #[serde(default)]
     pub build_location: Option<IntentPoint>,
+    #[serde(default)]
+    pub transfer_route: Option<TransferRoute>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferRoute {
+    pub donor_id: u64,
+    pub target_id: u64,
+    pub resource_type_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -843,6 +852,7 @@ impl RedisClient {
                 .map(|(resource, _)| resource.clone()),
             collect_nearest_compatible: collect_assignment.map(|(_, nearest)| nearest),
             build_location: construction.and_then(|(_, location, _)| location),
+            transfer_route: None,
         };
         let json = serde_json::to_string(&entry)?;
         let key = self.active_intents_key();
@@ -858,6 +868,18 @@ impl RedisClient {
         // net stays well ahead of the most recent activity.
         let ttl: i64 = ttl_secs.try_into().unwrap_or(i64::MAX);
         let _: () = self.conn.expire(&key, ttl).await?;
+        Ok(())
+    }
+
+    pub async fn persist_transfer_route(&mut self, entity_id: u64, delivery: &pb::DeliverIntent) -> anyhow::Result<()> {
+        let key = self.active_intents_key();
+        let json: Option<String> = self.conn.hget(&key, entity_id.to_string()).await?;
+        if let Some(json) = json {
+            let mut entry: EntityActiveIntent = serde_json::from_str(&json)?;
+            entry.transfer_route = Some(TransferRoute { donor_id: delivery.donor_id, target_id: delivery.target_id,
+                resource_type_ids: delivery.resource_type_ids.clone() });
+            let _: () = self.conn.hset(key, entity_id.to_string(), serde_json::to_string(&entry)?).await?;
+        }
         Ok(())
     }
 

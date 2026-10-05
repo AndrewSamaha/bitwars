@@ -330,6 +330,9 @@ fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -
                 exec = Some(pb::action_state::Exec::Deliver(pb::DeliverState {
                     target_id: d.target_id,
                     resource_type_ids: d.resource_type_ids.clone(),
+                    donor_id: d.donor_id,
+                    returning_to_donor: d.donor_id != 0,
+                    retry_tick: 0,
                 }));
             }
             pb::intent::Kind::Repair(r) => {
@@ -370,7 +373,7 @@ fn log_start(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u64
         Some(pb::action_state::Exec::Repair(_)) => "Repair",
         Some(pb::action_state::Exec::Upgrade(_)) => "Upgrade",
         Some(pb::action_state::Exec::Research(_)) => "Research",
-        Some(pb::action_state::Exec::Deliver(_)) => "Deliver",
+        Some(pb::action_state::Exec::Deliver(d)) => if d.donor_id == 0 { "Deliver" } else { "Transport" },
         None => "Unknown",
     };
     trace_start(metadata, kind, entity_id);
@@ -385,7 +388,7 @@ fn log_finish(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u6
         Some(pb::action_state::Exec::Repair(_)) => "Repair",
         Some(pb::action_state::Exec::Upgrade(_)) => "Upgrade",
         Some(pb::action_state::Exec::Research(_)) => "Research",
-        Some(pb::action_state::Exec::Deliver(_)) => "Deliver",
+        Some(pb::action_state::Exec::Deliver(d)) => if d.donor_id == 0 { "Deliver" } else { "Transport" },
         None => "Unknown",
     };
     info!(

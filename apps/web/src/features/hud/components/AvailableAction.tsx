@@ -2,7 +2,7 @@
 
 import React from "react";
 
-export type ActionDef = { key: string; name: string; enabled?: boolean; value: "Move" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research" | "Deliver" };
+export type ActionDef = { key: string; name: string; enabled?: boolean; value: "Move" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research" | "Deliver" | "Transport" };
 
 export type AvailableActionProps = {
   action: ActionDef;
