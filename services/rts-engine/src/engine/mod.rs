@@ -57,6 +57,71 @@ struct CarryState {
     amount: f32,
 }
 
+/// Fractional upkeep is already owed, even before the next whole-unit payment.
+fn accrued_upkeep(fractional: &HashMap<(String, String), f32>, entity_id: u64, resource: &str) -> f64 {
+    fractional.get(&(format!("entity:{entity_id}"), resource.to_string())).copied().unwrap_or(0.0) as f64
+}
+
+fn pay_entity_upkeep(
+    entity: &mut pb::Entity,
+    def: &EntityTypeDef,
+    dt: f32,
+    fractional: &mut HashMap<(String, String), f32>,
+) -> (Vec<String>, Vec<(String, f32)>) {
+    let mut missing_resources = Vec::new();
+    let mut spends = Vec::new();
+    for costs in std::iter::once(&def.maintenance_cost_per_minute)
+        .chain(def.sensor.iter().map(|sensor| &sensor.cost_per_minute))
+    {
+        for (resource_type, per_minute) in costs {
+            if !per_minute.is_finite() || *per_minute <= 0.0 {
+                continue;
+            }
+            let amount = per_minute * dt / 60.0;
+            let key = (format!("entity:{}", entity.id), resource_type.clone());
+            let total = fractional.get(&key).copied().unwrap_or(0.0) + amount;
+            let whole = total.floor();
+            let available = resource_amount(entity, resource_type);
+            if available + f64::EPSILON < whole as f64
+                && !missing_resources.contains(resource_type)
+            {
+                missing_resources.push(resource_type.clone());
+            }
+            let paid = available.min(whole as f64);
+            set_resource_amount(entity, resource_type, available - paid);
+            if paid == whole as f64 && total > whole { fractional.insert(key, total - whole); }
+            else { fractional.remove(&key); }
+            if paid > 0.0 { spends.push((resource_type.clone(), paid as f32)); }
+        }
+    }
+    (missing_resources, spends)
+}
+
+/// Transfer cargo first, then local inventory, retaining every unit that does not fit.
+fn deliver_resources(
+    actor: &mut pb::Entity,
+    recipient: &mut pb::Entity,
+    recipient_def: &EntityTypeDef,
+    resource_types: &[String],
+    mut cargo: Option<&mut CarryState>,
+) {
+    for resource in resource_types {
+        let current = resource_amount(recipient, resource);
+        let room = (recipient_def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64 - current).max(0.0);
+        let cargo_amount = cargo.as_ref()
+            .filter(|carry| carry.resource_type == *resource)
+            .map(|carry| carry.amount as f64).unwrap_or(0.0);
+        let from_cargo = cargo_amount.min(room);
+        let from_inventory = resource_amount(actor, resource).min(room - from_cargo);
+        if from_cargo + from_inventory <= 0.0 { continue; }
+        if let Some(carry) = cargo.as_mut().filter(|carry| carry.resource_type == *resource) {
+            carry.amount = (carry.amount - from_cargo as f32).max(0.0);
+        }
+        set_resource_amount(actor, resource, resource_amount(actor, resource) - from_inventory);
+        set_resource_amount(recipient, resource, current + from_cargo + from_inventory);
+    }
+}
+
 #[derive(Clone)]
 struct ResourceNodeSnapshot {
     id: u64,
@@ -459,6 +524,8 @@ mod radiation_tests {
         entity_types.insert(
             "star_yellow".to_string(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: Default::default(),
                 speed: 0.0,
                 stop_radius: 1.0,
@@ -510,6 +577,8 @@ mod radiation_tests {
         entity_types.insert(
             "collector_solar".to_string(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: Default::default(),
                 speed: 20.0,
                 stop_radius: 1.0,
@@ -540,6 +609,8 @@ mod radiation_tests {
         entity_types.insert(
             "worker".to_string(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: Default::default(),
                 speed: 90.0,
                 stop_radius: 0.75,
@@ -580,6 +651,7 @@ mod radiation_tests {
     fn shielding_creates_safe_collection_band_but_not_safe_core() {
         let content = make_content();
         let star = pb::Entity {
+            resources: None,
             id: 1,
             entity_type_id: "star_yellow".to_string(),
             pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
@@ -589,6 +661,7 @@ mod radiation_tests {
             health: 100.0,
         };
         let collector_safe = pb::Entity {
+            resources: None,
             id: 2,
             entity_type_id: "collector_solar".to_string(),
             pos: Some(pb::Vec2 { x: 120.0, y: 0.0 }),
@@ -598,6 +671,7 @@ mod radiation_tests {
             health: 100.0,
         };
         let collector_too_close = pb::Entity {
+            resources: None,
             id: 3,
             entity_type_id: "collector_solar".to_string(),
             pos: Some(pb::Vec2 { x: 20.0, y: 0.0 }),
@@ -607,6 +681,7 @@ mod radiation_tests {
             health: 100.0,
         };
         let worker_same_distance = pb::Entity {
+            resources: None,
             id: 4,
             entity_type_id: "worker".to_string(),
             pos: Some(pb::Vec2 { x: 120.0, y: 0.0 }),
@@ -640,6 +715,7 @@ mod radiation_tests {
             tick: 0,
             entities: vec![
                 pb::Entity {
+                    resources: None,
                     id: 1,
                     entity_type_id: "star_yellow".to_string(),
                     pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
@@ -649,6 +725,7 @@ mod radiation_tests {
                     health: 100.0,
                 },
                 pb::Entity {
+                    resources: None,
                     id: 2,
                     entity_type_id: "star_yellow".to_string(),
                     pos: Some(pb::Vec2 { x: 60.0, y: 0.0 }),
@@ -658,6 +735,7 @@ mod radiation_tests {
                     health: 100.0,
                 },
                 pb::Entity {
+                    resources: None,
                     id: 3,
                     entity_type_id: "worker".to_string(),
                     pos: Some(pb::Vec2 { x: 40.0, y: 0.0 }),
@@ -711,6 +789,7 @@ mod radiation_tests {
     fn zero_health_entities_are_removed_after_radiation_resolution() {
         let mut entities = vec![
             pb::Entity {
+                resources: None,
                 id: 1,
                 entity_type_id: "worker".to_string(),
                 pos: None,
@@ -720,6 +799,7 @@ mod radiation_tests {
                 health: 0.0,
             },
             pb::Entity {
+                resources: None,
                 id: 2,
                 entity_type_id: "worker".to_string(),
                 pos: None,
@@ -1751,6 +1831,7 @@ impl Engine {
             Some(pb::intent::Kind::Repair(r)) => r.entity_id,
             Some(pb::intent::Kind::Upgrade(u)) => u.entity_id,
             Some(pb::intent::Kind::Research(r)) => r.entity_id,
+            Some(pb::intent::Kind::Deliver(d)) => d.entity_id,
             None => return String::new(),
         };
         self.state
@@ -1930,7 +2011,17 @@ impl Engine {
         );
     }
 
-    fn apply_maintenance_costs(&mut self, dt: f32) -> HashMap<u64, Vec<String>> {
+    /// Collectors pay upkeep first; wireless receivers pay after receiving supply.
+    async fn maintain_and_share_resources(&mut self, dt: f32) -> HashMap<u64, Vec<String>> {
+        let mut unpaid = self.apply_maintenance_costs(dt, false);
+        let wireless_suppliers = self.share_wireless_collector_resources(&unpaid);
+        unpaid.extend(self.apply_maintenance_costs(dt, true));
+        self.share_resources(&unpaid, &wireless_suppliers);
+        self.emit_starvation_events(&unpaid).await;
+        unpaid
+    }
+
+    fn apply_maintenance_costs(&mut self, dt: f32, wireless_receivers: bool) -> HashMap<u64, Vec<String>> {
         let mut starvation_damage = HashMap::new();
         let Some(content) = self.content.as_ref() else {
             return starvation_damage;
@@ -1951,31 +2042,11 @@ impl Engine {
             let Some(def) = content.get(&entity.entity_type_id) else {
                 continue;
             };
-            let mut missing_resources = Vec::new();
-            for costs in std::iter::once(&def.maintenance_cost_per_minute)
-                .chain(def.sensor.iter().map(|sensor| &sensor.cost_per_minute))
-            {
-                for (resource_type, per_minute) in costs {
-                    if !per_minute.is_finite() || *per_minute <= 0.0 {
-                        continue;
-                    }
-                    let amount = per_minute * dt / 60.0;
-                    let key = (format!("entity:{}", entity.id), resource_type.clone());
-                    let total = self.maintenance_spend_fractional.get(&key).copied().unwrap_or(0.0) + amount;
-                    let whole = total.floor();
-                    let available = resource_amount(entity, resource_type);
-                    if available + f64::EPSILON < amount as f64
-                        && !missing_resources.contains(resource_type)
-                    {
-                        missing_resources.push(resource_type.clone());
-                    }
-                    let paid = available.min(whole as f64);
-                    set_resource_amount(entity, resource_type, available - paid);
-                    if paid == whole as f64 && total > whole { self.maintenance_spend_fractional.insert(key, total - whole); }
-                    else { self.maintenance_spend_fractional.remove(&key); }
-                    if paid > 0.0 { spends.push((entity.owner_player_id.clone(), resource_type.clone(), paid as f32)); }
-                }
-            }
+            let receives_wirelessly = def.resource_sharing.as_ref()
+                .is_some_and(|sharing| sharing.wireless_receives.iter().any(|r| r == "energy"));
+            if receives_wirelessly != wireless_receivers { continue; }
+            let (mut missing_resources, paid) = pay_entity_upkeep(entity, def, dt, &mut self.maintenance_spend_fractional);
+            spends.extend(paid.into_iter().map(|(resource, amount)| (entity.owner_player_id.clone(), resource, amount)));
             if !missing_resources.is_empty() {
                 entity.health = (entity.health - 1.0).max(0.0);
                 missing_resources.sort_unstable();
@@ -1986,9 +2057,11 @@ impl Engine {
         starvation_damage
     }
 
-    fn share_resources(&mut self) {
+    fn share_resources(&mut self, unpaid_entities: &HashMap<u64, Vec<String>>, wireless_suppliers: &HashMap<u64, u64>) {
         let Some(content) = self.content.as_ref() else { return; };
         let entities: Vec<_> = self.state.entities.iter().filter_map(|e| {
+            if e.health <= 0.0 || !is_player_owner(&e.owner_player_id)
+                || unpaid_entities.contains_key(&e.id) || self.is_upgrading(e.id) { return None; }
             let def = content.get(&e.entity_type_id)?;
             let share = def.resource_sharing.as_ref()?;
             let pos = e.pos.as_ref()?;
@@ -2004,17 +2077,21 @@ impl Engine {
             for resource in donor_types {
                 let mut recipients: Vec<u64> = self.state.entities.iter().filter(|e| {
                     if e.id == donor_id || e.owner_player_id != owner || !upkeep_types.get(&e.id).is_some_and(|types| types.contains(&resource)) { return false; }
+                    if e.health <= 0.0 || self.is_upgrading(e.id) { return false; }
+                    // Do not return energy to a collector that just supplied this donor.
+                    if resource == "energy" && wireless_suppliers.get(&e.id) == Some(&donor_id) { return false; }
                     let Some(pos) = e.pos.as_ref() else { return false; };
                     let dx = pos.x - x; let dy = pos.y - y;
                     dx * dx + dy * dy <= range * range
                 }).map(|e| e.id).collect();
                 recipients.sort_unstable();
                 let mut donor_stock = self.state.entities.iter().find(|e| e.id == donor_id).map(|e| resource_amount(e, &resource)).unwrap_or(0.0);
+                let reserve = accrued_upkeep(&self.maintenance_spend_fractional, donor_id, &resource);
                 for recipient_id in recipients {
-                    if donor_stock <= f64::EPSILON { break; }
+                    if donor_stock <= reserve + f64::EPSILON { break; }
                     let Some(target) = self.state.entities.iter_mut().find(|e| e.id == recipient_id) else { continue; };
                     let capacity = resource_capacity(content, &target.entity_type_id, &resource);
-                    let amount = donor_stock.min((capacity - resource_amount(target, &resource)).max(0.0));
+                    let amount = (donor_stock - reserve).min((capacity - resource_amount(target, &resource)).max(0.0));
                     if amount > 0.0 {
                         set_resource_amount(target, &resource, resource_amount(target, &resource) + amount);
                         donor_stock -= amount;
@@ -2025,15 +2102,18 @@ impl Engine {
         }
     }
 
-    fn share_wireless_collector_resources(&mut self) {
+    fn share_wireless_collector_resources(&mut self, unpaid_entities: &HashMap<u64, Vec<String>>) -> HashMap<u64, u64> {
+        let mut suppliers = HashMap::new();
         let Some(content) = self.content.as_ref() else {
-            return;
+            return suppliers;
         };
         let mut receivers: Vec<_> = self
             .state
             .entities
             .iter()
             .filter_map(|entity| {
+                if entity.health <= 0.0 || !is_player_owner(&entity.owner_player_id)
+                    || self.is_upgrading(entity.id) { return None; }
                 let definition = content.get(&entity.entity_type_id)?;
                 let sharing = definition.resource_sharing.as_ref()?;
                 if !sharing.wireless_receives.iter().any(|resource| resource == "energy") {
@@ -2059,6 +2139,7 @@ impl Engine {
             .filter(|entity| {
                 matches!(entity.entity_type_id.as_str(), "collector_solar" | "collector_solar_v2")
                     && entity.health > 0.0
+                    && !unpaid_entities.contains_key(&entity.id)
                     && is_player_owner(&entity.owner_player_id)
             })
             .filter_map(|entity| {
@@ -2101,7 +2182,8 @@ impl Engine {
             if available <= f64::EPSILON {
                 continue;
             }
-            let amount = available.min(receivers[receiver_index].5);
+            let surplus = (available - accrued_upkeep(&self.maintenance_spend_fractional, collector_id, "energy")).max(0.0);
+            let amount = surplus.min(receivers[receiver_index].5);
             if amount <= 0.0 {
                 continue;
             }
@@ -2123,10 +2205,12 @@ impl Engine {
                 set_resource_amount(source, "energy", available - amount);
             }
             receivers[receiver_index].5 -= amount;
+            suppliers.insert(collector_id, recipient_id);
             if let Some(state) = self.collector_ui_state_by_entity.get_mut(&collector_id) {
                 state.receiving_entity_id = Some(recipient_id);
             }
         }
+        suppliers
     }
 
     /// An upgrading entity is entirely inactive: it cannot provide passive
@@ -2966,6 +3050,68 @@ impl Engine {
                         updated_tick: self.state.tick,
                     },
                 );
+            }
+        }
+    }
+
+    /// Follow a friendly recipient and complete a single delivery trip.
+    async fn advance_deliveries(&mut self, dt: f32) {
+        let mut deliveries: Vec<_> = self.intents.active_intents().iter()
+            .filter_map(|(id, active)| match active.action.exec.as_ref() {
+                Some(pb::action_state::Exec::Deliver(delivery)) => Some((*id, delivery.clone())),
+                _ => None,
+            }).collect();
+        deliveries.sort_by_key(|(id, _)| *id);
+        for (id, delivery) in deliveries {
+            let actor = self.state.entities.iter().find(|e| e.id == id).cloned();
+            let target = self.state.entities.iter().find(|e| e.id == delivery.target_id).cloned();
+            let valid = actor.zip(target).and_then(|(actor, target)| {
+                let content = self.content.as_ref()?;
+                let actor_def = content.get(&actor.entity_type_id)?;
+                let target_def = content.get(&target.entity_type_id)?;
+                (actor.id != target.id && actor.health > 0.0 && target.health > 0.0
+                    && actor.owner_player_id == target.owner_player_id)
+                    .then_some((actor, target, actor_def.clone(), target_def.clone()))
+            });
+            let mut canceled = true;
+            if let Some((mut actor, mut target, actor_def, target_def)) = valid {
+                if let (Some(pos), Some(to)) = (actor.pos.as_ref(), target.pos.as_ref()) {
+                    let distance = Self::distance_sq(pos.x, pos.y, to.x, to.y).sqrt();
+                    let range = actor_def.hull_radius + target_def.hull_radius + actor_def.stop_radius.max(1.0);
+                    if distance > range {
+                        if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == id) {
+                            let speed = actor_def.speed.min((distance - range) / dt);
+                            Self::drive_velocity_toward(entity, speed, to.x, to.y, range);
+                        }
+                        continue;
+                    }
+                    deliver_resources(&mut actor, &mut target, &target_def,
+                        &delivery.resource_type_ids, self.carry_by_entity.get_mut(&id));
+                    for entity in &mut self.state.entities {
+                        if entity.id == id { entity.resources = actor.resources.clone(); }
+                        if entity.id == target.id { entity.resources = target.resources.clone(); }
+                    }
+                    let cargo = self.carry_by_entity.get(&id).cloned();
+                    if let Some(collector) = actor_def.collector.as_ref() {
+                        self.set_collector_ui_state(id, COLLECTOR_ACTIVITY_IDLE,
+                            cargo.as_ref().map(|c| c.resource_type.as_str()).unwrap_or(""),
+                            cargo.as_ref().map(|c| c.amount).unwrap_or(0.0), collector.carry_capacity, 0.0);
+                    }
+                    canceled = false;
+                }
+            }
+            if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == id) {
+                entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+            }
+            if let Some(metadata) = self.intents.finish(id) {
+                if let Err(error) = self.redis.clear_active_intent(id).await {
+                    warn!(?error, entity_id = id, "failed to clear delivery tracking");
+                }
+                let state = if canceled { pb::LifecycleState::Canceled } else { pb::LifecycleState::Finished };
+                let reason = if canceled { pb::LifecycleReason::InvalidTarget } else { pb::LifecycleReason::None };
+                if let Err(error) = self.emit_lifecycle_event(&metadata, state, reason, self.state.tick).await {
+                    warn!(?error, entity_id = id, "failed to publish delivery lifecycle");
+                }
             }
         }
     }
@@ -4087,10 +4233,8 @@ impl Engine {
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
         self.apply_repairs(dt).await;
         self.apply_resource_collection(dt).await;
-        let starvation_damage = self.apply_maintenance_costs(dt);
-        self.emit_starvation_events(&starvation_damage).await;
-        self.share_wireless_collector_resources();
-        self.share_resources();
+        self.advance_deliveries(dt).await;
+        let starvation_damage = self.maintain_and_share_resources(dt).await;
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
@@ -4321,12 +4465,10 @@ impl Engine {
             );
             self.apply_repairs(dt).await;
             self.apply_resource_collection(dt).await;
+            self.advance_deliveries(dt).await;
             self.advance_builds(dt).await;
             self.advance_research(dt).await;
-            let starvation_damage = self.apply_maintenance_costs(dt);
-            self.emit_starvation_events(&starvation_damage).await;
-            self.share_wireless_collector_resources();
-            self.share_resources();
+            let starvation_damage = self.maintain_and_share_resources(dt).await;
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
@@ -4693,6 +4835,10 @@ impl Engine {
                     kind: Some(pb::intent::Kind::Collect(c)),
                 }
             }
+            Some(intent_envelope::Payload::Deliver(d)) => {
+                info!(entity_id = d.entity_id, target_id = d.target_id, player = %player_id, "accept intent=Deliver");
+                pb::Intent { kind: Some(pb::intent::Kind::Deliver(d)) }
+            }
             Some(intent_envelope::Payload::Repair(r)) => {
                 info!(entity_id = r.entity_id, intent_id = %format_uuid(&intent_id), player = %player_id, target_id = r.target_id, "accept intent=Repair");
                 pb::Intent {
@@ -4721,6 +4867,7 @@ impl Engine {
             Some(pb::intent::Kind::Repair(r)) => r.entity_id,
             Some(pb::intent::Kind::Upgrade(u)) => u.entity_id,
             Some(pb::intent::Kind::Research(r)) => r.entity_id,
+            Some(pb::intent::Kind::Deliver(d)) => d.entity_id,
             None => {
                 self.emit_lifecycle_event(
                     &metadata,
@@ -4995,6 +5142,32 @@ impl Engine {
             }
         }
 
+        if let Some(pb::intent::Kind::Deliver(delivery)) = payload_intent.kind.as_ref() {
+            let valid = self.state.entities.iter().find(|e| e.id == entity_id)
+                .zip(self.state.entities.iter().find(|e| e.id == delivery.target_id))
+                .and_then(|(actor, target)| {
+                    let content = self.content.as_ref()?;
+                    let actor_def = content.get(&actor.entity_type_id)?;
+                    content.get(&target.entity_type_id)?;
+                    Some(actor.id != target.id && actor.health > 0.0 && target.health > 0.0
+                        && actor.owner_player_id == target.owner_player_id && actor_def.speed > 0.0
+                        && actor.pos.is_some() && target.pos.is_some()
+                        && !delivery.resource_type_ids.is_empty()
+                        && delivery.resource_type_ids.iter().any(|r| resource_capacity(content, &target.entity_type_id, r) > resource_amount(target, r))
+                        && delivery.resource_type_ids.iter().all(|resource| {
+                            let cargo = self.carry_by_entity.get(&entity_id)
+                                .filter(|c| c.resource_type == *resource).map(|c| c.amount).unwrap_or(0.0);
+                            content.get_resource_type(resource).is_some()
+                                && resource_amount(actor, resource) + cargo as f64 > 0.0
+                        }))
+                }).unwrap_or(false);
+            if !valid {
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::InvalidTarget, accept_tick).await?;
+                return Err(anyhow!("invalid delivery actor, recipient, or resources"));
+            }
+        }
+
         if let Some(pb::intent::Kind::Repair(repair)) = payload_intent.kind.as_ref() {
             let actor = self
                 .state
@@ -5070,6 +5243,7 @@ impl Engine {
             Some(pb::intent::Kind::Repair(_)) => ("repair", None, None, None),
             Some(pb::intent::Kind::Upgrade(_)) => ("upgrade", None, None, None),
             Some(pb::intent::Kind::Research(_)) => ("research", None, None, None),
+            Some(pb::intent::Kind::Deliver(_)) => ("deliver", None, None, None),
             None => ("unknown", None, None, None),
         };
 
@@ -5165,6 +5339,7 @@ impl Engine {
             Some(pb::intent::Kind::Repair(r)) => intent_envelope::Payload::Repair(r),
             Some(pb::intent::Kind::Upgrade(u)) => intent_envelope::Payload::Upgrade(u),
             Some(pb::intent::Kind::Research(r)) => intent_envelope::Payload::Research(r),
+            Some(pb::intent::Kind::Deliver(d)) => intent_envelope::Payload::Deliver(d),
             None => return Err(anyhow!("legacy intent missing kind")),
         };
 
@@ -5176,6 +5351,7 @@ impl Engine {
             Some(pb::intent::Kind::Repair(r)) => r.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Upgrade(_)) => "",
             Some(pb::intent::Kind::Research(_)) => "",
+            Some(pb::intent::Kind::Deliver(_)) => "",
             None => "",
         };
 
@@ -5199,6 +5375,7 @@ impl Engine {
             Some(pb::intent::Kind::Repair(r)) => r.player_id.clone(),
             Some(pb::intent::Kind::Upgrade(_)) => String::new(),
             Some(pb::intent::Kind::Research(_)) => String::new(),
+            Some(pb::intent::Kind::Deliver(_)) => String::new(),
             None => String::new(),
         };
 
@@ -5307,5 +5484,105 @@ impl Engine {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod delivery_tests {
+    use super::*;
+
+    #[test]
+    fn delivery_preserves_excess_cargo_and_unselected_inventory() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut recipient_def = content.get("habitat").unwrap().clone();
+        recipient_def.max_capacity = HashMap::from([("minerals".into(), 20.0), ("food".into(), 10.0)]);
+        let mut actor = pb::Entity::default();
+        let mut recipient = pb::Entity::default();
+        set_resource_amount(&mut actor, "minerals", 5.0);
+        set_resource_amount(&mut actor, "food", 8.0);
+        set_resource_amount(&mut actor, "energy", 3.0);
+        set_resource_amount(&mut recipient, "minerals", 18.0);
+        set_resource_amount(&mut recipient, "food", 2.0);
+        let mut cargo = CarryState { resource_type: "minerals".into(), amount: 7.0 };
+        deliver_resources(&mut actor, &mut recipient, &recipient_def,
+            &["minerals".into(), "food".into()], Some(&mut cargo));
+        assert_eq!(resource_amount(&recipient, "minerals"), 20.0);
+        assert_eq!(resource_amount(&actor, "minerals"), 5.0);
+        assert_eq!(cargo.amount, 5.0);
+        assert_eq!(resource_amount(&recipient, "food"), 10.0);
+        assert_eq!(resource_amount(&actor, "food"), 0.0);
+        assert_eq!(resource_amount(&actor, "energy"), 3.0);
+        set_resource_amount(&mut recipient, "minerals", 0.0);
+        deliver_resources(&mut actor, &mut recipient, &recipient_def,
+            &["minerals".into(), "energy".into()], Some(&mut cargo));
+        assert_eq!(resource_amount(&recipient, "minerals"), 10.0);
+        assert_eq!(resource_amount(&actor, "minerals"), 0.0);
+        assert_eq!(cargo.amount, 0.0);
+        assert_eq!(resource_amount(&actor, "energy"), 3.0);
+        assert_eq!(resource_amount(&recipient, "energy"), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod sharing_upkeep_tests {
+    use super::*;
+
+    #[test]
+    fn empty_habitat_reports_starvation_only_when_energy_payment_is_due() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let def = content.get("habitat").unwrap();
+        let mut habitat = pb::Entity { id: 1, ..Default::default() };
+        set_resource_amount(&mut habitat, "food", 100.0);
+        let mut fractional = HashMap::new();
+        let mut missed_payments = Vec::new();
+        for tick in 1..=3601 {
+            let (missing, _) = pay_entity_upkeep(&mut habitat, def, 1.0 / 60.0, &mut fractional);
+            if !missing.is_empty() {
+                assert_eq!(missing, vec!["energy".to_string()]);
+                missed_payments.push(tick);
+            }
+        }
+        assert_eq!(missed_payments.len(), 5);
+        assert!((719..=721).contains(&missed_payments[0]));
+    }
+
+
+    #[test]
+    fn incoming_energy_pays_habitat_upkeep_before_surplus_is_shared() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let habitat_def = content.get("habitat").unwrap();
+        let solar_def = content.get("collector_solar").unwrap();
+        let mut habitat = pb::Entity { id: 1, ..Default::default() };
+        set_resource_amount(&mut habitat, "food", 100.0);
+        let mut solar = pb::Entity { id: 2, ..Default::default() };
+        let mut fractional = HashMap::new();
+        let dt = 1.0 / 60.0;
+        let mut paid_energy = 0.0;
+        // Run beyond the habitat's first one-unit sensor payment (~12 seconds).
+        for _ in 0..800 {
+            let generated = solar_def.collector.as_ref().unwrap().proximity_rate_per_second * dt;
+            let available = resource_amount(&solar, "energy") + generated as f64;
+            set_resource_amount(&mut solar, "energy", available);
+            let (missing, _) = pay_entity_upkeep(&mut solar, solar_def, dt, &mut fractional);
+            assert!(missing.is_empty());
+            let available = resource_amount(&solar, "energy");
+            let retained = accrued_upkeep(&fractional, solar.id, "energy");
+            let incoming = (available - retained).max(0.0);
+            set_resource_amount(&mut solar, "energy", available - incoming);
+            let available = resource_amount(&habitat, "energy") + incoming;
+            set_resource_amount(&mut habitat, "energy", available);
+            let (missing, paid) = pay_entity_upkeep(&mut habitat, habitat_def, dt, &mut fractional);
+            assert!(missing.is_empty(), "habitat must receive supply before its upkeep check");
+            paid_energy += paid.iter().filter(|(r, _)| r == "energy").map(|(_, a)| *a).sum::<f32>();
+            // Even with unlimited demand, accrued upkeep stays on the donor.
+            let reserve = accrued_upkeep(&fractional, habitat.id, "energy");
+            let available = resource_amount(&habitat, "energy");
+            assert!(available + f64::EPSILON >= reserve);
+            set_resource_amount(&mut habitat, "energy", reserve);
+        }
+        assert_eq!(paid_energy, 1.0);
     }
 }

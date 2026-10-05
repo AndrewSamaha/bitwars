@@ -144,6 +144,14 @@ export default function GameStage() {
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
+            } : params.kind === "Deliver" ? {
+              type: "Deliver",
+              entity_id: params.entityId,
+              target_id: params.targetId,
+              resource_type_ids: params.resourceTypeIds,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
             } : {
               type: "Repair",
               entity_id: params.entityId,
@@ -1175,6 +1183,24 @@ export default function GameStage() {
           if (!shift && !ctrl) setSelectedAction(null);
         };
 
+        const dispatchDeliver = (targetId: string) => {
+          const sel = latestSelectorsRef.current;
+          const delivery = typeof sel.selectedAction === "object" ? sel.selectedAction : null;
+          if (!delivery) return;
+          if (targetId === sel.firstSelectedId) { setSelectedAction(null); return; }
+          if (!delivery.resourceTypeIds.length) return;
+          const target = findLiveEntityById(targetId);
+          const definition = contentManager.getEntityType(target?.entity_type_id ?? "");
+          if (!target || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
+            || !delivery.resourceTypeIds.some((r) => (definition?.max_capacity?.[r] ?? 0)
+              > (target.resources?.find((entry: { resource_type: string; amount: number }) => entry.resource_type === r)?.amount ?? 0))) return;
+          const entityId = Number(sel.firstSelectedId);
+          if (Number.isSafeInteger(entityId) && Number.isSafeInteger(Number(targetId))) {
+            intentQueue.handleDeliverCommand(entityId, Number(targetId), delivery.resourceTypeIds);
+          }
+          setSelectedAction(null);
+        };
+
         const dispatchRepair = (targetId: string) => {
           const sel = latestSelectorsRef.current;
           const target = findLiveEntityById(targetId);
@@ -1276,6 +1302,10 @@ export default function GameStage() {
             const press = entityPress;
             entityPress = null;
             if (press) {
+              if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
+                dispatchDeliver(press.id);
+                return;
+              }
               if (latestSelectorsRef.current.selectedAction === "Repair") {
                 dispatchRepair(press.id);
                 return;
@@ -1284,7 +1314,7 @@ export default function GameStage() {
               return;
             }
             if (latestSelectorsRef.current.selectedAction === 'Move') dispatchMove(ev.global, false, false);
-            else if (latestSelectorsRef.current.selectedAction === "Repair") setSelectedAction(null);
+            else if (latestSelectorsRef.current.selectedAction === "Repair" || (latestSelectorsRef.current.selectedAction && typeof latestSelectorsRef.current.selectedAction === "object")) setSelectedAction(null);
             else setSelection([]);
             return;
           }
@@ -1301,11 +1331,19 @@ export default function GameStage() {
           const height = Math.abs(endY - drag.startY);
           if (width < SELECTION_DRAG_THRESHOLD_PX && height < SELECTION_DRAG_THRESHOLD_PX) {
             if (press) {
+              if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
+                dispatchDeliver(press.id);
+                return;
+              }
               if (latestSelectorsRef.current.selectedAction === "Repair") {
                 dispatchRepair(press.id);
                 return;
               }
               selectPressedEntity(press);
+              return;
+            }
+            if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
+              setSelectedAction(null);
               return;
             }
             if (drag.moveMode) dispatchMove(ev.global, drag.shift, drag.ctrl);

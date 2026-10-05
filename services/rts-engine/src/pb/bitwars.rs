@@ -295,6 +295,16 @@ pub struct RepairIntent {
     #[prost(string, tag = "4")]
     pub player_id: ::prost::alloc::string::String,
 }
+/// Deliver currently held inventory and collection cargo to a friendly entity.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeliverIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub target_id: u64,
+    #[prost(string, repeated, tag = "3")]
+    pub resource_type_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntentEnvelope {
@@ -318,7 +328,7 @@ pub struct IntentEnvelope {
     /// defaults to REPLACE_ACTIVE when omitted
     #[prost(enumeration = "IntentPolicy", tag = "7")]
     pub policy: i32,
-    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14, 16, 17")]
+    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14, 16, 17, 18")]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
 /// Nested message and enum types in `IntentEnvelope`.
@@ -339,13 +349,15 @@ pub mod intent_envelope {
         Upgrade(super::UpgradeIntent),
         #[prost(message, tag = "17")]
         Research(super::ResearchIntent),
+        #[prost(message, tag = "18")]
+        Deliver(super::DeliverIntent),
     }
 }
 /// Extensible Intent envelope.
 /// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Intent {
-    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
     pub kind: ::core::option::Option<intent::Kind>,
 }
 /// Nested message and enum types in `Intent`.
@@ -366,6 +378,8 @@ pub mod intent {
         Upgrade(super::UpgradeIntent),
         #[prost(message, tag = "7")]
         Research(super::ResearchIntent),
+        #[prost(message, tag = "8")]
+        Deliver(super::DeliverIntent),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -502,13 +516,20 @@ pub struct RepairState {
     #[prost(uint64, tag = "1")]
     pub target_id: u64,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeliverState {
+    #[prost(uint64, tag = "1")]
+    pub target_id: u64,
+    #[prost(string, repeated, tag = "2")]
+    pub resource_type_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
 /// Unified per-entity execution container (one active at a time).
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ActionState {
     /// Echo original intent for correlation/observability (optional but useful)
     #[prost(message, optional, tag = "1")]
     pub intent: ::core::option::Option<Intent>,
-    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6, 7, 8")]
+    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6, 7, 8, 9")]
     pub exec: ::core::option::Option<action_state::Exec>,
 }
 /// Nested message and enum types in `ActionState`.
@@ -529,6 +550,8 @@ pub mod action_state {
         Upgrade(super::UpgradeState),
         #[prost(message, tag = "8")]
         Research(super::ResearchState),
+        #[prost(message, tag = "9")]
+        Deliver(super::DeliverState),
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

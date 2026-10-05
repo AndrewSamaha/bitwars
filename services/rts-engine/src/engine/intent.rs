@@ -92,6 +92,7 @@ impl IntentManager {
             pb::intent::Kind::Repair(r) => Some(r.entity_id),
             pb::intent::Kind::Upgrade(u) => Some(u.entity_id),
             pb::intent::Kind::Research(r) => Some(r.entity_id),
+            pb::intent::Kind::Deliver(d) => Some(d.entity_id),
         }
     }
 
@@ -325,6 +326,12 @@ fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -
                 };
                 exec = Some(pb::action_state::Exec::Collect(collect_state));
             }
+            pb::intent::Kind::Deliver(d) => {
+                exec = Some(pb::action_state::Exec::Deliver(pb::DeliverState {
+                    target_id: d.target_id,
+                    resource_type_ids: d.resource_type_ids.clone(),
+                }));
+            }
             pb::intent::Kind::Repair(r) => {
                 exec = Some(pb::action_state::Exec::Repair(pb::RepairState {
                     target_id: r.target_id,
@@ -363,6 +370,7 @@ fn log_start(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u64
         Some(pb::action_state::Exec::Repair(_)) => "Repair",
         Some(pb::action_state::Exec::Upgrade(_)) => "Upgrade",
         Some(pb::action_state::Exec::Research(_)) => "Research",
+        Some(pb::action_state::Exec::Deliver(_)) => "Deliver",
         None => "Unknown",
     };
     trace_start(metadata, kind, entity_id);
@@ -377,6 +385,7 @@ fn log_finish(metadata: &IntentMetadata, action: &pb::ActionState, entity_id: u6
         Some(pb::action_state::Exec::Repair(_)) => "Repair",
         Some(pb::action_state::Exec::Upgrade(_)) => "Upgrade",
         Some(pb::action_state::Exec::Research(_)) => "Research",
+        Some(pb::action_state::Exec::Deliver(_)) => "Deliver",
         None => "Unknown",
     };
     info!(
@@ -546,6 +555,7 @@ mod tests {
         let mut state = GameState {
             tick: 0,
             entities: vec![pb::Entity {
+                resources: None,
                 id: entity_id,
                 entity_type_id: String::new(),
                 pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
@@ -582,6 +592,7 @@ mod tests {
         let mut state = GameState {
             tick: 0,
             entities: vec![pb::Entity {
+                resources: None,
                 id: entity_id,
                 entity_type_id: "worker".into(),
                 pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),

@@ -84,6 +84,7 @@ export default function EntityDetailPanel() {
     setUpgradeMenuOpen(false);
     setResearchMenuOpen(false);
     setCollectMenuOpen(false);
+    if (typeof selectedAction === "object" && selectedAction) actions.setSelectedAction(null);
   }, [selectedIdsKey]);
 
   // Build a quick lookup of current positions and entity_type_id by entity id (stringified)
@@ -187,6 +188,7 @@ export default function EntityDetailPanel() {
     return [
       { key: "m", name: "move", enabled: true, value: "Move" },
       { key: "c", name: "collect", enabled: canCollect, value: "Collect" },
+      ...(canDeliver ? [{ key: "d", name: "deliver", value: "Deliver" as const }] : []),
       { key: "b", name: "build", enabled: canBuild, value: "Build" },
       { key: "u", name: "upgrade", enabled: canUpgrade, value: "Upgrade" },
       { key: "t", name: "research", enabled: canResearch, value: "Research" },
@@ -195,6 +197,26 @@ export default function EntityDetailPanel() {
   };
   // Intersect actions across all selected entities (simple approach: show those enabled for first)
   const firstId = selectedEntities[0] ?? "";
+  const deliverySelection = typeof selectedAction === "object" ? selectedAction : null;
+  const deliveryEntity = Array.from(game.world.with("id")).find((e) => String(e.id) === firstId);
+  const deliveryAmounts = new Map<string, number>();
+  for (const entry of deliveryEntity?.resources ?? []) {
+    if (entry.amount > 0) deliveryAmounts.set(entry.resource_type, entry.amount);
+  }
+  const cargo = deliveryEntity?.collector_state;
+  if (cargo?.resource_type && cargo.carry_amount > 0) {
+    deliveryAmounts.set(cargo.resource_type, (deliveryAmounts.get(cargo.resource_type) ?? 0) + cargo.carry_amount);
+  }
+  const deliveryOptions = [...deliveryAmounts.keys()].sort((a, b) =>
+    (contentManager.getResourceType(a)?.order ?? 0) - (contentManager.getResourceType(b)?.order ?? 0)
+    || a.localeCompare(b));
+  const canDeliver = selectedEntities.length === 1 && deliveryOptions.length > 0
+    && (contentManager.getEntityType(idToType.get(firstId) ?? "")?.speed ?? 0) > 0;
+  const toggleDeliveryResource = (resource: string) => {
+    const current = deliverySelection?.resourceTypeIds ?? [];
+    actions.setSelectedAction({ kind: "Deliver", resourceTypeIds: current.includes(resource)
+      ? current.filter((id) => id !== resource) : [...current, resource] });
+  };
   const availableActions = getActionsForEntity(firstId);
   const isCollectActiveForSelection = selectedEntities.length > 0 && selectedEntities.every((id) => {
     const ai = idToActiveIntent.get(id);
@@ -240,7 +262,8 @@ export default function EntityDetailPanel() {
     };
   }, [firstId, isSelectedEntityBuilding]);
 
-  const onClickAction = (val: "Move" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research") => {
+  const onClickAction = (val: "Move" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research" | "Deliver") => {
+    if (val !== "Deliver" && deliverySelection) actions.setSelectedAction(null);
     if (val === "Build") {
       setBuildMenuOpen((open) => !open);
       setUpgradeMenuOpen(false);
@@ -259,6 +282,14 @@ export default function EntityDetailPanel() {
     }
     if (val === "Collect") {
       openCollectPicker();
+      return;
+    }
+    if (val === "Deliver") {
+      actions.setSelectedAction(deliverySelection ? null : { kind: "Deliver", resourceTypeIds: [] });
+      setCollectMenuOpen(false);
+      setBuildMenuOpen(false);
+      setUpgradeMenuOpen(false);
+      setResearchMenuOpen(false);
       return;
     }
     if (val === "Repair") {
@@ -307,6 +338,7 @@ export default function EntityDetailPanel() {
   };
   const openCollectPicker = () => {
     if (collectOptions.length === 0) return;
+    actions.setSelectedAction(null);
     if (collectOptions.length === 1) {
       startCollection({ resourceTypeId: collectOptions[0], nearestCompatible: false });
       return;
@@ -414,6 +446,30 @@ export default function EntityDetailPanel() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [buildMenuOpen, buildOptions, collectMenuOpen, collectOptions, firstId, selectedIdsKey, upgradeMenuOpen, upgradeOptions]);
 
+  useEffect(() => {
+    const onDeliverKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, [contenteditable=true]")) return;
+      const key = event.key.toLowerCase();
+      if (key === "d" && canDeliver && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!event.repeat) onClickAction("Deliver");
+      } else if (deliverySelection && (key === "a" || key === "escape" || /^[1-9]$/.test(key))) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (key === "escape") actions.setSelectedAction(null);
+        else if (key === "a") actions.setSelectedAction({ kind: "Deliver", resourceTypeIds: deliveryOptions });
+        else {
+          const resource = deliveryOptions[Number(key) - 1];
+          if (resource) toggleDeliveryResource(resource);
+        }
+      }
+    };
+    window.addEventListener("keydown", onDeliverKey, true);
+    return () => window.removeEventListener("keydown", onDeliverKey, true);
+  });
+
   if (!selectedEntities?.length) return null;
 
   return (
@@ -511,7 +567,9 @@ export default function EntityDetailPanel() {
                   key={a.value}
                   action={a}
                   active={
-                    a.value === "Move"
+                    a.value === "Deliver"
+                      ? Boolean(deliverySelection)
+                      : a.value === "Move"
                       ? selectedAction === "Move"
                       : a.value === "Collect"
                         ? collectMenuOpen || isCollectActiveForSelection
@@ -529,6 +587,27 @@ export default function EntityDetailPanel() {
                 />
               ))}
             </div>
+            {deliverySelection && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
+                <span className="text-muted-foreground">Deliver:</span>
+                <button type="button" className="rounded border border-border bg-muted px-2 py-1 hover:bg-accent"
+                  onClick={() => actions.setSelectedAction({ kind: "Deliver", resourceTypeIds: deliveryOptions })}>
+                  [A]ll
+                </button>
+                {deliveryOptions.map((resource, index) => (
+                  <button key={resource} type="button"
+                    aria-pressed={deliverySelection.resourceTypeIds.includes(resource)}
+                    onClick={() => toggleDeliveryResource(resource)}
+                    className={`rounded border px-2 py-1 ${deliverySelection.resourceTypeIds.includes(resource)
+                      ? "border-primary bg-primary text-primary-foreground" : "border-border bg-muted hover:bg-accent"}`}>
+                    {index < 9 ? `[${index + 1}] ` : ""}{contentManager.getResourceType(resource)?.display_name ?? resource}
+                    {` (${(deliveryAmounts.get(resource) ?? 0).toFixed(1)})`}
+                  </button>
+                ))}
+                <span className="text-muted-foreground">{deliverySelection.resourceTypeIds.length
+                  ? "Click a friendly recipient" : "Select resources first"} · [Esc] cancel</span>
+              </div>
+            )}
             {collectMenuOpen && (
               <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
                 <span className="text-muted-foreground">Collect:</span>

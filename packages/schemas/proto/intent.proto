@@ -99,6 +99,13 @@ message RepairIntent {
   string player_id     = 4 [deprecated = true];
 }
 
+// Deliver currently held inventory and collection cargo to a friendly entity.
+message DeliverIntent {
+  uint64 entity_id = 1;
+  uint64 target_id = 2;
+  repeated string resource_type_ids = 3;
+}
+
 // Transport envelope that wraps all intent payloads and carries authoritative metadata.
 message IntentEnvelope {
   bytes  client_cmd_id    = 1;  // UUIDv7 (16 bytes), supplied by client
@@ -117,6 +124,7 @@ message IntentEnvelope {
     RepairIntent         repair = 14;
     UpgradeIntent        upgrade = 16;
     ResearchIntent       research = 17;
+    DeliverIntent        deliver = 18;
   }
   reserved 8, 9, 15;
 }
@@ -132,6 +140,7 @@ message Intent {
     RepairIntent         repair = 5;
     UpgradeIntent        upgrade = 6;
     ResearchIntent       research = 7;
+    DeliverIntent        deliver = 8;
   }
 }
 
@@ -225,6 +234,11 @@ message RepairState {
   uint64 target_id = 1;
 }
 
+message DeliverState {
+  uint64 target_id = 1;
+  repeated string resource_type_ids = 2;
+}
+
 // Unified per-entity execution container (one active at a time).
 message ActionState {
   // Echo original intent for correlation/observability (optional but useful)
@@ -238,5 +252,6 @@ message ActionState {
     RepairState  repair  = 6;
     UpgradeState upgrade = 7;
     ResearchState research = 8;
+    DeliverState deliver = 9;
   }
 }

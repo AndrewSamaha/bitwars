@@ -30,7 +30,7 @@ export type QueuedMoveIntent = {
   createdAt: number;
 };
 
-export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "unknown";
+export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "unknown";
 
 export type ActiveIntentInfo = {
   clientCmdId: string;
@@ -53,6 +53,15 @@ type PersistedState = {
 };
 
 export type SendIntentParams =
+  | {
+      kind: "Deliver";
+      entityId: number;
+      targetId: number;
+      resourceTypeIds: string[];
+      clientCmdId: string;
+      clientSeq: number;
+      policy: IntentPolicyName;
+    }
   | {
       kind: "Move";
       entityId: number;
@@ -145,7 +154,7 @@ class IntentQueueManager {
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
-  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair" | "research">();
+  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
@@ -222,6 +231,21 @@ class IntentQueueManager {
   ) {
     const clientCmdId = uuidv7();
     this.sendCollectNow(entityId, clientCmdId, assignment, policy);
+  }
+
+  /** Deliver currently held resources in one trip. */
+  handleDeliverCommand(entityId: number, targetId: number, resourceTypeIds: string[]) {
+    const clientCmdId = uuidv7();
+    const state = this.getOrCreate(entityId);
+    state.queue = [];
+    state.active = { clientCmdId, entityId, kind: "deliver" };
+    this.clientSeq++;
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.cmdToKind.set(clientCmdId, "deliver");
+    this.persist();
+    this.notify();
+    void this.sendCallback?.({ kind: "Deliver", entityId, targetId, resourceTypeIds,
+      clientCmdId, clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
   /** Start repairing a selected friendly target immediately. */
@@ -351,20 +375,9 @@ class IntentQueueManager {
       entityId: number,
       serverActive: (typeof handshake.active_intents)[0],
     ): ActiveIntentInfo => {
-      const kind: ActiveIntentKind =
-        serverActive.intent_kind?.toLowerCase() === "collect"
-          ? "collect"
-          : serverActive.intent_kind?.toLowerCase() === "move"
-            ? "move"
-            : serverActive.intent_kind?.toLowerCase() === "build"
-              ? "build"
-            : serverActive.intent_kind?.toLowerCase() === "repair"
-              ? "repair"
-              : serverActive.intent_kind?.toLowerCase() === "upgrade"
-                ? "upgrade"
-                : serverActive.intent_kind?.toLowerCase() === "research"
-                  ? "research"
-              : "unknown";
+      const intentKind = serverActive.intent_kind?.toLowerCase() ?? "";
+      const kind: ActiveIntentKind = ["move", "collect", "build", "repair", "upgrade", "research", "deliver"].includes(intentKind)
+        ? intentKind as ActiveIntentKind : "unknown";
       const moveTarget = serverActive.move_target;
       const target =
         kind === "move" &&
@@ -510,7 +523,7 @@ class IntentQueueManager {
     return typeof v === "number" ? v : null;
   }
 
-  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | "research" | null {
+  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | null {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 
@@ -652,7 +665,7 @@ class IntentQueueManager {
           const active = state.active;
           // Old persisted active intents did not record their kind. Leave them
           // target-less until reconnect reconciliation classifies them.
-          if (active && !["move", "collect", "build", "upgrade", "repair", "research"].includes(active.kind)) {
+          if (active && !["move", "collect", "build", "upgrade", "repair", "research", "deliver"].includes(active.kind)) {
             return [entityId, { ...state, active: { ...active, kind: "unknown", target: undefined } }];
           }
           return [entityId, state];

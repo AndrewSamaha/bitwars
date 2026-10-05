@@ -169,6 +169,7 @@ mod tests {
 
     fn entity(id: u64) -> Entity {
         Entity {
+            resources: None,
             id,
             entity_type_id: "worker".to_string(),
             pos: None,
@@ -203,7 +204,7 @@ mod tests {
             &HashMap::new(),
             0.01,
             0.01,
-            &HashSet::new(),
+            &HashMap::new(),
             &HashSet::new(),
         );
         assert!(delta.updates.is_empty());
@@ -242,7 +243,7 @@ mod tests {
             &combat_states,
             0.01,
             0.01,
-            &HashSet::new(),
+            &HashMap::new(),
             &HashSet::new(),
         );
         assert!(unchanged.collector_state_updates.is_empty());
@@ -257,7 +258,7 @@ mod tests {
             &combat_states,
             0.01,
             0.01,
-            &HashSet::new(),
+            &HashMap::new(),
             &HashSet::new(),
         );
         assert_eq!(changed.collector_state_updates.len(), 1);

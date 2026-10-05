@@ -549,6 +549,7 @@ mod tests {
 
     fn entity(id: u64, entity_type_id: &str, owner: &str, x: f32, y: f32) -> Entity {
         Entity {
+            resources: None,
             id,
             entity_type_id: entity_type_id.into(),
             pos: Some(Vec2 { x, y }),

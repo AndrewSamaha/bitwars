@@ -830,6 +830,8 @@ mod tests {
         types.insert(
             "worker".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
                 stop_radius: 0.75,
@@ -860,6 +862,8 @@ mod tests {
         types.insert(
             "scout".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
                 stop_radius: 0.5,
@@ -902,6 +906,8 @@ mod tests {
         types_a.insert(
             "worker".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
                 stop_radius: 0.75,
@@ -932,6 +938,8 @@ mod tests {
         types_a.insert(
             "scout".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
                 stop_radius: 0.5,
@@ -964,6 +972,8 @@ mod tests {
         types_b.insert(
             "scout".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
                 stop_radius: 0.5,
@@ -994,6 +1004,8 @@ mod tests {
         types_b.insert(
             "worker".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
                 stop_radius: 0.75,

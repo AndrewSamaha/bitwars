@@ -54,6 +54,8 @@ export type EntityTypeDef = {
   suppress_hover?: boolean;
   /** Resources required to produce one instance of this entity type. */
   build_cost?: Record<string, number>;
+  /** Maximum local inventory per resource type. */
+  max_capacity?: Record<string, number>;
   /** Per-resource upkeep charged to the owner, in units per minute. */
   maintenance_cost_per_minute?: Record<string, number>;
   repair?: {
