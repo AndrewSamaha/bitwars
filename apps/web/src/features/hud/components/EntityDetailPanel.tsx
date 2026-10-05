@@ -418,12 +418,12 @@ export default function EntityDetailPanel() {
 
   return (
     <div
-      className="fixed inset-x-4 bottom-0 z-50"
+      className="fixed inset-x-4 bottom-1 z-50"
       ref={statusBarRef}
     >
       <div className="flex h-full w-full flex-col rounded-t-lg border border-b-0 border-white/15 bg-black/88 shadow-2xl backdrop-blur-sm">
         {selectedEntities.length > 0 ? (
-          <div className="p-3">
+          <div className="px-3 pb-5 pt-3">
             <ul className="text-xs space-y-1">
               {selectedEntities.length > 1
                 ? selectedEntities.map((id) => (
