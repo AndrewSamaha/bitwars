@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
-import { getEntityDetailLeftOffset } from "@/features/hud/layout/constants";
 import { game } from "@/features/gamestate/world";
 import { contentManager } from "@/features/content/contentManager";
 import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
@@ -27,12 +26,30 @@ export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
   const { selectedEntities, selectedAction } = selectors;
   const selectedIdsKey = selectedEntities.join(",");
+  const statusBarRef = useRef<HTMLDivElement>(null);
   const [, forceRerender] = useState(0);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [upgradeMenuOpen, setUpgradeMenuOpen] = useState(false);
   const [researchMenuOpen, setResearchMenuOpen] = useState(false);
   const [collectMenuOpen, setCollectMenuOpen] = useState(false);
   const [buildStateById, setBuildStateById] = useState<BuildStateById>({});
+
+  useLayoutEffect(() => {
+    const bar = statusBarRef.current;
+    const root = document.documentElement;
+    if (!bar) {
+      root.style.setProperty("--bitwars-status-bar-height", "0px");
+      return;
+    }
+    const updateHeight = () => root.style.setProperty("--bitwars-status-bar-height", `${bar.getBoundingClientRect().height}px`);
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      root.style.setProperty("--bitwars-status-bar-height", "0px");
+    };
+  }, [selectedIdsKey]);
 
   // The ECS changes when the authoritative game stream applies a snapshot or
   // delta. Do not make the DOM follow Pixi's render loop; coalesce stream
@@ -68,12 +85,6 @@ export default function EntityDetailPanel() {
     setResearchMenuOpen(false);
     setCollectMenuOpen(false);
   }, [selectedIdsKey]);
-
-  // Position the detail panel so it never overlaps the TerminalPanel
-  // TerminalPanel uses w-96 (24rem) when open and w-12 (3rem) when closed, with left-4 (1rem) margin
-  // Add a 1rem gutter between panels for visual separation
-  const { isTerminalOpen } = selectors;
-  const leftOffsetRem = getEntityDetailLeftOffset(isTerminalOpen);
 
   // Build a quick lookup of current positions and entity_type_id by entity id (stringified)
   const idToPos = new Map<string, { x: number; y: number }>();
@@ -407,10 +418,10 @@ export default function EntityDetailPanel() {
 
   return (
     <div
-      className="fixed bottom-4 z-50"
-      style={{ left: `${leftOffsetRem}rem`, right: "1rem" }}
+      className="fixed inset-x-4 bottom-0 z-50"
+      ref={statusBarRef}
     >
-      <div className="flex h-full w-full flex-col rounded-lg border border-white/15 bg-black/88 shadow-2xl backdrop-blur-sm">
+      <div className="flex h-full w-full flex-col rounded-t-lg border border-b-0 border-white/15 bg-black/88 shadow-2xl backdrop-blur-sm">
         {selectedEntities.length > 0 ? (
           <div className="p-3">
             <ul className="text-xs space-y-1">

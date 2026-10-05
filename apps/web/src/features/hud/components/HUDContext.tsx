@@ -48,6 +48,7 @@ export type HUDState = {
   tooltip?: string | null;
   // Terminal state
   isTerminalOpen: boolean;
+  isTerminalWide: boolean;
   currentCommand: string;
   commandHistory: CommandHistory[];
   // PixiJS Stuff
@@ -72,6 +73,7 @@ const defaultState: HUDState = {
   hoveredEntity: null,
   tooltip: null,
   isTerminalOpen: true,
+  isTerminalWide: false,
   currentCommand: "",
   commandHistory: [
     { command: "", output: "BitWars Terminal v1.0.0\nType 'help' for available commands.\n" },
@@ -100,6 +102,7 @@ type Action =
   // Terminal actions
   | { type: "TERMINAL_SET_OPEN"; open: boolean }
   | { type: "TERMINAL_TOGGLE" }
+  | { type: "TERMINAL_TOGGLE_WIDTH" }
   | { type: "TERMINAL_SET_INPUT"; value: string }
   | { type: "TERMINAL_PUSH_HISTORY"; entry: CommandHistory }
   | { type: "HYDRATE"; state: HUDState };                         // for persistence restore
@@ -160,10 +163,13 @@ function reducer(state: HUDState, action: Action): HUDState {
       return { ...state, tooltip: action.text };
 
     case "TERMINAL_SET_OPEN":
-      return { ...state, isTerminalOpen: action.open };
+      return { ...state, isTerminalOpen: action.open, isTerminalWide: action.open ? state.isTerminalWide : false };
 
     case "TERMINAL_TOGGLE":
-      return { ...state, isTerminalOpen: !state.isTerminalOpen };
+      return { ...state, isTerminalOpen: !state.isTerminalOpen, isTerminalWide: false };
+
+    case "TERMINAL_TOGGLE_WIDTH":
+      return state.isTerminalOpen ? { ...state, isTerminalWide: !state.isTerminalWide } : state;
 
     case "TERMINAL_SET_INPUT":
       return { ...state, currentCommand: action.value };
@@ -223,6 +229,7 @@ type HUDContextValue = {
     // Terminal
     setTerminalOpen: (open: boolean) => void;
     toggleTerminal: () => void;
+    toggleTerminalWidth: () => void;
     setTerminalInput: (value: string) => void;
     pushCommandHistory: (entry: CommandHistory) => void;
     setApp: (app: Application | null) => void;
@@ -239,6 +246,7 @@ type HUDContextValue = {
     getResource: (key: keyof Resources) => number;
     // Terminal
     isTerminalOpen: boolean;
+    isTerminalWide: boolean;
     currentCommand: string;
     commandHistory: CommandHistory[];
     camera: Container | null;
@@ -320,6 +328,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       // Terminal
       setTerminalOpen: (open: boolean) => dispatch({ type: "TERMINAL_SET_OPEN", open }),
       toggleTerminal: () => dispatch({ type: "TERMINAL_TOGGLE" }),
+      toggleTerminalWidth: () => dispatch({ type: "TERMINAL_TOGGLE_WIDTH" }),
       setTerminalInput: (value: string) => dispatch({ type: "TERMINAL_SET_INPUT", value }),
       pushCommandHistory: (entry: CommandHistory) => dispatch({ type: "TERMINAL_PUSH_HISTORY", entry }),
     }),
@@ -339,6 +348,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       getResource: (key: keyof Resources) => state.resources[key] ?? 0,
       // Terminal
       isTerminalOpen: state.isTerminalOpen,
+      isTerminalWide: state.isTerminalWide,
       currentCommand: state.currentCommand,
       commandHistory: state.commandHistory,
       hoveredEntity: state.hoveredEntity,
@@ -353,6 +363,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       state.panels,
       state.resources,
       state.isTerminalOpen,
+      state.isTerminalWide,
       state.currentCommand,
       state.commandHistory,
       state.hoveredEntity,

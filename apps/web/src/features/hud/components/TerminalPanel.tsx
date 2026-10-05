@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useCallback, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { audio } from "@/features/audio/audioManager";
@@ -18,7 +18,7 @@ export default function TerminalPanel() {
   const { player } = usePlayer();
   const { status, login, logout, effectivePlayerId, actingAsId, su, exitSu } = useSession();
   const { selectors, actions, refs } = useHUD();
-  const { isTerminalOpen, currentCommand, commandHistory } = selectors;
+  const { isTerminalOpen, isTerminalWide, currentCommand, commandHistory } = selectors;
   const { terminalRef, inputRef } = refs;
   const realPlayerId = player?.id ?? null;
   const [commandRunning, setCommandRunning] = useState(false);
@@ -90,16 +90,35 @@ export default function TerminalPanel() {
   }, [inputRef]);
 
   return (
-    <div className={`fixed left-4 top-4 bottom-4 z-50 ${isTerminalOpen ? "w-96" : "w-12"}`}>
+    <div
+      className={`fixed top-4 z-50 ${isTerminalWide ? "inset-x-4" : `left-4 ${isTerminalOpen ? "w-96" : "w-12"}`}`}
+      style={{ bottom: "calc(var(--bitwars-status-bar-height, 0px) + 1rem)" }}
+    >
       {/* Toggle Button */}
       <Button
         onClick={() => actions.toggleTerminal()}
         size="sm"
         variant="outline"
-        className="absolute right-0 mr-1 top-2 z-10 bg-card border-border hover:bg-accent"
+        className={`absolute ${isTerminalOpen ? "right-11" : "right-0"} mr-1 top-2 z-10 bg-card border-border hover:bg-accent`}
+        aria-label={isTerminalOpen ? "Close terminal" : "Open terminal"}
+        title={isTerminalOpen ? "Close terminal" : "Open terminal"}
       >
         {isTerminalOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </Button>
+
+      {isTerminalOpen && (
+        <Button
+          onClick={() => actions.toggleTerminalWidth()}
+          size="sm"
+          variant="outline"
+          className="absolute right-0 mr-1 top-2 z-10 bg-card border-border hover:bg-accent"
+          aria-label={isTerminalWide ? "Use skinny terminal" : "Use wide terminal"}
+          title={isTerminalWide ? "Use skinny terminal" : "Use wide terminal"}
+        >
+          {isTerminalWide ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+        </Button>
+      )}
+
 
       {/* Terminal Window */}
       {isTerminalOpen && (
