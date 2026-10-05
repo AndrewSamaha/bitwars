@@ -1,0 +1,267 @@
+version: 1
+id: energy-transport-test
+name: energy-transport-test
+tags: []
+players:
+- player1
+technologies:
+  player1:
+  - space_age
+entities:
+- id: 39
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -92104.625
+    y: 67521.57
+  health: 100.0
+  resources: {}
+- id: 106
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -91579.15
+    y: 70826.48
+  health: 100.0
+  resources: {}
+- id: 476
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -89441.56
+    y: 74426.29
+  health: 100.0
+  resources: {}
+- id: 477
+  entity_type: habitat
+  owner: player1
+  position:
+    x: -91594.53
+    y: 68908.234
+  health: 400.0
+  resources:
+    energy: 4599.3702923208475
+    food: 4633.0
+    minerals: 1440.0
+- id: 478
+  entity_type: scout
+  owner: player1
+  position:
+    x: -91698.086
+    y: 70882.12
+  health: 60.0
+  resources:
+    energy: 100.0
+- id: 479
+  entity_type: worker
+  owner: player1
+  position:
+    x: -90334.35
+    y: 72233.67
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+- id: 480
+  entity_type: worker
+  owner: player1
+  position:
+    x: -90591.76
+    y: 71207.625
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+- id: 482
+  entity_type: worker
+  owner: player1
+  position:
+    x: -90975.08
+    y: 66463.914
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+- id: 483
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -91023.41
+    y: 68241.46
+  health: 100.0
+  resources:
+    energy: 0.35793793201446533
+- id: 486
+  entity_type: worker
+  owner: player1
+  position:
+    x: -91587.1
+    y: 69854.94
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+  cargo:
+    resource: food
+    amount: 50.0
+- id: 487
+  entity_type: worker
+  owner: player1
+  position:
+    x: -90545.266
+    y: 71715.164
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+- id: 488
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -90794.65
+    y: 67351.54
+  health: 100.0
+  resources:
+    energy: 0.9204355478286743
+- id: 489
+  entity_type: worker
+  owner: player1
+  position:
+    x: -91591.484
+    y: 69296.195
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+  cargo:
+    resource: food
+    amount: 50.0
+- id: 491
+  entity_type: worker
+  owner: player1
+  position:
+    x: -90457.4
+    y: 71928.66
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+  cargo:
+    resource: minerals
+    amount: 50.0
+- id: 492
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -91061.78
+    y: 66557.46
+  health: 100.0
+  resources:
+    energy: 0.7427539825439453
+- id: 493
+  entity_type: worker
+  owner: player1
+  position:
+    x: -91580.13
+    y: 70720.29
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 50.0
+  cargo:
+    resource: food
+    amount: 50.0
+- id: 494
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -92024.45
+    y: 66083.11
+  health: 100.0
+  resources:
+    energy: 0.5761271715164185
+- id: 507
+  entity_type: worker
+  owner: player1
+  position:
+    x: -90124.305
+    y: 72750.03
+  health: 200.0
+  resources:
+    energy: 50.0
+    food: 49.0
+- id: 509
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -90812.0
+    y: 70983.414
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 510
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -91930.11
+    y: 65999.09
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 511
+  entity_type: factory
+  owner: player1
+  position:
+    x: -90658.62
+    y: 71028.53
+  health: 150.0
+  resources:
+    energy: 500.0
+- id: 512
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -90615.95
+    y: 70820.07
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 514
+  entity_type: military_factory
+  owner: player1
+  position:
+    x: -90498.87
+    y: 70918.88
+  health: 150.0
+  resources:
+    energy: 500.0
+- id: 515
+  entity_type: processor
+  owner: player1
+  position:
+    x: -90744.36
+    y: 71226.35
+  health: 150.0
+  resources:
+    energy: 500.0
+    food: 500.0
+    minerals: 350.0
+- id: 516
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -90509.34
+    y: 71091.375
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 517
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -91172.88
+    y: 66493.45
+  health: 500.0
+  resources:
+    energy: 500.0
+captured_tick: 172942
