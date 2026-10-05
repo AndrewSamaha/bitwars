@@ -113,8 +113,11 @@ pub struct EntityTypeDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceSharingDef {
-    /// Maximum distance to entities that may receive shared resources.
+    /// Maximum distance for outgoing resource sharing and wireless receipt.
     pub range: f32,
+    /// Resource types this entity can receive wirelessly from nearby collectors.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wireless_receives: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -559,7 +562,7 @@ impl ContentPack {
         let file: ContentFile = serde_yaml::from_str(&raw)
             .with_context(|| format!("failed to parse content pack YAML: {}", path.display()))?;
 
-        validate_resource_content(&file.entity_types)?;
+        validate_resource_content(&file.entity_types, &file.resource_types)?;
         validate_upgrades(&file.entity_types)?;
         validate_technologies(&file.entity_types, &file.technologies)?;
 
@@ -595,7 +598,10 @@ impl ContentPack {
     }
 }
 
-fn validate_resource_content(entity_types: &HashMap<String, EntityTypeDef>) -> Result<()> {
+fn validate_resource_content(
+    entity_types: &HashMap<String, EntityTypeDef>,
+    resource_types: &HashMap<String, ResourceTypeDef>,
+) -> Result<()> {
     for (id, def) in entity_types {
         if def.max_capacity.values().any(|capacity| !capacity.is_finite() || *capacity < 0.0) {
             anyhow::bail!("entity type {id} has an invalid max_capacity");
@@ -603,6 +609,14 @@ fn validate_resource_content(entity_types: &HashMap<String, EntityTypeDef>) -> R
         if let Some(sharing) = &def.resource_sharing {
             if !sharing.range.is_finite() || sharing.range < 0.0 {
                 anyhow::bail!("entity type {id} has an invalid resource_sharing.range");
+            }
+            for resource in &sharing.wireless_receives {
+                if !resource_types.contains_key(resource) {
+                    anyhow::bail!("entity type {id} wireless_receives unknown resource {resource}");
+                }
+                if !def.max_capacity.contains_key(resource) {
+                    anyhow::bail!("entity type {id} wireless_receives {resource} without capacity");
+                }
             }
         }
     }

@@ -248,6 +248,8 @@ entity_types:
       minerals: 5000
     resource_sharing:
       range: 4000
+      wireless_receives:
+        - energy
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -471,7 +473,7 @@ entity_types:
       minerals: 100
       energy: 50
     maintenance_cost_per_minute:
-      energy: 100
+      energy: 30
     speed: 5
     stop_radius: 0.5
     mass: 1

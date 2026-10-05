@@ -5,12 +5,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import {
   COLLECTION_WAITING_EVENT,
   dispatchCenterCameraOnEntity,
+  ENTITY_RESOURCE_STARVATION_EVENT,
   MINIMUM_DISTANCE_VIOLATION_EVENT,
   type CollectionWaitingDetail,
   type MinimumDistanceViolationDetail,
 } from "@/features/gamestate/events";
 
-type Toast = { id: number; message: string; focusEntityId: string; entering?: boolean; leaving?: boolean; leavingTop?: number };
+type Toast = { id: number; title: string; message: string; focusEntityId: string; entering?: boolean; leaving?: boolean; leavingTop?: number };
 const COLLECTION_WAITING_MESSAGE = "Too close to another active collector. Move it farther away and restart collection, or wait for space to open up. It will retry automatically while waiting.";
 
 export default function LifecycleToasts() {
@@ -51,8 +52,9 @@ export default function LifecycleToasts() {
   }, [toasts]);
 
   useEffect(() => {
-    const showToast = (message: string, focusEntityId: string) => {
-      const toast = { message, focusEntityId, id: nextId.current++, entering: true };
+    const shownStarvationWarnings = new Set<string>();
+    const showToast = (title: string, message: string, focusEntityId: string) => {
+      const toast = { title, message, focusEntityId, id: nextId.current++, entering: true };
       setToasts((current) => [...current.slice(-2), toast]);
       window.requestAnimationFrame(() => {
         setToasts((current) => current.map((item) => (item.id === toast.id ? { ...item, entering: false } : item)));
@@ -62,17 +64,32 @@ export default function LifecycleToasts() {
     const onMinimumDistanceViolation = (event: Event) => {
       const detail = (event as CustomEvent<MinimumDistanceViolationDetail>).detail;
       if (!detail) return;
-      showToast(`Collector ${detail.collectorEntityId} is ${Math.round(detail.actualDistance)} units from collector ${detail.blockingEntityId}; ${Math.round(detail.requiredDistance)} required. Click to focus it.`, detail.blockingEntityId);
+      showToast("Collection blocked", `Collector ${detail.collectorEntityId} is ${Math.round(detail.actualDistance)} units from collector ${detail.blockingEntityId}; ${Math.round(detail.requiredDistance)} required. Click to focus it.`, detail.blockingEntityId);
     };
     const onCollectionWaiting = (event: Event) => {
       const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
-      if (detail) showToast(`${COLLECTION_WAITING_MESSAGE} Click to focus it.`, detail.collectorEntityId);
+      if (detail) showToast("Collection blocked", `${COLLECTION_WAITING_MESSAGE} Click to focus it.`, detail.collectorEntityId);
+    };
+    const onResourceStarvation = (event: Event) => {
+      const entity = (event as CustomEvent<{ id?: number | string; entity_type_id?: string }>).detail;
+      if (entity?.id == null) return;
+      const entityId = String(entity.id);
+      if (shownStarvationWarnings.has(entityId)) return;
+      shownStarvationWarnings.add(entityId);
+      dispatchCenterCameraOnEntity(entityId);
+      showToast(
+        "Resource starvation",
+        `${entity.entity_type_id ?? "Entity"} ${entityId} is taking damage because it lacks resources for maintenance.`,
+        entityId,
+      );
     };
     window.addEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
     window.addEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
+    window.addEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
     return () => {
       window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
       window.removeEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
+      window.removeEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
     };
   }, [dismiss]);
 
@@ -99,7 +116,7 @@ export default function LifecycleToasts() {
               }}
               type="button"
             >
-              <p className="font-medium">Collection blocked</p>
+              <p className="font-medium">{toast.title}</p>
               <p className="mt-1 text-xs text-slate-300">{toast.message}</p>
             </button>
             <button aria-label="Dismiss" className="self-start text-slate-400 hover:text-white" onClick={() => dismiss(toast.id)} type="button">

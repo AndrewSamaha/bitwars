@@ -681,9 +681,16 @@
       "type": "object",
       "properties": {
         "range": {
-          "description": "Maximum distance to entities that may receive shared resources.",
+          "description": "Maximum distance for outgoing resource sharing and wireless receipt.",
           "type": "number",
           "format": "float"
+        },
+        "wireless_receives": {
+          "description": "Resource types this entity can receive wirelessly from nearby collectors.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false,

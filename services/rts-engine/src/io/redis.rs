@@ -79,6 +79,8 @@ pub struct CollectorUiState {
     #[serde(default)]
     pub assigned_nearest_compatible: bool,
     #[serde(default)]
+    pub receiving_entity_id: Option<u64>,
+    #[serde(default)]
     pub updated_tick: u64,
 }
 

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file collector_state.proto.
  */
 export const file_collector_state: GenFile = /*@__PURE__*/
-  fileDesc("ChVjb2xsZWN0b3Jfc3RhdGUucHJvdG8SB2JpdHdhcnMi4gEKDkNvbGxlY3RvclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIQCghhY3Rpdml0eRgCIAEoCRIVCg1yZXNvdXJjZV90eXBlGAMgASgJEhQKDGNhcnJ5X2Ftb3VudBgEIAEoAhIWCg5jYXJyeV9jYXBhY2l0eRgFIAEoAhIhChllZmZlY3RpdmVfcmF0ZV9wZXJfc2Vjb25kGAYgASgCEh4KFmFzc2lnbmVkX3Jlc291cmNlX3R5cGUYByABKAkSIwobYXNzaWduZWRfbmVhcmVzdF9jb21wYXRpYmxlGAggASgIYgZwcm90bzM");
+  fileDesc("ChVjb2xsZWN0b3Jfc3RhdGUucHJvdG8SB2JpdHdhcnMinAIKDkNvbGxlY3RvclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIQCghhY3Rpdml0eRgCIAEoCRIVCg1yZXNvdXJjZV90eXBlGAMgASgJEhQKDGNhcnJ5X2Ftb3VudBgEIAEoAhIWCg5jYXJyeV9jYXBhY2l0eRgFIAEoAhIhChllZmZlY3RpdmVfcmF0ZV9wZXJfc2Vjb25kGAYgASgCEh4KFmFzc2lnbmVkX3Jlc291cmNlX3R5cGUYByABKAkSIwobYXNzaWduZWRfbmVhcmVzdF9jb21wYXRpYmxlGAggASgIEiAKE3JlY2VpdmluZ19lbnRpdHlfaWQYCSABKARIAIgBAUIWChRfcmVjZWl2aW5nX2VudGl0eV9pZGIGcHJvdG8z");
 
 /**
  * Authoritative collector telemetry for one entity. This travels with the
@@ -61,6 +61,11 @@ export type CollectorState = Message<"bitwars.CollectorState"> & {
    * @generated from field: bool assigned_nearest_compatible = 8;
    */
   assignedNearestCompatible: boolean;
+
+  /**
+   * @generated from field: optional uint64 receiving_entity_id = 9;
+   */
+  receivingEntityId?: bigint;
 };
 
 /**

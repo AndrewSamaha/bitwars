@@ -21,6 +21,7 @@ type CollectorStatePayload = {
   effective_rate_per_second: number;
   assigned_resource_type?: string;
   assigned_nearest_compatible?: boolean;
+  receiving_entity_id?: number | string | null;
   updated_tick?: number;
 };
 type StreamCollectorStatePayload = CollectorStatePayload & { entity_id: number | string };

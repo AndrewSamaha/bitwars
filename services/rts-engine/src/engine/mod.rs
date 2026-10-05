@@ -2020,6 +2020,110 @@ impl Engine {
         }
     }
 
+    fn share_wireless_collector_resources(&mut self) {
+        let Some(content) = self.content.as_ref() else {
+            return;
+        };
+        let mut receivers: Vec<_> = self
+            .state
+            .entities
+            .iter()
+            .filter_map(|entity| {
+                let definition = content.get(&entity.entity_type_id)?;
+                let sharing = definition.resource_sharing.as_ref()?;
+                if !sharing.wireless_receives.iter().any(|resource| resource == "energy") {
+                    return None;
+                }
+                let position = entity.pos.as_ref()?;
+                let capacity = resource_capacity(content, &entity.entity_type_id, "energy");
+                let remaining = (capacity - resource_amount(entity, "energy")).max(0.0);
+                Some((
+                    entity.id,
+                    entity.owner_player_id.clone(),
+                    position.x,
+                    position.y,
+                    sharing.range,
+                    remaining,
+                ))
+            })
+            .collect();
+        let mut collectors: Vec<_> = self
+            .state
+            .entities
+            .iter()
+            .filter(|entity| {
+                matches!(entity.entity_type_id.as_str(), "collector_solar" | "collector_solar_v2")
+                    && entity.health > 0.0
+                    && is_player_owner(&entity.owner_player_id)
+            })
+            .filter_map(|entity| {
+                let position = entity.pos.as_ref()?;
+                Some((
+                    entity.id,
+                    entity.owner_player_id.clone(),
+                    position.x,
+                    position.y,
+                ))
+            })
+            .collect();
+        collectors.sort_by_key(|collector| collector.0);
+
+        for (collector_id, owner, x, y) in collectors {
+            if self.is_upgrading(collector_id) {
+                continue;
+            }
+            let recipient = receivers
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, recipient_owner, _, _, _, remaining))| {
+                    recipient_owner == &owner && *remaining > f64::EPSILON
+                })
+                .filter_map(|(index, (id, _, rx, ry, range, _))| {
+                    let distance_sq = Self::distance_sq(x, y, *rx, *ry);
+                    (distance_sq <= range * range).then_some((index, *id, distance_sq))
+                })
+                .min_by(|a, b| a.2.total_cmp(&b.2).then_with(|| a.1.cmp(&b.1)));
+            let Some((receiver_index, recipient_id, _)) = recipient else {
+                continue;
+            };
+            let available = self
+                .state
+                .entities
+                .iter()
+                .find(|entity| entity.id == collector_id)
+                .map(|entity| resource_amount(entity, "energy"))
+                .unwrap_or(0.0);
+            if available <= f64::EPSILON {
+                continue;
+            }
+            let amount = available.min(receivers[receiver_index].5);
+            if amount <= 0.0 {
+                continue;
+            }
+            let Some(target) = self
+                .state
+                .entities
+                .iter_mut()
+                .find(|entity| entity.id == recipient_id)
+            else {
+                continue;
+            };
+            set_resource_amount(target, "energy", resource_amount(target, "energy") + amount);
+            if let Some(source) = self
+                .state
+                .entities
+                .iter_mut()
+                .find(|entity| entity.id == collector_id)
+            {
+                set_resource_amount(source, "energy", available - amount);
+            }
+            receivers[receiver_index].5 -= amount;
+            if let Some(state) = self.collector_ui_state_by_entity.get_mut(&collector_id) {
+                state.receiving_entity_id = Some(recipient_id);
+            }
+        }
+    }
+
     /// An upgrading entity is entirely inactive: it cannot provide passive
     /// economy, collection, refinery, radiation, or autonomous combat effects.
     fn is_upgrading(&self, entity_id: u64) -> bool {
@@ -2419,6 +2523,7 @@ impl Engine {
                 effective_rate_per_second: effective_rate_per_second.max(0.0),
                 assigned_resource_type,
                 assigned_nearest_compatible,
+                receiving_entity_id: None,
                 updated_tick: self.state.tick,
             },
         );
@@ -3863,6 +3968,7 @@ impl Engine {
                 effective_rate_per_second: state.effective_rate_per_second,
                 assigned_resource_type: state.assigned_resource_type.clone(),
                 assigned_nearest_compatible: state.assigned_nearest_compatible,
+                receiving_entity_id: state.receiving_entity_id,
             })
             .collect();
         states.sort_by_key(|state| state.entity_id);
@@ -3974,6 +4080,7 @@ impl Engine {
         self.apply_resource_collection(dt).await;
         let starvation_damage = self.apply_maintenance_costs(dt);
         self.emit_starvation_events(&starvation_damage).await;
+        self.share_wireless_collector_resources();
         self.share_resources();
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
@@ -4209,6 +4316,7 @@ impl Engine {
             self.advance_research(dt).await;
             let starvation_damage = self.apply_maintenance_costs(dt);
             self.emit_starvation_events(&starvation_damage).await;
+            self.share_wireless_collector_resources();
             self.share_resources();
             record_tick_phase(
                 phase_durations.as_mut(),

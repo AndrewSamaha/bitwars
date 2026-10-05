@@ -156,18 +156,38 @@ const commands: TerminalCommand[] = [
   },
   {
     name: "desc",
-    description: "Show an entity's resources: desc <entity_id>",
+    description: "Show an entity's health and resources: desc <entity_id|entity_type[index]>",
     requiresAuth: true,
     run: (args, context) => {
-      if (args.length !== 1 || !/^\d+$/.test(args[0])) {
-        return { output: "usage: desc <entity_id>" };
+      if (args.length !== 1) {
+        return { output: "usage: desc <entity_id|entity_type[index]>" };
       }
-      const entity = [...game.world.with("id")].find((candidate) => String(candidate.id) === args[0]);
+      const selector = args[0];
+      const entities = [...game.world.with("id")];
+      let entity = /^\d+$/.test(selector)
+        ? entities.find((candidate) => String(candidate.id) === selector)
+        : undefined;
+      if (!/^\d+$/.test(selector)) {
+        const match = /^([a-zA-Z0-9_-]+)(?:\[(\d+)\])?$/.exec(selector);
+        if (!match) return { output: "usage: desc <entity_id|entity_type[index]>" };
+        const [, entityTypeId, indexText] = match;
+        const matches = entities
+          .filter((candidate) => candidate.owner_player_id === context.realPlayerId)
+          .filter((candidate) => candidate.entity_type_id === entityTypeId)
+          .sort((a, b) => Number(a.id) - Number(b.id));
+        const index = indexText === undefined ? 0 : Number(indexText);
+        entity = matches[index];
+        if (!entity) {
+          return { output: `desc: ${entityTypeId}[${index}] not found (${matches.length} owned)` };
+        }
+      }
       if (!entity) return { output: `desc: entity ${args[0]} not found in your visible world` };
       if (entity.owner_player_id !== context.realPlayerId) {
         return { output: "desc: resource inventory is only available for entities you own" };
       }
 
+      const maxHealth = contentManager.getEntityType(entity.entity_type_id ?? "")?.health;
+      const health = Number((entity.health ?? 0).toFixed(3));
       const amounts = new Map((entity.resources ?? []).map(({ resource_type, amount }) => [resource_type, amount]));
       const resourceTypes = contentManager.getContent()?.resource_types ?? {};
       const resourceIds = [...new Set([...Object.keys(resourceTypes), ...amounts.keys()])].sort((a, b) =>
@@ -179,7 +199,13 @@ const commands: TerminalCommand[] = [
       if (cargo?.resource_type && cargo.carry_amount > 0) {
         lines.push(`transport cargo (${cargo.resource_type}): ${Number(cargo.carry_amount.toFixed(3))}`);
       }
-      return { output: [`Entity ${args[0]} (${entity.entity_type_id ?? "unknown"})`, ...lines].join("\n") };
+      return {
+        output: [
+          `Entity ${entity.id} (${entity.entity_type_id ?? "unknown"})`,
+          `health: ${health}/${maxHealth === undefined ? "?" : Number(maxHealth.toFixed(3))}`,
+          ...lines,
+        ].join("\n"),
+      };
     },
   },
   {

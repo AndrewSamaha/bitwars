@@ -98,6 +98,7 @@ export default function EntityDetailPanel() {
       effective_rate_per_second: number;
       assigned_resource_type?: string;
       assigned_nearest_compatible?: boolean;
+      receiving_entity_id?: number | string | null;
     }
   >();
   if (selectedEntities.length > 0) {
@@ -120,6 +121,7 @@ export default function EntityDetailPanel() {
               effective_rate_per_second?: number;
               assigned_resource_type?: string;
               assigned_nearest_compatible?: boolean;
+              receiving_entity_id?: number | string | null;
             }
           | undefined;
         if (id != null && pos) {
@@ -145,6 +147,7 @@ export default function EntityDetailPanel() {
               effective_rate_per_second: Number(collectorState.effective_rate_per_second ?? 0),
               assigned_resource_type: String(collectorState.assigned_resource_type ?? ""),
               assigned_nearest_compatible: Boolean(collectorState.assigned_nearest_compatible),
+              receiving_entity_id: collectorState.receiving_entity_id,
             });
           }
         }
@@ -479,6 +482,11 @@ export default function EntityDetailPanel() {
                     {collectorState && collectorState.carry_capacity <= 0 && (
                       <span className="font-mono text-muted-foreground">
                         rate: {collectorState.effective_rate_per_second.toFixed(1)}/s
+                      </span>
+                    )}
+                    {collectorState?.receiving_entity_id != null && (
+                      <span className="font-mono text-muted-foreground">
+                        wireless recipient: {collectorState.receiving_entity_id}
                       </span>
                     )}
                   </li>

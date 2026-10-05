@@ -90,6 +90,8 @@ pub struct CollectorState {
     pub assigned_resource_type: ::prost::alloc::string::String,
     #[prost(bool, tag = "8")]
     pub assigned_nearest_compatible: bool,
+    #[prost(uint64, optional, tag = "9")]
+    pub receiving_entity_id: ::core::option::Option<u64>,
 }
 /// Authoritative presentation state for a continuous entity interaction.
 #[derive(Clone, PartialEq, ::prost::Message)]
