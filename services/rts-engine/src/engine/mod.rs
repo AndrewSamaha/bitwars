@@ -41,7 +41,6 @@ const COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF: &str = "moving_to_dropoff";
 const COLLECTOR_ACTIVITY_DELIVERING: &str = "delivering";
 const COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING: &str = "proximity_collecting";
 const COLLECTOR_ACTIVITY_WAITING_FOR_TURN: &str = "waiting_for_turn";
-const BUILD_SPAWN_RADIUS: f32 = 100.0;
 
 fn retry_delay_ticks(retry_after_ms: u64, tps: u32) -> u64 {
     (retry_after_ms
@@ -2433,11 +2432,14 @@ impl Engine {
                 .unwrap_or(0)
                 + 1;
             let angle = (next_id as f32 * 2.399_963_1) % std::f32::consts::TAU;
-            let spawn_distance = BUILD_SPAWN_RADIUS * 0.75;
-            let health = content
-                .get(&target_entity_type_id)
-                .map(|definition| definition.health.max(0.0))
-                .unwrap_or(0.0);
+            let (Some(builder_def), Some(product_def)) = (
+                content.get(&builder.entity_type_id),
+                content.get(&target_entity_type_id),
+            ) else {
+                continue;
+            };
+            let spawn_distance = builder_def.hull_radius + product_def.hull_radius;
+            let health = product_def.health.max(0.0);
             self.state.entities.push(pb::Entity {
                 id: next_id,
                 entity_type_id: target_entity_type_id,
