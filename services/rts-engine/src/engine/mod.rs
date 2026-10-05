@@ -1930,8 +1930,8 @@ impl Engine {
         );
     }
 
-    fn apply_maintenance_costs(&mut self, dt: f32) -> HashSet<u64> {
-        let mut starvation_damage = HashSet::new();
+    fn apply_maintenance_costs(&mut self, dt: f32) -> HashMap<u64, Vec<String>> {
+        let mut starvation_damage = HashMap::new();
         let Some(content) = self.content.as_ref() else {
             return starvation_damage;
         };
@@ -1951,7 +1951,7 @@ impl Engine {
             let Some(def) = content.get(&entity.entity_type_id) else {
                 continue;
             };
-            let mut missing = false;
+            let mut missing_resources = Vec::new();
             for costs in std::iter::once(&def.maintenance_cost_per_minute)
                 .chain(def.sensor.iter().map(|sensor| &sensor.cost_per_minute))
             {
@@ -1964,7 +1964,11 @@ impl Engine {
                     let total = self.maintenance_spend_fractional.get(&key).copied().unwrap_or(0.0) + amount;
                     let whole = total.floor();
                     let available = resource_amount(entity, resource_type);
-                    if available + f64::EPSILON < amount as f64 { missing = true; }
+                    if available + f64::EPSILON < amount as f64
+                        && !missing_resources.contains(resource_type)
+                    {
+                        missing_resources.push(resource_type.clone());
+                    }
                     let paid = available.min(whole as f64);
                     set_resource_amount(entity, resource_type, available - paid);
                     if paid == whole as f64 && total > whole { self.maintenance_spend_fractional.insert(key, total - whole); }
@@ -1972,9 +1976,10 @@ impl Engine {
                     if paid > 0.0 { spends.push((entity.owner_player_id.clone(), resource_type.clone(), paid as f32)); }
                 }
             }
-            if missing {
+            if !missing_resources.is_empty() {
                 entity.health = (entity.health - 1.0).max(0.0);
-                starvation_damage.insert(entity.id);
+                missing_resources.sort_unstable();
+                starvation_damage.insert(entity.id, missing_resources);
             }
         }
         for (player_id, resource, amount) in spends { self.record_resource_spend(&player_id, &resource, amount); }
@@ -3180,6 +3185,7 @@ impl Engine {
                     crate::content::AttackType::Dismantle => "dismantle".to_string(),
                 },
                 damage_amount: None,
+                missing_resource_types: None,
                 source_entity_id: None,
                 position: entity_position(&destruction.victim),
                 recipients,
@@ -3212,6 +3218,7 @@ impl Engine {
                 attacker: None,
                 cause: "radiation".to_string(),
                 damage_amount: None,
+                missing_resource_types: None,
                 source_entity_id: source_entity_ids.get(&victim.id).copied(),
                 position: entity_position(victim),
                 recipients,
@@ -3226,12 +3233,12 @@ impl Engine {
         }
     }
 
-    async fn emit_starvation_events(&mut self, damaged_entity_ids: &HashSet<u64>) {
+    async fn emit_starvation_events(&mut self, damaged_entities: &HashMap<u64, Vec<String>>) {
         let mut victims: Vec<pb::Entity> = self
             .state
             .entities
             .iter()
-            .filter(|entity| damaged_entity_ids.contains(&entity.id))
+            .filter(|entity| damaged_entities.contains_key(&entity.id))
             .cloned()
             .collect();
         victims.sort_by_key(|entity| entity.id);
@@ -3250,6 +3257,7 @@ impl Engine {
                 attacker: None,
                 cause: "resource_starvation".to_string(),
                 damage_amount: Some(1.0),
+                missing_resource_types: damaged_entities.get(&victim.id).cloned(),
                 source_entity_id: None,
                 position: entity_position(&victim),
                 recipients: recipients.clone(),
@@ -3263,6 +3271,7 @@ impl Engine {
                     attacker: None,
                     cause: "resource_starvation".to_string(),
                     damage_amount: None,
+                    missing_resource_types: damaged_entities.get(&victim.id).cloned(),
                     source_entity_id: None,
                     position: entity_position(&victim),
                     recipients,

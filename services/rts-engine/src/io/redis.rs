@@ -107,6 +107,8 @@ pub struct GameplayEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub damage_amount: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub missing_resource_types: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_entity_id: Option<u64>,
     pub position: IntentPoint,
     /// Internal delivery policy; the web API removes this before responding.

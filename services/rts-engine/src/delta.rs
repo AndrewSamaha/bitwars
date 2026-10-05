@@ -14,7 +14,7 @@ pub fn compute_delta(
     curr_combat_effect_states: &HashMap<u64, CombatEffectUiState>,
     eps_pos: f32,
     eps_vel: f32,
-    resource_starvation_damaged_entities: &HashSet<u64>,
+    resource_starvation_damaged_entities: &HashMap<u64, Vec<String>>,
     radiation_damaged_entities: &HashSet<u64>,
 ) -> Delta {
     let mut prev_by_id: HashMap<u64, &Entity> = HashMap::with_capacity(prev.entities.len());
@@ -45,7 +45,7 @@ pub fn compute_delta(
             }
             if (pe.health - ce.health).abs() > f32::EPSILON {
                 ed.health = Some(ce.health);
-                if resource_starvation_damaged_entities.contains(&ce.id) {
+                if resource_starvation_damaged_entities.contains_key(&ce.id) {
                     ed.damage_type = Some("resource_starvation".to_string());
                 } else if radiation_damaged_entities.contains(&ce.id) {
                     ed.damage_type = Some("radiation".to_string());
@@ -83,7 +83,7 @@ pub fn compute_delta(
                 ed.owner_player_id = Some(ce.owner_player_id.clone());
             }
             ed.health = Some(ce.health);
-            if resource_starvation_damaged_entities.contains(&ce.id) {
+            if resource_starvation_damaged_entities.contains_key(&ce.id) {
                 ed.damage_type = Some("resource_starvation".to_string());
             } else if radiation_damaged_entities.contains(&ce.id) {
                 ed.damage_type = Some("radiation".to_string());
