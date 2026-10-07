@@ -14,7 +14,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 2
     },
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -10\nsuppress_hover: true\nstop_radius: 0.75\nmass: 500\nhealth: 100\nvisibility_range: 4000\nvisual:\n  scale: 2\nradiation_sources:\n  - radiation_type: theta\n    min_effective_distance_fill_color: \"#882cd6\"\n    full_damage_distance_fill_color: \"#a753ef\"\n    max_effective_distance_fill_color: \"#c384f8\"\n    min_effective_distance: 0\n    full_damage_distance: 700\n    max_effective_distance: 1200\n    damage_per_second: 6\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 350\n  max_effective_distance: 1600"
+    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -10\nsuppress_hover: true\nstop_radius: 0.75\nmass: 500\nhealth: 100\nvisibility_range: 4000\nvisual:\n  scale: 2\nradiation_sources:\n  - radiation_type: theta\n    min_effective_distance_fill_color: \"#882cd6\"\n    full_damage_distance_fill_color: \"#a753ef\"\n    max_effective_distance_fill_color: \"#c384f8\"\n    min_effective_distance: 0\n    full_damage_distance: 700\n    max_effective_distance: 1200\n    damage_per_second: 20\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 350\n  max_effective_distance: 1600"
   },
   {
     "id": "planet_blue",
@@ -32,7 +32,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 15
     },
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nvisibility_range: 40000\nz_index: -10\nsuppress_hover: true\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 15\nradiation_sources:\n  - radiation_type: stellar_heat\n    min_effective_distance_border_color: null\n    min_effective_distance_fill_color: \"#ef4444\"\n    full_damage_distance_border_color: null\n    full_damage_distance_fill_color: \"#f97316\"\n    max_effective_distance_border_color: null\n    max_effective_distance_fill_color: \"#facc15\"\n    min_effective_distance: 0\n    full_damage_distance: 900\n    max_effective_distance: 1200\n    damage_per_second: 2\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 10\n  max_effective_distance: 1500"
+    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nvisibility_range: 40000\nz_index: -10\nsuppress_hover: true\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 15\nradiation_sources:\n  - radiation_type: stellar_heat\n    min_effective_distance_fill_color: \"#ef4444\"\n    full_damage_distance_fill_color: \"#f97316\"\n    max_effective_distance_fill_color: \"#facc15\"\n    min_effective_distance: 0\n    full_damage_distance: 900\n    max_effective_distance: 1200\n    damage_per_second: 10\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 10\n  max_effective_distance: 1500"
   },
   {
     "id": "minerals",

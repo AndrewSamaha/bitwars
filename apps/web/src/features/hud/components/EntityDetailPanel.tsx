@@ -170,11 +170,23 @@ export default function EntityDetailPanel() {
     } catch {}
   }
 
+  const firstId = selectedEntities[0] ?? "";
+  const selectedTypesKey = selectedEntities.map((id) => idToType.get(id) ?? "").join(",");
+  const buildOptions = useMemo(() => selectedEntities.length > 0
+    ? (contentManager.getEntityType(idToType.get(firstId) ?? "")?.builds ?? []).filter((option) =>
+        selectedEntities.slice(1).every((id) =>
+          contentManager.getEntityType(idToType.get(id) ?? "")?.builds?.some((build) =>
+            build.entity_type_id === option.entity_type_id,
+          ),
+        ),
+      )
+    : [], [selectedIdsKey, selectedTypesKey]);
+
   // Dynamic actions for a given entity.
   const getActionsForEntity = (entityId: string): ActionDef[] => {
     const entityTypeId = idToType.get(entityId) ?? "";
     const entityDef = contentManager.getEntityType(entityTypeId);
-    const canBuild = selectedEntities.length === 1 && (entityDef?.builds?.length ?? 0) > 0;
+    const canBuild = buildOptions.length > 0;
     const health = idToHealth.get(entityId);
     const canUpgrade = selectedEntities.length === 1
       && (entityDef?.upgrades?.length ?? 0) > 0
@@ -200,8 +212,7 @@ export default function EntityDetailPanel() {
       { key: "r", name: "repair", enabled: canRepair, value: "Repair" },
     ];
   };
-  // Intersect actions across all selected entities (simple approach: show those enabled for first)
-  const firstId = selectedEntities[0] ?? "";
+  // Shared build options are intersected above; other action gates retain their existing behavior.
   const deliverySelection = typeof selectedAction === "object" ? selectedAction : null;
   const carrierEntity = Array.from(game.world.with("id")).find((e) => String(e.id) === firstId);
   const carrierDef = contentManager.getEntityType(idToType.get(firstId) ?? "");
@@ -322,12 +333,6 @@ export default function EntityDetailPanel() {
   };
 
   const selectedType = idToType.get(firstId) ?? "";
-  const buildOptions = useMemo(
-    () => selectedEntities.length === 1
-      ? contentManager.getEntityType(selectedType)?.builds ?? []
-      : [],
-    [selectedEntities.length, selectedType],
-  );
   const upgradeOptions = useMemo(
     () => selectedEntities.length === 1
       ? contentManager.getEntityType(selectedType)?.upgrades ?? []
@@ -378,9 +383,11 @@ export default function EntityDetailPanel() {
     return Object.entries(costs).every(([resource, cost]) => selectors.getResource(resource) >= cost);
   };
   const startBuild = (entityTypeId: string) => {
-    if (!canAfford(entityTypeId)) return;
-    const entityId = Number(firstId);
-    if (Number.isFinite(entityId)) intentQueue.handleBuildCommand(entityId, entityTypeId);
+    if (!buildOptions.some((option) => option.entity_type_id === entityTypeId) || !canAfford(entityTypeId)) return;
+    for (const id of selectedEntities) {
+      const entityId = Number(id);
+      if (Number.isSafeInteger(entityId)) intentQueue.handleBuildCommand(entityId, entityTypeId);
+    }
     setBuildMenuOpen(false);
   };
   const startUpgrade = (entityTypeId: string) => {

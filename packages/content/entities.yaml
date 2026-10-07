@@ -60,7 +60,7 @@ entity_types:
         min_effective_distance: 0
         full_damage_distance: 700
         max_effective_distance: 1200
-        damage_per_second: 6
+        damage_per_second: 20
     resource_node:
       resource_type: energy
       collection_mode: proximity
@@ -97,16 +97,13 @@ entity_types:
       scale: 15
     radiation_sources:
       - radiation_type: stellar_heat
-        min_effective_distance_border_color: null
         min_effective_distance_fill_color: "#ef4444"
-        full_damage_distance_border_color: null
         full_damage_distance_fill_color: "#f97316"
-        max_effective_distance_border_color: null
         max_effective_distance_fill_color: "#facc15"
         min_effective_distance: 0
         full_damage_distance: 900
         max_effective_distance: 1200
-        damage_per_second: 2
+        damage_per_second: 10
     resource_node:
       resource_type: energy
       collection_mode: proximity
