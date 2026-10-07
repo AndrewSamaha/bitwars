@@ -24,7 +24,7 @@ function sameBuildStates(left: BuildStateById, right: BuildStateById): boolean {
 
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
-  const { selectedEntities, selectedAction } = selectors;
+  const { selectedEntities, selectedAction, isMeasuring } = selectors;
   const selectedIdsKey = selectedEntities.join(",");
   const donorId = typeof selectedAction === "object" && selectedAction?.kind === "Transport" ? selectedAction.donorId : undefined;
   const statusBarRef = useRef<HTMLDivElement>(null);
@@ -190,8 +190,9 @@ export default function EntityDetailPanel() {
     );
     return [
       { key: "m", name: "move", enabled: true, value: "Move" },
+      { key: "d", name: "distance", enabled: selectedEntities.length === 1, value: "Measure" },
       { key: "c", name: "collect", enabled: canCollect, value: "Collect" },
-      ...(canDeliver ? [{ key: "d", name: "deliver", value: "Deliver" as const }] : []),
+      ...(canDeliver ? [{ key: "l", name: "deliver", value: "Deliver" as const }] : []),
       ...(canTransport ? [{ key: "s", name: "transport resources", value: "Transport" as const }] : []),
       { key: "b", name: "build", enabled: canBuild, value: "Build" },
       { key: "u", name: "upgrade", enabled: canUpgrade, value: "Upgrade" },
@@ -277,7 +278,12 @@ export default function EntityDetailPanel() {
     };
   }, [firstId, isSelectedEntityBuilding]);
 
-  const onClickAction = (val: "Move" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research" | "Deliver" | "Transport") => {
+  const onClickAction = (val: ActionDef["value"]) => {
+    if (val === "Measure") {
+      actions.setMeasuring(!isMeasuring);
+      return;
+    }
+    actions.setMeasuring(false);
     if (val !== "Deliver" && val !== "Transport" && deliverySelection) actions.setSelectedAction(null);
     if (val === "Build") {
       setBuildMenuOpen((open) => !open);
@@ -466,7 +472,7 @@ export default function EntityDetailPanel() {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable=true]")) return;
       const key = event.key.toLowerCase();
-      if (((key === "d" && canDeliver) || (key === "s" && canTransport)) && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
+      if (((key === "l" && canDeliver) || (key === "s" && canTransport)) && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (!event.repeat) onClickAction(key === "s" ? "Transport" : "Deliver");
@@ -586,7 +592,9 @@ export default function EntityDetailPanel() {
                   key={a.value}
                   action={a}
                   active={
-                    a.value === "Deliver" || a.value === "Transport"
+                    a.value === "Measure"
+                      ? isMeasuring
+                      : a.value === "Deliver" || a.value === "Transport"
                       ? deliverySelection?.kind === a.value
                       : a.value === "Move"
                       ? selectedAction === "Move"

@@ -1,5 +1,5 @@
 "use client";
-import { Application, Container, Graphics, RenderTexture, Sprite } from "pixi.js";
+import { Application, Container, Graphics, RenderTexture, Sprite, Text } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { game, type Entity } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
@@ -79,7 +79,7 @@ export default function GameStage() {
   const [moveDebug, setMoveDebug] = useState<string>("idle");
   const { effectivePlayerId } = useSession();
   const {
-    actions: { setHovered, setApp, clearApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction, setTerminalOpen },
+    actions: { setHovered, setApp, clearApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction, setMeasuring, setTerminalOpen },
     selectors,
     refs: { inputRef },
   } = useHUD();
@@ -501,6 +501,20 @@ export default function GameStage() {
         selectionBoxGraphics.eventMode = "none";
         app.stage.addChild(selectionBoxGraphics);
 
+        const measureGraphics = new Graphics();
+        measureGraphics.eventMode = "none";
+        const measureLabel = new Text({
+          text: "",
+          style: { fontFamily: "monospace", fontSize: 14, fontWeight: "bold", fill: 0xffffff,
+            stroke: { color: 0x111827, width: 4 } },
+        });
+        measureLabel.anchor.set(0.5, 1);
+        measureLabel.eventMode = "none";
+        app.stage.addChild(measureGraphics, measureLabel);
+        let measurePointer: { x: number; y: number } | null = null;
+        const onMeasurePointerLeave = () => { measurePointer = null; };
+        app.canvas.addEventListener("pointerleave", onMeasurePointerLeave);
+
         function worldToMinimapPx(
           wx: number,
           wy: number,
@@ -723,15 +737,21 @@ export default function GameStage() {
             .finally(() => { buildProgressRequestInFlight = false; });
         };
 
-        // Keyboard: M to set Move, C to issue Collect, Escape to clear; WASD/arrows to pan (M5.1/M8)
+        // Keyboard shortcuts for local modes and commands.
         const onKeyDown = (ev: KeyboardEvent) => {
           const sel = latestSelectorsRef.current;
           if ((ev.key === "i" || ev.key === "I") && !isFocusInEditable()) {
             setTerminalOpen(true);
             requestAnimationFrame(() => inputRef.current?.focus());
             ev.preventDefault();
-          } else if (ev.key === 'm' || ev.key === 'M') {
-            if (sel.hasSelection) setSelectedAction('Move');
+          } else if (ev.code === "KeyD" && !isFocusInEditable() && sel.selectionCount === 1) {
+            if (!ev.repeat) setMeasuring(!sel.isMeasuring);
+            ev.preventDefault();
+          } else if (ev.code === "KeyM" && !isFocusInEditable()) {
+            if (sel.hasSelection) {
+              setSelectedAction('Move');
+              ev.preventDefault();
+            }
           } else if (ev.key === 'c' || ev.key === 'C') {
             if (sel.hasSelection) {
               window.dispatchEvent(new Event("bitwars:open-collect-picker"));
@@ -744,6 +764,7 @@ export default function GameStage() {
             if (canRepair) setSelectedAction("Repair");
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
+            setMeasuring(false);
           } else if (ev.code === "Space" && !isFocusInEditable()) {
             const myId = myPlayerIdRef.current;
             if (!myId) return;
@@ -859,6 +880,24 @@ export default function GameStage() {
             if (String((e as any).id) === id) return e as any;
           }
           return null;
+        };
+
+        const drawMeasurement = () => {
+          measureGraphics.clear();
+          measureLabel.visible = false;
+          const sel = latestSelectorsRef.current;
+          if (!sel.isMeasuring || sel.selectionCount !== 1 || !measurePointer) return;
+          const entity = findLiveEntityById(sel.firstSelectedId ?? "");
+          if (!entity?.pos) return;
+          const start = worldContainer.toGlobal(entity.pos);
+          const end = measurePointer;
+          const target = worldContainer.toLocal(end);
+          const distance = Math.hypot(target.x - entity.pos.x, target.y - entity.pos.y);
+          measureGraphics.moveTo(start.x, start.y).lineTo(end.x, end.y)
+            .stroke({ width: 2, color: 0xffd166, alpha: 0.95 });
+          measureLabel.text = `${distance.toFixed(1)} units`;
+          measureLabel.position.set((start.x + end.x) / 2, (start.y + end.y) / 2 - 8);
+          measureLabel.visible = true;
         };
 
         const destroyRenderRef = (id: string) => {
@@ -1283,6 +1322,11 @@ export default function GameStage() {
         });
 
         app.stage.on("pointermove", (ev: any) => {
+          const minimapPoint = minimapContainer.toLocal(ev.global);
+          measurePointer = Math.hypot(
+            minimapPoint.x - MINIMAP_RADIUS_PX,
+            minimapPoint.y - MINIMAP_RADIUS_PX,
+          ) <= MINIMAP_RADIUS_PX ? null : { x: ev.global.x, y: ev.global.y };
           if (minimapDrag) {
             minimapDrag.moved = true;
             moveCameraToMinimapPoint(ev.global, minimapDrag);
@@ -1430,6 +1474,7 @@ export default function GameStage() {
             renderSonarPings(performance.now());
             despawnExplosions.update(performance.now());
             render();
+            drawMeasurement();
 
             // Keep fog aligned with post-tick entity positions. During an active
             // zoom gesture, cap render-texture redraws while still updating often
@@ -1449,6 +1494,7 @@ export default function GameStage() {
           if (destroyed) return;
           destroyed = true;
           app.canvas.removeEventListener("wheel", onWheel);
+          app.canvas.removeEventListener("pointerleave", onMeasurePointerLeave);
           for (const id of Array.from(renderById.keys())) {
             destroyRenderRef(id);
           }

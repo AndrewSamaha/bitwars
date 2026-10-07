@@ -2,7 +2,7 @@
 
 import React from "react";
 
-export type ActionDef = { key: string; name: string; enabled?: boolean; value: "Move" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research" | "Deliver" | "Transport" };
+export type ActionDef = { key: string; name: string; enabled?: boolean; value: "Move" | "Measure" | "Collect" | "Build" | "Upgrade" | "Repair" | "Research" | "Deliver" | "Transport" };
 
 export type AvailableActionProps = {
   action: ActionDef;
@@ -24,7 +24,7 @@ export default function AvailableAction({ action, active = false, onClick }: Ava
       aria-pressed={active}
       title={active ? `${name} (selected)` : `Press '${keyChar.toUpperCase()}' to ${name}`}
     >
-      <span className="font-mono">[{keyChar}]</span>
+      <span className="font-mono">[{keyChar.toUpperCase()}]</span>
       <span className="ml-1 capitalize">{name}</span>
     </div>
   );

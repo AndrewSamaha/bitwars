@@ -41,6 +41,7 @@ export type HUDState = {
   selectedEntities: EntityId[];     // ordered array if you care about last-selected
   selectedSet: Set<EntityId>;       // fast membership checks
   selectedAction: "Move" | "Repair" | { kind: "Deliver" | "Transport"; resourceTypeIds: string[]; donorId?: string } | null;
+  isMeasuring: boolean;
   resources: Resources;
   panels: HUDPanels;
   // Misc ephemeral HUD data
@@ -63,6 +64,7 @@ const defaultState: HUDState = {
   selectedEntities: [],
   selectedSet: new Set(),
   selectedAction: null,
+  isMeasuring: false,
   resources: { gold: 0, wood: 0, stone: 0 },
   panels: {
     minimapOpen: true,
@@ -91,6 +93,7 @@ type Action =
   | { type: "SELECT_REMOVE"; ids: EntityId[] }                    // remove from selection
   | { type: "SELECT_CLEAR" }
   | { type: "ACTION_SET"; value: HUDState["selectedAction"] }
+  | { type: "MEASURE_SET"; value: boolean }
   | { type: "RES_SET"; patch: Partial<Resources> }                // set/patch resource values
   | { type: "RES_DELTA"; delta: Partial<Resources> }              // increment/decrement resources
   | { type: "PANEL_SET"; key: keyof HUDPanels; value: boolean }
@@ -132,7 +135,10 @@ function reducer(state: HUDState, action: Action): HUDState {
       return { ...state, selectedEntities: [], selectedSet: new Set() };
 
     case "ACTION_SET":
-      return { ...state, selectedAction: action.value };
+      return { ...state, selectedAction: action.value, isMeasuring: action.value ? false : state.isMeasuring };
+
+    case "MEASURE_SET":
+      return { ...state, isMeasuring: action.value, selectedAction: action.value ? null : state.selectedAction };
 
     case "RES_SET": {
       const next: Resources = { ...state.resources };
@@ -224,6 +230,7 @@ type HUDContextValue = {
     removeSelection: (ids: EntityId[]) => void;
     clearSelection: () => void;
     setSelectedAction: (value: HUDState["selectedAction"]) => void;
+    setMeasuring: (value: boolean) => void;
     setResources: (patch: Partial<Resources>) => void;
     deltaResources: (delta: Partial<Resources>) => void;
     setPanel: (key: keyof HUDPanels, value: boolean) => void;
@@ -245,6 +252,7 @@ type HUDContextValue = {
     selectionCount: number;
     isSelected: (id: EntityId) => boolean;
     selectedAction: HUDState["selectedAction"];
+    isMeasuring: boolean;
     selectedEntities: EntityId[];
     firstSelectedId: EntityId | null;
     isPanelOpen: (key: keyof HUDPanels) => boolean;
@@ -318,6 +326,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       removeSelection: (ids: EntityId[]) => dispatch({ type: "SELECT_REMOVE", ids }),
       clearSelection: () => dispatch({ type: "SELECT_CLEAR" }),
       setSelectedAction: (value: HUDState["selectedAction"]) => dispatch({ type: "ACTION_SET", value }),
+      setMeasuring: (value: boolean) => dispatch({ type: "MEASURE_SET", value }),
 
       setResources: (patch: Partial<Resources>) => dispatch({ type: "RES_SET", patch }),
       deltaResources: (delta: Partial<Resources>) => dispatch({ type: "RES_DELTA", delta }),
@@ -348,6 +357,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       selectionCount: state.selectedEntities.length,
       isSelected: (id: EntityId) => state.selectedSet.has(id),
       selectedAction: state.selectedAction,
+      isMeasuring: state.isMeasuring,
       selectedEntities: state.selectedEntities,
       firstSelectedId: state.selectedEntities.length > 0 ? state.selectedEntities[0]! : null,
       isPanelOpen: (key: keyof HUDPanels) => !!state.panels[key],
@@ -365,6 +375,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       state.selectedEntities.length,
       state.selectedSet,
       state.selectedAction,
+      state.isMeasuring,
       state.selectedEntities,
       state.panels,
       state.resources,
