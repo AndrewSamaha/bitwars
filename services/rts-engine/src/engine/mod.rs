@@ -23,11 +23,12 @@ use crate::io::redis::{
     RedisClient,
 };
 use crate::io::telemetry::{summarize_tick_durations, Telemetry};
+use crate::io::host_metrics::HostSampler;
 use crate::npc_scripting::{NpcCommands, RaiderScript};
 use crate::pb::{self, intent_envelope};
 use crate::physics::integrate;
 use crate::spatial::SpatialIndex;
-use crate::spawn_config::{is_player_owner, SpawnConfig, UNIVERSE_OWNER};
+use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_OWNER};
 use prost::Message;
 use state::{ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
@@ -4503,6 +4504,7 @@ impl Engine {
             .telemetry
             .as_ref()
             .map(|_| HashMap::<bool, Vec<(usize, usize)>>::new());
+        let mut host_sampler = self.telemetry.as_ref().map(|_| HostSampler::new());
 
         loop {
             ticker.tick().await;
@@ -4814,12 +4816,20 @@ impl Engine {
                     let game_id = self.cfg.game_id.clone();
                     let server_tick = self.state.tick;
                     let entity_count = self.state.entities.len();
+                    let raider_entity_count = self.state.entities.iter()
+                        .filter(|entity| entity.owner_player_id == RAIDERS_OWNER).count();
+                    let player_entity_count = self.state.entities.iter()
+                        .filter(|entity| is_player_owner(&entity.owner_player_id)).count();
+                    let host_metrics = host_sampler.as_mut().expect("telemetry enabled").sample();
                     tokio::spawn(async move {
                         if let Err(error) = telemetry
                             .publish_tick_timings(
                                 &game_id,
                                 server_tick,
                                 entity_count,
+                                raider_entity_count,
+                                player_entity_count,
+                                host_metrics,
                                 raider_ai_spatial_index_enabled,
                                 raider_ai_processed_p50,
                                 raider_ai_processed_p95,

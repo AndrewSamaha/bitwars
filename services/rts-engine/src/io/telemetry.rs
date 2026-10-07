@@ -6,6 +6,8 @@ use reqwest::Client;
 use serde_json::json;
 use tracing::warn;
 
+use crate::io::host_metrics::{hostname, HostMetrics};
+
 #[derive(Debug, PartialEq)]
 pub struct TickTimingSummary {
     pub samples: usize,
@@ -47,6 +49,7 @@ pub struct Telemetry {
     dataset: String,
     org_id: Option<String>,
     service_name: String,
+    hostname: String,
 }
 
 impl Telemetry {
@@ -94,6 +97,7 @@ impl Telemetry {
             dataset,
             org_id,
             service_name,
+            hostname: hostname().unwrap_or_else(|| "unknown".to_string()),
         }))
     }
 
@@ -117,6 +121,7 @@ impl Telemetry {
             "timestamp": timestamp,
             "event_type": "intent_lifecycle",
             "service": self.service_name,
+            "hostname": self.hostname,
             "dataset": self.dataset,
             "game_id": game_id,
             "player_id": player_id,
@@ -136,6 +141,9 @@ impl Telemetry {
         game_id: &str,
         server_tick: u64,
         entity_count: usize,
+        raider_entity_count: usize,
+        player_entity_count: usize,
+        host_metrics: HostMetrics,
         raider_ai_spatial_index_enabled: bool,
         raider_ai_processed_p50: f64,
         raider_ai_processed_p95: f64,
@@ -154,6 +162,8 @@ impl Telemetry {
             "game_id": game_id,
             "server_tick": server_tick,
             "entity_count": entity_count,
+            "raider_entity_count": raider_entity_count,
+            "player_entity_count": player_entity_count,
             "raider_ai_spatial_index_enabled": raider_ai_spatial_index_enabled,
             "raider_ai_processed_p50": raider_ai_processed_p50,
             "raider_ai_processed_p95": raider_ai_processed_p95,
@@ -176,6 +186,8 @@ impl Telemetry {
                 "game_id": game_id,
                 "server_tick": server_tick,
                 "entity_count": entity_count,
+                "raider_entity_count": raider_entity_count,
+                "player_entity_count": player_entity_count,
                 "raider_ai_spatial_index_enabled": raider_ai_spatial_index_enabled,
                 "phase": phase,
                 "samples": summary.samples,
@@ -185,6 +197,13 @@ impl Telemetry {
             })
         }));
 
+        let host_fields = serde_json::to_value(host_metrics)?;
+        if let (Some(fields), Some(host)) = (records[0].as_object_mut(), host_fields.as_object()) {
+            fields.extend(host.clone());
+        }
+        for record in records.iter_mut().skip(1) {
+            record["hostname"] = json!(self.hostname);
+        }
         self.send_many(records).await
     }
 

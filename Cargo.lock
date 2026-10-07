@@ -1748,6 +1748,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "hex",
+ "libc",
  "mlua",
  "prost",
  "prost-build",
