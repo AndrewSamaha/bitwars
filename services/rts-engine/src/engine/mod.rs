@@ -1471,7 +1471,7 @@ impl Engine {
                             if let Some(pb::action_state::Exec::Deliver(state)) = active.action.exec.as_mut() { state.returning_to_donor = false; }
                         }
                     }
-                    engine.redis.persist_active_intent(entry.entity_id, &metadata, "transport", None, None, None, engine.cfg.tracking_ttl_secs).await?;
+                    engine.redis.persist_active_intent(entry.entity_id, &metadata, "transport", None, None, None).await?;
                     engine.redis.persist_transfer_route(entry.entity_id, &delivery).await?;
                 }
                 for (entry, resource_type_id, nearest_compatible, entity_type_id) in restored_collects {
@@ -1511,7 +1511,6 @@ impl Engine {
                             None,
                             Some((resource_type_id, nearest_compatible)),
                             None,
-                            engine.cfg.tracking_ttl_secs,
                         )
                         .await?;
                 }
@@ -1560,7 +1559,6 @@ impl Engine {
                             None,
                             None,
                             Some((blueprint_id.clone(), entry.build_location.clone(), progress)),
-                            engine.cfg.tracking_ttl_secs,
                         )
                         .await?;
                 }
@@ -5508,7 +5506,6 @@ impl Engine {
                     move_target,
                     collect_assignment,
                     construction,
-                    self.cfg.tracking_ttl_secs,
                 )
                 .await?;
 

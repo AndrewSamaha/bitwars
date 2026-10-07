@@ -834,7 +834,6 @@ impl RedisClient {
         move_target: Option<IntentPoint>,
         collect_assignment: Option<(String, bool)>,
         construction: Option<(String, Option<IntentPoint>, f32)>,
-        ttl_secs: u64,
     ) -> anyhow::Result<()> {
         let entry = EntityActiveIntent {
             entity_id,
@@ -857,17 +856,12 @@ impl RedisClient {
         let json = serde_json::to_string(&entry)?;
         let key = self.active_intents_key();
         let field = entity_id.to_string();
-        let _: () = redis::cmd("HSET")
-            .arg(&key)
-            .arg(&field)
-            .arg(&json)
-            .query_async(&mut self.conn)
-            .await?;
-
-        // Refresh the TTL on the whole hash each time we write, so the safety
-        // net stays well ahead of the most recent activity.
-        let ttl: i64 = ttl_secs.try_into().unwrap_or(i64::MAX);
-        let _: () = self.conn.expire(&key, ttl).await?;
+        // Active collection and construction can run indefinitely. Remove any
+        // expiry left by older engines in the same write as the new order.
+        let _: () = redis::pipe().atomic()
+            .cmd("HSET").arg(&key).arg(&field).arg(&json).ignore()
+            .cmd("PERSIST").arg(&key).ignore()
+            .query_async(&mut self.conn).await?;
         Ok(())
     }
 
