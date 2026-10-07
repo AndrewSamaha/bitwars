@@ -126,6 +126,8 @@ entity_types:
       max_simultaneous_collectors: 1
       min_effective_distance: 20
       max_effective_distance: 50
+    builds:
+      - entity_type_id: asteroid
   collector_solar:
     max_capacity:
       energy: 500
@@ -891,3 +893,14 @@ entity_types:
     visual:
       scale: 0.8
     visibility_range: 10000
+  asteroid:
+    max_capacity: {}
+    fog_memory: retain_last_known
+    speed: 0
+    z_index: -1
+    stop_radius: 1
+    mass: 500
+    health: 100
+    visibility_range: 1000
+    visual:
+      scale: 2.5
