@@ -932,6 +932,8 @@ entity_types:
   food_storage_container:
     max_capacity:
       food: 1000
+      minerals: 100
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5

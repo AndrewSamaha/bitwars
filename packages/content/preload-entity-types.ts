@@ -266,7 +266,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1.5
     },
-    "definition": "max_capacity:\n  food: 1000\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 50\nhull_radius: 16\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 100\n  energy: 100\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat_targetable: true\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nrefinery:\n  accepts:\n    - minerals"
+    "definition": "max_capacity:\n  food: 1000\n  minerals: 100\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 50\nhull_radius: 16\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 100\n  energy: 100\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat_targetable: true\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nrefinery:\n  accepts:\n    - minerals"
   },
   {
     "id": "dead_planet_blue",
