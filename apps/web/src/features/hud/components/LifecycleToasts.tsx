@@ -2,6 +2,7 @@
 
 import { AlertTriangle, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useHUD } from "@/features/hud/components/HUDContext";
 import {
   COLLECTION_WAITING_EVENT,
   TRANSFER_ENDPOINT_LOST_EVENT,
@@ -16,6 +17,7 @@ type Toast = { id: number; title: string; message: string; focusEntityId: string
 const COLLECTION_WAITING_MESSAGE = "Too close to another active collector. Move it farther away and restart collection, or wait for space to open up. It will retry automatically while waiting.";
 
 export default function LifecycleToasts() {
+  const { actions: { pushMessageLog } } = useHUD();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(0);
   const toastRefs = useRef(new Map<number, HTMLDivElement>());
@@ -55,6 +57,7 @@ export default function LifecycleToasts() {
   useEffect(() => {
     const shownStarvationWarnings = new Set<string>();
     const showToast = (title: string, message: string, focusEntityId: string) => {
+      pushMessageLog({ title, message, timestamp: Date.now() });
       const toast = { title, message, focusEntityId, id: nextId.current++, entering: true };
       setToasts((current) => [...current.slice(-2), toast]);
       window.requestAnimationFrame(() => {
@@ -98,7 +101,7 @@ export default function LifecycleToasts() {
       window.removeEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
       window.removeEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
     };
-  }, [dismiss]);
+  }, [dismiss, pushMessageLog]);
 
   if (toasts.length === 0) return null;
   return (

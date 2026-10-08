@@ -17,7 +17,7 @@ const SHOW_STREAM_COUNTER = false;
 export default function TerminalPanel() {
   const { player } = usePlayer();
   const { status, login, logout, effectivePlayerId, actingAsId, su, exitSu } = useSession();
-  const { selectors, actions, refs } = useHUD();
+  const { state: { messageLog }, selectors, actions, refs } = useHUD();
   const { isTerminalOpen, isTerminalWide, currentCommand, commandHistory } = selectors;
   const { terminalRef, inputRef } = refs;
   const realPlayerId = player?.id ?? null;
@@ -66,6 +66,7 @@ export default function TerminalPanel() {
           effectivePlayerId,
           actingAsId,
           sessionStatus: status,
+          messageLog,
           logout: () => logout(() => {
             actions.pushCommandHistory({ command: cmd, output: "Logging out…" });
           }),
@@ -80,7 +81,7 @@ export default function TerminalPanel() {
         setCommandRunning(false);
       }
     },
-    [currentCommand, commandRunning, actions, realPlayerId, effectivePlayerId, actingAsId, status, login, logout, su, exitSu]
+    [currentCommand, commandRunning, actions, realPlayerId, effectivePlayerId, actingAsId, status, login, logout, su, exitSu, messageLog]
   );
 
   const handleTerminalClick = useCallback(() => {

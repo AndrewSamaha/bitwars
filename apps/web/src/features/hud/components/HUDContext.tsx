@@ -12,6 +12,7 @@ import React, {
 
 import type { Application, Container } from "pixi.js";
 import type { Entity } from "@/features/gamestate/world";
+import { appendMessageLog, type MessageLogEntry } from "@/features/hud/messageLog";
 //
 // Types
 //
@@ -52,6 +53,7 @@ export type HUDState = {
   isTerminalWide: boolean;
   currentCommand: string;
   commandHistory: CommandHistory[];
+  messageLog: MessageLogEntry[];
   // PixiJS Stuff
   app: Application | null;
   camera: Container | null;
@@ -81,6 +83,7 @@ const defaultState: HUDState = {
     { command: "", output: "BitWars Terminal v1.0.0\nType 'help' for available commands.\n" },
   ],
   app: null,
+  messageLog: [],
   camera: null,
 };
 
@@ -109,6 +112,7 @@ type Action =
   | { type: "TERMINAL_TOGGLE_WIDTH" }
   | { type: "TERMINAL_SET_INPUT"; value: string }
   | { type: "TERMINAL_PUSH_HISTORY"; entry: CommandHistory }
+  | { type: "MESSAGE_LOG_PUSH"; entry: MessageLogEntry }
   | { type: "HYDRATE"; state: HUDState };                         // for persistence restore
 
 //
@@ -184,10 +188,14 @@ function reducer(state: HUDState, action: Action): HUDState {
     case "TERMINAL_PUSH_HISTORY":
       return { ...state, commandHistory: [...state.commandHistory, action.entry] };
 
+    case "MESSAGE_LOG_PUSH":
+      return { ...state, messageLog: appendMessageLog(state.messageLog, action.entry) };
+
     case "HYDRATE":
       // Rebuild Set from plain array if coming from JSON
       return {
         ...action.state,
+        messageLog: (action.state.messageLog ?? []).slice(-100),
         selectedSet: new Set(action.state.selectedEntities),
       };
 
@@ -243,6 +251,7 @@ type HUDContextValue = {
     toggleTerminalWidth: () => void;
     setTerminalInput: (value: string) => void;
     pushCommandHistory: (entry: CommandHistory) => void;
+    pushMessageLog: (entry: MessageLogEntry) => void;
     setApp: (app: Application | null) => void;
     clearApp: (app: Application) => void;
     setCamera: (camera: Container | null) => void;
@@ -346,6 +355,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       toggleTerminalWidth: () => dispatch({ type: "TERMINAL_TOGGLE_WIDTH" }),
       setTerminalInput: (value: string) => dispatch({ type: "TERMINAL_SET_INPUT", value }),
       pushCommandHistory: (entry: CommandHistory) => dispatch({ type: "TERMINAL_PUSH_HISTORY", entry }),
+      pushMessageLog: (entry: MessageLogEntry) => dispatch({ type: "MESSAGE_LOG_PUSH", entry }),
     }),
     []
   );

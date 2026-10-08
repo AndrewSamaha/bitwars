@@ -1,12 +1,44 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeTerminalCommand } from "@/features/hud/terminal/commands";
 import { type Entity, game } from "@/features/gamestate/world";
+import { appendMessageLog, type MessageLogEntry } from "@/features/hud/messageLog";
 
 const added: Entity[] = [];
 
 afterEach(() => {
   for (const entity of added.splice(0)) game.world.remove(entity);
   vi.unstubAllGlobals();
+});
+
+describe("log", () => {
+  it("retains the latest 100 messages and prints them with optional original timestamps", async () => {
+    let messageLog: MessageLogEntry[] = [];
+    for (let index = 0; index < 105; index += 1) {
+      messageLog = appendMessageLog(messageLog, {
+        title: "Collection blocked", message: `Collector ${index} is waiting.`,
+        timestamp: Date.UTC(2026, 9, 8, 12, 0, index),
+      });
+    }
+    expect(messageLog).toHaveLength(100);
+    expect(messageLog[0].message).toBe("Collector 5 is waiting.");
+    expect(messageLog[99].message).toBe("Collector 104 is waiting.");
+    const context = {
+      realPlayerId: "player-a", effectivePlayerId: "player-a", actingAsId: null,
+      sessionStatus: "active" as const, messageLog,
+      logout: async () => "", su: () => {}, exitSu: () => {},
+    };
+
+    const plain = await executeTerminalCommand("log", context);
+    expect(plain.output.split("\n")).toEqual(messageLog.map(entry => `${entry.title}: ${entry.message}`));
+    const timestamped = await executeTerminalCommand("log -ts", context);
+    expect(timestamped.output.split("\n")).toEqual(messageLog.map(entry =>
+      `[${new Date(entry.timestamp).toLocaleString()}] ${entry.title}: ${entry.message}`,
+    ));
+    expect((await executeTerminalCommand("log", { ...context, messageLog: [] })).output).toBe("No messages logged.");
+    expect((await executeTerminalCommand("log --bad", context)).output).toBe("usage: log [-ts]");
+    expect((await executeTerminalCommand("log -ts extra", context)).output).toBe("usage: log [-ts]");
+    expect((await executeTerminalCommand("help", context)).output).toContain("log [-ts]");
+  });
 });
 
 describe("who", () => {

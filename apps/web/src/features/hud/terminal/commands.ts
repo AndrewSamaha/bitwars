@@ -1,6 +1,7 @@
 import { game } from "@/features/gamestate/world";
 import { contentManager } from "@/features/content/contentManager";
 import type { SessionStatus } from "@/features/users/components/identity/SessionContext";
+import type { MessageLogEntry } from "@/features/hud/messageLog";
 
 const SYSTEM_OWNERS = [
   { id: "raiders", name: "Raiders" },
@@ -12,6 +13,7 @@ export type TerminalCommandContext = {
   effectivePlayerId: string | null;
   actingAsId: string | null;
   sessionStatus: SessionStatus;
+  messageLog?: readonly MessageLogEntry[];
   logout: () => Promise<string>;
   su: (playerId: string) => void;
   exitSu: () => void;
@@ -92,6 +94,21 @@ async function resolveSuTarget(input: string): Promise<{ id: string; name: strin
 }
 
 const commands: TerminalCommand[] = [
+  {
+    name: "log",
+    description: "Show the last 100 toast messages: log [-ts] (include timestamps)",
+    requiresAuth: true,
+    run: (args, context) => {
+      if (args.length > 1 || (args.length === 1 && args[0] !== "-ts")) {
+        return { output: "usage: log [-ts]" };
+      }
+      const entries = context.messageLog ?? [];
+      return { output: entries.length === 0 ? "No messages logged." : entries.map((entry) => {
+        const prefix = args[0] === "-ts" ? `[${new Date(entry.timestamp).toLocaleString()}] ` : "";
+        return `${prefix}${entry.title}: ${entry.message}`;
+      }).join("\n") };
+    },
+  },
   {
     name: "scenario",
     description: "scenario list|status|validate <id>|load <id>|reload|pause|resume|step [ticks]|bookmark <id> [tags...] [--entities=1,2]",
