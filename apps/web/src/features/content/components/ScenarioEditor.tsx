@@ -75,7 +75,7 @@ export default function ScenarioEditor() {
 
   return <main className="min-h-screen bg-slate-950 p-6 text-slate-100">
     <nav className="mb-4 flex flex-wrap border-b border-slate-700" aria-label="Content">
-      {[ ["entities", "Entities"], ["techtree", "Techtree"], ["sprite-library", "Sprites"], ["sfx", "SFX"], ["scenarios", "Scenarios"] ].map(([path, label]) => <Link className={`px-4 py-2 text-sm ${path === "scenarios" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} href={`/content/${path}`} key={path}>{label}</Link>)}
+      {[ ["entities", "Entities"], ["techtree", "Techtree"], ["sprite-library", "Sprites"], ["sfx", "SFX"], ["scenarios", "Scenarios"], ["spawn", "Spawn"] ].map(([path, label]) => <Link className={`px-4 py-2 text-sm ${path === "scenarios" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400"}`} href={`/content/${path}`} key={path}>{label}</Link>)}
     </nav>
     <h1 className="mb-2 text-xl font-semibold">Scenarios</h1>
     <p className="mb-4 text-sm text-slate-400">Loading replaces the shared game world for everyone. Player slots bind to your account; extra slots require UUID bindings below.</p>

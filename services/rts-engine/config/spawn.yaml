@@ -2,7 +2,7 @@ min_entity_spawn_distance: 200
 max_entity_spawn_distance: 300
 max_raiders: 150
 loadouts:
-  - worker: 2
+  - worker: 3
     collector_solar: 0
     habitat: 1
     scout: 1
@@ -28,11 +28,17 @@ global_neutral_fields:
       - 0
       - 0
     standard_deviation: 50000
+  - type: asteroid
+    count: 200
+    origin:
+      - 0
+      - 0
+    standard_deviation: 50000
 neutrals_near_spawn: []
 starting_resources:
   food: 500
   minerals: 500
-  energy: 500
+  energy: 700
 starting_resources_recipient_type: habitat
 
 # Normal resource amounts, clamped to min/max. Keys are entity type IDs.

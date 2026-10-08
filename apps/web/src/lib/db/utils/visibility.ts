@@ -138,7 +138,17 @@ export class VisibilityFilter {
   }
 
   private currentlyWithinSensors(): Set<string> {
-    return new Set([...this.entities].filter(([, entity]) => hasPosition(entity) && this.isPositionVisible(entity.pos)).map(([key]) => key));
+    const visible = new Set<string>();
+    const sources = this.sensorSources();
+    for (const [key, entity] of this.entities) {
+      if (!hasPosition(entity)) continue;
+      if (sources.some(source => {
+        const dx = source.pos.x - entity.pos.x;
+        const dy = source.pos.y - entity.pos.y;
+        return dx * dx + dy * dy <= source.range * source.range;
+      })) visible.add(key);
+    }
+    return visible;
   }
 
   private currentlyVisible(): Set<string> {

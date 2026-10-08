@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { VisibilityFilter } from "../src/lib/db/utils/visibility";
 
 describe("VisibilityFilter", () => {
+  it("handles a large neutral field without rebuilding sensors for every entity", () => {
+    // Count metadata reads instead of elapsed time so this check is independent of machine speed.
+    let sensorReads = 0;
+    const filter = new VisibilityFilter("me", {
+      worker: { sensor: { get range() { sensorReads++; return 400; } } },
+      minerals: { visibility_range: 1000 },
+    });
+    const entities = Array.from({ length: 1000 }, (_, id) => ({
+      id, entity_type_id: id < 5 ? "worker" : "minerals",
+      owner_player_id: id < 5 ? "me" : "universe", pos: { x: id * 3, y: 0 },
+    }));
+    filter.filterSnapshot({ type: "snapshot", tick: 0, entities });
+    for (let tick = 1; tick <= 60; tick++) {
+      filter.filterDelta({ type: "delta", tick, updates: [{ id: 0, pos: { x: tick * 10, y: 0 } }] });
+    }
+    expect(sensorReads).toBeLessThan(2000);
+  });
+
   it("shows deposit stock only inside actual sensor coverage and refreshes it as sensors move", () => {
     const filter = new VisibilityFilter("me", {
       worker: { sensor: { range: 100 } },

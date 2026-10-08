@@ -356,6 +356,7 @@ export default function ContentGraph() {
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprite-library">Sprites</Link>
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sfx">SFX</Link>
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/scenarios">Scenarios</Link>
+          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/spawn">Spawn</Link>
         </nav>
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
           <div ref={graphRef} className="graph-scrollport relative h-[calc(100vh-16.625rem-1px)] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">

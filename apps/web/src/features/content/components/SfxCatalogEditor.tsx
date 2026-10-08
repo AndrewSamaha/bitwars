@@ -114,6 +114,7 @@ export default function SfxCatalogEditor() {
         <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprite-library">Sprites</Link>
         <Link className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" href="/content/sfx">SFX</Link>
           <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/scenarios">Scenarios</Link>
+          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/spawn">Spawn</Link>
       </nav>
       <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
         <h1 className="text-xl font-semibold">Sound effects</h1>
