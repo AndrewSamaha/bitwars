@@ -24,6 +24,7 @@ export const mapDeltaToJson = (d: Delta) => ({
       ...(uAny.ownerPlayerId !== undefined ? { owner_player_id: uAny.ownerPlayerId } : {}),
       ...(uAny.health !== undefined ? { health: uAny.health } : {}),
       ...(u.damageType ? { damage_type: u.damageType } : {}),
+      ...(u.resourceDeposit ? { resource_deposit: { amount: u.resourceDeposit.amount, remaining: u.resourceDeposit.remaining } } : {}),
       ...(u.resources ? { resources: u.resources.resources.map((r) => ({ resource_type: r.resourceType, amount: r.amount })) } : {}),
     };
   }),
@@ -57,6 +58,7 @@ export const mapEntityToJson = (e: Entity) => {
     ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
     ...(eAny.ownerPlayerId !== undefined ? { owner_player_id: eAny.ownerPlayerId } : {}),
     ...(eAny.health !== undefined ? { health: eAny.health } : {}),
+    ...(e.resourceDeposit ? { resource_deposit: { amount: e.resourceDeposit.amount, remaining: e.resourceDeposit.remaining } } : {}),
     ...(e.resources ? { resources: e.resources.resources.map((r) => ({ resource_type: r.resourceType, amount: r.amount })) } : {}),
   };
 };

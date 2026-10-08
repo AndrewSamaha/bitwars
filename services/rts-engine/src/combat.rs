@@ -461,6 +461,7 @@ mod tests {
 
     fn entity(id: u64, kind: &str, owner: &str, x: f32, health: f32) -> Entity {
         Entity {
+            resource_deposit: None,
             resources: None,
             id,
             entity_type_id: kind.to_string(),

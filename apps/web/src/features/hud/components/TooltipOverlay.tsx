@@ -110,6 +110,8 @@ export function TooltipOverlay() {
   const healthFraction = typeof maxHealth === "number" && maxHealth > 0 ? health / maxHealth : null;
   const inventory = ownerPlayerId === player?.id ? ((hoveredEntity as any).resources as Array<{resource_type: string; amount: number}> | undefined) : undefined;
   const capacities = (contentManager.getEntityType(entityTypeId) as any)?.max_capacity as Record<string, number> | undefined;
+  const deposit = (hoveredEntity as any).resource_deposit as { amount: number; remaining: number } | null | undefined;
+  const depositResource = contentManager.getEntityType(entityTypeId)?.resource_node?.resource_type;
   const rememberedAt = (hoveredEntity as any).remembered?.last_seen_at as number | undefined;
 
   return (
@@ -137,6 +139,9 @@ export function TooltipOverlay() {
             ? ` / ${maxHealth.toFixed(1)} (${Math.round(Math.min(1, Math.max(0, healthFraction ?? 0)) * 100)}%)`
             : ""}
         </div>
+      )}
+      {rememberedAt === undefined && deposit && depositResource && (
+        <div><b>{depositResource}:</b> {deposit.remaining.toFixed(1)} / {deposit.amount.toFixed(1)}</div>
       )}
       {inventory?.map(({ resource_type, amount }) => {
         const capacity = capacities?.[resource_type] ?? 0;

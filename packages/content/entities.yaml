@@ -71,7 +71,6 @@ entity_types:
     fog_memory: retain_last_known
     speed: 0
     z_index: -2
-    suppress_hover: true
     stop_radius: 1
     mass: 500
     health: 100
@@ -79,6 +78,7 @@ entity_types:
       scale: 4
     resource_node:
       resource_type: food
+      amount: 2000
       collection_mode: transport
       max_simultaneous_collectors: 1
       min_effective_distance: 20
@@ -122,6 +122,7 @@ entity_types:
       scale: 3
     resource_node:
       resource_type: minerals
+      amount: 10000
       collection_mode: transport
       max_simultaneous_collectors: 1
       min_effective_distance: 20

@@ -468,6 +468,7 @@ impl RaiderScript {
             force: Some(Vec2 { x: 0.0, y: 0.0 }),
             owner_player_id: RAIDERS_OWNER.into(),
             health,
+            resource_deposit: None,
             resources: None,
         });
     }
@@ -549,6 +550,7 @@ mod tests {
 
     fn entity(id: u64, entity_type_id: &str, owner: &str, x: f32, y: f32) -> Entity {
         Entity {
+            resource_deposit: None,
             resources: None,
             id,
             entity_type_id: entity_type_id.into(),

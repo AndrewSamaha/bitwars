@@ -140,6 +140,8 @@ impl Scenario {
                 }),
                 vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                resource_deposit: def.resource_node.as_ref().and_then(|node| node.amount)
+                    .map(|amount| pb::ResourceDeposit { amount, remaining: amount }),
                 resources: None,
             };
             for (resource, amount) in &source.resources {

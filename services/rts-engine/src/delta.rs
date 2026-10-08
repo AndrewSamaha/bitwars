@@ -32,6 +32,7 @@ pub fn compute_delta(
             owner_player_id: None,
             entity_type_id: None,
             health: None,
+            resource_deposit: None,
             resources: None,
             damage_type: None,
         };
@@ -53,6 +54,9 @@ pub fn compute_delta(
             }
             if pe.resources != ce.resources {
                 ed.resources = ce.resources.clone();
+            }
+            if pe.resource_deposit != ce.resource_deposit {
+                ed.resource_deposit = ce.resource_deposit.clone();
             }
             if let (Some(cp), Some(pp)) = (&ce.pos, &pe.pos) {
                 if (cp.x - pp.x).abs() > eps_pos || (cp.y - pp.y).abs() > eps_pos {
@@ -89,6 +93,7 @@ pub fn compute_delta(
                 ed.damage_type = Some("radiation".to_string());
             }
             ed.resources = ce.resources.clone();
+            ed.resource_deposit = ce.resource_deposit.clone();
         }
 
         if ed.pos.is_some()
@@ -98,6 +103,7 @@ pub fn compute_delta(
             || ed.entity_type_id.is_some()
             || ed.health.is_some()
             || ed.resources.is_some()
+            || ed.resource_deposit.is_some()
         {
             updates.push(ed);
         }
@@ -169,6 +175,7 @@ mod tests {
 
     fn entity(id: u64) -> Entity {
         Entity {
+            resource_deposit: None,
             resources: None,
             id,
             entity_type_id: "worker".to_string(),
@@ -178,6 +185,22 @@ mod tests {
             owner_player_id: "player".to_string(),
             health: 100.0,
         }
+    }
+
+    #[test]
+    fn reports_deposit_depletion_and_round_trips_zero_stock() {
+        use prost::Message;
+        let mut source = entity(1);
+        source.resource_deposit = Some(crate::pb::ResourceDeposit { amount: 10.0, remaining: 1.0 });
+        let previous = GameState { tick: 1, entities: vec![source], ledger: HashMap::new(), technologies: HashMap::new() };
+        let mut current = previous.clone();
+        current.entities[0].resource_deposit.as_mut().unwrap().remaining = 0.0;
+        let delta = compute_delta(&previous, &current, &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(), 0.01, 0.01, &HashMap::new(), &HashSet::new());
+        assert_eq!(delta.updates.len(), 1);
+        let decoded = Delta::decode(delta.encode_to_vec().as_slice()).unwrap();
+        let deposit = decoded.updates[0].resource_deposit.as_ref().unwrap();
+        assert_eq!(deposit.amount, 10.0);
+        assert_eq!(deposit.remaining, 0.0);
     }
 
     #[test]

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity.proto.
  */
 export const file_entity: GenFile = /*@__PURE__*/
-  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMi2gEKBkVudGl0eRIKCgJpZBgBIAEoBBIWCg5lbnRpdHlfdHlwZV9pZBgCIAEoCRIaCgNwb3MYAyABKAsyDS5iaXR3YXJzLlZlYzISGgoDdmVsGAQgASgLMg0uYml0d2Fycy5WZWMyEhwKBWZvcmNlGAUgASgLMg0uYml0d2Fycy5WZWMyEhcKD293bmVyX3BsYXllcl9pZBgGIAEoCRIOCgZoZWFsdGgYByABKAISLQoJcmVzb3VyY2VzGAggASgLMhouYml0d2Fycy5SZXNvdXJjZUludmVudG9yeSI3Cg5SZXNvdXJjZUFtb3VudBIVCg1yZXNvdXJjZV90eXBlGAEgASgJEg4KBmFtb3VudBgCIAEoASI/ChFSZXNvdXJjZUludmVudG9yeRIqCglyZXNvdXJjZXMYASADKAsyFy5iaXR3YXJzLlJlc291cmNlQW1vdW50YgZwcm90bzM", [file_vec2]);
+  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMijgIKBkVudGl0eRIKCgJpZBgBIAEoBBIWCg5lbnRpdHlfdHlwZV9pZBgCIAEoCRIaCgNwb3MYAyABKAsyDS5iaXR3YXJzLlZlYzISGgoDdmVsGAQgASgLMg0uYml0d2Fycy5WZWMyEhwKBWZvcmNlGAUgASgLMg0uYml0d2Fycy5WZWMyEhcKD293bmVyX3BsYXllcl9pZBgGIAEoCRIOCgZoZWFsdGgYByABKAISLQoJcmVzb3VyY2VzGAggASgLMhouYml0d2Fycy5SZXNvdXJjZUludmVudG9yeRIyChByZXNvdXJjZV9kZXBvc2l0GAkgASgLMhguYml0d2Fycy5SZXNvdXJjZURlcG9zaXQiNAoPUmVzb3VyY2VEZXBvc2l0Eg4KBmFtb3VudBgBIAEoARIRCglyZW1haW5pbmcYAiABKAEiNwoOUmVzb3VyY2VBbW91bnQSFQoNcmVzb3VyY2VfdHlwZRgBIAEoCRIOCgZhbW91bnQYAiABKAEiPwoRUmVzb3VyY2VJbnZlbnRvcnkSKgoJcmVzb3VyY2VzGAEgAygLMhcuYml0d2Fycy5SZXNvdXJjZUFtb3VudGIGcHJvdG8z", [file_vec2]);
 
 /**
  * @generated from message bitwars.Entity
@@ -63,6 +63,13 @@ export type Entity = Message<"bitwars.Entity"> & {
    * @generated from field: bitwars.ResourceInventory resources = 8;
    */
   resources?: ResourceInventory;
+
+  /**
+   * finite source stock; visible within sensor coverage
+   *
+   * @generated from field: bitwars.ResourceDeposit resource_deposit = 9;
+   */
+  resourceDeposit?: ResourceDeposit;
 };
 
 /**
@@ -71,6 +78,30 @@ export type Entity = Message<"bitwars.Entity"> & {
  */
 export const EntitySchema: GenMessage<Entity> = /*@__PURE__*/
   messageDesc(file_entity, 0);
+
+/**
+ * @generated from message bitwars.ResourceDeposit
+ */
+export type ResourceDeposit = Message<"bitwars.ResourceDeposit"> & {
+  /**
+   * initial sampled amount (the maximum)
+   *
+   * @generated from field: double amount = 1;
+   */
+  amount: number;
+
+  /**
+   * @generated from field: double remaining = 2;
+   */
+  remaining: number;
+};
+
+/**
+ * Describes the message bitwars.ResourceDeposit.
+ * Use `create(ResourceDepositSchema)` to create a new message.
+ */
+export const ResourceDepositSchema: GenMessage<ResourceDeposit> = /*@__PURE__*/
+  messageDesc(file_entity, 1);
 
 /**
  * @generated from message bitwars.ResourceAmount
@@ -92,7 +123,7 @@ export type ResourceAmount = Message<"bitwars.ResourceAmount"> & {
  * Use `create(ResourceAmountSchema)` to create a new message.
  */
 export const ResourceAmountSchema: GenMessage<ResourceAmount> = /*@__PURE__*/
-  messageDesc(file_entity, 1);
+  messageDesc(file_entity, 2);
 
 /**
  * @generated from message bitwars.ResourceInventory
@@ -109,5 +140,5 @@ export type ResourceInventory = Message<"bitwars.ResourceInventory"> & {
  * Use `create(ResourceInventorySchema)` to create a new message.
  */
 export const ResourceInventorySchema: GenMessage<ResourceInventory> = /*@__PURE__*/
-  messageDesc(file_entity, 2);
+  messageDesc(file_entity, 3);
 

@@ -30,7 +30,7 @@ use crate::physics::integrate;
 use crate::spatial::SpatialIndex;
 use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_OWNER};
 use prost::Message;
-use state::{ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
+use state::{initialize_resource_deposits, take_from_deposit, ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
 pub const ENGINE_PROTOCOL_MAJOR: u32 = 12;
 const TICK_TIMING_WINDOW_TICKS: usize = 600;
@@ -681,6 +681,7 @@ mod radiation_tests {
     fn shielding_creates_safe_collection_band_but_not_safe_core() {
         let content = make_content();
         let star = pb::Entity {
+            resource_deposit: None,
             resources: None,
             id: 1,
             entity_type_id: "star_yellow".to_string(),
@@ -691,6 +692,7 @@ mod radiation_tests {
             health: 100.0,
         };
         let collector_safe = pb::Entity {
+            resource_deposit: None,
             resources: None,
             id: 2,
             entity_type_id: "collector_solar".to_string(),
@@ -701,6 +703,7 @@ mod radiation_tests {
             health: 100.0,
         };
         let collector_too_close = pb::Entity {
+            resource_deposit: None,
             resources: None,
             id: 3,
             entity_type_id: "collector_solar".to_string(),
@@ -711,6 +714,7 @@ mod radiation_tests {
             health: 100.0,
         };
         let worker_same_distance = pb::Entity {
+            resource_deposit: None,
             resources: None,
             id: 4,
             entity_type_id: "worker".to_string(),
@@ -745,6 +749,7 @@ mod radiation_tests {
             tick: 0,
             entities: vec![
                 pb::Entity {
+                    resource_deposit: None,
                     resources: None,
                     id: 1,
                     entity_type_id: "star_yellow".to_string(),
@@ -755,6 +760,7 @@ mod radiation_tests {
                     health: 100.0,
                 },
                 pb::Entity {
+                    resource_deposit: None,
                     resources: None,
                     id: 2,
                     entity_type_id: "star_yellow".to_string(),
@@ -765,6 +771,7 @@ mod radiation_tests {
                     health: 100.0,
                 },
                 pb::Entity {
+                    resource_deposit: None,
                     resources: None,
                     id: 3,
                     entity_type_id: "worker".to_string(),
@@ -819,6 +826,7 @@ mod radiation_tests {
     fn zero_health_entities_are_removed_after_radiation_resolution() {
         let mut entities = vec![
             pb::Entity {
+                resource_deposit: None,
                 resources: None,
                 id: 1,
                 entity_type_id: "worker".to_string(),
@@ -829,6 +837,7 @@ mod radiation_tests {
                 health: 0.0,
             },
             pb::Entity {
+                resource_deposit: None,
                 resources: None,
                 id: 2,
                 entity_type_id: "worker".to_string(),
@@ -1764,6 +1773,8 @@ impl Engine {
             &mut rng,
         );
 
+        initialize_resource_deposits(&mut self.state.entities, _content, Some(sc), &mut rng);
+
         let spawned: Vec<(u64, String)> = self.state.entities[entity_count_before..]
             .iter()
             .map(|e| (e.id, e.entity_type_id.clone()))
@@ -1869,6 +1880,7 @@ impl Engine {
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: crate::spawn_config::RAIDERS_OWNER.to_string(),
                 health,
+                resource_deposit: None,
                 resources: None,
             });
         }
@@ -2521,6 +2533,7 @@ impl Engine {
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 owner_player_id: player_id,
                 health,
+                resource_deposit: None,
                 resources: None,
             });
             if let Some(metadata) = self.intents.finish(builder_id) {
@@ -2719,7 +2732,7 @@ impl Engine {
         };
         let mut nodes = Vec::new();
         for e in &self.state.entities {
-            if self.is_upgrading(e.id) {
+            if self.is_upgrading(e.id) || e.resource_deposit.as_ref().is_some_and(|deposit| deposit.remaining <= 0.0) {
                 continue;
             }
             let Some(pos) = e.pos.as_ref() else {
@@ -3812,6 +3825,7 @@ impl Engine {
         if self.content.is_none() {
             return;
         }
+        initialize_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), None, &mut rand::thread_rng());
         let collect_active_entities: HashSet<u64> = self
             .intents
             .active_intents()
@@ -3931,7 +3945,10 @@ impl Engine {
             if let Some(ref carry) = carry_snapshot {
                 let carry_is_full =
                     carry_capacity > 0.0 && carry.amount >= (carry_capacity - f32::EPSILON);
-                if carry.amount > 0.0 && carry_is_full {
+                let source_depleted = self.transport_node_by_entity.get(&collector.id)
+                    .is_some_and(|id| !nodes.iter().any(|node| node.id == *id));
+                let no_source = !nodes.iter().any(|node| node.mode == CollectionMode::Transport && node.resource_type == carry.resource_type);
+                if carry.amount > 0.0 && (carry_is_full || source_depleted || no_source) {
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     if let Some(refinery) = Self::pick_best_refinery(
                         &collector,
@@ -3943,20 +3960,26 @@ impl Engine {
                             Self::distance_sq(collector.x, collector.y, refinery.x, refinery.y)
                                 .sqrt();
                         if dist <= DEPOSIT_DISTANCE {
+                            let mut delivered = 0.0;
                             if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == refinery.id) {
                                 let current = resource_amount(entity, &carry.resource_type);
                                 let capacity = refinery.max_capacity.get(&carry.resource_type).copied().unwrap_or(0.0) as f64;
-                                let delivered = (carry.amount as f64).min((capacity - current).max(0.0));
+                                delivered = (carry.amount as f64).min((capacity - current).max(0.0));
                                 set_resource_amount(entity, &carry.resource_type, current + delivered);
                             }
                             // Transport cargo is tracked in CarryState; depositing it must not
                             // erase the collector's separate maintenance inventory.
-                            self.carry_by_entity.remove(&collector.id);
+                            let remaining_cargo = (carry.amount - delivered as f32).max(0.0);
+                            if remaining_cargo > 0.0 {
+                                self.carry_by_entity.get_mut(&collector.id).unwrap().amount = remaining_cargo;
+                            } else {
+                                self.carry_by_entity.remove(&collector.id);
+                            }
                             self.set_collector_ui_state(
                                 collector.id,
                                 COLLECTOR_ACTIVITY_DELIVERING,
                                 &carry.resource_type,
-                                0.0,
+                                remaining_cargo,
                                 carry_capacity,
                                 0.0,
                             );
@@ -4060,7 +4083,10 @@ impl Engine {
                         continue;
                     }
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
-                    let gather = collector_def.transport_rate_per_second.max(0.0) * dt;
+                    let requested = (collector_def.transport_rate_per_second.max(0.0) * dt)
+                        .min((carry_capacity - carry_snapshot.as_ref().map(|carry| carry.amount).unwrap_or(0.0)).max(0.0));
+                    let gather = self.state.entities.iter_mut().find(|entity| entity.id == node.id)
+                        .map(|entity| take_from_deposit(entity, requested as f64) as f32).unwrap_or(0.0);
                     if gather > 0.0 {
                         let (resource_type, carry_amount) = {
                             let carry =
@@ -4084,7 +4110,7 @@ impl Engine {
                             &resource_type,
                             carry_amount,
                             carry_capacity,
-                            collector_def.transport_rate_per_second.max(0.0),
+                            if dt > 0.0 { gather / dt } else { 0.0 },
                         );
                     } else {
                         self.set_collector_ui_state(
@@ -4212,10 +4238,13 @@ impl Engine {
                     self.collection_retry_tick_by_entity.remove(&collector.id);
                     operating_collectors.insert(collector.id);
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
+                    let current = self.state.entities.iter().find(|e| e.id == collector.id)
+                        .map(|entity| resource_amount(entity, &node.resource_type)).unwrap_or(0.0);
+                    let capacity = resource_capacity(self.content.as_ref().unwrap(), &collector.entity_type_id, &node.resource_type);
+                    let requested = (rate as f64).min((capacity - current).max(0.0));
+                    let amount = self.state.entities.iter_mut().find(|entity| entity.id == node.id)
+                        .map(|entity| take_from_deposit(entity, requested)).unwrap_or(0.0);
                     if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
-                        let current = resource_amount(entity, &node.resource_type);
-                        let capacity = resource_capacity(self.content.as_ref().unwrap(), &collector.entity_type_id, &node.resource_type);
-                        let amount = (rate as f64).min((capacity - current).max(0.0));
                         set_resource_amount(entity, &node.resource_type, current + amount);
                     }
                     self.set_collector_ui_state(

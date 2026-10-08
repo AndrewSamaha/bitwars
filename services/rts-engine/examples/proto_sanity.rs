@@ -10,6 +10,7 @@ fn main() {
         force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
         owner_player_id: String::new(),
         health: 100.0,
+        ..Default::default()
     };
     let s = pb::Snapshot {
         tick: 0,
@@ -17,6 +18,7 @@ fn main() {
         player_ledgers: vec![],
         collector_states: vec![],
         combat_effect_states: vec![],
+        ..Default::default()
     };
     println!("OK: {} entities", s.entities.len());
 }

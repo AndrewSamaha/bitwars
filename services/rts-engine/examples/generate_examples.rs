@@ -28,6 +28,7 @@ fn main() -> anyhow::Result<()> {
         force: None,
         owner_player_id: String::new(),
         health: 100.0,
+        ..Default::default()
     };
     let e2 = Entity {
         id: 2,
@@ -37,6 +38,7 @@ fn main() -> anyhow::Result<()> {
         force: Some(Vec2 { x: 0.0, y: 0.2 }),
         owner_player_id: String::new(),
         health: 100.0,
+        ..Default::default()
     };
     let snapshot = Snapshot {
         tick: 42,
@@ -44,6 +46,7 @@ fn main() -> anyhow::Result<()> {
         player_ledgers: vec![],
         collector_states: vec![],
         combat_effect_states: vec![],
+        ..Default::default()
     };
 
     // Encode with prost::Message
@@ -59,6 +62,7 @@ fn main() -> anyhow::Result<()> {
         owner_player_id: None,
         entity_type_id: None,
         health: Some(100.0),
+        ..Default::default()
     };
     let d2 = EntityDelta {
         id: 2,
@@ -68,6 +72,7 @@ fn main() -> anyhow::Result<()> {
         owner_player_id: None,
         entity_type_id: None,
         health: Some(100.0),
+        ..Default::default()
     };
     let delta = Delta {
         tick: 43,

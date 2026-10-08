@@ -27,6 +27,17 @@ pub struct Entity {
     /// local inventory; omitted from client projections for non-owned entities
     #[prost(message, optional, tag = "8")]
     pub resources: ::core::option::Option<ResourceInventory>,
+    /// finite source stock; visible within sensor coverage
+    #[prost(message, optional, tag = "9")]
+    pub resource_deposit: ::core::option::Option<ResourceDeposit>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ResourceDeposit {
+    /// initial sampled amount (the maximum)
+    #[prost(double, tag = "1")]
+    pub amount: f64,
+    #[prost(double, tag = "2")]
+    pub remaining: f64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ResourceAmount {
@@ -67,6 +78,8 @@ pub struct EntityDelta {
     /// e.g. resource_starvation
     #[prost(string, optional, tag = "9")]
     pub damage_type: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "10")]
+    pub resource_deposit: ::core::option::Option<ResourceDeposit>,
 }
 /// Authoritative collector telemetry for one entity. This travels with the
 /// normal snapshot/delta stream instead of a separately polled UI side channel.

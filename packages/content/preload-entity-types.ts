@@ -23,7 +23,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 4
     },
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -2\nsuppress_hover: true\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 4\nresource_node:\n  resource_type: food\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50"
+    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -2\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 4\nresource_node:\n  resource_type: food\n  amount: 2000\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50"
   },
   {
     "id": "star_yellow",
@@ -41,7 +41,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 3
     },
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nvisual:\n  scale: 3\nresource_node:\n  resource_type: minerals\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50\nbuilds:\n  - entity_type_id: asteroid"
+    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nvisual:\n  scale: 3\nresource_node:\n  resource_type: minerals\n  amount: 10000\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50\nbuilds:\n  - entity_type_id: asteroid"
   },
   {
     "id": "collector_solar",

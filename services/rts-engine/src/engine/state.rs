@@ -39,6 +39,35 @@ pub fn resource_capacity(content: &ContentPack, entity_type_id: &str, resource_t
         .unwrap_or(0.0) as f64
 }
 
+/// Initialize each finite deposit once; zero stock must never be refilled.
+pub fn initialize_resource_deposits(
+    entities: &mut [Entity],
+    content: &ContentPack,
+    spawn_config: Option<&SpawnConfig>,
+    rng: &mut impl rand::Rng,
+) {
+    for entity in entities {
+        if entity.resource_deposit.is_some() { continue; }
+        let Some(node) = content.get(&entity.entity_type_id).and_then(|def| def.resource_node.as_ref()) else { continue; };
+        let amount = spawn_config
+            .and_then(|config| config.resource_amounts.get(&entity.entity_type_id))
+            .map(|distribution| distribution.sample(rng))
+            .or(node.amount);
+        if let Some(amount) = amount {
+            entity.resource_deposit = Some(crate::pb::ResourceDeposit { amount, remaining: amount });
+        }
+    }
+}
+
+/// Unlimited sources have no deposit. Finite sources debit exactly the amount granted.
+pub fn take_from_deposit(entity: &mut Entity, requested: f64) -> f64 {
+    let requested = requested.max(0.0);
+    let Some(deposit) = entity.resource_deposit.as_mut() else { return requested; };
+    let taken = requested.min(deposit.remaining.max(0.0));
+    deposit.remaining = (deposit.remaining - taken).max(0.0);
+    taken
+}
+
 const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
 const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
 const MAX_MINERAL_SPAWN_ATTEMPTS: usize = 256;
@@ -139,6 +168,7 @@ pub fn spawn_celestial_field(
             next_id += 1;
         }
     }
+    initialize_resource_deposits(entities, content, Some(spawn_config), rng);
 }
 
 /// Ensures a player spawn has a mineral node within 4,000 units.
@@ -153,6 +183,7 @@ pub fn ensure_minerals_near_spawn(
 ) -> Result<u64> {
     if entities.iter().any(|entity| {
         entity.entity_type_id == "minerals"
+            && entity.resource_deposit.as_ref().is_none_or(|deposit| deposit.remaining > 0.0)
             && entity.pos.as_ref().is_some_and(|pos| {
                 squared_distance(spawn_x, spawn_y, pos.x, pos.y)
                     <= PLAYER_MINERAL_SEARCH_RADIUS.powi(2)
@@ -222,6 +253,7 @@ fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &Conte
             .get(entity_type_id)
             .map(|def| def.health.max(0.0))
             .unwrap_or(0.0),
+        resource_deposit: None,
         resources: None,
     }
 }
@@ -270,6 +302,7 @@ pub fn on_player_spawn(
                     .get(type_id)
                     .map(|def| def.health.max(0.0))
                     .unwrap_or(0.0),
+                resource_deposit: None,
                 resources: Some(Default::default()),
             });
             placed_player_positions.push(Vec2 { x, y });
@@ -312,6 +345,7 @@ pub fn on_player_spawn(
                     .get(&neutral.entity_type_id)
                     .map(|def| def.health.max(0.0))
                     .unwrap_or(0.0),
+                resource_deposit: None,
                 resources: None,
             });
             id += 1;
@@ -454,6 +488,31 @@ pub fn log_sample(state: &GameState) {
 mod tests {
     use super::*;
     use rand::SeedableRng;
+
+    #[test]
+    fn finite_deposits_are_sampled_once_and_cannot_be_overdrawn_or_refilled() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
+        let config = SpawnConfig::load(&root.join("services/rts-engine/config/spawn.yaml")).unwrap();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let mut entities = vec![neutral_entity(1, "minerals", 0.0, 0.0, &content), neutral_entity(2, "star_yellow", 0.0, 0.0, &content)];
+        initialize_resource_deposits(&mut entities, &content, Some(&config), &mut rng);
+        let initial = entities[0].resource_deposit.clone().unwrap();
+        assert!((2000.0..=20000.0).contains(&initial.amount));
+        assert_eq!(initial.amount, initial.remaining);
+        assert_eq!(take_from_deposit(&mut entities[0], 3.5), 3.5);
+        assert_eq!(take_from_deposit(&mut entities[0], initial.amount), initial.amount - 3.5);
+        assert_eq!(take_from_deposit(&mut entities[0], 1.0), 0.0);
+        initialize_resource_deposits(&mut entities, &content, Some(&config), &mut rng);
+        assert_eq!(entities[0].resource_deposit.as_ref().unwrap().remaining, 0.0);
+        assert_eq!(entities[0].resource_deposit.as_ref().unwrap().amount, initial.amount);
+        assert!(entities[1].resource_deposit.is_none());
+        assert_eq!(take_from_deposit(&mut entities[1], 100.0), 100.0);
+
+        let mut fixed = vec![neutral_entity(3, "planet_blue", 0.0, 0.0, &content)];
+        initialize_resource_deposits(&mut fixed, &content, None, &mut rng);
+        assert_eq!(fixed[0].resource_deposit.as_ref().unwrap().amount, 2000.0);
+    }
 
     #[test]
     fn celestial_field_has_one_hundred_stars_and_seventy_five_planets() {

@@ -641,6 +641,14 @@
       "description": "Resource source profile for entity types that can be gathered from.",
       "type": "object",
       "properties": {
+        "amount": {
+          "description": "Initial finite resource stock. Omitted means unlimited; spawn configuration may override it.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
         "collection_mode": {
           "description": "Whether gathering fills cargo for delivery (transport) or credits resources directly (proximity).",
           "$ref": "#/$defs/CollectionMode"

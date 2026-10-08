@@ -87,6 +87,11 @@ export type EntityTypeDef = {
     collects?: string[];
     carry_capacity?: number;
   };
+  resource_node?: {
+    resource_type: string;
+    collection_mode: "transport" | "proximity";
+    amount?: number;
+  };
   radiation_sources?: Array<{
     radiation_type: string;
     min_effective_distance_border_color?: string;

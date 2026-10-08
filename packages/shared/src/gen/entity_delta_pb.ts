@@ -6,7 +6,7 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Vec2 } from "./vec2_pb.js";
 import { file_vec2 } from "./vec2_pb.js";
-import type { ResourceInventory } from "./entity_pb.js";
+import type { ResourceDeposit, ResourceInventory } from "./entity_pb.js";
 import { file_entity } from "./entity_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity_delta.proto.
  */
 export const file_entity_delta: GenFile = /*@__PURE__*/
-  fileDesc("ChJlbnRpdHlfZGVsdGEucHJvdG8SB2JpdHdhcnMihgMKC0VudGl0eURlbHRhEgoKAmlkGAEgASgEEh8KA3BvcxgCIAEoCzINLmJpdHdhcnMuVmVjMkgAiAEBEh8KA3ZlbBgDIAEoCzINLmJpdHdhcnMuVmVjMkgBiAEBEiEKBWZvcmNlGAQgASgLMg0uYml0d2Fycy5WZWMySAKIAQESHAoPb3duZXJfcGxheWVyX2lkGAUgASgJSAOIAQESGwoOZW50aXR5X3R5cGVfaWQYBiABKAlIBIgBARITCgZoZWFsdGgYByABKAJIBYgBARIyCglyZXNvdXJjZXMYCCABKAsyGi5iaXR3YXJzLlJlc291cmNlSW52ZW50b3J5SAaIAQESGAoLZGFtYWdlX3R5cGUYCSABKAlIB4gBAUIGCgRfcG9zQgYKBF92ZWxCCAoGX2ZvcmNlQhIKEF9vd25lcl9wbGF5ZXJfaWRCEQoPX2VudGl0eV90eXBlX2lkQgkKB19oZWFsdGhCDAoKX3Jlc291cmNlc0IOCgxfZGFtYWdlX3R5cGViBnByb3RvMw", [file_vec2, file_entity]);
+  fileDesc("ChJlbnRpdHlfZGVsdGEucHJvdG8SB2JpdHdhcnMi1AMKC0VudGl0eURlbHRhEgoKAmlkGAEgASgEEh8KA3BvcxgCIAEoCzINLmJpdHdhcnMuVmVjMkgAiAEBEh8KA3ZlbBgDIAEoCzINLmJpdHdhcnMuVmVjMkgBiAEBEiEKBWZvcmNlGAQgASgLMg0uYml0d2Fycy5WZWMySAKIAQESHAoPb3duZXJfcGxheWVyX2lkGAUgASgJSAOIAQESGwoOZW50aXR5X3R5cGVfaWQYBiABKAlIBIgBARITCgZoZWFsdGgYByABKAJIBYgBARIyCglyZXNvdXJjZXMYCCABKAsyGi5iaXR3YXJzLlJlc291cmNlSW52ZW50b3J5SAaIAQESGAoLZGFtYWdlX3R5cGUYCSABKAlIB4gBARI3ChByZXNvdXJjZV9kZXBvc2l0GAogASgLMhguYml0d2Fycy5SZXNvdXJjZURlcG9zaXRICIgBAUIGCgRfcG9zQgYKBF92ZWxCCAoGX2ZvcmNlQhIKEF9vd25lcl9wbGF5ZXJfaWRCEQoPX2VudGl0eV90eXBlX2lkQgkKB19oZWFsdGhCDAoKX3Jlc291cmNlc0IOCgxfZGFtYWdlX3R5cGVCEwoRX3Jlc291cmNlX2RlcG9zaXRiBnByb3RvMw", [file_vec2, file_entity]);
 
 /**
  * Sparse delta: only include fields that changed meaningfully.
@@ -77,6 +77,11 @@ export type EntityDelta = Message<"bitwars.EntityDelta"> & {
    * @generated from field: optional string damage_type = 9;
    */
   damageType?: string;
+
+  /**
+   * @generated from field: optional bitwars.ResourceDeposit resource_deposit = 10;
+   */
+  resourceDeposit?: ResourceDeposit;
 };
 
 /**

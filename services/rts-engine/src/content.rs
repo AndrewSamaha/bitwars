@@ -440,6 +440,9 @@ pub struct MinimumDistanceDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceNodeDef {
+    /// Initial finite resource stock. Omitted means unlimited; spawn configuration may override it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount: Option<f64>,
     /// Resource ID produced by this source; must be included in the collector's collects list.
     pub resource_type: String,
     /// Whether gathering fills cargo for delivery (transport) or credits resources directly (proximity).
@@ -678,6 +681,9 @@ fn validate_technologies(
     }
     for (entity_id, entity) in entity_types {
         if let Some(node) = entity.resource_node.as_ref() {
+            if node.amount.is_some_and(|amount| !amount.is_finite() || amount < 0.0) {
+                anyhow::bail!("entity type {entity_id} has an invalid resource node amount");
+            }
             if let Some(limit) = node.max_simultaneous_collectors {
                 if limit == 0 || node.collection_mode != CollectionMode::Transport {
                     anyhow::bail!(

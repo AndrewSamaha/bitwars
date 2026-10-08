@@ -558,6 +558,7 @@ mod tests {
         let mut state = GameState {
             tick: 0,
             entities: vec![pb::Entity {
+                resource_deposit: None,
                 resources: None,
                 id: entity_id,
                 entity_type_id: String::new(),
@@ -595,6 +596,7 @@ mod tests {
         let mut state = GameState {
             tick: 0,
             entities: vec![pb::Entity {
+                resource_deposit: None,
                 resources: None,
                 id: entity_id,
                 entity_type_id: "worker".into(),

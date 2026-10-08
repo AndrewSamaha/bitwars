@@ -34,3 +34,16 @@ starting_resources:
   minerals: 500
   energy: 500
 starting_resources_recipient_type: habitat
+
+# Normal resource amounts, clamped to min/max. Keys are entity type IDs.
+resource_amounts:
+  minerals:
+    average: 10000
+    sd: 2000
+    min: 2000
+    max: 20000
+  planet_blue:
+    average: 2000
+    sd: 400
+    min: 400
+    max: 4000

@@ -58,7 +58,7 @@ export type Entity = Partial<
   EntityTypeId &
   OwnerPlayerId &
   Health &
-  { resources?: ResourceAmountView[] } &
+  { resources?: ResourceAmountView[]; resource_deposit?: { amount: number; remaining: number } | null } &
   FogMemoryView &
   RadiationDamagePresentation &
   ActiveIntentView &

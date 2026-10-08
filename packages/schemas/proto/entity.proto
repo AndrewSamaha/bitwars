@@ -12,6 +12,12 @@ message Entity {
   string owner_player_id  = 6;  // M6: empty = unowned/legacy, else player or registered system owner
   float  health           = 7;  // current health; max health is defined by content
   ResourceInventory resources = 8; // local inventory; omitted from client projections for non-owned entities
+  ResourceDeposit resource_deposit = 9; // finite source stock; visible within sensor coverage
+}
+
+message ResourceDeposit {
+  double amount = 1; // initial sampled amount (the maximum)
+  double remaining = 2;
 }
 
 message ResourceAmount {
