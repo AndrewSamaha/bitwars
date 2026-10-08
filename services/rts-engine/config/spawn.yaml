@@ -47,7 +47,7 @@ resource_amounts:
     min: 6000
     max: 20000
   planet_blue:
-    average: 2000
-    sd: 400
-    min: 400
-    max: 4000
+    average: 10000
+    sd: 2000
+    min: 1000
+    max: 40000

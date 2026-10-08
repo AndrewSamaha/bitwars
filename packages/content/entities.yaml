@@ -452,7 +452,7 @@ entity_types:
     sensor:
       range: 1200
       cost_per_minute:
-        energy: 2.5
+        energy: 0
   defense_pylon_v2:
     max_capacity:
       energy: 500

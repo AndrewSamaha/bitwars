@@ -143,8 +143,8 @@ export function TooltipOverlay() {
       {rememberedAt === undefined && deposit && depositResource && (
         <div><b>{depositResource}:</b> {deposit.remaining.toFixed(1)} / {deposit.amount.toFixed(1)}</div>
       )}
-      {inventory?.map(({ resource_type, amount }) => {
-        const capacity = capacities?.[resource_type] ?? 0;
+      {ownerPlayerId === player?.id && Object.entries(capacities ?? {}).filter(([, capacity]) => capacity > 0).map(([resource_type, capacity]) => {
+        const amount = inventory?.find((resource) => resource.resource_type === resource_type)?.amount ?? 0;
         return <div key={resource_type}><b>{resource_type}:</b> {Number(amount).toFixed(1)} / {capacity}</div>;
       })}
       <div><b>pos:</b> {Math.round(hoveredEntity.pos?.x ?? 0)}, {Math.round(hoveredEntity.pos?.y ?? 0)}</div>

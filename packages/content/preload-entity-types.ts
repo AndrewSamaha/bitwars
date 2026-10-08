@@ -119,7 +119,7 @@ export const ENTITY_CONTENT = [
       "scale": 0.75,
       "rotate_deg": 90
     },
-    "definition": "max_capacity: {}\nfog_memory: forget_when_hidden\nspeed: 110\nstop_radius: 0.5\nmass: 0.8\nhealth: 40\nhull_radius: 50\ncombat_targetable: true\nvisual:\n  scale: 0.75\n  rotate_deg: 90\ncombat:\n  acquisition_range: 1200\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 180\n      damage: 8\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 1200\n  cost_per_minute:\n    energy: 2.5"
+    "definition": "max_capacity: {}\nfog_memory: forget_when_hidden\nspeed: 110\nstop_radius: 0.5\nmass: 0.8\nhealth: 40\nhull_radius: 50\ncombat_targetable: true\nvisual:\n  scale: 0.75\n  rotate_deg: 90\ncombat:\n  acquisition_range: 1200\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 180\n      damage: 8\n      cooldown_ticks: 100\n      priority: 0\nsensor:\n  range: 1200\n  cost_per_minute:\n    energy: 0"
   },
   {
     "id": "defense_pylon_v2",
