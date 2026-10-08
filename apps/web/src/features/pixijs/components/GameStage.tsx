@@ -28,6 +28,7 @@ import { gameEntityScale } from "@/features/pixijs/renderer/entityScale";
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
 import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog";
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
+import { selectEntitiesOfTypeInView } from "@/features/pixijs/utils/typeSelection";
 import { minimapOffsetToWorld, worldToMinimapOffset } from "@/features/pixijs/utils/minimap";
 import {
   CELL_SIZE,
@@ -1155,6 +1156,7 @@ export default function GameStage() {
         let selectionDrag: SelectionDrag | null = null;
         let cameraDrag: CameraDrag | null = null;
         let entityPress: EntityPress | null = null;
+        let selectionTapId: string | null = null;
         let minimapDrag: MinimapDrag | null = null;
         const SELECTION_DRAG_THRESHOLD_PX = 4;
 
@@ -1189,6 +1191,7 @@ export default function GameStage() {
           const live = findLiveEntityById(press.id);
           const ownerId = (live as any)?.owner_player_id;
           if (!live || myPlayerIdRef.current == null || ownerId !== myPlayerIdRef.current) return;
+          selectionTapId = press.id;
           if (press.shift) {
             if (latestSelectorsRef.current.isSelected(press.id)) removeSelection([press.id]);
             else addSelection([press.id]);
@@ -1196,6 +1199,22 @@ export default function GameStage() {
             setSelection([press.id]);
           }
         };
+
+        const onDoubleClick = (event: MouseEvent) => {
+          if (event.button !== 0 || !selectionTapId) return;
+          const typeId = findLiveEntityById(selectionTapId)?.entity_type_id;
+          const playerId = myPlayerIdRef.current;
+          if (!typeId || !playerId) return;
+          const candidates = [];
+          for (const entity of game.world.with("id")) {
+            const visual = renderById.get(String(entity.id));
+            if (visual) candidates.push({ entity, bounds: visual.container.getBounds() });
+          }
+          const ids = selectEntitiesOfTypeInView(candidates, typeId, playerId, app.screen);
+          if (event.shiftKey) addSelection(ids);
+          else setSelection(ids);
+        };
+        app.canvas.addEventListener("dblclick", onDoubleClick);
 
         const dispatchMove = (global: { x: number; y: number }, shift: boolean, ctrl: boolean) => {
           const sel = latestSelectorsRef.current;
@@ -1275,6 +1294,7 @@ export default function GameStage() {
 
         // Stage click — selects, moves, or starts a camera/selection drag.
         app.stage.on('pointerdown', (ev: any) => {
+          selectionTapId = null;
           try {
             const global = ev.global;
             // A minimap drag keeps the grabbed world point beneath the pointer.
@@ -1493,6 +1513,7 @@ export default function GameStage() {
         return () => {
           if (destroyed) return;
           destroyed = true;
+          app.canvas.removeEventListener("dblclick", onDoubleClick);
           app.canvas.removeEventListener("wheel", onWheel);
           app.canvas.removeEventListener("pointerleave", onMeasurePointerLeave);
           for (const id of Array.from(renderById.keys())) {

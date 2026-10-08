@@ -257,9 +257,91 @@ fn repair_tick(repair: &RepairDef, dt: f32, missing_health: f32) -> (f32, HashMa
     (restored, costs)
 }
 
+/// Friendly stockpiles can supply construction and repair within their sharing range.
+fn resource_donor_ids(entities: &[pb::Entity], content: Option<&ContentPack>, actor_id: u64, player_id: &str) -> Vec<u64> {
+    let Some(actor) = entities.iter().find(|entity| entity.id == actor_id) else {
+        return Vec::new();
+    };
+    let Some(actor_pos) = actor.pos.as_ref() else { return vec![actor_id]; };
+    let mut donors: Vec<_> = entities.iter().filter_map(|entity| {
+        if entity.owner_player_id != player_id { return None; }
+        if entity.id == actor_id { return Some(entity.id); }
+        let definition = content?.get(&entity.entity_type_id)?;
+        let range = definition.resource_sharing.as_ref()?.range;
+        let pos = entity.pos.as_ref()?;
+        let dx = pos.x - actor_pos.x;
+        let dy = pos.y - actor_pos.y;
+        (dx * dx + dy * dy <= range * range).then_some(entity.id)
+    }).collect();
+    donors.sort_unstable();
+    donors
+}
+
+/// Debit donors in stable ID order, only when every resource can be paid.
+fn pay_resources_from_donors(entities: &mut [pb::Entity], donor_ids: &[u64], costs: &HashMap<String, f32>) -> bool {
+    if costs.iter().any(|(resource, amount)| {
+        entities.iter().filter(|entity| donor_ids.binary_search(&entity.id).is_ok())
+            .map(|entity| resource_amount(entity, resource)).sum::<f64>() + f64::EPSILON < *amount as f64
+    }) { return false; }
+    for (resource, amount) in costs {
+        let mut remaining = *amount as f64;
+        for donor_id in donor_ids {
+            let Some(entity) = entities.iter_mut().find(|entity| entity.id == *donor_id) else { continue; };
+            let available = resource_amount(entity, resource);
+            let spent = available.min(remaining);
+            if spent > 0.0 {
+                set_resource_amount(entity, resource, available - spent);
+                remaining -= spent;
+            }
+            if remaining <= f64::EPSILON { break; }
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod repair_tests {
     use super::*;
+
+    #[test]
+    fn repair_borrows_from_in_range_friendly_habitat_and_is_atomic() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
+        let repair = content.get("worker").unwrap().repair.as_ref().unwrap();
+        let make_entity = |id, kind: &str, owner: &str, x| pb::Entity {
+            id, entity_type_id: kind.into(), owner_player_id: owner.into(),
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default()
+        };
+        let mut entities = vec![make_entity(2, "worker", "me", 0.0), make_entity(1, "habitat", "me", 114.0)];
+        set_resource_amount(&mut entities[0], "energy", 50.0);
+        set_resource_amount(&mut entities[1], "energy", 5.0);
+        set_resource_amount(&mut entities[1], "minerals", 5.0);
+        let (health, costs) = repair_tick(repair, 1.0, 323.0);
+        let donors = resource_donor_ids(&entities, Some(&content), 2, "me");
+        assert_eq!(donors, vec![1, 2]);
+        assert!(pay_resources_from_donors(&mut entities, &donors, &costs));
+        assert_eq!(health, 1.0);
+        assert_eq!(resource_amount(&entities[1], "energy"), 4.0);
+        assert_eq!(resource_amount(&entities[1], "minerals"), 4.0);
+        assert_eq!(resource_amount(&entities[0], "energy"), 50.0);
+        assert_eq!(resource_amount(&entities[0], "minerals"), 0.0);
+
+        entities[1].pos.as_mut().unwrap().x = 4001.0;
+        let donors = resource_donor_ids(&entities, Some(&content), 2, "me");
+        assert_eq!(donors, vec![2]);
+        let before = entities.clone();
+        assert!(!pay_resources_from_donors(&mut entities, &donors, &costs));
+        assert_eq!(entities, before);
+        entities[1].pos.as_mut().unwrap().x = 114.0;
+        entities[1].owner_player_id = "other".into();
+        assert_eq!(resource_donor_ids(&entities, Some(&content), 2, "me"), vec![2]);
+        entities[1].owner_player_id = "me".into();
+        set_resource_amount(&mut entities[1], "minerals", 0.0);
+        let donors = resource_donor_ids(&entities, Some(&content), 2, "me");
+        let before = entities.clone();
+        assert!(!pay_resources_from_donors(&mut entities, &donors, &costs));
+        assert_eq!(entities, before);
+    }
 
     #[test]
     fn efficiency_converts_each_resource_unit_to_health() {
@@ -918,8 +1000,6 @@ pub struct Engine {
     resource_fractional: HashMap<(String, String), f32>,
     /// Fractional resource debits accumulated while construction channels run.
     build_spend_fractional: HashMap<(String, String), f32>,
-    /// Fractional resource debits accumulated while repair channels run.
-    repair_spend_fractional: HashMap<(String, String), f32>,
     /// Fractional upkeep accumulated between whole-unit ledger debits.
     maintenance_spend_fractional: HashMap<(String, String), f32>,
     /// Cumulative maintenance demand and successful construction spending,
@@ -1445,7 +1525,6 @@ impl Engine {
                     transport_wait_since_tick_by_entity: HashMap::new(),
                     resource_fractional: HashMap::new(),
                     build_spend_fractional: HashMap::new(),
-                    repair_spend_fractional: HashMap::new(),
                     maintenance_spend_fractional: HashMap::new(),
                     resource_spend_total: HashMap::new(),
                     resource_gain_total: HashMap::new(),
@@ -1657,7 +1736,6 @@ impl Engine {
             transport_wait_since_tick_by_entity: HashMap::new(),
             resource_fractional: HashMap::new(),
             build_spend_fractional: HashMap::new(),
-            repair_spend_fractional: HashMap::new(),
             maintenance_spend_fractional: HashMap::new(),
             resource_spend_total: HashMap::new(),
             resource_gain_total: HashMap::new(),
@@ -1991,91 +2069,21 @@ impl Engine {
         true
     }
 
-    fn build_donor_ids(&self, builder_id: u64, player_id: &str) -> Vec<u64> {
-        let Some(builder) = self.state.entities.iter().find(|entity| entity.id == builder_id) else {
-            return Vec::new();
-        };
-        let Some(builder_pos) = builder.pos.as_ref() else { return vec![builder_id]; };
-        let mut donors: Vec<_> = self.state.entities.iter().filter_map(|entity| {
-            if entity.owner_player_id != player_id { return None; }
-            if entity.id == builder_id { return Some(entity.id); }
-            let definition = self.content.as_ref()?.get(&entity.entity_type_id)?;
-            let range = definition.resource_sharing.as_ref()?.range;
-            let pos = entity.pos.as_ref()?;
-            let dx = pos.x - builder_pos.x;
-            let dy = pos.y - builder_pos.y;
-            (dx * dx + dy * dy <= range * range).then_some(entity.id)
-        }).collect();
-        donors.sort_unstable();
-        donors
+    fn action_donor_ids(&self, actor_id: u64, player_id: &str) -> Vec<u64> {
+        resource_donor_ids(&self.state.entities, self.content.as_ref(), actor_id, player_id)
     }
 
     fn available_build_resource(&self, builder_id: u64, player_id: &str, resource: &str) -> f64 {
-        let donor_ids = self.build_donor_ids(builder_id, player_id);
+        let donor_ids = self.action_donor_ids(builder_id, player_id);
         self.state.entities.iter().filter(|entity| donor_ids.binary_search(&entity.id).is_ok())
             .map(|entity| resource_amount(entity, resource)).sum()
     }
 
-    fn spend_build_resources(&mut self, builder_id: u64, player_id: &str, costs: &HashMap<String, f32>) -> bool {
-        let donor_ids = self.build_donor_ids(builder_id, player_id);
-        if costs.iter().any(|(resource, amount)| {
-            self.state.entities.iter().filter(|entity| donor_ids.binary_search(&entity.id).is_ok())
-                .map(|entity| resource_amount(entity, resource)).sum::<f64>() + f64::EPSILON < *amount as f64
-        }) { return false; }
+    fn spend_action_resources(&mut self, actor_id: u64, player_id: &str, costs: &HashMap<String, f32>) -> bool {
+        let donor_ids = self.action_donor_ids(actor_id, player_id);
+        if !pay_resources_from_donors(&mut self.state.entities, &donor_ids, costs) { return false; }
         for (resource, amount) in costs {
-            let mut remaining = *amount as f64;
-            for donor_id in &donor_ids {
-                let Some(entity) = self.state.entities.iter_mut().find(|entity| entity.id == *donor_id) else { continue; };
-                let available = resource_amount(entity, resource);
-                let spent = available.min(remaining);
-                if spent > 0.0 {
-                    set_resource_amount(entity, resource, available - spent);
-                    remaining -= spent;
-                }
-                if remaining <= f64::EPSILON { break; }
-            }
             self.record_resource_spend(player_id, resource, *amount);
-        }
-        true
-    }
-
-    /// Atomically charge all resources for one repair tick.
-    fn spend_repair_resources(&mut self, player_id: &str, costs: &HashMap<String, f32>) -> bool {
-        let charges: Vec<_> = costs
-            .iter()
-            .map(|(resource, amount)| {
-                let key = (player_id.to_string(), resource.clone());
-                let total = self
-                    .repair_spend_fractional
-                    .get(&key)
-                    .copied()
-                    .unwrap_or(0.0)
-                    + amount;
-                (resource, key, total.floor() as i64, total.fract())
-            })
-            .collect();
-        if charges.iter().any(|(resource, _, whole, _)| {
-            let available = self
-                .state
-                .ledger
-                .get(player_id)
-                .and_then(|ledger| ledger.get(*resource))
-                .copied()
-                .unwrap_or(0);
-            available <= 0 || available < *whole
-        }) {
-            return false;
-        }
-        let ledger = self.state.ledger.entry(player_id.to_string()).or_default();
-        for (resource, key, whole, remainder) in charges {
-            if whole > 0 {
-                *ledger.entry(resource.clone()).or_insert(0) -= whole;
-            }
-            if remainder > 0.0 {
-                self.repair_spend_fractional.insert(key, remainder);
-            } else {
-                self.repair_spend_fractional.remove(&key);
-            }
         }
         true
     }
@@ -2420,7 +2428,7 @@ impl Engine {
                 }
             }
             if !is_upgrade {
-                can_spend &= self.spend_build_resources(entity_id, &player_id, &tick_costs);
+                can_spend &= self.spend_action_resources(entity_id, &player_id, &tick_costs);
             }
             if !can_spend {
                 continue;
@@ -3382,7 +3390,7 @@ impl Engine {
                 finished.push(entity_id);
                 continue;
             }
-            if !self.spend_repair_resources(&actor.owner_player_id, &costs) {
+            if !self.spend_action_resources(entity_id, &actor.owner_player_id, &costs) {
                 continue;
             }
             if let Some(entity) = self

@@ -46,7 +46,7 @@ resource_amounts:
   minerals:
     average: 10000
     sd: 2000
-    min: 2000
+    min: 6000
     max: 20000
   planet_blue:
     average: 2000
