@@ -210,6 +210,8 @@ entity_types:
       deposit_entity_types:
         - processor
         - habitat
+        - factory
+        - military_factory
     repair:
       range: 150
       cost_per_min:
@@ -243,9 +245,9 @@ entity_types:
           energy: 1.2
   habitat:
     max_capacity:
-      energy: 5000
+      energy: 1000
       food: 5000
-      minerals: 5000
+      minerals: 1000
     resource_sharing:
       range: 4000
       wireless_receives:
@@ -335,8 +337,6 @@ entity_types:
       accepts:
         - minerals
   factory:
-    max_capacity:
-      energy: 500
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -353,6 +353,18 @@ entity_types:
       range: 400
       cost_per_minute:
         energy: 0.1
+    max_capacity:
+      energy: 3000
+      food: 500
+      minerals: 3000
+    refinery:
+      accepts:
+        - food
+        - minerals
+    resource_sharing:
+      range: 1000
+      wireless_receives:
+        - energy
     builds:
       - entity_type_id: scout
         spend_rates:
@@ -757,6 +769,8 @@ entity_types:
       deposit_entity_types:
         - processor
         - habitat
+        - factory
+        - military_factory
   military_factory:
     max_capacity:
       energy: 500
@@ -843,6 +857,8 @@ entity_types:
       deposit_entity_types:
         - processor
         - habitat
+        - factory
+        - military_factory
     repair:
       range: 150
       cost_per_min:

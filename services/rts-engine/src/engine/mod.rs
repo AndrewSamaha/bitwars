@@ -458,6 +458,37 @@ mod transport_capacity_tests {
     use super::*;
 
     #[test]
+    fn dropoff_skips_full_storage_and_rechecks_current_amounts() {
+        let collector = CollectorSnapshot {
+            id: 1, entity_type_id: "worker".into(), owner_player_id: "p1".into(),
+            x: 0.0, y: 0.0,
+        };
+        let refinery = |id, x| RefinerySnapshot {
+            id, entity_type_id: "habitat".into(), owner_player_id: "p1".into(), x, y: 0.0,
+            accepts: vec!["minerals".into()],
+            max_capacity: HashMap::from([("minerals".into(), 100.0)]),
+        };
+        let refineries = [refinery(2, 10.0), refinery(3, 200.0)];
+        let mut entities = [
+            pb::Entity { id: 2, ..Default::default() },
+            pb::Entity { id: 3, ..Default::default() },
+        ];
+        let pick = |entities: &[pb::Entity]| Engine::pick_best_refinery(
+            &collector, &refineries, entities, "minerals", &["habitat".into()],
+        ).map(|refinery| refinery.id);
+
+        set_resource_amount(&mut entities[0], "minerals", 100.0);
+        assert_eq!(pick(&entities), Some(3), "skip the nearer full habitat");
+        set_resource_amount(&mut entities[0], "minerals", 99.0);
+        assert_eq!(pick(&entities), Some(2), "partial cargo delivery is allowed");
+        set_resource_amount(&mut entities[0], "minerals", 100.0);
+        set_resource_amount(&mut entities[1], "minerals", 100.0);
+        assert_eq!(pick(&entities), None, "wait when all storage is full");
+        set_resource_amount(&mut entities[1], "minerals", 90.0);
+        assert_eq!(pick(&entities), Some(3), "resume when storage has room again");
+    }
+
+    #[test]
     fn content_configures_transport_node_capacity() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml");
@@ -3695,6 +3726,7 @@ impl Engine {
     fn pick_best_refinery<'a>(
         collector: &CollectorSnapshot,
         refineries: &'a [RefinerySnapshot],
+        entities: &[pb::Entity],
         resource_type: &str,
         allowed_entity_types: &[String],
     ) -> Option<&'a RefinerySnapshot> {
@@ -3707,6 +3739,11 @@ impl Engine {
                     || allowed_entity_types
                         .iter()
                         .any(|et| et == &r.entity_type_id)
+            })
+            .filter(|r| {
+                let capacity = r.max_capacity.get(resource_type).copied().unwrap_or(0.0) as f64;
+                entities.iter().find(|entity| entity.id == r.id)
+                    .is_some_and(|entity| capacity - resource_amount(entity, resource_type) > f64::EPSILON)
             })
             .min_by(|a, b| {
                 let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
@@ -3961,6 +3998,7 @@ impl Engine {
                     if let Some(refinery) = Self::pick_best_refinery(
                         &collector,
                         &refineries,
+                        &self.state.entities,
                         &carry.resource_type,
                         &collector_def.deposit_entity_types,
                     ) {
