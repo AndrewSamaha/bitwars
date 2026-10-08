@@ -280,6 +280,8 @@ entity_types:
           priority: 0
     maintenance_cost_per_minute:
       food: 60
+      energy: 10
+      minerals: 5
     sensor:
       range: 4000
       cost_per_minute:
