@@ -568,7 +568,6 @@ mod tests {
                 owner_player_id: String::new(),
                 health: 100.0,
             }],
-            ledger: crate::engine::state::ResourceLedger::new(),
             technologies: Default::default(),
         };
 
@@ -606,7 +605,6 @@ mod tests {
                 owner_player_id: "p1".into(),
                 health: 100.0,
             }],
-            ledger: crate::engine::state::ResourceLedger::new(),
             technologies: Default::default(),
         };
 

@@ -67,6 +67,24 @@ export function unknownTechnologyFieldErrors(value: unknown): string[] {
   return errors;
 }
 
+/** Validate upkeep buffers against each entity type's capacity. */
+export function resourceReserveErrors(value: unknown, knownResources?: Set<string>): string[] {
+  if (!value || typeof value !== "object") return [];
+  const entity = value as { max_capacity?: Record<string, unknown>; resource_reserves?: unknown };
+  const reserves = entity.resource_reserves;
+  if (reserves === undefined) return [];
+  if (!reserves || typeof reserves !== "object" || Array.isArray(reserves)) return ["resource_reserves must be a resource amount map"];
+  const errors: string[] = [];
+  for (const [resource, reserve] of Object.entries(reserves)) {
+    const path = `resource_reserves.${resource}`;
+    const capacity = entity.max_capacity?.[resource];
+    if (knownResources && !knownResources.has(resource)) errors.push(`${path}: unknown resource`);
+    if (typeof capacity !== "number" || !Number.isFinite(capacity) || capacity <= 0) errors.push(`${path}: requires positive max_capacity`);
+    else if (typeof reserve !== "number" || !Number.isFinite(reserve) || reserve < 0 || reserve > capacity) errors.push(`${path}: must be between 0 and max_capacity (${capacity})`);
+  }
+  return errors;
+}
+
 /** Cross-field constraints that JSON Schema cannot express for inventory policies. */
 export function resourceSharingPolicyErrors(value: unknown, knownResources?: Set<string>): string[] {
   if (!value || typeof value !== "object") return [];

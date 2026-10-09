@@ -17,24 +17,11 @@ This builds on the data-driven resource types, entity upkeep, collector, refiner
 - Worker and transport entities can move selected resources between assigned donor and recipient entities, including habitats. The unit transports cargo in its own inventory. The exact per-trip loading rule should reuse the existing intent lifecycle and queueing rules.
 - Inventories, transfer cargo, damage, and sharing outcomes are authoritative simulation state and must survive snapshots, reconnects, and deterministic replay.
 
-## Current starting-resource behavior
+## Starting inventory
 
-`services/rts-engine/config/spawn.yaml` configures `starting_resources` as `food: 500`, `minerals: 500`, and `energy: 500`. `ensure_spawned` grants these amounts once per player into `GameState.ledger`, keyed by player ID, after spawning that player's loadout. The snapshot persists this as `player_ledgers`; `/api/players/me` exposes it to the existing resource HUD. Current gameplay costs also debit that player ledger.
+`services/rts-engine/config/spawn.yaml` defines `starting_resources` and `starting_resources_recipient_type` (default `habitat`). On first player spawn, the engine grants the configured stock directly into the newly spawned recipient’s inventory. The selected loadout must contain exactly one recipient of that type, and every configured amount must fit its capacity; otherwise spawning fails validation. Existing inventories are restored from snapshots rather than recreated from current spawn configuration.
 
-This correctly implements a player-wide starting balance, but it is not sufficient for localized resources: no entity receives those amounts, and an entity-local cost cannot spend them. The spawn loadout already includes a `habitat`, which is a natural initial stockpile, but the grant code does not select or initialize a recipient. Keep the spawn-config amounts and HUD aggregate, but change the grant to put the configured starting stock into a configured player-owned storage entity (recommended default: the spawned habitat), subject to that entity's capacity. If the selected loadout lacks the configured recipient or the starting stock exceeds capacity, spawn validation should report a configuration error rather than silently losing resources.
-
-The player ledger should then be derived from/synchronized with entity inventories for display and economy reporting; it must not remain a second spendable pool. For deterministic spawn and restore, inventory must be stored in world/entity state and snapshots, not reconstructed from current spawn config after the player has joined.
-
-## Ways to assign inventory during spawn
-
-The existing spawn path chooses one `Loadout` (`entity_type_id → count`), passes it to `on_player_spawn`, which appends entities to `GameState.entities`, and then grants the player-wide starting balance. The spawned slice is available in `ensure_spawned`, but the loadout is a `HashMap`: entity iteration order is unspecified, and a type/count map does not identify a particular instance when there are duplicates.
-
-Two reasonable options:
-
-1. **Keep loadouts as-is; configure starting inventory by entity type.** Replace/extend `starting_resources` with a map or list keyed by recipient type, such as `starting_inventories: [{ entity_type: habitat, resources: { energy: 500, ... } }]`. After spawn, find the matching newly created owned entity and initialize its inventory. Validate that the selected loadout contains exactly one matching entity and that its configured capacity can hold the grant. This is the smallest change and suits the current single-habitat start.
-2. **Make loadouts structured spawn entries.** Each loadout contains entries like `{ type: habitat, count: 1, resources: {...} }`; `on_player_spawn` initializes inventory while creating each entity. This associates inventory with the exact spawned entry and scales to multiple copies or distinct entity roles, but changes the loadout schema and spawn code more broadly.
-
-Recommendation: use option 1 now, with an explicit recipient type and clear validation. Move to option 2 if a loadout needs different starting inventories for multiple entities of the same type. Avoid putting starting inventory on the general entity content definition: that would grant it on every spawn/build of that type, rather than only at player join.
+Snapshot `player_ledgers` are derived reporting totals, not a second spendable resource pool.
 
 ## Content and state shape
 
@@ -55,7 +42,7 @@ Entity runtime state needs a resource inventory map. Transport cargo should use 
 ## Gameplay rules to pin down
 
 1. **Collection and deposit:** transport collection fills collector inventory; delivery transfers that inventory to a local recipient with room. Proximity collection credits the collecting entity directly. Resource capacity caps both paths.
-2. **Spending:** maintenance and sensor operation debit the operating entity, repair costs debit the repairer and nearby friendly resource-sharing donors, upgrade costs debit the upgrading entity, and research costs debit the researcher. A producer may start construction when the full build cost is available across one or more donors, each within its configured resource-sharing range of the builder. Resources remain in donor inventories and are progressively debited from donors in entity-ID order as construction proceeds.
+2. **Spending:** maintenance and sensor operation debit the operating entity, repair costs debit the repairer and nearby friendly resource-sharing donors, upgrade and research costs debit the acting entity and nearby friendly resource-sharing donors, using the same payment rules as construction. A producer may start construction when the full build cost is available across one or more donors, each within its configured resource-sharing range of the builder. Resources remain in donor inventories and are progressively debited from donors in entity-ID order as construction proceeds.
 3. **Lifecycle:** an upgraded entity's replacement inherits its inventory. In all other cases, including destruction and ownership change/capture, its inventory is lost. Resource theft by another entity is a possible future mechanic.
 4. **Sharing:** sharing transfers inventory, it does not create resources. Sharing range is declared on the sharing entity type. Recipients are all same-owner entities within that range that have maintenance costs, and a recipient only receives a resource type that it uses for upkeep. Each donor pays its own due maintenance and sensor costs before sharing. Accrued fractional upkeep is reserved until its whole-unit payment is due; only unreserved stock is shared. Solar collectors pay their upkeep before wireless donation, and habitats receive wireless supply before checking their upkeep. Donors with an unpaid due payment cannot share that tick. A habitat does not return energy to a collector that supplied it wirelessly that tick. For resources with a sharing policy, supply goes to requesting recipients in descending priority, then distance, then entity-ID order, capped by the refill target. Resources without a policy retain the existing capacity-based, entity-ID-ordered transfers. Stock blocked by full recipients stays with the habitat for a later sharing tick.
 5. **Transfer orders:** the player assigns both a donor resource container and a recipient resource container. Any entity that uses or carries resources may be the recipient. Worker/transport cargo is local inventory; loading debits the donor and unloading credits the recipient. Transfers use a maintained, long-running intent like `Collect`, repeating supply behavior until replaced or interrupted. Reject or partially fulfill incompatible/full/empty transfers without losing resources. If either endpoint disappears, cancel the transfer intent and notify the player with a dedicated `TRANSFER_ENDPOINT_LOST_EVENT`, modeled on `COLLECTION_WAITING_EVENT`, with a player-facing toast.
@@ -201,3 +188,13 @@ Habitats can use the example above; outgoing reserve should leave stock availabl
 for nearby upkeep recipients. Factories use priority 0,
 `refill_below: 3000`, `fill_to: 3000`, and `reserve: 50`, so they accumulate
 leftover energy but can help refill a low habitat.
+
+## Player-wide totals after migration
+
+Player ledgers in snapshots are reporting-only sums of entity inventories. The engine does not restore or maintain a second spendable player balance. Construction, upgrades, and research validate the full cost against the acting entity and same-owner donors within each donor’s sharing range, then debit those inventories progressively. Each tick’s multi-resource payment is atomic: if any resource is unavailable, no resources are charged and progress pauses. Sharing refill targets and reserves control automatic transfers, not these explicit action payments.
+
+Build, upgrade, and research menus use streamed entity inventories and the same donor eligibility rules. They refresh when menus are open and nearby inventories change. The client no longer polls `/api/players/me` for resource balances; aggregate snapshot totals and the reporting fields on `/api/players/me` remain available for diagnostics.
+
+## Shared inventory upkeep reserves
+
+The detailed rollout is tracked in [Shared inventory and upkeep reserve migration](resource-inventory-migration.md). Phase 1 adds optional entity-type `resource_reserves`, caps automatic supply at configured buffers, and retains those buffers during directed loading/delivery and outgoing sharing. Workers, marine workers, and resource transports start with five food and five energy. Inventory totals still include the reserve; upkeep and explicit action costs can consume it. No additional per-entity resource balance or protobuf field is introduced. Resource-node collection’s separate legacy cargo remains for phase 2. Existing matches do not require reset for phase 1.

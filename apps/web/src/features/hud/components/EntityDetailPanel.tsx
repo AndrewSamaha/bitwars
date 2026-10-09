@@ -7,6 +7,8 @@ import { contentManager } from "@/features/content/contentManager";
 import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { GAMESTATE_UPDATED_EVENT, type GameStateUpdatedDetail } from "@/features/gamestate/events";
+import { transferableResourceAmount } from "@/features/hud/resourceInventory";
+import { canAffordAction } from "@/features/hud/actionResources";
 
 const GAMESTATE_UI_REFRESH_INTERVAL_MS = 100;
 type BuildState = { blueprint_id?: string; progress?: number };
@@ -65,7 +67,8 @@ export default function EntityDetailPanel() {
     };
     const onGameStateUpdated = (event: Event) => {
       const changedIds = (event as CustomEvent<GameStateUpdatedDetail>).detail?.entityIds;
-      if (changedIds && !selectedEntities.some((id) => changedIds.includes(id)) && !(donorId && changedIds.includes(donorId))) return;
+      if (selectedEntities.length === 0) return;
+      if (changedIds && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen && !selectedEntities.some((id) => changedIds.includes(id)) && !(donorId && changedIds.includes(donorId))) return;
       const remaining = GAMESTATE_UI_REFRESH_INTERVAL_MS - (performance.now() - lastRefreshAt);
       if (remaining <= 0) {
         refresh();
@@ -78,7 +81,7 @@ export default function EntityDetailPanel() {
       window.removeEventListener(GAMESTATE_UPDATED_EVENT, onGameStateUpdated);
       if (trailingRefresh !== undefined) window.clearTimeout(trailingRefresh);
     };
-  }, [selectedEntities, selectedIdsKey, donorId]);
+  }, [selectedEntities, selectedIdsKey, donorId, buildMenuOpen, upgradeMenuOpen, researchMenuOpen]);
 
   useEffect(() => {
     setBuildMenuOpen(false);
@@ -214,15 +217,18 @@ export default function EntityDetailPanel() {
   };
   // Shared build options are intersected above; other action gates retain their existing behavior.
   const deliverySelection = typeof selectedAction === "object" ? selectedAction : null;
-  const carrierEntity = Array.from(game.world.with("id")).find((e) => String(e.id) === firstId);
+  const entities = Array.from(game.world.with("id"));
+  const carrierEntity = entities.find((e) => String(e.id) === firstId);
   const carrierDef = contentManager.getEntityType(idToType.get(firstId) ?? "");
   const canTransport = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0 && (carrierDef?.collector?.carry_capacity ?? 0) > 0;
   const transportSelection = deliverySelection?.kind === "Transport" ? deliverySelection : null;
   const deliveryEntity = transportSelection
-    ? Array.from(game.world.with("id")).find((e) => String(e.id) === transportSelection.donorId) : carrierEntity;
+    ? entities.find((e) => String(e.id) === transportSelection.donorId) : carrierEntity;
+  const deliveryDef = contentManager.getEntityType(deliveryEntity?.entity_type_id ?? "");
   const deliveryAmounts = new Map<string, number>();
   for (const entry of deliveryEntity?.resources ?? []) {
-    if (entry.amount > 0 && (!transportSelection || (carrierDef?.max_capacity?.[entry.resource_type] ?? 0) > 0)) deliveryAmounts.set(entry.resource_type, entry.amount);
+    const available = transferableResourceAmount(deliveryEntity, deliveryDef, entry.resource_type);
+    if (available > 0 && (!transportSelection || (carrierDef?.max_capacity?.[entry.resource_type] ?? 0) > 0)) deliveryAmounts.set(entry.resource_type, available);
   }
   if (transportSelection) {
     for (const resource of transportSelection.resourceTypeIds) {
@@ -237,7 +243,7 @@ export default function EntityDetailPanel() {
     (contentManager.getResourceType(a)?.order ?? 0) - (contentManager.getResourceType(b)?.order ?? 0)
     || a.localeCompare(b));
   const canDeliver = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0
-    && ((carrierEntity?.resources ?? []).some(resource => resource.amount > 0)
+    && ((carrierEntity?.resources ?? []).some(resource => transferableResourceAmount(carrierEntity, carrierDef, resource.resource_type) > 0)
       || (carrierEntity?.collector_state?.carry_amount ?? 0) > 0);
   const toggleDeliveryResource = (resource: string) => {
     const current = deliverySelection?.resourceTypeIds ?? [];
@@ -378,9 +384,11 @@ export default function EntityDetailPanel() {
   // Reserve n for the explicit nearest-compatible collection mode. The rest
   // mirrors the option-key ordering used by build and upgrade menus.
   const collectKeys = "qwetasdfgzxcvb";
-  const canAfford = (entityTypeId: string) => {
+  const canAffordCosts = (entityId: string, costs: Record<string, number>) =>
+    canAffordAction(entityId, Array.from(game.world.with("id")), contentManager.getContent()?.entity_types ?? {}, costs);
+  const canAfford = (entityTypeId: string, entityIds = selectedEntities) => {
     const costs = contentManager.getEntityType(entityTypeId)?.build_cost ?? {};
-    return Object.entries(costs).every(([resource, cost]) => selectors.getResource(resource) >= cost);
+    return entityIds.length > 0 && entityIds.every((id) => canAffordCosts(id, costs));
   };
   const startBuild = (entityTypeId: string) => {
     if (!buildOptions.some((option) => option.entity_type_id === entityTypeId) || !canAfford(entityTypeId)) return;
@@ -391,14 +399,14 @@ export default function EntityDetailPanel() {
     setBuildMenuOpen(false);
   };
   const startUpgrade = (entityTypeId: string) => {
-    if (!canAfford(entityTypeId)) return;
+    if (!canAfford(entityTypeId, [firstId])) return;
     const entityId = Number(firstId);
     if (Number.isFinite(entityId)) intentQueue.handleUpgradeCommand(entityId, entityTypeId);
     setUpgradeMenuOpen(false);
   };
   const startResearch = (technologyId: string) => {
     const costs = contentManager.getContent()?.technologies?.[technologyId]?.research_cost ?? {};
-    if (!Object.entries(costs).every(([resource, cost]) => selectors.getResource(resource) >= cost)) return;
+    if (!canAffordCosts(firstId, costs)) return;
     const entityId = Number(firstId);
     if (Number.isFinite(entityId)) intentQueue.handleResearchCommand(entityId, technologyId);
     setResearchMenuOpen(false);
@@ -520,7 +528,8 @@ export default function EntityDetailPanel() {
                 const pos = idToPos.get(id);
                 const entityTypeId = idToType.get(id) ?? "—";
                 const health = idToHealth.get(id);
-                const maxHealth = contentManager.getEntityType(entityTypeId)?.health;
+                const entityDef = contentManager.getEntityType(entityTypeId);
+                const maxHealth = entityDef?.health;
                 const activeIntent = idToActiveIntent.get(id);
                 const collectorState = idToCollectorState.get(id);
                 const buildState = buildStateById[id];
@@ -565,6 +574,13 @@ export default function EntityDetailPanel() {
                       </span>
                     )}
                     {activeIntent?.transfer && <span className="font-mono text-muted-foreground">{activeIntent.transfer.donorId} → {activeIntent.transfer.targetId} ({activeIntent.transfer.resourceTypeIds.join(", ")})</span>}
+                    {activeIntent?.kind === "transport" && activeIntent.transfer && (
+                      <span className="font-mono text-muted-foreground">shipment: {activeIntent.transfer.resourceTypeIds.map((resource) => {
+                        const inventory = transferableResourceAmount(entities.find((entity) => String(entity.id) === id), entityDef, resource);
+                        const collectionCargo = collectorState?.resource_type === resource ? collectorState.carry_amount : 0;
+                        return `${resource} ${(inventory + collectionCargo).toFixed(1)}`;
+                      }).join(", ")}</span>
+                    )}
                     {activeIntent?.kind === "transport" && collectorState && (
                       <span className="font-mono text-muted-foreground">{collectorState.activity === "waiting_for_cargo_space" ? "Carry hold full; deliver existing cargo first" : collectorState.activity.replaceAll("_", " ")}</span>
                     )}
@@ -692,7 +708,7 @@ export default function EntityDetailPanel() {
                 <span className="text-muted-foreground">Upgrade:</span>
                 {upgradeOptions.map((option, index) => {
                   const costs = contentManager.getEntityType(option.entity_type_id)?.build_cost ?? {};
-                  const enabled = canAfford(option.entity_type_id);
+                  const enabled = canAfford(option.entity_type_id, [firstId]);
                   const costText = Object.entries(costs).map(([resource, amount]) => `${amount} ${resource}`).join(", ");
                   return (
                     <button
@@ -715,7 +731,7 @@ export default function EntityDetailPanel() {
                 {researchOptions.map((technologyId) => {
                   const technology = contentManager.getContent()?.technologies?.[technologyId];
                   const costs = technology?.research_cost ?? {};
-                  const enabled = Object.entries(costs).every(([resource, cost]) => selectors.getResource(resource) >= cost);
+                  const enabled = canAffordCosts(firstId, costs);
                   const costText = Object.entries(costs).map(([resource, amount]) => `${amount} ${resource}`).join(", ");
                   return <button key={technologyId} type="button" disabled={!enabled} onClick={() => startResearch(technologyId)} className={enabled ? "rounded border border-border bg-muted px-2 py-1 hover:bg-accent" : "cursor-not-allowed rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground"}>{technology?.display_name ?? technologyId} — {costText}</button>;
                 })}

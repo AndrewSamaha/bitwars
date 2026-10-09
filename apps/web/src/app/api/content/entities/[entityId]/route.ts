@@ -2,7 +2,7 @@ import { access, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { parseDocument, stringify } from "yaml";
-import { unknownEntityFieldErrors, resourceSharingPolicyErrors } from "@/lib/content/schemaValidation";
+import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors } from "@/lib/content/schemaValidation";
 
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
@@ -26,7 +26,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ enti
   const entity = parseDocument(definition);
   const types: any = doc.get("entity_types", true);
   if (doc.errors.length || entity.errors.length || !types?.has(entityId) || (newId !== entityId && types.has(newId))) return NextResponse.json({ error: "Invalid YAML or duplicate id" }, { status: 400 });
-  const validationErrors = [...unknownEntityFieldErrors(entity.toJS()), ...resourceSharingPolicyErrors(entity.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {})))];
+  const validationErrors = [...unknownEntityFieldErrors(entity.toJS()), ...resourceSharingPolicyErrors(entity.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(entity.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {})))];
   if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
   const replace = (value: any): any => Array.isArray(value) ? value.map(replace) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replace(item)])) : value === entityId ? newId : value;
   const content = replace(doc.toJS());

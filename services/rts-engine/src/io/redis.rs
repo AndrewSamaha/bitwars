@@ -698,23 +698,9 @@ impl RedisClient {
             .await
             .unwrap_or_else(|_| "0-0".to_string());
 
-        let ledger = snapshot
-            .player_ledgers
-            .iter()
-            .map(|pl| {
-                let resources = pl
-                    .resources
-                    .iter()
-                    .map(|e| (e.resource_type.clone(), e.amount))
-                    .collect();
-                (pl.player_id.clone(), resources)
-            })
-            .collect();
-
         let state = GameState {
             tick: snapshot.tick as u64,
             entities: snapshot.entities,
-            ledger,
             technologies: Default::default(),
         };
 
@@ -899,7 +885,7 @@ impl RedisClient {
         Ok(())
     }
 
-    /// Tie restored construction progress to the ledger saved in the same world snapshot.
+    /// Tie restored construction progress to the inventories saved in the same world snapshot.
     pub async fn checkpoint_construction_progress(
         &mut self,
         progress_by_entity: &HashMap<u64, f32>,

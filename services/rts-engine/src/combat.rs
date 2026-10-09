@@ -405,6 +405,7 @@ mod tests {
 
     fn content() -> ContentPack {
         let raider = EntityTypeDef {
+            resource_reserves: HashMap::new(),
             max_capacity: HashMap::new(),
             resource_sharing: None,
             fog_memory: Default::default(),

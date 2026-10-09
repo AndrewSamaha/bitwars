@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { completionHelp, contentSchemas, hoverHelp, type ContentKind } from "../src/lib/content/editorHelp";
-import { resourceSharingPolicyErrors, unknownEntityFieldErrors } from "../src/lib/content/schemaValidation";
+import { resourceSharingPolicyErrors, resourceReserveErrors, unknownEntityFieldErrors } from "../src/lib/content/schemaValidation";
 
 function hover(source: string, kind: ContentKind = "entity") {
   const offset = source.indexOf("|");
@@ -35,6 +35,19 @@ describe("content editor help", () => {
     expect(resourceSharingPolicyErrors({ ...entity(), max_capacity: { energy: 0 } })[0]).toContain("positive max_capacity");
     expect(unknownEntityFieldErrors(entity({ typo: 1 }))[0]).toContain("typo");
     expect(resourceSharingPolicyErrors({ resource_sharing: { range: 4000 } })).toEqual([]);
+  });
+
+  it("documents and validates shared-inventory upkeep reserves", () => {
+    expect(complete("|").suggestions.map((item) => item.label)).toContain("resource_reserves");
+    expect(hover("resource_reserves:\n  |food: 5")).toContain("upkeep buffers");
+    const entity = (reserve: unknown) => ({ max_capacity: { food: 50 }, resource_reserves: { food: reserve } });
+    for (const reserve of [0, 5, 50]) expect(resourceReserveErrors(entity(reserve), new Set(["food"]))).toEqual([]);
+    for (const reserve of [-1, 51, NaN, Infinity, "5", null]) expect(resourceReserveErrors(entity(reserve)).length).toBeGreaterThan(0);
+    expect(resourceReserveErrors({})).toEqual([]);
+    expect(resourceReserveErrors({ resource_reserves: [] }).length).toBeGreaterThan(0);
+    expect(resourceReserveErrors(entity(5), new Set(["energy"])).join(" ")).toContain("unknown resource");
+    expect(resourceReserveErrors({ resource_reserves: { food: 5 } }).join(" ")).toContain("max_capacity");
+    expect(unknownEntityFieldErrors(entity(5))).toEqual([]);
   });
 
   it("documents every property and enum choice in both generated schemas", () => {

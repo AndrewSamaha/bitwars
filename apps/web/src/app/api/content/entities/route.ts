@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { parseDocument, stringify } from "yaml";
-import { unknownEntityFieldErrors, resourceSharingPolicyErrors } from "@/lib/content/schemaValidation";
+import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors } from "@/lib/content/schemaValidation";
 
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   const doc = parseDocument(await readFile(contentPath, "utf8"));
   const child = parseDocument(definition);
   if (doc.errors.length || child.errors.length) return NextResponse.json({ error: "Invalid YAML" }, { status: 400 });
-  const validationErrors = [...unknownEntityFieldErrors(child.toJS()), ...resourceSharingPolicyErrors(child.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {})))];
+  const validationErrors = [...unknownEntityFieldErrors(child.toJS()), ...resourceSharingPolicyErrors(child.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(child.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {})))];
   if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
   const types: any = doc.get("entity_types", true);
   if (!types?.has(parentId) || types.has(childId)) return NextResponse.json({ error: "Invalid parent or duplicate child" }, { status: 400 });

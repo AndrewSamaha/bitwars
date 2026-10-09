@@ -77,16 +77,12 @@ const PLAYER_MINERAL_SEARCH_RADIUS: f32 = 4_000.0;
 const PLANET_MIN_DISTANCE_FROM_STAR: f32 = 3_000.0;
 const PLANET_MAX_DISTANCE_FROM_STAR: f32 = 4_500.0;
 
-/// M7: Per-player resource totals. Outer key = player_id, inner key = resource_type_id.
-pub type ResourceLedger = HashMap<String, HashMap<String, i64>>;
 pub type PlayerTechnologies = HashMap<String, std::collections::HashSet<String>>;
 
 #[derive(Clone)]
 pub struct GameState {
     pub tick: u64,
     pub entities: Vec<Entity>,
-    /// M7: Authoritative per-player resource ledger (player_id → resource_type → amount).
-    pub ledger: ResourceLedger,
     /// Completed, player-owned technologies. Definitions remain immutable content.
     pub technologies: PlayerTechnologies,
 }
@@ -101,7 +97,6 @@ pub fn init_world(spawn_config: &SpawnConfig) -> GameState {
     GameState {
         tick: 0,
         entities: Vec::new(),
-        ledger: ResourceLedger::new(),
         technologies: PlayerTechnologies::new(),
     }
 }

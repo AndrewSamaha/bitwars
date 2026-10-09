@@ -63,7 +63,7 @@
       "default": 0.0
     },
     "maintenance_cost_per_minute": {
-      "description": "Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.\nCharged to the owner while active; balances stop at zero without accruing debt. Omitted means free upkeep.",
+      "description": "Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.\nCharged to the entity inventory while active; balances stop at zero without accruing debt. Omitted means free upkeep.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -151,6 +151,14 @@
         }
       ],
       "default": null
+    },
+    "resource_reserves": {
+      "description": "Per-resource upkeep buffers in the shared inventory. Automatic supply tops up only to this stock;\nsharing, delivery and transport loading retain it. Upkeep and explicit action costs may consume it.\nEach entry requires a known resource with positive max_capacity and 0 <= reserve <= capacity.\nOmitted entries keep existing behavior. This is entity-type configuration, not another resource balance.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "format": "double"
+      }
     },
     "resource_sharing": {
       "description": "Shares upkeep resources with nearby same-owner entities.",

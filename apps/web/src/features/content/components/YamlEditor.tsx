@@ -6,7 +6,7 @@ import { configureMonacoYaml } from "monaco-yaml";
 import { parseDocument } from "yaml";
 import entitySchema from "@bitwars/content/entity.schema.json";
 import technologySchema from "@bitwars/content/technology.schema.json";
-import { entityCombatRangeWarnings, resourceSharingPolicyErrors } from "@/lib/content/schemaValidation";
+import { entityCombatRangeWarnings, resourceSharingPolicyErrors, resourceReserveErrors } from "@/lib/content/schemaValidation";
 import { completionHelp, hoverHelp } from "@/lib/content/editorHelp";
 
 let yamlConfigured = false;
@@ -121,12 +121,13 @@ function updateContentMarkers(model: Parameters<OnMount>[0]["getModel"] extends 
   });
   monaco.editor.setModelMarkers(model, "bitwars-content-unknown-fields", markers);
   const document = parseDocument(model.getValue());
-  const sharingLine = Math.max(0, model.getLinesContent().findIndex((line) => /^resource_sharing:/.test(line)));
+  const lines = model.getLinesContent();
   monaco.editor.setModelMarkers(model, "bitwars-content-resource-sharing", document.errors.length ? []
-    : resourceSharingPolicyErrors(document.toJS()).map((message) => ({
-      ...markerForLine(monaco, model.getLinesContent()[sharingLine], sharingLine + 1, message),
-      severity: monaco.MarkerSeverity.Error,
-    })));
+    : [...resourceSharingPolicyErrors(document.toJS()), ...resourceReserveErrors(document.toJS())].map((message) => {
+      const field = message.startsWith("resource_reserves") ? "resource_reserves:" : "resource_sharing:";
+      const line = Math.max(0, lines.findIndex((text) => text.startsWith(field)));
+      return { ...markerForLine(monaco, lines[line], line + 1, message), severity: monaco.MarkerSeverity.Error };
+    }));
   monaco.editor.setModelMarkers(
     model,
     "bitwars-content-combat-range-warnings",

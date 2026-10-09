@@ -39,6 +39,12 @@ pub struct EntityTypeDef {
     pub health: f32,
     /// Maximum local inventory by resource type. Required for every entity type.
     pub max_capacity: HashMap<String, f32>,
+    /// Per-resource upkeep buffers in the shared inventory. Automatic supply tops up only to this stock;
+    /// sharing, delivery and transport loading retain it. Upkeep and explicit action costs may consume it.
+    /// Each entry requires a known resource with positive max_capacity and 0 <= reserve <= capacity.
+    /// Omitted entries keep existing behavior. This is entity-type configuration, not another resource balance.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub resource_reserves: HashMap<String, f64>,
     /// Shares upkeep resources with nearby same-owner entities.
     #[serde(default)]
     pub resource_sharing: Option<ResourceSharingDef>,
@@ -85,7 +91,7 @@ pub struct EntityTypeDef {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub build_cost: HashMap<String, f32>,
     /// Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.
-    /// Charged to the owner while active; balances stop at zero without accruing debt. Omitted means free upkeep.
+    /// Charged to the entity inventory while active; balances stop at zero without accruing debt. Omitted means free upkeep.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub maintenance_cost_per_minute: HashMap<String, f32>,
     /// Optional area sensor. Its operating costs are charged continuously.
@@ -628,6 +634,13 @@ fn validate_resource_content(
         if def.max_capacity.values().any(|capacity| !capacity.is_finite() || *capacity < 0.0) {
             anyhow::bail!("entity type {id} has an invalid max_capacity");
         }
+        for (resource, reserve) in &def.resource_reserves {
+            let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64;
+            if !resource_types.contains_key(resource) || capacity <= 0.0
+                || !reserve.is_finite() || *reserve < 0.0 || *reserve > capacity {
+                anyhow::bail!("entity type {id} resource_reserves.{resource} requires a known resource, positive capacity and 0 <= reserve <= capacity");
+            }
+        }
         if let Some(sharing) = &def.resource_sharing {
             if !sharing.range.is_finite() || sharing.range < 0.0 {
                 anyhow::bail!("entity type {id} has an invalid resource_sharing.range");
@@ -846,6 +859,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn validates_inventory_reserves_against_known_resources_and_capacity() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut def = content.get("worker").unwrap().clone();
+        for (resource, amount) in [("food", -1.0), ("food", 51.0), ("food", f64::NAN), ("food", f64::INFINITY), ("unknown", 5.0)] {
+            def.resource_reserves = HashMap::from([(resource.into(), amount)]);
+            assert!(validate_resource_content(&HashMap::from([("worker".into(), def.clone())]), &content.resource_types).is_err());
+        }
+        for amount in [0.0, 5.0, 50.0] {
+            def.resource_reserves = HashMap::from([("food".into(), amount)]);
+            assert!(validate_resource_content(&HashMap::from([("worker".into(), def.clone())]), &content.resource_types).is_ok());
+        }
+        def.max_capacity.remove("food");
+        assert!(validate_resource_content(&HashMap::from([("worker".into(), def)]), &content.resource_types).is_err());
+    }
+
+    #[test]
     fn sharing_policy_validation_rejects_invalid_targets_and_resources() {
         let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();
@@ -885,6 +915,7 @@ mod tests {
             "worker".into(),
             EntityTypeDef {
                 max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
@@ -917,6 +948,7 @@ mod tests {
             "scout".into(),
             EntityTypeDef {
                 max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
@@ -961,6 +993,7 @@ mod tests {
             "worker".into(),
             EntityTypeDef {
                 max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
@@ -993,6 +1026,7 @@ mod tests {
             "scout".into(),
             EntityTypeDef {
                 max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
@@ -1027,6 +1061,7 @@ mod tests {
             "scout".into(),
             EntityTypeDef {
                 max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
@@ -1059,6 +1094,7 @@ mod tests {
             "worker".into(),
             EntityTypeDef {
                 max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,

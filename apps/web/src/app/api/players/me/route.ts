@@ -52,7 +52,7 @@ export async function GET() {
 
     const payload = parse.data as Record<string, unknown>;
 
-    // M7: Attach resource ledger from latest snapshot so client has single source for identity + resources.
+    // Attach aggregate inventory and economy totals for reporting; gameplay spends entity inventories.
     try {
       const GAME_ID = getEnv('GAME_ID', DEFAULT_GAME_ID);
       const snapshotKey = `snapshot:${GAME_ID}`;

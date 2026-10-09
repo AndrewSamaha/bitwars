@@ -171,6 +171,9 @@ entity_types:
     upgrades:
       - entity_type_id: collector_solar_v2
   worker:
+    resource_reserves:
+      food: 5
+      energy: 5
     max_capacity:
       energy: 50
       food: 50
@@ -774,6 +777,9 @@ entity_types:
       cost_per_minute:
         energy: 2.5
   resource_transport:
+    resource_reserves:
+      food: 5
+      energy: 5
     max_capacity:
       energy: 90
       food: 90
@@ -855,6 +861,9 @@ entity_types:
           minerals: 2
           energy: 2
   marine_worker:
+    resource_reserves:
+      food: 5
+      energy: 5
     max_capacity:
       energy: 40
       food: 40

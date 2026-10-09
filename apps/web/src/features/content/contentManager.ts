@@ -56,6 +56,8 @@ export type EntityTypeDef = {
   build_cost?: Record<string, number>;
   /** Maximum local inventory per resource type. */
   max_capacity?: Record<string, number>;
+  /** Upkeep buffers retained in the shared inventory; also automatic-supply targets. */
+  resource_reserves?: Record<string, number>;
   resource_sharing?: {
     range: number;
     wireless_receives?: string[];

@@ -198,7 +198,6 @@ impl Scenario {
             GameState {
                 tick: 0,
                 entities,
-                ledger: HashMap::new(),
                 technologies,
             },
             carries,
@@ -280,8 +279,6 @@ impl Engine {
         self.carry_by_entity = carries;
         self.transport_node_by_entity.clear();
         self.transport_wait_since_tick_by_entity.clear();
-        self.resource_fractional.clear();
-        self.build_spend_fractional.clear();
         self.maintenance_spend_fractional.clear();
         self.resource_refilling.clear();
         self.resource_spend_total.clear();

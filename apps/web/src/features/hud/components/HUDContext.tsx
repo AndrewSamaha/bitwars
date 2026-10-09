@@ -18,13 +18,6 @@ import { appendMessageLog, type MessageLogEntry } from "@/features/hud/messageLo
 //
 export type EntityId = string;
 
-export type Resources = {
-  gold: number;
-  wood: number;
-  stone: number;
-  [k: string]: number; // extensible
-};
-
 export type CommandHistory = {
   command: string;
   output: string;
@@ -43,7 +36,6 @@ export type HUDState = {
   selectedSet: Set<EntityId>;       // fast membership checks
   selectedAction: "Move" | "Repair" | { kind: "Deliver" | "Transport"; resourceTypeIds: string[]; donorId?: string } | null;
   isMeasuring: boolean;
-  resources: Resources;
   panels: HUDPanels;
   // Misc ephemeral HUD data
   hoveredEntity: Entity | null;
@@ -67,7 +59,6 @@ const defaultState: HUDState = {
   selectedSet: new Set(),
   selectedAction: null,
   isMeasuring: false,
-  resources: { gold: 0, wood: 0, stone: 0 },
   panels: {
     minimapOpen: true,
     inventoryOpen: false,
@@ -97,8 +88,6 @@ type Action =
   | { type: "SELECT_CLEAR" }
   | { type: "ACTION_SET"; value: HUDState["selectedAction"] }
   | { type: "MEASURE_SET"; value: boolean }
-  | { type: "RES_SET"; patch: Partial<Resources> }                // set/patch resource values
-  | { type: "RES_DELTA"; delta: Partial<Resources> }              // increment/decrement resources
   | { type: "PANEL_SET"; key: keyof HUDPanels; value: boolean }
   | { type: "PANEL_TOGGLE"; key: keyof HUDPanels }
   | { type: "HOVER_SET"; entity: Entity | null }
@@ -143,23 +132,6 @@ function reducer(state: HUDState, action: Action): HUDState {
 
     case "MEASURE_SET":
       return { ...state, isMeasuring: action.value, selectedAction: action.value ? null : state.selectedAction };
-
-    case "RES_SET": {
-      const next: Resources = { ...state.resources };
-      for (const [k, v] of Object.entries(action.patch)) {
-        if (typeof v === "number") {
-          next[k] = v;
-        }
-      }
-      return { ...state, resources: next };
-    }
-    case "RES_DELTA": {
-      const next: Resources = { ...state.resources };
-      for (const [k, v] of Object.entries(action.delta)) {
-        next[k] = (next[k] ?? 0) + (v ?? 0);
-      }
-      return { ...state, resources: next };
-    }
 
     case "PANEL_SET":
       return { ...state, panels: { ...state.panels, [action.key]: action.value } };
@@ -239,8 +211,6 @@ type HUDContextValue = {
     clearSelection: () => void;
     setSelectedAction: (value: HUDState["selectedAction"]) => void;
     setMeasuring: (value: boolean) => void;
-    setResources: (patch: Partial<Resources>) => void;
-    deltaResources: (delta: Partial<Resources>) => void;
     setPanel: (key: keyof HUDPanels, value: boolean) => void;
     togglePanel: (key: keyof HUDPanels) => void;
     setHovered: (entity: Entity | null) => void;
@@ -265,7 +235,6 @@ type HUDContextValue = {
     selectedEntities: EntityId[];
     firstSelectedId: EntityId | null;
     isPanelOpen: (key: keyof HUDPanels) => boolean;
-    getResource: (key: keyof Resources) => number;
     // Terminal
     isTerminalOpen: boolean;
     isTerminalWide: boolean;
@@ -337,9 +306,6 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       setSelectedAction: (value: HUDState["selectedAction"]) => dispatch({ type: "ACTION_SET", value }),
       setMeasuring: (value: boolean) => dispatch({ type: "MEASURE_SET", value }),
 
-      setResources: (patch: Partial<Resources>) => dispatch({ type: "RES_SET", patch }),
-      deltaResources: (delta: Partial<Resources>) => dispatch({ type: "RES_DELTA", delta }),
-
       setPanel: (key: keyof HUDPanels, value: boolean) => dispatch({ type: "PANEL_SET", key, value }),
       togglePanel: (key: keyof HUDPanels) => dispatch({ type: "PANEL_TOGGLE", key }),
 
@@ -371,7 +337,6 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       selectedEntities: state.selectedEntities,
       firstSelectedId: state.selectedEntities.length > 0 ? state.selectedEntities[0]! : null,
       isPanelOpen: (key: keyof HUDPanels) => !!state.panels[key],
-      getResource: (key: keyof Resources) => state.resources[key] ?? 0,
       // Terminal
       isTerminalOpen: state.isTerminalOpen,
       isTerminalWide: state.isTerminalWide,
@@ -388,7 +353,6 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       state.isMeasuring,
       state.selectedEntities,
       state.panels,
-      state.resources,
       state.isTerminalOpen,
       state.isTerminalWide,
       state.currentCommand,

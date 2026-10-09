@@ -192,7 +192,7 @@ mod tests {
         use prost::Message;
         let mut source = entity(1);
         source.resource_deposit = Some(crate::pb::ResourceDeposit { amount: 10.0, remaining: 1.0 });
-        let previous = GameState { tick: 1, entities: vec![source], ledger: HashMap::new(), technologies: HashMap::new() };
+        let previous = GameState { tick: 1, entities: vec![source], technologies: HashMap::new() };
         let mut current = previous.clone();
         current.entities[0].resource_deposit.as_mut().unwrap().remaining = 0.0;
         let delta = compute_delta(&previous, &current, &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(), 0.01, 0.01, &HashMap::new(), &HashSet::new());
@@ -208,13 +208,11 @@ mod tests {
         let previous = GameState {
             tick: 10,
             entities: vec![entity(9), entity(2), entity(5)],
-            ledger: HashMap::new(),
             technologies: HashMap::new(),
         };
         let current = GameState {
             tick: 11,
             entities: vec![entity(5)],
-            ledger: HashMap::new(),
             technologies: HashMap::new(),
         };
 
@@ -239,7 +237,6 @@ mod tests {
         let state = GameState {
             tick: 10,
             entities: vec![entity(4)],
-            ledger: HashMap::new(),
             technologies: HashMap::new(),
         };
         let collector = CollectorUiState {
