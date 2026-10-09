@@ -92,6 +92,11 @@ export function resourceSharingPolicyErrors(value: unknown, knownResources?: Set
     if (typeof priority !== "number" || !Number.isInteger(priority) || priority < -2147483648 || priority > 2147483647) {
       errors.push(`${path}.priority: must be a 32-bit integer`);
     }
+    const overflowPriority = fields.overflow_priority;
+    if (overflowPriority != null && (typeof overflowPriority !== "number" || !Number.isInteger(overflowPriority)
+      || overflowPriority < -2147483648 || overflowPriority > 2147483647)) {
+      errors.push(`${path}.overflow_priority: must be a 32-bit integer when provided`);
+    }
     const { refill_below, fill_to, reserve } = fields;
     if (typeof refill_below !== "number" || !Number.isFinite(refill_below)
       || typeof fill_to !== "number" || !Number.isFinite(fill_to)

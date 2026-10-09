@@ -14,8 +14,9 @@ function complete(source: string, kind: ContentKind = "entity") {
 describe("content editor help", () => {
   it("documents sharing policies and validates thresholds against resource capacity", () => {
     const source = "resource_sharing:\n  resources:\n    energy:\n      |";
-    expect(complete(source).suggestions.map(item => item.label).sort()).toEqual(["fill_to", "priority", "refill_below", "reserve"]);
+    expect(complete(source).suggestions.map(item => item.label).sort()).toEqual(["fill_to", "overflow_priority", "priority", "refill_below", "reserve"]);
     expect(hover("resource_sharing:\n  resources:\n    energy:\n      |reserve: 50")).toContain("Keep this stock");
+    expect(hover("resource_sharing:\n  resources:\n    energy:\n      |overflow_priority: -1")).toContain("surplus");
     const policy = { priority: 10, refill_below: 700, fill_to: 900, reserve: 900 };
     const entity = (changes = {}, resource = "energy") => ({
       max_capacity: { energy: 1000 },
@@ -23,8 +24,11 @@ describe("content editor help", () => {
     });
     expect(unknownEntityFieldErrors(entity())).toEqual([]);
     expect(resourceSharingPolicyErrors(entity(), new Set(["energy"]))).toEqual([]);
+    expect(resourceSharingPolicyErrors(entity({ overflow_priority: -1 }))).toEqual([]);
+    expect(resourceSharingPolicyErrors(entity({ overflow_priority: null }))).toEqual([]);
     for (const changes of [{ refill_below: -1 }, { refill_below: 901 }, { fill_to: 1001 }, { reserve: -1 },
-      { reserve: 1001 }, { priority: 0.5 }, { fill_to: NaN }, { fill_to: undefined }]) {
+      { reserve: 1001 }, { priority: 0.5 }, { fill_to: NaN }, { fill_to: undefined },
+      { overflow_priority: 0.5 }, { overflow_priority: "1" }, { overflow_priority: 2147483648 }]) {
       expect(resourceSharingPolicyErrors(entity(changes)).length).toBeGreaterThan(0);
     }
     expect(resourceSharingPolicyErrors(entity({}, "unknown"), new Set(["energy"])).join(" ")).toContain("unknown resource");

@@ -153,8 +153,9 @@ assigned and waits there. Refilling it should resume deliveries automatically.
 
 ### Per-resource sharing policies
 
-`resource_sharing.resources` optionally maps resource IDs to policies. All four
-policy fields are required; amounts are inventory units, not percentages:
+`resource_sharing.resources` optionally maps resource IDs to policies. The
+`priority`, `refill_below`, `fill_to`, and `reserve` fields are required;
+`overflow_priority` is optional. Amounts are inventory units, not percentages:
 
 ```yaml
 resource_sharing:
@@ -163,17 +164,23 @@ resource_sharing:
   resources:
     energy:
       priority: 10
+      overflow_priority: -1
       refill_below: 700
       fill_to: 900
-      reserve: 900
+      reserve: 100
 ```
 
 A receiver starts requesting when stock is strictly below `refill_below`, keeps
-requesting until reaching `fill_to`, and then stops until the lower threshold
-is crossed again. Higher `priority` wins over distance; entity ID breaks equal
+requesting at normal `priority` until reaching `fill_to`. Outside active refill
+mode, a configured `overflow_priority` allows accepting surplus up to maximum
+capacity, including stock between `refill_below` and `fill_to`. If omitted,
+requests stop until the lower threshold is crossed again. A receiver at normal
+priority 0 takes supply before overflow priority -1. Higher priority wins over
+distance; entity ID breaks equal
 distance ties. Wireless solar delivery, automatic sharing, and collection cargo drop-offs all
 use these requests. Collection carriers choose eligible requesting refineries by
-priority, distance and entity ID, unload only to the target, then keep delivering
+priority, distance and entity ID, unload only to the refill target (or maximum
+capacity in overflow mode), then keep delivering
 any excess cargo to another requesting destination. If none requests resources,
 they hold position with the cargo until a destination becomes eligible. Explicit
 Deliver and Transport orders keep their player-selected destinations and
@@ -183,11 +190,13 @@ reserves apply to automatic sharing, not explicit spending or transport intents.
 Refill flags are runtime state and reset on engine restart or scenario reset.
 
 Validation requires a known resource with positive capacity, a 32-bit integer
-priority, `0 <= refill_below <= fill_to <= max_capacity`, and
+priority (and a 32-bit integer `overflow_priority` when provided),
+`0 <= refill_below <= fill_to <= max_capacity`, and
 `0 <= reserve <= max_capacity`, with finite amounts. Monaco shows the field
 hints and cross-field errors; entity saves and engine content loading enforce
 the same constraints.
 
+Habitat energy, food, and minerals use overflow priority -1.
 Habitats can use the example above; outgoing reserve should leave stock available
 for nearby upkeep recipients. Factories use priority 0,
 `refill_below: 3000`, `fill_to: 3000`, and `reserve: 50`, so they accumulate

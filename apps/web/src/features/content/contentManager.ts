@@ -59,7 +59,7 @@ export type EntityTypeDef = {
   resource_sharing?: {
     range: number;
     wireless_receives?: string[];
-    resources?: Record<string, { priority: number; refill_below: number; fill_to: number; reserve: number }>;
+    resources?: Record<string, { priority: number; overflow_priority?: number | null; refill_below: number; fill_to: number; reserve: number }>;
   };
   /** Per-resource upkeep charged to the owner, in units per minute. */
   maintenance_cost_per_minute?: Record<string, number>;

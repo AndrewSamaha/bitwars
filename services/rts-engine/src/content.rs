@@ -128,6 +128,9 @@ pub struct ResourceSharingDef {
 pub struct ResourceSharingPolicy {
     /// Higher priorities receive supply first; distance then entity ID break ties.
     pub priority: i32,
+    /// Optional priority for accepting surplus up to max_capacity when not actively refilling. Omitted means no overflow requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow_priority: Option<i32>,
     /// Start requesting below this stock; keep requesting until fill_to is reached. Must be between zero and fill_to.
     pub refill_below: f64,
     /// Stop refilling at this stock. Must not exceed this resource's max_capacity.
@@ -850,7 +853,7 @@ mod tests {
         for (refill_below, fill_to, reserve) in [(-1.0, 900.0, 900.0), (901.0, 900.0, 900.0),
             (700.0, 1001.0, 900.0), (700.0, 900.0, -1.0), (700.0, 900.0, 1001.0), (f64::NAN, 900.0, 900.0)] {
             def.resource_sharing.as_mut().unwrap().resources.insert("energy".into(), ResourceSharingPolicy {
-                priority: 10, refill_below, fill_to, reserve,
+                priority: 10, overflow_priority: None, refill_below, fill_to, reserve,
             });
             assert!(validate_resource_content(&HashMap::from([("habitat".into(), def.clone())]), &content.resource_types).is_err());
         }

@@ -72,11 +72,16 @@ fn sharing_request_room(entity: &pb::Entity, def: &EntityTypeDef, resource: &str
     let key = (entity.id, resource.to_string());
     if stock >= policy.fill_to { refilling.remove(&key); }
     else if stock < policy.refill_below { refilling.insert(key.clone()); }
-    if refilling.contains(&key) { (policy.fill_to - stock).max(0.0) } else { 0.0 }
+    if refilling.contains(&key) { (policy.fill_to - stock).max(0.0) }
+    else if policy.overflow_priority.is_some() { (capacity - stock).max(0.0) }
+    else { 0.0 }
 }
 
-fn sharing_priority(def: &EntityTypeDef, resource: &str) -> i32 {
-    def.resource_sharing.as_ref().and_then(|sharing| sharing.resources.get(resource)).map_or(0, |policy| policy.priority)
+fn sharing_priority(entity: &pb::Entity, def: &EntityTypeDef, resource: &str, refilling: &HashSet<(u64, String)>) -> i32 {
+    def.resource_sharing.as_ref().and_then(|sharing| sharing.resources.get(resource)).map_or(0, |policy| {
+        if refilling.contains(&(entity.id, resource.to_string())) { policy.priority }
+        else { policy.overflow_priority.unwrap_or(policy.priority) }
+    })
 }
 
 fn sharing_reserve(def: &EntityTypeDef, resource: &str, accrued: f64) -> f64 {
@@ -490,13 +495,61 @@ mod transport_capacity_tests {
     use super::*;
 
     #[test]
+    fn overflow_deliveries_yield_to_other_receivers_and_use_remaining_capacity() {
+        let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let def = content.entity_types.get_mut("habitat").unwrap();
+        def.max_capacity.insert("minerals".into(), 1000.0);
+        def.resource_sharing.as_mut().unwrap().resources.insert("minerals".into(), crate::content::ResourceSharingPolicy {
+            priority: 10, overflow_priority: Some(-1), refill_below: 700.0, fill_to: 900.0, reserve: 100.0,
+        });
+        content.entity_types.get_mut("factory").unwrap().resource_sharing.as_mut().unwrap().resources.remove("minerals");
+        let collector = CollectorSnapshot { id: 1, entity_type_id: "worker".into(), owner_player_id: "me".into(), x: 0.0, y: 0.0 };
+        let refinery = |id, entity_type_id: &str, x, capacity| RefinerySnapshot {
+            id, entity_type_id: entity_type_id.into(), owner_player_id: "me".into(), x, y: 0.0,
+            accepts: vec!["minerals".into()], max_capacity: HashMap::from([("minerals".into(), capacity)]),
+        };
+        let refineries = [refinery(2, "habitat", 10.0, 1000.0), refinery(3, "factory", 200.0, 3000.0)];
+        let mut entities = [pb::Entity { id: 2, entity_type_id: "habitat".into(), ..Default::default() },
+            pb::Entity { id: 3, entity_type_id: "factory".into(), ..Default::default() }];
+        let pick = |entities: &[pb::Entity], refilling: &mut HashSet<(u64, String)>| Engine::pick_best_refinery(
+            &collector, &refineries, entities, "minerals", &[], &content, refilling,
+        ).map(|refinery| refinery.id);
+        let mut refilling = HashSet::new();
+        set_resource_amount(&mut entities[0], "minerals", 727.0);
+        assert_eq!(pick(&entities, &mut refilling), Some(3), "priority zero storage beats nearer overflow");
+        set_resource_amount(&mut entities[1], "minerals", 3000.0);
+        assert_eq!(pick(&entities, &mut refilling), Some(2), "overflow works below fill_to too");
+        let def = content.get("habitat").unwrap();
+        let mut cargo = CarryState { resource_type: "minerals".into(), amount: 250.0 };
+        deposit_collection_cargo(&mut entities[0], def, &mut cargo, &mut refilling);
+        assert_eq!(resource_amount(&entities[0], "minerals"), 977.0);
+        assert_eq!(cargo.amount, 0.0);
+        cargo.amount = 50.0;
+        deposit_collection_cargo(&mut entities[0], def, &mut cargo, &mut refilling);
+        assert_eq!(resource_amount(&entities[0], "minerals"), 1000.0);
+        assert_eq!(cargo.amount, 27.0);
+        assert_eq!(pick(&entities, &mut refilling), None);
+        set_resource_amount(&mut entities[0], "minerals", 699.0);
+        set_resource_amount(&mut entities[1], "minerals", 0.0);
+        assert_eq!(pick(&entities, &mut refilling), Some(2), "low habitat regains normal priority");
+        set_resource_amount(&mut entities[0], "minerals", 850.0);
+        assert_eq!(pick(&entities, &mut refilling), Some(2), "normal priority persists until the target");
+        cargo.amount = 100.0;
+        deposit_collection_cargo(&mut entities[0], def, &mut cargo, &mut refilling);
+        assert_eq!(resource_amount(&entities[0], "minerals"), 900.0);
+        assert_eq!(cargo.amount, 50.0);
+        assert_eq!(pick(&entities, &mut refilling), Some(3), "reaching fill_to switches back to overflow priority");
+    }
+
+    #[test]
     fn collection_deliveries_follow_refill_priority_and_keep_excess_cargo() {
         let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();
         let habitat_def = content.entity_types.get_mut("habitat").unwrap();
         habitat_def.max_capacity.insert("food".into(), 100.0);
         habitat_def.resource_sharing.as_mut().unwrap().resources.insert("food".into(), crate::content::ResourceSharingPolicy {
-            priority: 10, refill_below: 30.0, fill_to: 80.0, reserve: 20.0,
+            priority: 10, overflow_priority: None, refill_below: 30.0, fill_to: 80.0, reserve: 20.0,
         });
         let collector = CollectorSnapshot { id: 1, entity_type_id: "resource_transport".into(),
             owner_player_id: "me".into(), x: 0.0, y: 0.0 };
@@ -2297,7 +2350,7 @@ impl Engine {
                     let dx = pos.x - x; let dy = pos.y - y;
                     let distance = dx * dx + dy * dy;
                     if distance > range * range || sharing_request_room(e, def, &resource, refilling) <= f64::EPSILON { return None; }
-                    Some((e.id, sharing_priority(def, &resource), distance, has_policy))
+                    Some((e.id, sharing_priority(e, def, &resource, refilling), distance, has_policy))
                 }).collect();
                 let donor_def = content.get(&self.state.entities.iter().find(|e| e.id == donor_id).unwrap().entity_type_id).unwrap();
                 let policy = donor_def.resource_sharing.as_ref().and_then(|sharing| sharing.resources.get(&resource));
@@ -2349,7 +2402,7 @@ impl Engine {
                     position.y,
                     sharing.range,
                     remaining,
-                    sharing_priority(definition, "energy"),
+                    sharing_priority(entity, definition, "energy", refilling),
                 ))
             })
             .collect();
@@ -3853,7 +3906,7 @@ impl Engine {
                 if capacity - resource_amount(entity, resource_type) <= f64::EPSILON { return None; }
                 let def = content.get(&r.entity_type_id)?;
                 if sharing_request_room(entity, def, resource_type, refilling) <= f64::EPSILON { return None; }
-                Some((r, sharing_priority(def, resource_type)))
+                Some((r, sharing_priority(entity, def, resource_type, refilling)))
             })
             .min_by(|(a, a_priority), (b, b_priority)| {
                 let da = Self::distance_sq(collector.x, collector.y, a.x, a.y);
@@ -5930,10 +5983,10 @@ mod sharing_upkeep_tests {
         let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();
         content.entity_types.get_mut("habitat").unwrap().resource_sharing.as_mut().unwrap().resources.insert("energy".into(), crate::content::ResourceSharingPolicy {
-            priority: 10, refill_below: 700.0, fill_to: 900.0, reserve: 900.0,
+            priority: 10, overflow_priority: None, refill_below: 700.0, fill_to: 900.0, reserve: 900.0,
         });
         content.entity_types.get_mut("factory").unwrap().resource_sharing.as_mut().unwrap().resources.insert("energy".into(), crate::content::ResourceSharingPolicy {
-            priority: 0, refill_below: 3000.0, fill_to: 3000.0, reserve: 50.0,
+            priority: 0, overflow_priority: None, refill_below: 3000.0, fill_to: 3000.0, reserve: 50.0,
         });
         let habitat_def = content.get("habitat").unwrap();
         let factory_def = content.get("factory").unwrap();
@@ -5955,8 +6008,8 @@ mod sharing_upkeep_tests {
         assert_eq!(sharing_reserve(factory_def, "energy", 0.5), 50.0);
         assert_eq!(sharing_reserve(factory_def, "energy", 51.0), 51.0);
         assert!(sharing_receiver_order(
-            (sharing_priority(habitat_def, "energy"), 10000.0, 678),
-            (sharing_priority(factory_def, "energy"), 1.0, 712),
+            (sharing_priority(&habitat, habitat_def, "energy", &refilling), 10000.0, 678),
+            (sharing_priority(&factory, factory_def, "energy", &refilling), 1.0, 712),
         ).is_lt(), "priority must beat distance");
         assert!(sharing_receiver_order((0, 1.0, 9), (0, 2.0, 1)).is_lt());
         assert!(sharing_receiver_order((0, 1.0, 1), (0, 1.0, 9)).is_lt());

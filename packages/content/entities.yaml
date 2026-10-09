@@ -250,6 +250,10 @@ entity_types:
         spend_rates:
           minerals: 1
           energy: 1
+      - entity_type_id: mineral_storage_container
+        spend_rates:
+          minerals: 1
+          energy: 1
   habitat:
     max_capacity:
       energy: 1000
@@ -262,16 +266,19 @@ entity_types:
       resources:
         energy:
           priority: 10
+          overflow_priority: -1
           refill_below: 700
           fill_to: 900
           reserve: 100
         food:
           priority: 10
+          overflow_priority: -1
           refill_below: 2500
           fill_to: 2900
           reserve: 200
         minerals:
           priority: 10
+          overflow_priority: -1
           refill_below: 700
           fill_to: 900
           reserve: 100
@@ -999,3 +1006,31 @@ entity_types:
       max_simultaneous_collectors: 1
       min_effective_distance: 20
       max_effective_distance: 50
+  mineral_storage_container:
+    max_capacity:
+      food: 100
+      minerals: 1000
+      energy: 100
+    fog_memory: forget_when_hidden
+    speed: 60
+    stop_radius: 0.5
+    mass: 7
+    health: 50
+    hull_radius: 16
+    visual:
+      scale: 1.5
+    build_cost:
+      minerals: 100
+      energy: 100
+    sensor:
+      range: 400
+      cost_per_minute:
+        energy: 0.1
+    combat_targetable: true
+    maintenance_cost_per_minute:
+      energy: 1
+      minerals: 1
+    refinery:
+      accepts:
+        - minerals
+        - food

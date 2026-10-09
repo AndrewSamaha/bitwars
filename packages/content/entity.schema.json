@@ -721,6 +721,14 @@
           "type": "number",
           "format": "double"
         },
+        "overflow_priority": {
+          "description": "Optional priority for accepting surplus up to max_capacity when not actively refilling. Omitted means no overflow requests.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
         "priority": {
           "description": "Higher priorities receive supply first; distance then entity ID break ties.",
           "type": "integer",
