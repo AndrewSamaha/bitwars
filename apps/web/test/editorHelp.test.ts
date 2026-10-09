@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { completionHelp, contentSchemas, hoverHelp, type ContentKind } from "../src/lib/content/editorHelp";
+import { resourceSharingPolicyErrors, unknownEntityFieldErrors } from "../src/lib/content/schemaValidation";
 
 function hover(source: string, kind: ContentKind = "entity") {
   const offset = source.indexOf("|");
@@ -11,6 +12,27 @@ function complete(source: string, kind: ContentKind = "entity") {
 }
 
 describe("content editor help", () => {
+  it("documents sharing policies and validates thresholds against resource capacity", () => {
+    const source = "resource_sharing:\n  resources:\n    energy:\n      |";
+    expect(complete(source).suggestions.map(item => item.label).sort()).toEqual(["fill_to", "priority", "refill_below", "reserve"]);
+    expect(hover("resource_sharing:\n  resources:\n    energy:\n      |reserve: 50")).toContain("Keep this stock");
+    const policy = { priority: 10, refill_below: 700, fill_to: 900, reserve: 900 };
+    const entity = (changes = {}, resource = "energy") => ({
+      max_capacity: { energy: 1000 },
+      resource_sharing: { range: 4000, resources: { [resource]: { ...policy, ...changes } } },
+    });
+    expect(unknownEntityFieldErrors(entity())).toEqual([]);
+    expect(resourceSharingPolicyErrors(entity(), new Set(["energy"]))).toEqual([]);
+    for (const changes of [{ refill_below: -1 }, { refill_below: 901 }, { fill_to: 1001 }, { reserve: -1 },
+      { reserve: 1001 }, { priority: 0.5 }, { fill_to: NaN }, { fill_to: undefined }]) {
+      expect(resourceSharingPolicyErrors(entity(changes)).length).toBeGreaterThan(0);
+    }
+    expect(resourceSharingPolicyErrors(entity({}, "unknown"), new Set(["energy"])).join(" ")).toContain("unknown resource");
+    expect(resourceSharingPolicyErrors({ ...entity(), max_capacity: { energy: 0 } })[0]).toContain("positive max_capacity");
+    expect(unknownEntityFieldErrors(entity({ typo: 1 }))[0]).toContain("typo");
+    expect(resourceSharingPolicyErrors({ resource_sharing: { range: 4000 } })).toEqual([]);
+  });
+
   it("documents every property and enum choice in both generated schemas", () => {
     function audit(node: unknown, path: string) {
       if (!node || typeof node !== "object") return;

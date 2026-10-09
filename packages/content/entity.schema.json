@@ -693,6 +693,13 @@
           "type": "number",
           "format": "float"
         },
+        "resources": {
+          "description": "Optional per-resource refill priorities, targets and outgoing reserves. Omitted resources use existing capacity-based sharing.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ResourceSharingPolicy"
+          }
+        },
         "wireless_receives": {
           "description": "Resource types this entity can receive wirelessly from nearby collectors.",
           "type": "array",
@@ -704,6 +711,38 @@
       "additionalProperties": false,
       "required": [
         "range"
+      ]
+    },
+    "ResourceSharingPolicy": {
+      "type": "object",
+      "properties": {
+        "fill_to": {
+          "description": "Stop refilling at this stock. Must not exceed this resource's max_capacity.",
+          "type": "number",
+          "format": "double"
+        },
+        "priority": {
+          "description": "Higher priorities receive supply first; distance then entity ID break ties.",
+          "type": "integer",
+          "format": "int32"
+        },
+        "refill_below": {
+          "description": "Start requesting below this stock; keep requesting until fill_to is reached. Must be between zero and fill_to.",
+          "type": "number",
+          "format": "double"
+        },
+        "reserve": {
+          "description": "Keep this stock when sharing outward, in addition to protecting accrued upkeep. Must be between zero and max_capacity.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "priority",
+        "refill_below",
+        "fill_to",
+        "reserve"
       ]
     },
     "SensorDef": {

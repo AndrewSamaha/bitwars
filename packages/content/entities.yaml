@@ -214,6 +214,7 @@ entity_types:
         - habitat
         - factory
         - military_factory
+        - food_storage_container
     repair:
       range: 150
       cost_per_min:
@@ -252,12 +253,28 @@ entity_types:
   habitat:
     max_capacity:
       energy: 1000
-      food: 5000
+      food: 3000
       minerals: 1000
     resource_sharing:
       range: 4000
       wireless_receives:
         - energy
+      resources:
+        energy:
+          priority: 10
+          refill_below: 700
+          fill_to: 900
+          reserve: 100
+        food:
+          priority: 10
+          refill_below: 2500
+          fill_to: 2900
+          reserve: 200
+        minerals:
+          priority: 10
+          refill_below: 700
+          fill_to: 900
+          reserve: 100
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -373,6 +390,12 @@ entity_types:
       range: 1000
       wireless_receives:
         - energy
+      resources:
+        energy:
+          priority: 0
+          refill_below: 3000
+          fill_to: 3000
+          reserve: 50
     builds:
       - entity_type_id: scout
         spend_rates:
@@ -779,6 +802,7 @@ entity_types:
         - habitat
         - factory
         - military_factory
+        - food_storage_container
   military_factory:
     max_capacity:
       energy: 500
@@ -867,6 +891,7 @@ entity_types:
         - habitat
         - factory
         - military_factory
+        - food_storage_container
     repair:
       range: 150
       cost_per_min:
@@ -956,6 +981,7 @@ entity_types:
     refinery:
       accepts:
         - minerals
+        - food
   dead_planet_blue:
     max_capacity: {}
     fog_memory: retain_last_known

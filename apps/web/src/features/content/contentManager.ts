@@ -56,6 +56,11 @@ export type EntityTypeDef = {
   build_cost?: Record<string, number>;
   /** Maximum local inventory per resource type. */
   max_capacity?: Record<string, number>;
+  resource_sharing?: {
+    range: number;
+    wireless_receives?: string[];
+    resources?: Record<string, { priority: number; refill_below: number; fill_to: number; reserve: number }>;
+  };
   /** Per-resource upkeep charged to the owner, in units per minute. */
   maintenance_cost_per_minute?: Record<string, number>;
   repair?: {

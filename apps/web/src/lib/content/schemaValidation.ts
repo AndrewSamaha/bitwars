@@ -67,6 +67,44 @@ export function unknownTechnologyFieldErrors(value: unknown): string[] {
   return errors;
 }
 
+/** Cross-field constraints that JSON Schema cannot express for inventory policies. */
+export function resourceSharingPolicyErrors(value: unknown, knownResources?: Set<string>): string[] {
+  if (!value || typeof value !== "object") return [];
+  const entity = value as { max_capacity?: Record<string, unknown>; resource_sharing?: { resources?: unknown } };
+  const policies = entity.resource_sharing?.resources;
+  if (policies === undefined) return [];
+  if (!policies || typeof policies !== "object" || Array.isArray(policies)) return ["resource_sharing.resources must be a resource policy map"];
+  const errors: string[] = [];
+  for (const [resource, policy] of Object.entries(policies)) {
+    const path = `resource_sharing.resources.${resource}`;
+    const capacity = entity.max_capacity?.[resource];
+    if (knownResources && !knownResources.has(resource)) errors.push(`${path}: unknown resource`);
+    if (typeof capacity !== "number" || !Number.isFinite(capacity) || capacity <= 0) {
+      errors.push(`${path}: requires positive max_capacity for ${resource}`);
+      continue;
+    }
+    if (!policy || typeof policy !== "object" || Array.isArray(policy)) {
+      errors.push(`${path}: must be a policy object`);
+      continue;
+    }
+    const fields = policy as Record<string, unknown>;
+    const priority = fields.priority;
+    if (typeof priority !== "number" || !Number.isInteger(priority) || priority < -2147483648 || priority > 2147483647) {
+      errors.push(`${path}.priority: must be a 32-bit integer`);
+    }
+    const { refill_below, fill_to, reserve } = fields;
+    if (typeof refill_below !== "number" || !Number.isFinite(refill_below)
+      || typeof fill_to !== "number" || !Number.isFinite(fill_to)
+      || refill_below < 0 || refill_below > fill_to || fill_to > capacity) {
+      errors.push(`${path}: requires 0 <= refill_below <= fill_to <= max_capacity (${capacity})`);
+    }
+    if (typeof reserve !== "number" || !Number.isFinite(reserve) || reserve < 0 || reserve > capacity) {
+      errors.push(`${path}.reserve: must be between 0 and max_capacity (${capacity})`);
+    }
+  }
+  return errors;
+}
+
 export function technologyRequirementErrors(requirement: unknown, knownIds: Set<string>): string[] {
   if (requirement === undefined || requirement === null) return [];
   if (typeof requirement === "string") return knownIds.has(requirement) ? [] : [`Unknown technology requirement \`${requirement}\``];

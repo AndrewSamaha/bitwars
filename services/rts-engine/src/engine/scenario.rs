@@ -283,6 +283,7 @@ impl Engine {
         self.resource_fractional.clear();
         self.build_spend_fractional.clear();
         self.maintenance_spend_fractional.clear();
+        self.resource_refilling.clear();
         self.resource_spend_total.clear();
         self.resource_gain_total.clear();
         self.collector_ui_state_by_entity.clear();

@@ -57,7 +57,7 @@ Entity runtime state needs a resource inventory map. Transport cargo should use 
 1. **Collection and deposit:** transport collection fills collector inventory; delivery transfers that inventory to a local recipient with room. Proximity collection credits the collecting entity directly. Resource capacity caps both paths.
 2. **Spending:** maintenance and sensor operation debit the operating entity, repair costs debit the repairer and nearby friendly resource-sharing donors, upgrade costs debit the upgrading entity, and research costs debit the researcher. A producer may start construction when the full build cost is available across one or more donors, each within its configured resource-sharing range of the builder. Resources remain in donor inventories and are progressively debited from donors in entity-ID order as construction proceeds.
 3. **Lifecycle:** an upgraded entity's replacement inherits its inventory. In all other cases, including destruction and ownership change/capture, its inventory is lost. Resource theft by another entity is a possible future mechanic.
-4. **Sharing:** sharing transfers inventory, it does not create resources. Sharing range is declared on the sharing entity type. Recipients are all same-owner entities within that range that have maintenance costs, and a recipient only receives a resource type that it uses for upkeep. Each donor pays its own due maintenance and sensor costs before sharing. Accrued fractional upkeep is reserved until its whole-unit payment is due; only unreserved stock is shared. Solar collectors pay their upkeep before wireless donation, and habitats receive wireless supply before checking their upkeep. Donors with an unpaid due payment cannot share that tick. A habitat does not return energy to a collector that supplied it wirelessly that tick. Remaining stock is split equally in one pass among eligible recipients for that resource; give indivisible remainder units in ascending entity-ID order. Cap each transfer by recipient free capacity. Stock blocked by full recipients stays with the habitat for a later sharing tick.
+4. **Sharing:** sharing transfers inventory, it does not create resources. Sharing range is declared on the sharing entity type. Recipients are all same-owner entities within that range that have maintenance costs, and a recipient only receives a resource type that it uses for upkeep. Each donor pays its own due maintenance and sensor costs before sharing. Accrued fractional upkeep is reserved until its whole-unit payment is due; only unreserved stock is shared. Solar collectors pay their upkeep before wireless donation, and habitats receive wireless supply before checking their upkeep. Donors with an unpaid due payment cannot share that tick. A habitat does not return energy to a collector that supplied it wirelessly that tick. For resources with a sharing policy, supply goes to requesting recipients in descending priority, then distance, then entity-ID order, capped by the refill target. Resources without a policy retain the existing capacity-based, entity-ID-ordered transfers. Stock blocked by full recipients stays with the habitat for a later sharing tick.
 5. **Transfer orders:** the player assigns both a donor resource container and a recipient resource container. Any entity that uses or carries resources may be the recipient. Worker/transport cargo is local inventory; loading debits the donor and unloading credits the recipient. Transfers use a maintained, long-running intent like `Collect`, repeating supply behavior until replaced or interrupted. Reject or partially fulfill incompatible/full/empty transfers without losing resources. If either endpoint disappears, cancel the transfer intent and notify the player with a dedicated `TRANSFER_ENDPOINT_LOST_EVENT`, modeled on `COLLECTION_WAITING_EVENT`, with a player-facing toast.
    - The interaction sequence is: select the worker to show its actions in the bottom status bar; choose `Transport Resources`; select a donor entity; if it is eligible, show its available resources in the bottom status bar; select one or more available resource types; select a recipient entity to assign it.
    - If the selected donor has none of a selected resource available, the worker waits and retries while the intent remains active, following the existing wait behavior when a collection point is full.
@@ -82,7 +82,7 @@ Entity runtime state needs a resource inventory map. Transport cargo should use 
 
 1. **Starting resources — decided:** assign the configured stock to the player's spawned habitat, preserving existing amounts. Configure recipient type and validate that each chosen loadout has one habitat with sufficient capacity. Structured loadout entries can wait until inventories need to vary by instance.
 2. **Entity capacities — decided:** every player-owned entity type must declare `max_capacity`; omission is a schema error. Define capacity only for resources that entity can carry.
-3. **Sharing eligibility and policy — decided:** sharing range is defined in the sharer's schema. Every same-owner entity within range with maintenance costs is a recipient for each resource type it uses for upkeep. The sharer pays its own maintenance first, then distributes remaining stock equally in one pass, ordered by entity ID for indivisible remainders, subject to each recipient's capacity.
+3. **Sharing eligibility and policy — decided:** sharing range is defined in the sharer's schema. Every same-owner entity within range with maintenance costs is a recipient for each resource type it uses for upkeep. The sharer pays its own maintenance first, retains its configured reserve, then supplies requesting recipients by priority, distance and entity ID, subject to refill targets. Unconfigured resources retain capacity-based sharing.
 4. **Sharing cadence:** sharing runs on the normal simulation tick unless profiling shows that needs throttling. It does not repeatedly rebalance inventories within a tick.
 5. **Transfer intent — decided:** resource movement is a maintained, long-running intent like collection, repeating until replaced or interrupted. UI sequence: select worker; choose `Transport Resources` from its bottom-bar actions; select an eligible donor; select one or more of the donor's available resource types shown in the bottom bar; select a recipient. A recipient must use or carry the selected resource. If the donor lacks selected resources or the recipient has no room, the worker waits and retries while the intent stays active. The worker loads as much as possible under its current shared `carry_capacity` and the donor/recipient inventory limits, delivers, and repeats. Per-resource cargo capacities may be added later. Clicking open space or the worker again resets selection. If either endpoint disappears, cancel the intent and emit a dedicated transfer-endpoint-lost UI event like `COLLECTION_WAITING_EVENT`, so the player sees a toast.
 6. **Refineries — decided:** use generic entity inventory and collection drop-off capabilities; configure high resource capacities so players can use refineries as local stockpiles. No separate refinery-specific resource accounting or transformation mechanic is needed.
@@ -149,3 +149,46 @@ For a small runnable check, load the `resource-transport` scenario, select worke
 habitat 2. Resume: the worker should repeatedly move at most 50 minerals from
 processor to habitat each trip. When the processor empties, the worker remains
 assigned and waits there. Refilling it should resume deliveries automatically.
+
+
+### Per-resource sharing policies
+
+`resource_sharing.resources` optionally maps resource IDs to policies. All four
+policy fields are required; amounts are inventory units, not percentages:
+
+```yaml
+resource_sharing:
+  range: 4000
+  wireless_receives: [energy]
+  resources:
+    energy:
+      priority: 10
+      refill_below: 700
+      fill_to: 900
+      reserve: 900
+```
+
+A receiver starts requesting when stock is strictly below `refill_below`, keeps
+requesting until reaching `fill_to`, and then stops until the lower threshold
+is crossed again. Higher `priority` wins over distance; entity ID breaks equal
+distance ties. Wireless solar delivery, automatic sharing, and collection cargo drop-offs all
+use these requests. Collection carriers choose eligible requesting refineries by
+priority, distance and entity ID, unload only to the target, then keep delivering
+any excess cargo to another requesting destination. If none requests resources,
+they hold position with the cargo until a destination becomes eligible. Explicit
+Deliver and Transport orders keep their player-selected destinations and
+capacity-based transfers. A policy also opts a resource into receipt even without upkeep costs.
+Outgoing transfers retain the greater of `reserve` and accrued upkeep. These
+reserves apply to automatic sharing, not explicit spending or transport intents.
+Refill flags are runtime state and reset on engine restart or scenario reset.
+
+Validation requires a known resource with positive capacity, a 32-bit integer
+priority, `0 <= refill_below <= fill_to <= max_capacity`, and
+`0 <= reserve <= max_capacity`, with finite amounts. Monaco shows the field
+hints and cross-field errors; entity saves and engine content loading enforce
+the same constraints.
+
+Habitats can use the example above; outgoing reserve should leave stock available
+for nearby upkeep recipients. Factories use priority 0,
+`refill_below: 3000`, `fill_to: 3000`, and `reserve: 50`, so they accumulate
+leftover energy but can help refill a low habitat.

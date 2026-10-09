@@ -118,6 +118,22 @@ pub struct ResourceSharingDef {
     /// Resource types this entity can receive wirelessly from nearby collectors.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wireless_receives: Vec<String>,
+    /// Optional per-resource refill priorities, targets and outgoing reserves. Omitted resources use existing capacity-based sharing.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub resources: HashMap<String, ResourceSharingPolicy>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceSharingPolicy {
+    /// Higher priorities receive supply first; distance then entity ID break ties.
+    pub priority: i32,
+    /// Start requesting below this stock; keep requesting until fill_to is reached. Must be between zero and fill_to.
+    pub refill_below: f64,
+    /// Stop refilling at this stock. Must not exceed this resource's max_capacity.
+    pub fill_to: f64,
+    /// Keep this stock when sharing outward, in addition to protecting accrued upkeep. Must be between zero and max_capacity.
+    pub reserve: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -621,6 +637,17 @@ fn validate_resource_content(
                     anyhow::bail!("entity type {id} wireless_receives {resource} without capacity");
                 }
             }
+            for (resource, policy) in &sharing.resources {
+                let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64;
+                if !resource_types.contains_key(resource) || capacity <= 0.0 {
+                    anyhow::bail!("entity type {id} sharing policy {resource} needs a known resource with positive capacity");
+                }
+                if !policy.refill_below.is_finite() || !policy.fill_to.is_finite() || !policy.reserve.is_finite()
+                    || policy.refill_below < 0.0 || policy.refill_below > policy.fill_to || policy.fill_to > capacity
+                    || policy.reserve < 0.0 || policy.reserve > capacity {
+                    anyhow::bail!("entity type {id} sharing policy {resource} requires 0 <= refill_below <= fill_to <= capacity and 0 <= reserve <= capacity");
+                }
+            }
         }
     }
     Ok(())
@@ -814,6 +841,24 @@ fn canonical_hash(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sharing_policy_validation_rejects_invalid_targets_and_resources() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut def = content.get("habitat").unwrap().clone();
+        for (refill_below, fill_to, reserve) in [(-1.0, 900.0, 900.0), (901.0, 900.0, 900.0),
+            (700.0, 1001.0, 900.0), (700.0, 900.0, -1.0), (700.0, 900.0, 1001.0), (f64::NAN, 900.0, 900.0)] {
+            def.resource_sharing.as_mut().unwrap().resources.insert("energy".into(), ResourceSharingPolicy {
+                priority: 10, refill_below, fill_to, reserve,
+            });
+            assert!(validate_resource_content(&HashMap::from([("habitat".into(), def.clone())]), &content.resource_types).is_err());
+        }
+        def = content.get("habitat").unwrap().clone();
+        let policy = def.resource_sharing.as_mut().unwrap().resources.remove("energy").unwrap();
+        def.resource_sharing.as_mut().unwrap().resources.insert("unknown".into(), policy);
+        assert!(validate_resource_content(&HashMap::from([("habitat".into(), def)]), &content.resource_types).is_err());
+    }
 
     #[test]
     fn rejects_unknown_entity_and_nested_combat_fields() {

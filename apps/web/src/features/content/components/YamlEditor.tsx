@@ -6,7 +6,7 @@ import { configureMonacoYaml } from "monaco-yaml";
 import { parseDocument } from "yaml";
 import entitySchema from "@bitwars/content/entity.schema.json";
 import technologySchema from "@bitwars/content/technology.schema.json";
-import { entityCombatRangeWarnings } from "@/lib/content/schemaValidation";
+import { entityCombatRangeWarnings, resourceSharingPolicyErrors } from "@/lib/content/schemaValidation";
 import { completionHelp, hoverHelp } from "@/lib/content/editorHelp";
 
 let yamlConfigured = false;
@@ -120,6 +120,13 @@ function updateContentMarkers(model: Parameters<OnMount>[0]["getModel"] extends 
     }];
   });
   monaco.editor.setModelMarkers(model, "bitwars-content-unknown-fields", markers);
+  const document = parseDocument(model.getValue());
+  const sharingLine = Math.max(0, model.getLinesContent().findIndex((line) => /^resource_sharing:/.test(line)));
+  monaco.editor.setModelMarkers(model, "bitwars-content-resource-sharing", document.errors.length ? []
+    : resourceSharingPolicyErrors(document.toJS()).map((message) => ({
+      ...markerForLine(monaco, model.getLinesContent()[sharingLine], sharingLine + 1, message),
+      severity: monaco.MarkerSeverity.Error,
+    })));
   monaco.editor.setModelMarkers(
     model,
     "bitwars-content-combat-range-warnings",
