@@ -56,7 +56,7 @@ export type EntityTypeDef = {
   build_cost?: Record<string, number>;
   /** Maximum local inventory per resource type. */
   max_capacity?: Record<string, number>;
-  /** Upkeep buffers retained in the shared inventory; also automatic-supply targets. */
+  /** Operating targets retained in shared inventory; omitted entries use one minute of upkeep for automatic supply. */
   resource_reserves?: Record<string, number>;
   resource_sharing?: {
     range: number;
@@ -90,9 +90,10 @@ export type EntityTypeDef = {
   requires_technologies?: TechnologyRequirement;
   researches?: string[];
   collector?: {
+    /** Units per second collected into inventory; zero disables transport collection. */
+    transport_rate_per_second?: number;
     vfx?: "solar_proximity" | "mineral_transport";
     collects?: string[];
-    carry_capacity?: number;
   };
   resource_node?: {
     resource_type: string;

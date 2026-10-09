@@ -76,7 +76,7 @@
       "format": "float"
     },
     "max_capacity": {
-      "description": "Maximum local inventory by resource type. Required for every entity type.",
+      "description": "Maximum local inventory by resource type, shared by collection, shipments and upkeep.\nRequired for every entity type. Each resource has its own limit; there is no shared cargo quota.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -153,7 +153,7 @@
       "default": null
     },
     "resource_reserves": {
-      "description": "Per-resource upkeep buffers in the shared inventory. Automatic supply tops up only to this stock;\nsharing, delivery and transport loading retain it. Upkeep and explicit action costs may consume it.\nEach entry requires a known resource with positive max_capacity and 0 <= reserve <= capacity.\nOmitted entries keep existing behavior. This is entity-type configuration, not another resource balance.",
+      "description": "Per-resource upkeep buffers in the shared inventory. Automatic supply tops up only to this stock;\nsharing, delivery and transport loading retain it. Upkeep and explicit action costs may consume it.\nEach entry requires a known resource with positive max_capacity and 0 <= reserve <= capacity.\nOmitted entries use one minute of upkeep (at least one whole unit, capped at capacity) for automatic operating supply.\nThis is entity-type configuration, not another resource balance.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -161,7 +161,7 @@
       }
     },
     "resource_sharing": {
-      "description": "Shares upkeep resources with nearby same-owner entities.",
+      "description": "Supplies operating buffers before bulk stock to nearby same-owner entities.",
       "anyOf": [
         {
           "$ref": "#/$defs/ResourceSharingDef"
@@ -351,12 +351,6 @@
       "description": "Automatic resource collector capabilities and rates.",
       "type": "object",
       "properties": {
-        "carry_capacity": {
-          "description": "Max carried amount for transport mode before deposit run.",
-          "type": "number",
-          "format": "float",
-          "default": 100.0
-        },
         "collects": {
           "description": "Resource type ids this collector can gather.",
           "type": "array",
@@ -391,7 +385,7 @@
           "default": 6.0
         },
         "transport_rate_per_second": {
-          "description": "Units/second gathered in transport mode while in gather band.",
+          "description": "Units/second gathered into local inventory in transport mode while in gather band.\nZero disables transport collection and maintained resource transport. Limited by max_capacity.",
           "type": "number",
           "format": "float",
           "default": 8.0
@@ -702,7 +696,7 @@
           "format": "float"
         },
         "resources": {
-          "description": "Optional per-resource refill priorities, targets and outgoing reserves. Omitted resources use existing capacity-based sharing.",
+          "description": "Optional per-resource receiving targets, bulk priorities and outgoing reserves.\nAutomatic sharing supplies operating buffers first, before upkeep is charged.\nBulk donations protect the donor's receiving target and go only to strictly higher effective receiving priorities.",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/ResourceSharingPolicy"
@@ -725,7 +719,7 @@
       "type": "object",
       "properties": {
         "fill_to": {
-          "description": "Stop refilling at this stock. Must not exceed this resource's max_capacity.",
+          "description": "Stop refilling at this stock. Must not exceed this resource's max_capacity.\nRetained by bulk donors while actively refilling; operating supply may draw below it.",
           "type": "number",
           "format": "double"
         },
@@ -738,17 +732,17 @@
           "format": "int32"
         },
         "priority": {
-          "description": "Higher priorities receive supply first; distance then entity ID break ties.",
+          "description": "Higher priorities receive bulk supply first; distance then entity ID break ties.\nBulk sharing requires higher effective priority than the donor. Operating buffers are supplied first regardless of priority.",
           "type": "integer",
           "format": "int32"
         },
         "refill_below": {
-          "description": "Start requesting below this stock; keep requesting until fill_to is reached. Must be between zero and fill_to.",
+          "description": "Start requesting below this stock; keep requesting until fill_to is reached. Must be between zero and fill_to.\nAlso the donor's minimum retained stock for bulk sharing when not actively refilling.",
           "type": "number",
           "format": "double"
         },
         "reserve": {
-          "description": "Keep this stock when sharing outward, in addition to protecting accrued upkeep. Must be between zero and max_capacity.",
+          "description": "Keep this stock when sharing outward, in addition to protecting accrued upkeep and the operating buffer. Must be between zero and max_capacity.\nBulk sharing also protects the donor's own refill target.",
           "type": "number",
           "format": "double"
         }

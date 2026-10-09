@@ -256,10 +256,6 @@ const commands: TerminalCommand[] = [
         || a.localeCompare(b),
       );
       const lines = resourceIds.map((id) => `${id}: ${Number((amounts.get(id) ?? 0).toFixed(3))}`);
-      const cargo = entity.collector_state;
-      if (cargo?.resource_type && cargo.carry_amount > 0) {
-        lines.push(`transport cargo (${cargo.resource_type}): ${Number(cargo.carry_amount.toFixed(3))}`);
-      }
       return {
         output: [
           `Entity ${entity.id} (${entity.entity_type_id ?? "unknown"})`,

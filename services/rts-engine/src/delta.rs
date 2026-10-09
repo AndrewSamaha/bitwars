@@ -124,8 +124,6 @@ pub fn compute_delta(
                 .map(|previous| {
                     previous.activity != state.activity
                         || previous.resource_type != state.resource_type
-                        || previous.carry_amount != state.carry_amount
-                        || previous.carry_capacity != state.carry_capacity
                         || previous.effective_rate_per_second != state.effective_rate_per_second
                         || previous.assigned_resource_type != state.assigned_resource_type
                         || previous.assigned_nearest_compatible != state.assigned_nearest_compatible
@@ -137,8 +135,8 @@ pub fn compute_delta(
             entity_id: *entity_id,
             activity: state.activity.clone(),
             resource_type: state.resource_type.clone(),
-            carry_amount: state.carry_amount,
-            carry_capacity: state.carry_capacity,
+            carry_amount: 0.0,
+            carry_capacity: 0.0,
             effective_rate_per_second: state.effective_rate_per_second,
             assigned_resource_type: state.assigned_resource_type.clone(),
             assigned_nearest_compatible: state.assigned_nearest_compatible,
@@ -242,8 +240,6 @@ mod tests {
         let collector = CollectorUiState {
             activity: "gathering".to_string(),
             resource_type: "minerals".to_string(),
-            carry_amount: 2.0,
-            carry_capacity: 10.0,
             effective_rate_per_second: 0.0,
             assigned_resource_type: "minerals".to_string(),
             assigned_nearest_compatible: false,
@@ -268,7 +264,15 @@ mod tests {
         );
         assert!(unchanged.collector_state_updates.is_empty());
 
-        current.get_mut(&4).unwrap().carry_amount = 3.0;
+        let mut inventory_changed = state.clone();
+        crate::engine::state::set_resource_amount(&mut inventory_changed.entities[0], "minerals", 8.0);
+        let inventory_delta = compute_delta(&state, &inventory_changed, &previous, &current,
+            &combat_states, &combat_states, 0.01, 0.01, &HashMap::new(), &HashSet::new());
+        assert_eq!(inventory_delta.updates.len(), 1);
+        assert_eq!(inventory_delta.updates[0].resources.as_ref().unwrap().resources[0].amount, 8.0);
+        assert!(inventory_delta.collector_state_updates.is_empty(), "inventory changes need no duplicate cargo telemetry");
+
+        current.get_mut(&4).unwrap().resource_type = "food".into();
         let changed = compute_delta(
             &state,
             &state,
@@ -283,6 +287,6 @@ mod tests {
         );
         assert_eq!(changed.collector_state_updates.len(), 1);
         assert_eq!(changed.collector_state_updates[0].entity_id, 4);
-        assert_eq!(changed.collector_state_updates[0].carry_amount, 3.0);
+        assert_eq!(changed.collector_state_updates[0].resource_type, "food");
     }
 }

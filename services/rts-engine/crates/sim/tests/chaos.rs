@@ -48,6 +48,7 @@ fn make_entity(id: u64, x: f32, y: f32) -> Entity {
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
         health: 100.0,
+        ..Default::default()
     }
 }
 

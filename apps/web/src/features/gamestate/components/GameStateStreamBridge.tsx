@@ -15,8 +15,6 @@ type Pos = { x: number; y: number };
 type CollectorStatePayload = {
   activity: string;
   resource_type: string;
-  carry_amount: number;
-  carry_capacity: number;
   effective_rate_per_second: number;
   assigned_resource_type?: string;
   assigned_nearest_compatible?: boolean;

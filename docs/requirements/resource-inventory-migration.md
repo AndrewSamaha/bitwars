@@ -10,7 +10,7 @@ resource_reserves:
   energy: 5
 ```
 
-A configured reserve is an automatic-supply target and the stock retained during outgoing sharing, delivery, and transport loading from that entity. It is not a second balance or extra capacity. Upkeep and explicit build/upgrade/research/repair payments can consume it. Omitted resource entries preserve existing behavior (no delivery reserve; automatic sharing can fill capacity). Existing `resource_sharing.resources.*.reserve` remains the donor's automatic-sharing-only floor; outgoing sharing protects the larger floor. Explicit transport continues to bypass sharing priorities/refill targets.
+A configured reserve is an automatic-supply target and the stock retained during outgoing sharing, delivery, and transport loading from that entity. It is not a second balance or extra capacity. Upkeep and explicit build/upgrade/research/repair payments can consume it. Omitted resource entries retain no explicit delivery reserve. Automatic sharing now supplies one minute of upkeep before any bulk allocation (see the upkeep-first rules below). Existing `resource_sharing.resources.*.reserve` remains the donor's automatic-sharing-only floor; outgoing sharing protects the larger floor. Explicit transport continues to bypass sharing priorities/refill targets.
 
 For workers, marine workers, and resource transports, start with five food and five energy. Five food covers 2.5 minutes of their current upkeep. These amounts are tuning values, editable in the content editor. Automatic supply fills only the configured buffer, leaving the remaining inventory available for shipments. Existing above-reserve stock remains usable; nothing is discarded.
 
@@ -28,21 +28,34 @@ For workers, marine workers, and resource transports, start with five food and f
 
 No entity protobuf changes or additional per-entity resource balances are needed for this phase. Engine restart and client refresh apply the content/code changes. Do not reset the match.
 
-## Phase 2: remove legacy resource-node cargo
+## Phase 2: one inventory for collection and transport — implemented
 
-Resource-node `Collect` still uses `Engine.carry_by_entity` / `CarryState`, separate from entity inventory. Complete its conversion as a separate, reviewable step:
+- [x] Resource-node collection credits entity inventory immediately. Gathering respects each resource's `max_capacity`, and upkeep/actions consume those same resources before delivery.
+- [x] Collection deposits retain `resource_reserves` and follow recipient sharing priorities, refill targets and overflow priorities. Partial unloads keep the undelivered inventory aboard.
+- [x] Retired `collector.carry_capacity` from Rust/client content types, YAML and generated Monaco schema/preload definitions. `max_capacity` is the sole inventory limit. Mixed shipments use each resource's capacity independently; there is no shared shipment quota. A positive `collector.transport_rate_per_second` enables maintained transport.
+- [x] Removed `Engine.carry_by_entity` / `CarryState`. Switching assignments delivers the previous resource first; interrupting collection leaves inventory intact. Upgrades preserve inventory, and destruction removes it with the entity.
+- [x] Snapshot restore merges each legacy collector's `carry_amount` into inventory and clears the legacy fields. New snapshots/deltas write zero legacy cargo fields, which protobuf omits. Existing combined stock above capacity is preserved and cannot receive further units of that resource until room is available. Subsequent restores do not add cargo again.
+- [x] Preserved collector assignment/activity metadata during restore and retained existing route/construction restore paths. Completed technologies now restore from the snapshot rather than being dropped.
+- [x] UI/terminal displays and delivery pickers read inventory once. Removed duplicate cargo amounts from frontend projections; collector telemetry retains activity, assignment, resource type and effective rate. Ownership filtering remains in place.
+- [x] Scenario capture writes inventory only. Legacy scenario `cargo` remains readable and merges into inventory; migrated overflow inventory can reload. Converted bundled fixtures and checked they validate.
+- [x] Replay snapshot decoding and deterministic state now include ownership, per-entity inventory and resource-node deposits. Legacy cargo is included in decoded inventory.
+- [x] Tests cover legacy/new snapshot round trips, invalid legacy amounts, researched unlocks, inventory conservation across collection/upkeep/deposit, assignment changes, retained buffers, partial deposits, overflow, independent multi-resource capacity, sparse inventory deltas and editor hints.
 
-- Collection admission/gathering/deposit: fill actual entity inventory, respect per-resource capacity and reserves, preserve deposit priority/overflow behavior and node binding.
-- Reconcile or retire `collector.carry_capacity`: identify every use in collection, directed transport, eligibility, schema, content, and UI before changing its meaning. Per-resource capacity is the final inventory limit; decide explicitly whether a shared shipment quota remains useful.
-- Intent switching/cancellation/destruction/upgrades: remove cargo credit/cleanup paths without losing or duplicating resources; protect retained upkeep stock during deposits.
-- Snapshot migration: fold saved legacy collection cargo into inventory exactly once; deal explicitly with combined amounts exceeding capacity. Never silently clamp/discard stock. Preserve pending transfers and construction progress.
-- Snapshot/delta/collector telemetry: carry amounts become derived UI values, not another authoritative resource balance. Audit `collector_state.proto`, Rust/TS generated bindings, Redis restore, visibility filtering, frontend world/stream mapping, tooltips/status, terminal descriptions, sim codec/hashes, and reconnect.
-- Tests/fixtures: save/restore legacy and new snapshots, interrupted collection, multi-resource transfers, capacity boundaries, conservation across sharing/upkeep/delivery, deterministic replay, telemetry ownership filtering.
+Apply with an engine restart and client refresh; **do not reset the match**. Old content definitions must remove `collector.carry_capacity`; use `max_capacity` for each resource. The bundled definitions are already updated. The running engine has not been restarted as part of this change.
 
-## Existing issues to keep separate
+## Verification and existing failures
 
-Completed technologies are currently not restored from snapshots. Fix that before relying on a restart to preserve researched unlocks. The full engine unit suite has five content-dependent failures on unchanged HEAD (habitat upkeep, celestial counts, and content/repair expectations); do not change gameplay to make those fixtures pass.
+Phase 2: TypeScript and all 22 focused UI/editor tests pass, as do the simulation tests and all-target Rust compilation. The engine library suite passes 81 tests with one ignored integration test and the same five pre-existing content-dependent failures (content/repair expectations, habitat upkeep fixtures, celestial counts).
 
-## Phase 1 verification
+The `two_entities_move` golden replay also fails on unchanged HEAD with the identical position and hash mismatch; movement behavior was not changed to satisfy that stale fixture. Actual live restart/reconnect and browser interaction remain untested. Snapshot migration is covered by protobuf round-trip unit tests; no game data was reset or modified.
 
-Focused client/editor tests cover reserve hints and invalid values, transferable inventory, local action affordability, and the resource banner. Engine regressions cover repeated two-worker food transport, shared multi-resource shipment capacity, donor/recipient/carrier buffers, upkeep consuming the same inventory, partial recipient capacity, and legacy collection-cargo delivery compatibility. Content generation and TypeScript checks pass. Live browser use and an actual engine restart/restore were not exercised; completed-technology restore remains an independent issue.
+
+## Upkeep-first automatic sharing
+
+- Wireless collectors retain an operating buffer before supplying receivers. Local sharing then fills operating buffers before charging upkeep, so nearby supply is usable on the payment tick.
+- An explicit `resource_reserves` entry sets the operating target. Otherwise use one minute of maintenance plus sensor costs, capped at capacity and at least one whole unit for positive costs. A zero explicit target opts out. For a basic defense pylon the default energy target is 32.5.
+- Within each donor's range, scarce supply equalizes the lowest fractions of operating targets first. Multiple donors recalculate current coverage, and all transfers conserve inventory. Range, ownership, health, upgrade exclusions, accrued upkeep, and explicit outgoing reserves still apply.
+- Bulk transfers happen after upkeep. Retain `fill_to` while actively refilling, or `refill_below` otherwise, in addition to the operating buffer and outgoing reserve. Transfer only to strictly higher effective receiving priority; equal priorities cannot circulate bulk stock. Collection drop-off preferences and explicit transport/action payment semantics are unchanged.
+- Regression tests cover the habitat/factory/pylon arrangement, repeated stable bulk allocation, a minute of pylon upkeep, scarce supply, differing upkeep rates, multiple donors, explicit targets, capacity limits, priority transitions and eligibility guards.
+
+No new schema fields, inventory balances or reset are needed. Restart the engine to apply the behavior. Live/browser testing and the actual restart were not performed.

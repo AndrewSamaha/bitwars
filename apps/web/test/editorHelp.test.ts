@@ -117,4 +117,17 @@ describe("content editor help", () => {
     const help = completionHelp(text, start, start + 3, "entity");
     expect(help.suggestions.find((item) => item.label === "range")?.insertText).toBe("range");
   });
+  it("documents shared per-resource capacity and retires the separate cargo limit", () => {
+    expect(hover("|max_capacity:\n  food: 50")).toContain("shipments and upkeep");
+    const keys = complete("collector:\n  |").suggestions.map((item) => item.label);
+    expect(keys).toContain("transport_rate_per_second");
+    expect(keys).not.toContain("carry_capacity");
+  });
+
+  it("explains upkeep-first supply and the donor's bulk protection", () => {
+    expect(hover("|resource_reserves:\n  energy: 5")).toContain("one minute of upkeep");
+    expect(hover("resource_sharing:\n  resources:\n    energy:\n      |priority: 10")).toContain("higher effective priority than the donor");
+    expect(hover("resource_sharing:\n  resources:\n    energy:\n      |fill_to: 900")).toContain("operating supply may draw below it");
+  });
+
 });

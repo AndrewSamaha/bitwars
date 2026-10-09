@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file collector_state.proto.
  */
 export const file_collector_state: GenFile = /*@__PURE__*/
-  fileDesc("ChVjb2xsZWN0b3Jfc3RhdGUucHJvdG8SB2JpdHdhcnMinAIKDkNvbGxlY3RvclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIQCghhY3Rpdml0eRgCIAEoCRIVCg1yZXNvdXJjZV90eXBlGAMgASgJEhQKDGNhcnJ5X2Ftb3VudBgEIAEoAhIWCg5jYXJyeV9jYXBhY2l0eRgFIAEoAhIhChllZmZlY3RpdmVfcmF0ZV9wZXJfc2Vjb25kGAYgASgCEh4KFmFzc2lnbmVkX3Jlc291cmNlX3R5cGUYByABKAkSIwobYXNzaWduZWRfbmVhcmVzdF9jb21wYXRpYmxlGAggASgIEiAKE3JlY2VpdmluZ19lbnRpdHlfaWQYCSABKARIAIgBAUIWChRfcmVjZWl2aW5nX2VudGl0eV9pZGIGcHJvdG8z");
+  fileDesc("ChVjb2xsZWN0b3Jfc3RhdGUucHJvdG8SB2JpdHdhcnMipAIKDkNvbGxlY3RvclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIQCghhY3Rpdml0eRgCIAEoCRIVCg1yZXNvdXJjZV90eXBlGAMgASgJEhgKDGNhcnJ5X2Ftb3VudBgEIAEoAkICGAESGgoOY2FycnlfY2FwYWNpdHkYBSABKAJCAhgBEiEKGWVmZmVjdGl2ZV9yYXRlX3Blcl9zZWNvbmQYBiABKAISHgoWYXNzaWduZWRfcmVzb3VyY2VfdHlwZRgHIAEoCRIjChthc3NpZ25lZF9uZWFyZXN0X2NvbXBhdGlibGUYCCABKAgSIAoTcmVjZWl2aW5nX2VudGl0eV9pZBgJIAEoBEgAiAEBQhYKFF9yZWNlaXZpbmdfZW50aXR5X2lkYgZwcm90bzM");
 
 /**
  * Authoritative collector telemetry for one entity. This travels with the
@@ -35,12 +35,17 @@ export type CollectorState = Message<"bitwars.CollectorState"> & {
   resourceType: string;
 
   /**
-   * @generated from field: float carry_amount = 4;
+   * Legacy snapshot migration only. New writers leave both fields zero;
+   * current amounts and capacities come from entity inventory and content.
+   *
+   * @generated from field: float carry_amount = 4 [deprecated = true];
+   * @deprecated
    */
   carryAmount: number;
 
   /**
-   * @generated from field: float carry_capacity = 5;
+   * @generated from field: float carry_capacity = 5 [deprecated = true];
+   * @deprecated
    */
   carryCapacity: number;
 
@@ -51,7 +56,7 @@ export type CollectorState = Message<"bitwars.CollectorState"> & {
 
   /**
    * The maintained Collect order, distinct from resource_type (the current
-   * cargo/gathering resource shown above).
+   * inventory/gathering resource shown above).
    *
    * @generated from field: string assigned_resource_type = 7;
    */

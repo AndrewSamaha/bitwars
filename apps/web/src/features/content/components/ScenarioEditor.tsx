@@ -112,7 +112,7 @@ export default function ScenarioEditor() {
           {scope === "entities" && <label className="block text-sm">Entity IDs (comma separated)<input className={input} value={entityIds} onChange={event => setEntityIds(event.target.value)} /></label>}
           {scope === "area" && <>{[["Center X", centerX, setCenterX], ["Center Y", centerY, setCenterY], ["Radius", radius, setRadius]].map(([label, value, setter]) => <label key={label as string} className="block text-sm">{label as string}<input className={input} type="number" value={value as number} onChange={event => (setter as (value: number) => void)(Number(event.target.value))} /></label>)}</>}
           <button className={button} onClick={() => void act("bookmark")}>Capture bookmark</button>
-          <p className="text-xs text-slate-400">Captures inventory, cargo, health and technology. Orders and fractional timers start fresh when loaded.</p>
+          <p className="text-xs text-slate-400">Captures inventory, health and technology. Orders and fractional timers start fresh when loaded.</p>
         </fieldset>
       </aside>
       <section aria-label="Scenario YAML" className="overflow-hidden rounded border border-slate-700"><YamlEditor kind="scenario" id={id} value={yaml} onChange={setYaml} /></section>

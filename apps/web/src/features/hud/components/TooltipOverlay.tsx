@@ -92,15 +92,11 @@ export function TooltipOverlay() {
     | {
         activity?: string;
         resource_type?: string;
-        carry_amount?: number;
-        carry_capacity?: number;
         effective_rate_per_second?: number;
       }
     | undefined;
   const activity = String(collectorState?.activity ?? "idle");
   const resourceType = String(collectorState?.resource_type ?? "");
-  const carryAmount = Number(collectorState?.carry_amount ?? 0);
-  const carryCapacity = Number(collectorState?.carry_capacity ?? 0);
   const effectiveRate = Number(collectorState?.effective_rate_per_second ?? 0);
   const ownerPlayerId = String((hoveredEntity as any).owner_player_id ?? "");
   const ownerPlayerName = playerNamesById[ownerPlayerId];
@@ -150,10 +146,7 @@ export function TooltipOverlay() {
       <div><b>pos:</b> {Math.round(hoveredEntity.pos?.x ?? 0)}, {Math.round(hoveredEntity.pos?.y ?? 0)}</div>
       <div><b>vel:</b> {Math.round(hoveredEntity.vel?.x ?? 0)}, {Math.round(hoveredEntity.vel?.y ?? 0)}</div>
       {collectorState && <div><b>collector:</b> {activity}{resourceType ? ` (${resourceType})` : ""}</div>}
-      {collectorState && carryCapacity > 0 && (
-        <div><b>carry:</b> {carryAmount.toFixed(1)} / {carryCapacity.toFixed(1)}</div>
-      )}
-      {collectorState && carryCapacity <= 0 && (
+      {collectorState && (
         <div><b>rate:</b> {effectiveRate.toFixed(1)}/s</div>
       )}
     </div>

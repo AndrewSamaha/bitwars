@@ -37,15 +37,17 @@ pub struct EntityTypeDef {
     pub mass: f32,
     /// Hull hit points before the entity is destroyed.
     pub health: f32,
-    /// Maximum local inventory by resource type. Required for every entity type.
+    /// Maximum local inventory by resource type, shared by collection, shipments and upkeep.
+    /// Required for every entity type. Each resource has its own limit; there is no shared cargo quota.
     pub max_capacity: HashMap<String, f32>,
     /// Per-resource upkeep buffers in the shared inventory. Automatic supply tops up only to this stock;
     /// sharing, delivery and transport loading retain it. Upkeep and explicit action costs may consume it.
     /// Each entry requires a known resource with positive max_capacity and 0 <= reserve <= capacity.
-    /// Omitted entries keep existing behavior. This is entity-type configuration, not another resource balance.
+    /// Omitted entries use one minute of upkeep (at least one whole unit, capped at capacity) for automatic operating supply.
+    /// This is entity-type configuration, not another resource balance.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub resource_reserves: HashMap<String, f64>,
-    /// Shares upkeep resources with nearby same-owner entities.
+    /// Supplies operating buffers before bulk stock to nearby same-owner entities.
     #[serde(default)]
     pub resource_sharing: Option<ResourceSharingDef>,
     /// Physical hull radius in world units used by contact attacks. Defaults to 0.
@@ -124,7 +126,9 @@ pub struct ResourceSharingDef {
     /// Resource types this entity can receive wirelessly from nearby collectors.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wireless_receives: Vec<String>,
-    /// Optional per-resource refill priorities, targets and outgoing reserves. Omitted resources use existing capacity-based sharing.
+    /// Optional per-resource receiving targets, bulk priorities and outgoing reserves.
+    /// Automatic sharing supplies operating buffers first, before upkeep is charged.
+    /// Bulk donations protect the donor's receiving target and go only to strictly higher effective receiving priorities.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub resources: HashMap<String, ResourceSharingPolicy>,
 }
@@ -132,16 +136,20 @@ pub struct ResourceSharingDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceSharingPolicy {
-    /// Higher priorities receive supply first; distance then entity ID break ties.
+    /// Higher priorities receive bulk supply first; distance then entity ID break ties.
+    /// Bulk sharing requires higher effective priority than the donor. Operating buffers are supplied first regardless of priority.
     pub priority: i32,
     /// Optional priority for accepting surplus up to max_capacity when not actively refilling. Omitted means no overflow requests.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overflow_priority: Option<i32>,
     /// Start requesting below this stock; keep requesting until fill_to is reached. Must be between zero and fill_to.
+    /// Also the donor's minimum retained stock for bulk sharing when not actively refilling.
     pub refill_below: f64,
     /// Stop refilling at this stock. Must not exceed this resource's max_capacity.
+    /// Retained by bulk donors while actively refilling; operating supply may draw below it.
     pub fill_to: f64,
-    /// Keep this stock when sharing outward, in addition to protecting accrued upkeep. Must be between zero and max_capacity.
+    /// Keep this stock when sharing outward, in addition to protecting accrued upkeep and the operating buffer. Must be between zero and max_capacity.
+    /// Bulk sharing also protects the donor's own refill target.
     pub reserve: f64,
 }
 
@@ -431,15 +439,13 @@ pub struct CollectorDef {
     /// Resource type ids this collector can gather.
     #[serde(default)]
     pub collects: Vec<String>,
-    /// Units/second gathered in transport mode while in gather band.
+    /// Units/second gathered into local inventory in transport mode while in gather band.
+    /// Zero disables transport collection and maintained resource transport. Limited by max_capacity.
     #[serde(default = "default_transport_rate_per_second")]
     pub transport_rate_per_second: f32,
     /// Units/second gathered in proximity mode while in effective band.
     #[serde(default = "default_proximity_rate_per_second")]
     pub proximity_rate_per_second: f32,
-    /// Max carried amount for transport mode before deposit run.
-    #[serde(default = "default_carry_capacity")]
-    pub carry_capacity: f32,
     /// Optional allowed refinery entity type ids for transport deposits.
     /// Empty means any refinery that accepts the resource.
     #[serde(default)]
@@ -557,10 +563,6 @@ fn default_transport_rate_per_second() -> f32 {
 
 fn default_proximity_rate_per_second() -> f32 {
     6.0
-}
-
-fn default_carry_capacity() -> f32 {
-    100.0
 }
 
 fn default_max_effective_distance() -> f32 {

@@ -167,7 +167,6 @@ entity_types:
           - habitat
       proximity_rate_per_second: 3
       transport_rate_per_second: 0
-      carry_capacity: 0
     upgrades:
       - entity_type_id: collector_solar_v2
   worker:
@@ -211,7 +210,6 @@ entity_types:
         - minerals
         - food
       transport_rate_per_second: 8
-      carry_capacity: 50
       deposit_entity_types:
         - processor
         - habitat
@@ -334,7 +332,6 @@ entity_types:
         - energy
       proximity_rate_per_second: 5
       transport_rate_per_second: 0
-      carry_capacity: 0
       minimum_distance:
         value: 800
         retry_after_ms: 1000
@@ -591,7 +588,6 @@ entity_types:
           - habitat
       proximity_rate_per_second: 15
       transport_rate_per_second: 0
-      carry_capacity: 0
   defense_pylon_v3:
     max_capacity:
       energy: 500
@@ -809,7 +805,6 @@ entity_types:
         - minerals
         - food
       transport_rate_per_second: 8
-      carry_capacity: 90
       deposit_entity_types:
         - processor
         - habitat
@@ -901,7 +896,6 @@ entity_types:
         - minerals
         - food
       transport_rate_per_second: 8
-      carry_capacity: 40
       deposit_entity_types:
         - processor
         - habitat

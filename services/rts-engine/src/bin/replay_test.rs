@@ -66,6 +66,7 @@ fn scenarios() -> Vec<ReplayScenario> {
                     vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                     force: Some(Vec2 { x: 0.0, y: 0.0 }),
                     health: 100.0,
+                    ..Default::default()
                 },
                 Entity {
                     id: 2,
@@ -74,6 +75,7 @@ fn scenarios() -> Vec<ReplayScenario> {
                     vel: Some(Vec2 { x: 0.0, y: 0.0 }),
                     force: Some(Vec2 { x: 0.0, y: 0.0 }),
                     health: 100.0,
+                    ..Default::default()
                 },
             ],
         ),

@@ -52,10 +52,11 @@ fn retry_delay_ticks(retry_after_ms: u64, tps: u32) -> u64 {
         .max(1)
 }
 
+/// A transient view derived from the entity inventory, never stored as a balance.
 #[derive(Clone, Debug)]
-struct CarryState {
+struct CollectionLoad {
     resource_type: String,
-    amount: f32,
+    amount: f64,
 }
 
 /// Fractional upkeep is already owed, even before the next whole-unit payment.
@@ -92,20 +93,165 @@ fn sharing_priority(entity: &pb::Entity, def: &EntityTypeDef, resource: &str, re
     })
 }
 
+/// One minute of upkeep, unless content explicitly supplies an operating target.
+fn operating_target(def: &EntityTypeDef, resource: &str) -> f64 {
+    let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64;
+    let upkeep = def.maintenance_cost_per_minute.get(resource).copied().unwrap_or(0.0)
+        + def.sensor.as_ref().and_then(|sensor| sensor.cost_per_minute.get(resource)).copied().unwrap_or(0.0);
+    // Upkeep charges whole units, so a fractional rate still needs one unit available.
+    def.resource_reserves.get(resource).copied()
+        .unwrap_or(if upkeep > 0.0 { (upkeep as f64).max(1.0) } else { 0.0 })
+        .min(capacity).max(0.0)
+}
+
 fn sharing_reserve(def: &EntityTypeDef, resource: &str, accrued: f64) -> f64 {
-    accrued.max(def.resource_reserves.get(resource).copied().unwrap_or(0.0)).max(def.resource_sharing.as_ref().and_then(|sharing| sharing.resources.get(resource)).map_or(0.0, |policy| policy.reserve))
+    accrued.max(operating_target(def, resource)).max(def.resource_sharing.as_ref().and_then(|sharing| sharing.resources.get(resource)).map_or(0.0, |policy| policy.reserve))
+}
+
+/// Operating supply is independent of bulk priorities; bulk flow only goes up in priority.
+fn share_local_resources(
+    entities: &mut [pb::Entity],
+    content: &ContentPack,
+    unavailable_donors: &HashSet<u64>,
+    upgrading: &HashSet<u64>,
+    wireless_suppliers: &HashMap<u64, u64>,
+    fractional: &HashMap<(String, String), f32>,
+    refilling: &mut HashSet<(u64, String)>,
+    operating_only: bool,
+) {
+    let mut donors: Vec<_> = entities.iter().filter_map(|entity| {
+        if entity.health <= 0.0 || !is_player_owner(&entity.owner_player_id)
+            || unavailable_donors.contains(&entity.id) { return None; }
+        let definition = content.get(&entity.entity_type_id)?;
+        let sharing = definition.resource_sharing.as_ref()?;
+        let position = entity.pos?;
+        Some((entity.id, entity.owner_player_id.clone(), entity.entity_type_id.clone(), position, sharing.range))
+    }).collect();
+    donors.sort_by_key(|donor| donor.0);
+    for (donor_id, owner, entity_type, position, range) in donors {
+        let donor_index = entities.iter().position(|entity| entity.id == donor_id).unwrap();
+        let donor_def = content.get(&entity_type).unwrap();
+        let mut resources: Vec<_> = entities[donor_index].resources.as_ref().into_iter()
+            .flat_map(|inventory| inventory.resources.iter().map(|entry| entry.resource_type.clone())).collect();
+        resources.sort();
+        for resource in resources {
+            sharing_request_room(&entities[donor_index], donor_def, &resource, refilling);
+            let donor_priority = sharing_priority(&entities[donor_index], donor_def, &resource, refilling);
+            let mut floor = sharing_reserve(donor_def, &resource, accrued_upkeep(fractional, donor_id, &resource));
+            if !operating_only {
+                if let Some(policy) = donor_def.resource_sharing.as_ref().and_then(|sharing| sharing.resources.get(&resource)) {
+                    floor = floor.max(if refilling.contains(&(donor_id, resource.clone())) { policy.fill_to } else { policy.refill_below });
+                }
+            }
+            let stock = resource_amount(&entities[donor_index], &resource);
+            let budget = (stock - floor).max(0.0);
+            if budget <= f64::EPSILON { continue; }
+            let mut recipients = Vec::new();
+            for (index, entity) in entities.iter().enumerate() {
+                if entity.id == donor_id || entity.owner_player_id != owner || entity.health <= 0.0
+                    || upgrading.contains(&entity.id) { continue; }
+                // Wireless producers keep the operating buffer retained before their donation.
+                if resource == "energy" && wireless_suppliers.get(&entity.id) == Some(&donor_id) { continue; }
+                let Some(def) = content.get(&entity.entity_type_id) else { continue; };
+                let Some(target_position) = entity.pos else { continue; };
+                let distance = (target_position.x-position.x).powi(2) + (target_position.y-position.y).powi(2);
+                if distance > range * range { continue; }
+                let target = operating_target(def, &resource);
+                let current = resource_amount(entity, &resource);
+                if operating_only {
+                    if target > current + f64::EPSILON {
+                        recipients.push((index, entity.id, 0, distance, current, target));
+                    }
+                } else {
+                    let has_policy = def.resource_sharing.as_ref().is_some_and(|sharing| sharing.resources.contains_key(&resource));
+                    if !has_policy && target <= 0.0 { continue; }
+                    if sharing_request_room(entity, def, &resource, refilling) <= f64::EPSILON { continue; }
+                    let priority = sharing_priority(entity, def, &resource, refilling);
+                    if priority > donor_priority {
+                        recipients.push((index, entity.id, priority, distance, current, target));
+                    }
+                }
+            }
+            let mut remaining = budget;
+            if operating_only {
+                recipients.sort_by(|a, b| (a.4 / a.5).total_cmp(&(b.4 / b.5)).then_with(|| a.1.cmp(&b.1)));
+                // Raise the least-covered buffers together, stopping at the available budget.
+                let mut level = recipients.first().map_or(1.0, |entry| entry.4 / entry.5);
+                let mut total_target = 0.0;
+                for (index, entry) in recipients.iter().enumerate() {
+                    total_target += entry.5;
+                    let next = recipients.get(index+1).map_or(1.0, |entry| entry.4 / entry.5);
+                    let needed = (next-level) * total_target;
+                    if needed >= remaining {
+                        level += remaining / total_target;
+                        break;
+                    }
+                    remaining -= needed;
+                    level = next;
+                }
+                remaining = budget;
+                for (index, _, _, _, current, target) in recipients {
+                    let amount = (level * target-current).max(0.0).min(remaining);
+                    set_resource_amount(&mut entities[index], &resource, current+amount);
+                    remaining -= amount;
+                }
+            } else {
+                recipients.sort_by(|a, b| sharing_receiver_order((a.2, a.3, a.1), (b.2, b.3, b.1)));
+                for (index, _, _, _, _, _) in recipients {
+                    let def = content.get(&entities[index].entity_type_id).unwrap();
+                    let amount = remaining.min(sharing_request_room(&entities[index], def, &resource, refilling));
+                    if amount <= 0.0 { continue; }
+                    let current = resource_amount(&entities[index], &resource);
+                    set_resource_amount(&mut entities[index], &resource, current+amount);
+                    remaining -= amount;
+                    sharing_request_room(&entities[index], def, &resource, refilling);
+                }
+            }
+            set_resource_amount(&mut entities[donor_index], &resource, floor+remaining);
+            sharing_request_room(&entities[donor_index], donor_def, &resource, refilling);
+        }
+    }
 }
 
 fn sharing_receiver_order(a: (i32, f32, u64), b: (i32, f32, u64)) -> std::cmp::Ordering {
     b.0.cmp(&a.0).then_with(|| a.1.total_cmp(&b.1)).then_with(|| a.2.cmp(&b.2))
 }
 
-fn deposit_collection_cargo(recipient: &mut pb::Entity, def: &EntityTypeDef, cargo: &mut CarryState, refilling: &mut HashSet<(u64, String)>) {
-    let amount = (cargo.amount as f64).min(sharing_request_room(recipient, def, &cargo.resource_type, refilling));
+fn deposit_collection_inventory(actor: &mut pb::Entity, actor_def: &EntityTypeDef,
+    recipient: &mut pb::Entity, recipient_def: &EntityTypeDef, resource: &str,
+    refilling: &mut HashSet<(u64, String)>) {
+    let amount = transferable_resource(actor, actor_def, resource)
+        .min(sharing_request_room(recipient, recipient_def, resource, refilling));
     if amount <= 0.0 { return; }
-    set_resource_amount(recipient, &cargo.resource_type, resource_amount(recipient, &cargo.resource_type) + amount);
-    cargo.amount = (cargo.amount - amount as f32).max(0.0);
-    sharing_request_room(recipient, def, &cargo.resource_type, refilling);
+    set_resource_amount(actor, resource, resource_amount(actor, resource) - amount);
+    set_resource_amount(recipient, resource, resource_amount(recipient, resource) + amount);
+    sharing_request_room(recipient, recipient_def, resource, refilling);
+}
+
+fn collection_load(entity: &pb::Entity, def: &EntityTypeDef, preferred: &[&str]) -> Option<CollectionLoad> {
+    let collector = def.collector.as_ref()?;
+    if collector.transport_rate_per_second <= 0.0 { return None; }
+    preferred.iter().copied().chain(collector.collects.iter().map(String::as_str))
+        .filter(|resource| collector.collects.iter().any(|kind| kind == resource))
+        .find_map(|resource| {
+            let amount = transferable_resource(entity, def, resource);
+            (amount > f64::EPSILON).then(|| CollectionLoad { resource_type: resource.into(), amount })
+        })
+}
+
+fn gather_transport_inventory(entities: &mut [pb::Entity], actor_id: u64, node_id: u64,
+    def: &EntityTypeDef, resource: &str, requested: f64) -> f64 {
+    if actor_id == node_id { return 0.0; }
+    let Some(actor) = entities.iter().find(|entity| entity.id == actor_id) else { return 0.0; };
+    let current = resource_amount(actor, resource);
+    let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64;
+    let requested = requested.max(0.0).min((capacity - current).max(0.0));
+    let gathered = entities.iter_mut().find(|entity| entity.id == node_id)
+        .map(|entity| take_from_deposit(entity, requested)).unwrap_or(0.0);
+    if let Some(actor) = entities.iter_mut().find(|entity| entity.id == actor_id) {
+        set_resource_amount(actor, resource, current + gathered);
+    }
+    gathered
 }
 
 fn pay_entity_upkeep(
@@ -143,57 +289,31 @@ fn pay_entity_upkeep(
     (missing_resources, spends)
 }
 
-/// Transfer cargo first, then local inventory, retaining every unit that does not fit.
-fn deliver_resources(
-    actor: &mut pb::Entity,
-    actor_def: &EntityTypeDef,
-    recipient: &mut pb::Entity,
-    recipient_def: &EntityTypeDef,
-    resource_types: &[String],
-    mut cargo: Option<&mut CarryState>,
-) {
+/// Delivery moves inventory above the operating reserve and retains anything that does not fit.
+fn deliver_resources(actor: &mut pb::Entity, actor_def: &EntityTypeDef,
+    recipient: &mut pb::Entity, recipient_def: &EntityTypeDef, resource_types: &[String]) {
     for resource in resource_types {
         let current = resource_amount(recipient, resource);
         let room = (recipient_def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64 - current).max(0.0);
-        let cargo_amount = cargo.as_ref()
-            .filter(|carry| carry.resource_type == *resource)
-            .map(|carry| carry.amount as f64).unwrap_or(0.0);
-        let from_cargo = cargo_amount.min(room);
-        let from_inventory = transferable_resource(actor, actor_def, resource).min(room - from_cargo);
-        if from_cargo + from_inventory <= 0.0 { continue; }
-        if let Some(carry) = cargo.as_mut().filter(|carry| carry.resource_type == *resource) {
-            carry.amount = (carry.amount - from_cargo as f32).max(0.0);
-        }
-        set_resource_amount(actor, resource, resource_amount(actor, resource) - from_inventory);
-        set_resource_amount(recipient, resource, current + from_cargo + from_inventory);
+        let amount = transferable_resource(actor, actor_def, resource).min(room);
+        if amount <= 0.0 { continue; }
+        set_resource_amount(actor, resource, resource_amount(actor, resource) - amount);
+        set_resource_amount(recipient, resource, current + amount);
     }
 }
 
-fn transport_carry_used(actor: &pb::Entity, actor_def: &EntityTypeDef, resources: &[String], cargo: Option<&CarryState>) -> f64 {
-    // Selected shipment surplus and non-upkeep inventory use the shared carry quota.
-    let held: f64 = actor.resources.as_ref().into_iter().flat_map(|inventory| &inventory.resources)
-        .filter(|entry| resources.contains(&entry.resource_type) || (actor_def.maintenance_cost_per_minute.get(&entry.resource_type).copied().unwrap_or(0.0) <= 0.0
-            && actor_def.sensor.as_ref().and_then(|sensor| sensor.cost_per_minute.get(&entry.resource_type)).copied().unwrap_or(0.0) <= 0.0))
-        .map(|entry| transferable_resource(actor, actor_def, &entry.resource_type)).sum();
-    held + cargo.map_or(0.0, |cargo| cargo.amount as f64)
-}
-
-/// Shipment inventory shares the collector's carry limit; unrelated upkeep stock stays aboard.
+/// Each resource uses its own inventory capacity; there is no separate shipment quota.
 fn load_transfer_resources(actor: &mut pb::Entity, donor: &mut pb::Entity, recipient: &pb::Entity,
-    actor_def: &EntityTypeDef, donor_def: &EntityTypeDef, recipient_def: &EntityTypeDef, resources: &[String], existing_cargo: Option<&CarryState>) {
-    let limit = actor_def.collector.as_ref().map_or(0.0, |collector| collector.carry_capacity as f64);
-    let mut room = (limit - transport_carry_used(actor, actor_def, resources, existing_cargo)).max(0.0);
+    actor_def: &EntityTypeDef, donor_def: &EntityTypeDef, recipient_def: &EntityTypeDef, resources: &[String]) {
     for resource in resources {
         let aboard = resource_amount(actor, resource);
         let carrier_room = (actor_def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64 - aboard).max(0.0);
         let recipient_room = (recipient_def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64
-            - resource_amount(recipient, resource) - transferable_resource(actor, actor_def, resource)
-            - existing_cargo.filter(|cargo| cargo.resource_type == *resource).map_or(0.0, |cargo| cargo.amount as f64)).max(0.0);
-        let amount = transferable_resource(donor, donor_def, resource).min(room).min(carrier_room).min(recipient_room);
+            - resource_amount(recipient, resource) - transferable_resource(actor, actor_def, resource)).max(0.0);
+        let amount = transferable_resource(donor, donor_def, resource).min(carrier_room).min(recipient_room);
         if amount > 0.0 {
             set_resource_amount(donor, resource, resource_amount(donor, resource) - amount);
             set_resource_amount(actor, resource, aboard + amount);
-            room -= amount;
         }
     }
 }
@@ -504,24 +624,26 @@ mod transport_capacity_tests {
         set_resource_amount(&mut entities[1], "minerals", 3000.0);
         assert_eq!(pick(&entities, &mut refilling), Some(2), "overflow works below fill_to too");
         let def = content.get("habitat").unwrap();
-        let mut cargo = CarryState { resource_type: "minerals".into(), amount: 250.0 };
-        deposit_collection_cargo(&mut entities[0], def, &mut cargo, &mut refilling);
+        let mut actor = pb::Entity::default();
+        let actor_def = content.get("worker").unwrap();
+        set_resource_amount(&mut actor, "minerals", 250.0);
+        deposit_collection_inventory(&mut actor, actor_def, &mut entities[0], def, "minerals", &mut refilling);
         assert_eq!(resource_amount(&entities[0], "minerals"), 977.0);
-        assert_eq!(cargo.amount, 0.0);
-        cargo.amount = 50.0;
-        deposit_collection_cargo(&mut entities[0], def, &mut cargo, &mut refilling);
+        assert_eq!(resource_amount(&actor, "minerals"), 0.0);
+        set_resource_amount(&mut actor, "minerals", 50.0);
+        deposit_collection_inventory(&mut actor, actor_def, &mut entities[0], def, "minerals", &mut refilling);
         assert_eq!(resource_amount(&entities[0], "minerals"), 1000.0);
-        assert_eq!(cargo.amount, 27.0);
+        assert_eq!(resource_amount(&actor, "minerals"), 27.0);
         assert_eq!(pick(&entities, &mut refilling), None);
         set_resource_amount(&mut entities[0], "minerals", 699.0);
         set_resource_amount(&mut entities[1], "minerals", 0.0);
         assert_eq!(pick(&entities, &mut refilling), Some(2), "low habitat regains normal priority");
         set_resource_amount(&mut entities[0], "minerals", 850.0);
         assert_eq!(pick(&entities, &mut refilling), Some(2), "normal priority persists until the target");
-        cargo.amount = 100.0;
-        deposit_collection_cargo(&mut entities[0], def, &mut cargo, &mut refilling);
+        set_resource_amount(&mut actor, "minerals", 100.0);
+        deposit_collection_inventory(&mut actor, actor_def, &mut entities[0], def, "minerals", &mut refilling);
         assert_eq!(resource_amount(&entities[0], "minerals"), 900.0);
-        assert_eq!(cargo.amount, 50.0);
+        assert_eq!(resource_amount(&actor, "minerals"), 50.0);
         assert_eq!(pick(&entities, &mut refilling), Some(3), "reaching fill_to switches back to overflow priority");
     }
 
@@ -551,18 +673,20 @@ mod transport_capacity_tests {
         assert_eq!(pick(&entities, &mut refilling), Some(3), "satisfied habitat does not request a delivery");
         set_resource_amount(&mut entities[0], "food", 20.0);
         assert_eq!(pick(&entities, &mut refilling), Some(2), "priority beats distance");
-        let mut cargo = CarryState { resource_type: "food".into(), amount: 50.0 };
-        deposit_collection_cargo(&mut entities[0], content.get("habitat").unwrap(), &mut cargo, &mut refilling);
-        assert_eq!(cargo.amount, 0.0);
+        let mut actor = pb::Entity::default();
+        let actor_def = content.get("resource_transport").unwrap();
+        set_resource_amount(&mut actor, "food", 55.0);
+        deposit_collection_inventory(&mut actor, actor_def, &mut entities[0], content.get("habitat").unwrap(), "food", &mut refilling);
+        assert_eq!(resource_amount(&actor, "food"), 5.0);
         assert_eq!(pick(&entities, &mut refilling), Some(2), "keep refilling above the lower threshold");
-        cargo.amount = 50.0;
-        deposit_collection_cargo(&mut entities[0], content.get("habitat").unwrap(), &mut cargo, &mut refilling);
+        set_resource_amount(&mut actor, "food", 55.0);
+        deposit_collection_inventory(&mut actor, actor_def, &mut entities[0], content.get("habitat").unwrap(), "food", &mut refilling);
         assert_eq!(resource_amount(&entities[0], "food"), 80.0);
-        assert_eq!(cargo.amount, 40.0, "cargo above the target must remain aboard");
+        assert_eq!(resource_amount(&actor, "food"), 45.0, "cargo above the target must remain aboard");
         assert_eq!(pick(&entities, &mut refilling), Some(3));
-        deposit_collection_cargo(&mut entities[1], content.get("factory").unwrap(), &mut cargo, &mut refilling);
+        deposit_collection_inventory(&mut actor, actor_def, &mut entities[1], content.get("factory").unwrap(), "food", &mut refilling);
         assert_eq!(resource_amount(&entities[1], "food"), 40.0);
-        assert_eq!(cargo.amount, 0.0);
+        assert_eq!(resource_amount(&actor, "food"), 5.0);
         set_resource_amount(&mut entities[1], "food", 500.0);
         assert_eq!(pick(&entities, &mut refilling), None, "hold cargo when no receiver requests it");
         set_resource_amount(&mut entities[0], "food", 29.0);
@@ -1139,8 +1263,6 @@ pub struct Engine {
     telemetry: Option<Telemetry>,
     /// M6: Players that have already been given a spawn (idempotency).
     joined_players: HashSet<String>,
-    /// M8: In-flight transport-mode carry amounts per collector entity.
-    carry_by_entity: HashMap<u64, CarryState>,
     /// Transport collectors stay bound to one resource entity across delivery trips.
     transport_node_by_entity: HashMap<u64, u64>,
     /// First tick spent waiting at a full resource entity; used for FIFO admission.
@@ -1665,7 +1787,6 @@ impl Engine {
                     lifecycle_emitted: HashSet::new(),
                     telemetry,
                     joined_players,
-                    carry_by_entity: HashMap::new(),
                     transport_node_by_entity: HashMap::new(),
                     transport_wait_since_tick_by_entity: HashMap::new(),
                     maintenance_spend_fractional: HashMap::new(),
@@ -1682,9 +1803,15 @@ impl Engine {
                     scenario_runtime: Default::default(),
                     loaded_scenario: None,
                 };
-                for state in &snapshot_collector_states {
-                    if state.carry_amount > 0.0 && engine.state.entities.iter().any(|entity| entity.id == state.entity_id) {
-                        engine.carry_by_entity.insert(state.entity_id, CarryState { resource_type: state.resource_type.clone(), amount: state.carry_amount });
+                for view in &snapshot_collector_states {
+                    if engine.state.entities.iter().any(|entity| entity.id == view.entity_id) {
+                        engine.collector_ui_state_by_entity.insert(view.entity_id, CollectorUiState {
+                            activity: view.activity.clone(), resource_type: view.resource_type.clone(),
+                            effective_rate_per_second: view.effective_rate_per_second,
+                            assigned_resource_type: view.assigned_resource_type.clone(),
+                            assigned_nearest_compatible: view.assigned_nearest_compatible,
+                            receiving_entity_id: view.receiving_entity_id, updated_tick: engine.state.tick,
+                        });
                     }
                 }
                 for (entry, route, entity_type_id) in restored_transfers {
@@ -1694,8 +1821,7 @@ impl Engine {
                     let delivery = pb::DeliverIntent { entity_id: entry.entity_id, target_id: route.target_id,
                         donor_id: route.donor_id, resource_type_ids: route.resource_type_ids };
                     let loaded = engine.state.entities.iter().find(|entity| entity.id == entry.entity_id).is_some_and(|entity|
-                        delivery.resource_type_ids.iter().any(|resource| engine.content.as_ref().and_then(|pack| pack.get(&entity.entity_type_id)).is_some_and(|def| transferable_resource(entity, def, resource) > 0.0)))
-                        || engine.carry_by_entity.get(&entry.entity_id).is_some_and(|cargo| delivery.resource_type_ids.contains(&cargo.resource_type));
+                        delivery.resource_type_ids.iter().any(|resource| engine.content.as_ref().and_then(|pack| pack.get(&entity.entity_type_id)).is_some_and(|def| transferable_resource(entity, def, resource) > 0.0)));
                     let metadata = IntentMetadata { intent_id: intent_id.into_bytes().to_vec(), client_cmd_id: client_cmd_id.into_bytes().to_vec(),
                         player_id: entry.player_id, protocol_version: ENGINE_PROTOCOL_MAJOR, server_tick: entry.started_tick, policy: pb::IntentPolicy::ReplaceActive };
                     engine.intents.try_activate(pb::Intent { kind: Some(pb::intent::Kind::Deliver(delivery.clone())) }, metadata.clone(), &entity_type_id);
@@ -1875,7 +2001,6 @@ impl Engine {
             lifecycle_emitted: HashSet::new(),
             telemetry,
             joined_players: HashSet::new(),
-            carry_by_entity: HashMap::new(),
             transport_node_by_entity: HashMap::new(),
             transport_wait_since_tick_by_entity: HashMap::new(),
             maintenance_spend_fractional: HashMap::new(),
@@ -2172,16 +2297,18 @@ impl Engine {
         true
     }
 
-    /// Collectors pay upkeep first; wireless receivers pay after receiving supply.
+    /// Supply operating buffers before charging upkeep; bulk sharing uses only the remaining surplus.
     async fn maintain_and_share_resources(&mut self, dt: f32) -> HashMap<u64, Vec<String>> {
-        let mut unpaid = self.apply_maintenance_costs(dt, false);
+        let mut unpaid = HashMap::new();
         let mut refilling = std::mem::take(&mut self.resource_refilling);
         refilling.retain(|(id, resource)| self.state.entities.iter().any(|entity| entity.id == *id
             && self.content.as_ref().and_then(|content| content.get(&entity.entity_type_id))
                 .and_then(|def| def.resource_sharing.as_ref()).is_some_and(|sharing| sharing.resources.contains_key(resource))));
         let wireless_suppliers = self.share_wireless_collector_resources(&unpaid, &mut refilling);
+        self.share_resources(&unpaid, &wireless_suppliers, &mut refilling, true);
+        unpaid.extend(self.apply_maintenance_costs(dt, false));
         unpaid.extend(self.apply_maintenance_costs(dt, true));
-        self.share_resources(&unpaid, &wireless_suppliers, &mut refilling);
+        self.share_resources(&unpaid, &wireless_suppliers, &mut refilling, false);
         self.resource_refilling = refilling;
         self.emit_starvation_events(&unpaid).await;
         unpaid
@@ -2223,60 +2350,12 @@ impl Engine {
         starvation_damage
     }
 
-    fn share_resources(&mut self, unpaid_entities: &HashMap<u64, Vec<String>>, wireless_suppliers: &HashMap<u64, u64>, refilling: &mut HashSet<(u64, String)>) {
+    fn share_resources(&mut self, unpaid_entities: &HashMap<u64, Vec<String>>, wireless_suppliers: &HashMap<u64, u64>, refilling: &mut HashSet<(u64, String)>, operating_only: bool) {
         let Some(content) = self.content.as_ref() else { return; };
-        let entities: Vec<_> = self.state.entities.iter().filter_map(|e| {
-            if e.health <= 0.0 || !is_player_owner(&e.owner_player_id)
-                || unpaid_entities.contains_key(&e.id) || self.is_upgrading(e.id) { return None; }
-            let def = content.get(&e.entity_type_id)?;
-            let share = def.resource_sharing.as_ref()?;
-            let pos = e.pos.as_ref()?;
-            Some((e.id, e.owner_player_id.clone(), e.entity_type_id.clone(), pos.x, pos.y, share.range))
-        }).collect();
-        let upkeep_types: HashMap<u64, HashSet<String>> = self.state.entities.iter().filter_map(|e| {
-            let def = content.get(&e.entity_type_id)?;
-            let types = def.maintenance_cost_per_minute.keys().chain(def.sensor.iter().flat_map(|s| s.cost_per_minute.keys())).cloned().collect::<HashSet<_>>();
-            Some((e.id, types))
-        }).collect();
-        for (donor_id, owner, _, x, y, range) in entities {
-            let donor_types: Vec<String> = self.state.entities.iter().find(|e| e.id == donor_id).map(|e| e.resources.as_ref().into_iter().flat_map(|i| i.resources.iter().map(|r| r.resource_type.clone())).collect()).unwrap_or_default();
-            for resource in donor_types {
-                let mut recipients: Vec<_> = self.state.entities.iter().filter_map(|e| {
-                    let def = content.get(&e.entity_type_id)?;
-                    let has_policy = def.resource_sharing.as_ref().is_some_and(|sharing| sharing.resources.contains_key(&resource));
-                    if e.id == donor_id || e.owner_player_id != owner
-                        || (!has_policy && !upkeep_types.get(&e.id).is_some_and(|types| types.contains(&resource))) { return None; }
-                    if e.health <= 0.0 || self.is_upgrading(e.id) { return None; }
-                    // Do not return energy to a collector that just supplied this donor.
-                    if resource == "energy" && wireless_suppliers.get(&e.id) == Some(&donor_id) { return None; }
-                    let pos = e.pos.as_ref()?;
-                    let dx = pos.x - x; let dy = pos.y - y;
-                    let distance = dx * dx + dy * dy;
-                    if distance > range * range || sharing_request_room(e, def, &resource, refilling) <= f64::EPSILON { return None; }
-                    Some((e.id, sharing_priority(e, def, &resource, refilling), distance, has_policy))
-                }).collect();
-                let donor_def = content.get(&self.state.entities.iter().find(|e| e.id == donor_id).unwrap().entity_type_id).unwrap();
-                let policy = donor_def.resource_sharing.as_ref().and_then(|sharing| sharing.resources.get(&resource));
-                let uses_policy = policy.is_some() || recipients.iter().any(|recipient| recipient.3);
-                recipients.sort_by(|a, b| if uses_policy {
-                    sharing_receiver_order((a.1, a.2, a.0), (b.1, b.2, b.0))
-                } else { a.0.cmp(&b.0) });
-                let mut donor_stock = self.state.entities.iter().find(|e| e.id == donor_id).map(|e| resource_amount(e, &resource)).unwrap_or(0.0);
-                let reserve = sharing_reserve(donor_def, &resource, accrued_upkeep(&self.maintenance_spend_fractional, donor_id, &resource));
-                for (recipient_id, _, _, _) in recipients {
-                    if donor_stock <= reserve + f64::EPSILON { break; }
-                    let Some(target) = self.state.entities.iter_mut().find(|e| e.id == recipient_id) else { continue; };
-                    let def = content.get(&target.entity_type_id).unwrap();
-                    let amount = (donor_stock - reserve).min(sharing_request_room(target, def, &resource, refilling));
-                    if amount > 0.0 {
-                        set_resource_amount(target, &resource, resource_amount(target, &resource) + amount);
-                        donor_stock -= amount;
-                        sharing_request_room(target, def, &resource, refilling);
-                    }
-                }
-                if let Some(donor) = self.state.entities.iter_mut().find(|e| e.id == donor_id) { set_resource_amount(donor, &resource, donor_stock); }
-            }
-        }
+        let upgrading: HashSet<_> = self.state.entities.iter().filter(|entity| self.is_upgrading(entity.id)).map(|entity| entity.id).collect();
+        let unavailable: HashSet<_> = upgrading.iter().copied().chain(unpaid_entities.keys().copied()).collect();
+        share_local_resources(&mut self.state.entities, content, &unavailable, &upgrading,
+            wireless_suppliers, &self.maintenance_spend_fractional, refilling, operating_only);
     }
 
     fn share_wireless_collector_resources(&mut self, unpaid_entities: &HashMap<u64, Vec<String>>, refilling: &mut HashSet<(u64, String)>) -> HashMap<u64, u64> {
@@ -2759,12 +2838,6 @@ impl Engine {
     }
 
     fn clear_fractional_for_entity(&mut self, entity_id: u64) {
-        if let Some(carry) = self.carry_by_entity.remove(&entity_id) {
-            if carry.amount > 0.0 {
-                // Keep deterministic accounting by dropping sub-unit carry on despawn/loss.
-                warn!(entity_id, resource_type = %carry.resource_type, amount = carry.amount, "dropping carry due to missing collector entity");
-            }
-        }
         self.collector_ui_state_by_entity.remove(&entity_id);
     }
 
@@ -2773,8 +2846,6 @@ impl Engine {
         entity_id: u64,
         activity: &str,
         resource_type: &str,
-        carry_amount: f32,
-        carry_capacity: f32,
         effective_rate_per_second: f32,
     ) {
         let (assigned_resource_type, assigned_nearest_compatible) = self
@@ -2786,8 +2857,6 @@ impl Engine {
             CollectorUiState {
                 activity: activity.to_string(),
                 resource_type: resource_type.to_string(),
-                carry_amount: carry_amount.max(0.0),
-                carry_capacity: carry_capacity.max(0.0),
                 effective_rate_per_second: effective_rate_per_second.max(0.0),
                 assigned_resource_type,
                 assigned_nearest_compatible,
@@ -3247,7 +3316,7 @@ impl Engine {
                 && actor.id != donor.id && actor.id != recipient.id && donor.id != recipient.id
                 && actor.owner_player_id == donor.owner_player_id && actor.owner_player_id == recipient.owner_player_id
                 && actor.pos.is_some() && donor.pos.is_some() && recipient.pos.is_some()
-                && actor_def.speed > 0.0 && actor_def.collector.as_ref().is_some_and(|collector| collector.carry_capacity > 0.0)
+                && actor_def.speed > 0.0 && actor_def.collector.as_ref().is_some_and(|collector| collector.transport_rate_per_second > 0.0)
                 && delivery.resource_type_ids.iter().all(|resource|
                     actor_def.max_capacity.get(resource).copied().unwrap_or(0.0) > 0.0
                     && donor_def.max_capacity.get(resource).copied().unwrap_or(0.0) > 0.0
@@ -3274,36 +3343,28 @@ impl Engine {
         let to = endpoint.pos.as_ref().unwrap();
         let distance = Self::distance_sq(pos.x, pos.y, to.x, to.y).sqrt();
         let range = actor_def.hull_radius + endpoint_def.hull_radius + actor_def.stop_radius.max(1.0);
-        let capacity = actor_def.collector.as_ref().unwrap().carry_capacity;
         if !Self::reached_contact(pos, to, range) {
             if let Some(entity) = self.state.entities.iter_mut().find(|entity| entity.id == id) {
                 Self::drive_velocity_toward(entity, actor_def.speed.min((distance-range)/dt), to.x, to.y, range);
             }
-            let cargo = self.carry_by_entity.get(&id).cloned();
-            self.set_collector_ui_state(id, if delivery.returning_to_donor { "moving_to_donor" } else { "moving_to_recipient" },
-                cargo.as_ref().map_or("", |cargo| cargo.resource_type.as_str()), cargo.as_ref().map_or(0.0, |cargo| cargo.amount), capacity, 0.0);
+            self.set_collector_ui_state(id, if delivery.returning_to_donor { "moving_to_donor" } else { "moving_to_recipient" }, if delivery.resource_type_ids.len() == 1 { &delivery.resource_type_ids[0] } else { "" }, 0.0);
             return;
         }
-        let cargo = self.carry_by_entity.get(&id).cloned();
         let mut returning = delivery.returning_to_donor;
-        let held = |actor: &pb::Entity, cargo: Option<&CarryState>| -> f64 {
-            delivery.resource_type_ids.iter().map(|resource| transferable_resource(actor, &actor_def, resource)).sum::<f64>()
-                + cargo.filter(|cargo| delivery.resource_type_ids.contains(&cargo.resource_type)).map_or(0.0, |cargo| cargo.amount as f64)
+        let held = |actor: &pb::Entity| -> f64 {
+            delivery.resource_type_ids.iter().map(|resource| transferable_resource(actor, &actor_def, resource)).sum()
         };
         let activity;
         if returning {
             load_transfer_resources(&mut actor, &mut donor, &recipient, &actor_def, &donor_def, &recipient_def,
-                &delivery.resource_type_ids, cargo.as_ref());
-            if held(&actor, cargo.as_ref()) > f64::EPSILON { returning = false; activity = "moving_to_recipient"; }
-            else if transport_carry_used(&actor, &actor_def, &delivery.resource_type_ids, cargo.as_ref()) >= capacity as f64 {
-                activity = "waiting_for_cargo_space";
-            }
+                &delivery.resource_type_ids);
+            if held(&actor) > f64::EPSILON { returning = false; activity = "moving_to_recipient"; }
             else if delivery.resource_type_ids.iter().all(|resource| transferable_resource(&donor, &donor_def, resource) <= f64::EPSILON) {
                 activity = "waiting_for_resources";
             } else { activity = "waiting_for_capacity"; }
         } else {
-            deliver_resources(&mut actor, &actor_def, &mut recipient, &recipient_def, &delivery.resource_type_ids, self.carry_by_entity.get_mut(&id));
-            if held(&actor, self.carry_by_entity.get(&id)) <= f64::EPSILON { returning = true; activity = "moving_to_donor"; }
+            deliver_resources(&mut actor, &actor_def, &mut recipient, &recipient_def, &delivery.resource_type_ids);
+            if held(&actor) <= f64::EPSILON { returning = true; activity = "moving_to_donor"; }
             else { activity = "waiting_for_capacity"; }
         }
         for entity in &mut self.state.entities {
@@ -3317,11 +3378,8 @@ impl Engine {
                 state.retry_tick = if activity.starts_with("waiting") { self.state.tick + self.cfg.tps as u64 } else { 0 };
             }
         }
-        let cargo = self.carry_by_entity.get(&id);
-        // Shipment amounts are already in entity inventory; retain the separate collection-cargo view.
-        let cargo_resource = cargo.map_or(String::new(), |cargo| cargo.resource_type.clone());
-        let cargo_amount = cargo.map_or(0.0, |cargo| cargo.amount);
-        self.set_collector_ui_state(id, activity, &cargo_resource, cargo_amount, capacity, 0.0);
+        let resource = if delivery.resource_type_ids.len() == 1 { delivery.resource_type_ids[0].as_str() } else { "" };
+        self.set_collector_ui_state(id, activity, resource, 0.0);
     }
 
     /// Follow a friendly recipient and complete a single delivery trip.
@@ -3357,16 +3415,13 @@ impl Engine {
                         continue;
                     }
                     deliver_resources(&mut actor, &actor_def, &mut target, &target_def,
-                        &delivery.resource_type_ids, self.carry_by_entity.get_mut(&id));
+                        &delivery.resource_type_ids);
                     for entity in &mut self.state.entities {
                         if entity.id == id { entity.resources = actor.resources.clone(); }
                         if entity.id == target.id { entity.resources = target.resources.clone(); }
                     }
-                    let cargo = self.carry_by_entity.get(&id).cloned();
-                    if let Some(collector) = actor_def.collector.as_ref() {
-                        self.set_collector_ui_state(id, COLLECTOR_ACTIVITY_IDLE,
-                            cargo.as_ref().map(|c| c.resource_type.as_str()).unwrap_or(""),
-                            cargo.as_ref().map(|c| c.amount).unwrap_or(0.0), collector.carry_capacity, 0.0);
+                    if actor_def.collector.is_some() {
+                        self.set_collector_ui_state(id, COLLECTOR_ACTIVITY_IDLE, delivery.resource_type_ids.first().map(String::as_str).unwrap_or(""), 0.0);
                     }
                     canceled = false;
                 }
@@ -3971,15 +4026,6 @@ impl Engine {
         let collector_ids: HashSet<u64> = collectors.iter().map(|c| c.id).collect();
         self.transport_node_by_entity.retain(|id, _| collector_ids.contains(id));
         self.transport_wait_since_tick_by_entity.retain(|id, _| collector_ids.contains(id));
-        let stale_carry_ids: Vec<u64> = self
-            .carry_by_entity
-            .keys()
-            .copied()
-            .filter(|id| !collector_ids.contains(id))
-            .collect();
-        for id in stale_carry_ids {
-            self.clear_fractional_for_entity(id);
-        }
         let stale_ui_ids: Vec<u64> = self
             .collector_ui_state_by_entity
             .keys()
@@ -4000,12 +4046,15 @@ impl Engine {
             else {
                 continue;
             };
-            let Some(collector_def) = def.collector else {
+            let Some(collector_def) = def.collector.as_ref() else {
                 continue;
             };
             let speed = def.speed.max(0.0);
-            let carry_capacity = collector_def.carry_capacity.max(0.0);
-            let carry_snapshot = self.carry_by_entity.get(&collector.id).cloned();
+            let previous_resource = self.collector_ui_state_by_entity.get(&collector.id)
+                .map(|view| view.resource_type.as_str()).unwrap_or("");
+            let assigned_resource = collection_assignments.get(&collector.id).map(|(resource, _)| resource.as_str()).unwrap_or("");
+            let load_snapshot = self.state.entities.iter().find(|entity| entity.id == collector.id)
+                .and_then(|entity| collection_load(entity, &def, &[previous_resource, assigned_resource]));
 
             // M8 (collect-intent model): autonomous collection only runs while
             // a maintained Collect intent is active for this entity.
@@ -4017,24 +4066,10 @@ impl Engine {
                     matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Deliver(state)) if state.donor_id != 0)) {
                     continue;
                 }
-                if let Some(carry) = carry_snapshot.as_ref() {
-                    self.set_collector_ui_state(
-                        collector.id,
-                        COLLECTOR_ACTIVITY_IDLE,
-                        &carry.resource_type,
-                        carry.amount,
-                        carry_capacity,
-                        0.0,
-                    );
+                if let Some(carry) = load_snapshot.as_ref() {
+                    self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_IDLE, &carry.resource_type, 0.0);
                 } else {
-                    self.set_collector_ui_state(
-                        collector.id,
-                        COLLECTOR_ACTIVITY_IDLE,
-                        "",
-                        0.0,
-                        carry_capacity,
-                        0.0,
-                    );
+                    self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_IDLE, "", 0.0);
                 }
                 continue;
             }
@@ -4046,15 +4081,17 @@ impl Engine {
             };
 
             // Finish delivery trips before gathering again, including partial unloads.
-            if let Some(ref carry) = carry_snapshot {
-                let carry_is_full =
-                    carry_capacity > 0.0 && carry.amount >= (carry_capacity - f32::EPSILON);
+            if let Some(ref carry) = load_snapshot {
+                let inventory_is_full = self.state.entities.iter().find(|entity| entity.id == collector.id)
+                    .is_some_and(|entity| resource_amount(entity, &carry.resource_type)
+                        >= def.max_capacity.get(&carry.resource_type).copied().unwrap_or(0.0) as f64 - f64::EPSILON);
                 let source_depleted = self.transport_node_by_entity.get(&collector.id)
                     .is_some_and(|id| !nodes.iter().any(|node| node.id == *id));
                 let no_source = !nodes.iter().any(|node| node.mode == CollectionMode::Transport && node.resource_type == carry.resource_type);
                 let delivery_in_progress = self.collector_ui_state_by_entity.get(&collector.id).is_some_and(|state|
                     matches!(state.activity.as_str(), COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF | COLLECTOR_ACTIVITY_DELIVERING | "waiting_for_dropoff"));
-                if carry.amount > 0.0 && (carry_is_full || source_depleted || no_source || delivery_in_progress) {
+                if carry.amount > 0.0 && (inventory_is_full || source_depleted || no_source || delivery_in_progress
+                    || (!nearest_compatible && carry.resource_type != *assigned_resource_type)) {
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     if let Some(refinery) = Self::pick_best_refinery(
                         &collector,
@@ -4069,27 +4106,16 @@ impl Engine {
                             Self::distance_sq(collector.x, collector.y, refinery.x, refinery.y)
                                 .sqrt();
                         if dist <= DEPOSIT_DISTANCE {
-                            let mut remaining_cargo = carry.amount;
-                            if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == refinery.id) {
-                                if let Some(def) = self.content.as_ref().and_then(|content| content.get(&entity.entity_type_id)) {
-                                    let cargo = self.carry_by_entity.get_mut(&collector.id).unwrap();
-                                    deposit_collection_cargo(entity, def, cargo, &mut self.resource_refilling);
-                                    remaining_cargo = cargo.amount;
+                            let mut actor = self.state.entities.iter().find(|entity| entity.id == collector.id).unwrap().clone();
+                            if let Some(recipient) = self.state.entities.iter_mut().find(|entity| entity.id == refinery.id) {
+                                if let Some(recipient_def) = self.content.as_ref().and_then(|content| content.get(&recipient.entity_type_id)) {
+                                    deposit_collection_inventory(&mut actor, &def, recipient, recipient_def, &carry.resource_type, &mut self.resource_refilling);
                                 }
                             }
-                            // Transport cargo is tracked in CarryState; depositing it must not
-                            // erase the collector's separate maintenance inventory.
-                            if remaining_cargo <= 0.0 {
-                                self.carry_by_entity.remove(&collector.id);
+                            if let Some(entity) = self.state.entities.iter_mut().find(|entity| entity.id == collector.id) {
+                                entity.resources = actor.resources;
                             }
-                            self.set_collector_ui_state(
-                                collector.id,
-                                COLLECTOR_ACTIVITY_DELIVERING,
-                                &carry.resource_type,
-                                remaining_cargo,
-                                carry_capacity,
-                                0.0,
-                            );
+                            self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_DELIVERING, &carry.resource_type, 0.0);
                             if let Some(entity) = self
                                 .state
                                 .entities
@@ -4116,25 +4142,11 @@ impl Engine {
                                 DEPOSIT_DISTANCE,
                             );
                         }
-                        self.set_collector_ui_state(
-                            collector.id,
-                            COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF,
-                            &carry.resource_type,
-                            carry.amount,
-                            carry_capacity,
-                            0.0,
-                        );
+                        self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF, &carry.resource_type, 0.0);
                         continue;
                     }
                     // No valid refinery: hold position.
-                    self.set_collector_ui_state(
-                        collector.id,
-                        "waiting_for_dropoff",
-                        &carry.resource_type,
-                        carry.amount,
-                        carry_capacity,
-                        0.0,
-                    );
+                    self.set_collector_ui_state(collector.id, "waiting_for_dropoff", &carry.resource_type, 0.0);
                     if let Some(entity) = self
                         .state
                         .entities
@@ -4150,7 +4162,7 @@ impl Engine {
             }
 
             let mut handled_transport = false;
-            let preferred_resource_type = carry_snapshot
+            let preferred_resource_type = load_snapshot
                 .as_ref()
                 .filter(|c| c.amount > 0.0)
                 .map(|c| c.resource_type.as_str());
@@ -4174,14 +4186,7 @@ impl Engine {
                         self.transport_wait_since_tick_by_entity
                             .entry(collector.id)
                             .or_insert(self.state.tick);
-                        self.set_collector_ui_state(
-                            collector.id,
-                            COLLECTOR_ACTIVITY_WAITING_FOR_TURN,
-                            &node.resource_type,
-                            carry_snapshot.as_ref().map(|c| c.amount).unwrap_or(0.0),
-                            carry_capacity,
-                            0.0,
-                        );
+                        self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_WAITING_FOR_TURN, &node.resource_type, 0.0);
                         if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
                             let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                             vel.x = 0.0;
@@ -4190,45 +4195,10 @@ impl Engine {
                         continue;
                     }
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
-                    let requested = (collector_def.transport_rate_per_second.max(0.0) * dt)
-                        .min((carry_capacity - carry_snapshot.as_ref().map(|carry| carry.amount).unwrap_or(0.0)).max(0.0));
-                    let gather = self.state.entities.iter_mut().find(|entity| entity.id == node.id)
-                        .map(|entity| take_from_deposit(entity, requested as f64) as f32).unwrap_or(0.0);
-                    if gather > 0.0 {
-                        let (resource_type, carry_amount) = {
-                            let carry =
-                                self.carry_by_entity
-                                    .entry(collector.id)
-                                    .or_insert(CarryState {
-                                        resource_type: node.resource_type.clone(),
-                                        amount: 0.0,
-                                    });
-                            if carry.resource_type != node.resource_type {
-                                carry.resource_type = node.resource_type.clone();
-                                carry.amount = 0.0;
-                            }
-                            carry.amount = (carry.amount + gather).min(carry_capacity);
-                            // Keep transport cargo separate from the entity's usable inventory.
-                            (carry.resource_type.clone(), carry.amount)
-                        };
-                        self.set_collector_ui_state(
-                            collector.id,
-                            COLLECTOR_ACTIVITY_GATHERING,
-                            &resource_type,
-                            carry_amount,
-                            carry_capacity,
-                            if dt > 0.0 { gather / dt } else { 0.0 },
-                        );
-                    } else {
-                        self.set_collector_ui_state(
-                            collector.id,
-                            COLLECTOR_ACTIVITY_GATHERING,
-                            &node.resource_type,
-                            carry_snapshot.as_ref().map(|c| c.amount).unwrap_or(0.0),
-                            carry_capacity,
-                            0.0,
-                        );
-                    }
+                    let gathered = gather_transport_inventory(&mut self.state.entities, collector.id, node.id,
+                        &def, &node.resource_type, collector_def.transport_rate_per_second.max(0.0) as f64 * dt as f64);
+                    self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_GATHERING, &node.resource_type,
+                        if dt > 0.0 { (gathered / dt as f64) as f32 } else { 0.0 });
                     if let Some(entity) = self
                         .state
                         .entities
@@ -4254,14 +4224,7 @@ impl Engine {
                         node.min_effective_distance,
                         node.max_effective_distance,
                     );
-                    self.set_collector_ui_state(
-                        collector.id,
-                        COLLECTOR_ACTIVITY_MOVING_TO_SOURCE,
-                        &node.resource_type,
-                        carry_snapshot.as_ref().map(|c| c.amount).unwrap_or(0.0),
-                        carry_capacity,
-                        0.0,
-                    );
+                    self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, &node.resource_type, 0.0);
                 }
                 handled_transport = true;
             } else {
@@ -4322,14 +4285,7 @@ impl Engine {
                                 self.state.tick.saturating_add(retry_ticks),
                             );
                         }
-                        self.set_collector_ui_state(
-                            collector.id,
-                            COLLECTOR_ACTIVITY_WAITING_FOR_TURN,
-                            &node.resource_type,
-                            0.0,
-                            carry_capacity,
-                            0.0,
-                        );
+                        self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_WAITING_FOR_TURN, &node.resource_type, 0.0);
                         if let Some(entity) = self
                             .state
                             .entities
@@ -4354,14 +4310,7 @@ impl Engine {
                     if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
                         set_resource_amount(entity, &node.resource_type, current + amount);
                     }
-                    self.set_collector_ui_state(
-                        collector.id,
-                        COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING,
-                        &node.resource_type,
-                        0.0,
-                        carry_capacity,
-                        collector_def.proximity_rate_per_second.max(0.0),
-                    );
+                    self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING, &node.resource_type, collector_def.proximity_rate_per_second.max(0.0));
                     if let Some(entity) = self
                         .state
                         .entities
@@ -4387,27 +4336,13 @@ impl Engine {
                         node.min_effective_distance,
                         node.max_effective_distance,
                     );
-                    self.set_collector_ui_state(
-                        collector.id,
-                        COLLECTOR_ACTIVITY_MOVING_TO_SOURCE,
-                        &node.resource_type,
-                        0.0,
-                        carry_capacity,
-                        0.0,
-                    );
+                    self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, &node.resource_type, 0.0);
                 }
             } else {
-                self.set_collector_ui_state(
-                    collector.id,
-                    COLLECTOR_ACTIVITY_IDLE,
-                    carry_snapshot
+                self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_IDLE, load_snapshot
                         .as_ref()
                         .map(|c| c.resource_type.as_str())
-                        .unwrap_or(""),
-                    carry_snapshot.as_ref().map(|c| c.amount).unwrap_or(0.0),
-                    carry_capacity,
-                    0.0,
-                );
+                        .unwrap_or(""), 0.0);
                 if let Some(entity) = self
                     .state
                     .entities
@@ -4430,8 +4365,8 @@ impl Engine {
                 entity_id: *entity_id,
                 activity: state.activity.clone(),
                 resource_type: state.resource_type.clone(),
-                carry_amount: state.carry_amount,
-                carry_capacity: state.carry_capacity,
+                carry_amount: 0.0,
+                carry_capacity: 0.0,
                 effective_rate_per_second: state.effective_rate_per_second,
                 assigned_resource_type: state.assigned_resource_type.clone(),
                 assigned_nearest_compatible: state.assigned_nearest_compatible,
@@ -5282,17 +5217,7 @@ impl Engine {
                 return Err(anyhow!("collector cannot collect requested resource type"));
             }
 
-            // Replacing one maintained Collect assignment with a different one
-            // discards in-flight cargo. Other orders merely interrupt the
-            // temporary assignment and intentionally leave cargo untouched.
-            let requested = (collect.resource_type_id.clone(), collect.nearest_compatible);
-            if self
-                .intents
-                .active_collect_assignment(entity_id)
-                .is_some_and(|active| active != requested)
-            {
-                self.carry_by_entity.remove(&entity_id);
-            }
+
         }
 
         // Production is entirely content-driven and always revalidated by the
@@ -5480,17 +5405,15 @@ impl Engine {
                         && (if delivery.donor_id == 0 {
                             delivery.resource_type_ids.iter().any(|r| resource_capacity(content, &target.entity_type_id, r) > resource_amount(target, r))
                         } else {
-                            actor_def.collector.as_ref().is_some_and(|collector| collector.carry_capacity > 0.0)
+                            actor_def.collector.as_ref().is_some_and(|collector| collector.transport_rate_per_second > 0.0)
                                 && self.state.entities.iter().find(|entity| entity.id == delivery.donor_id).is_some_and(|donor|
                                     donor.id != actor.id && donor.id != target.id && donor.health > 0.0
                                     && donor.owner_player_id == actor.owner_player_id && donor.pos.is_some()
                                     && delivery.resource_type_ids.iter().all(|resource| resource_capacity(content, &donor.entity_type_id, resource) > 0.0))
                         })
                         && delivery.resource_type_ids.iter().all(|resource| {
-                            let cargo = self.carry_by_entity.get(&entity_id)
-                                .filter(|c| c.resource_type == *resource).map(|c| c.amount).unwrap_or(0.0);
                             content.get_resource_type(resource).is_some()
-                                && (if delivery.donor_id == 0 { transferable_resource(actor, actor_def, resource) + cargo as f64 > 0.0 }
+                                && (if delivery.donor_id == 0 { transferable_resource(actor, actor_def, resource) > 0.0 }
                                     else { resource_capacity(content, &actor.entity_type_id, resource) > 0.0 && resource_capacity(content, &target.entity_type_id, resource) > 0.0 })
                         }))
                 }).unwrap_or(false);
@@ -5849,10 +5772,10 @@ mod delivery_tests {
         for _ in 0..3 {
             for worker in &mut workers {
                 assert_eq!(transferable_resource(worker, worker_def, "food"), 0.0);
-                load_transfer_resources(worker, &mut storage, &habitat, worker_def, storage_def, habitat_def, &resources, None);
+                load_transfer_resources(worker, &mut storage, &habitat, worker_def, storage_def, habitat_def, &resources);
                 assert_eq!(resource_amount(worker, "food"), 50.0);
-                assert_eq!(transport_carry_used(worker, worker_def, &resources, None), 45.0);
-                deliver_resources(worker, worker_def, &mut habitat, habitat_def, &resources, None);
+                assert_eq!(transferable_resource(worker, worker_def, "food"), 45.0);
+                deliver_resources(worker, worker_def, &mut habitat, habitat_def, &resources);
                 assert_eq!(resource_amount(worker, "food"), 5.0);
                 assert_eq!(transferable_resource(worker, worker_def, "food"), 0.0);
                 assert_eq!(sharing_request_room(worker, worker_def, "food", &mut HashSet::new()), 0.0);
@@ -5862,11 +5785,11 @@ mod delivery_tests {
         assert_eq!(resource_amount(&habitat, "food"), 467.0);
         // Consumption uses the same bucket and reduces the amount delivered.
         let worker = &mut workers[0];
-        load_transfer_resources(worker, &mut storage, &habitat, worker_def, storage_def, habitat_def, &resources, None);
+        load_transfer_resources(worker, &mut storage, &habitat, worker_def, storage_def, habitat_def, &resources);
         let (missing, _) = pay_entity_upkeep(worker, worker_def, 30.0, &mut HashMap::new());
         assert!(missing.is_empty());
         assert_eq!(resource_amount(worker, "food"), 49.0);
-        deliver_resources(worker, worker_def, &mut habitat, habitat_def, &resources, None);
+        deliver_resources(worker, worker_def, &mut habitat, habitat_def, &resources);
         assert_eq!(resource_amount(worker, "food"), 5.0);
         assert_eq!(resource_amount(&habitat, "food"), 511.0);
     }
@@ -5885,23 +5808,22 @@ mod delivery_tests {
         set_resource_amount(&mut donor, "food", 50.0);
         set_resource_amount(&mut donor, "minerals", 50.0);
         let resources = vec!["food".to_string(), "minerals".to_string()];
-        load_transfer_resources(&mut actor, &mut donor, &recipient, actor_def, donor_def, &recipient_def, &resources, None);
+        load_transfer_resources(&mut actor, &mut donor, &recipient, actor_def, donor_def, &recipient_def, &resources);
         assert_eq!(resource_amount(&donor, "food"), 5.0);
         assert_eq!(resource_amount(&actor, "food"), 50.0);
-        assert_eq!(resource_amount(&actor, "minerals"), 5.0);
-        assert_eq!(transport_carry_used(&actor, actor_def, &resources, None), 50.0);
+        assert_eq!(resource_amount(&actor, "minerals"), 50.0);
         recipient_def.max_capacity.insert("food".into(), 2.0);
-        deliver_resources(&mut actor, actor_def, &mut recipient, &recipient_def, &resources, None);
+        deliver_resources(&mut actor, actor_def, &mut recipient, &recipient_def, &resources);
         assert_eq!(resource_amount(&actor, "food"), 48.0);
         assert_eq!(resource_amount(&recipient, "food"), 2.0);
         assert_eq!(resource_amount(&actor, "minerals"), 0.0);
-        assert_eq!(resource_amount(&recipient, "minerals"), 5.0);
+        assert_eq!(resource_amount(&recipient, "minerals"), 50.0);
 
         // Only two free recipient units should be picked up, despite the carrier's retained five.
         set_resource_amount(&mut actor, "food", 5.0);
         set_resource_amount(&mut donor, "food", 50.0);
         set_resource_amount(&mut recipient, "food", 0.0);
-        load_transfer_resources(&mut actor, &mut donor, &recipient, actor_def, donor_def, &recipient_def, &["food".into()], None);
+        load_transfer_resources(&mut actor, &mut donor, &recipient, actor_def, donor_def, &recipient_def, &["food".into()]);
         assert_eq!(resource_amount(&actor, "food"), 7.0);
         assert_eq!(resource_amount(&donor, "food"), 48.0);
         assert_eq!(sharing_request_room(&actor, actor_def, "food", &mut HashSet::new()), 0.0);
@@ -5921,26 +5843,23 @@ mod delivery_tests {
         recipient_def.max_capacity = HashMap::from([("minerals".into(), 20.0), ("food".into(), 10.0)]);
         let mut actor = pb::Entity::default();
         let mut recipient = pb::Entity::default();
-        set_resource_amount(&mut actor, "minerals", 5.0);
+        set_resource_amount(&mut actor, "minerals", 12.0);
         set_resource_amount(&mut actor, "food", 8.0);
         set_resource_amount(&mut actor, "energy", 3.0);
         set_resource_amount(&mut recipient, "minerals", 18.0);
         set_resource_amount(&mut recipient, "food", 2.0);
-        let mut cargo = CarryState { resource_type: "minerals".into(), amount: 7.0 };
         deliver_resources(&mut actor, &actor_def, &mut recipient, &recipient_def,
-            &["minerals".into(), "food".into()], Some(&mut cargo));
+            &["minerals".into(), "food".into()]);
         assert_eq!(resource_amount(&recipient, "minerals"), 20.0);
-        assert_eq!(resource_amount(&actor, "minerals"), 5.0);
-        assert_eq!(cargo.amount, 5.0);
+        assert_eq!(resource_amount(&actor, "minerals"), 10.0);
         assert_eq!(resource_amount(&recipient, "food"), 10.0);
         assert_eq!(resource_amount(&actor, "food"), 0.0);
         assert_eq!(resource_amount(&actor, "energy"), 3.0);
         set_resource_amount(&mut recipient, "minerals", 0.0);
         deliver_resources(&mut actor, &actor_def, &mut recipient, &recipient_def,
-            &["minerals".into(), "energy".into()], Some(&mut cargo));
+            &["minerals".into(), "energy".into()]);
         assert_eq!(resource_amount(&recipient, "minerals"), 10.0);
         assert_eq!(resource_amount(&actor, "minerals"), 0.0);
-        assert_eq!(cargo.amount, 0.0);
         assert_eq!(resource_amount(&actor, "energy"), 3.0);
         assert_eq!(resource_amount(&recipient, "energy"), 0.0);
     }
@@ -5989,7 +5908,7 @@ mod sharing_upkeep_tests {
         legacy_def.resource_sharing.as_mut().unwrap().resources.clear();
         set_resource_amount(&mut habitat, "energy", 850.0);
         assert_eq!(sharing_request_room(&habitat, &legacy_def, "energy", &mut refilling), 2150.0);
-        assert_eq!(sharing_reserve(&legacy_def, "energy", 0.5), 0.5);
+        assert_eq!(sharing_reserve(&legacy_def, "energy", 0.5), 1.0);
     }
 
     #[test]
@@ -6048,5 +5967,218 @@ mod sharing_upkeep_tests {
             set_resource_amount(&mut habitat, "energy", reserve);
         }
         assert_eq!(paid_energy, 1.0);
+    }
+}
+
+#[cfg(test)]
+mod collection_inventory_tests {
+    use super::*;
+
+    #[test]
+    fn collection_upkeep_and_partial_delivery_use_one_inventory_and_preserve_stock() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let def = content.get("worker").unwrap();
+        let mut entities = vec![pb::Entity { id: 1, ..Default::default() }, pb::Entity {
+            id: 2, resource_deposit: Some(pb::ResourceDeposit { amount: 100.0, remaining: 100.0 }), ..Default::default()
+        }];
+        set_resource_amount(&mut entities[0], "food", 5.0);
+        set_resource_amount(&mut entities[0], "energy", 50.0);
+        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, def, "food", 100.0), 45.0);
+        assert_eq!(resource_amount(&entities[0], "food"), 50.0);
+        assert_eq!(entities[1].resource_deposit.unwrap().remaining, 55.0);
+        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, def, "food", 8.0), 0.0);
+        // Changing assignments or stopping collection does not move or erase inventory.
+        let load = collection_load(&entities[0], def, &["minerals"]).unwrap();
+        assert_eq!(load.resource_type, "food");
+        assert_eq!(load.amount, 45.0);
+        let (missing, _) = pay_entity_upkeep(&mut entities[0], def, 30.0, &mut HashMap::new());
+        assert!(missing.is_empty());
+        assert_eq!(resource_amount(&entities[0], "food"), 49.0);
+        let mut recipient = pb::Entity::default();
+        let mut recipient_def = content.get("habitat").unwrap().clone();
+        recipient_def.max_capacity.insert("food".into(), 20.0);
+        recipient_def.resource_sharing.as_mut().unwrap().resources.clear();
+        let mut refilling = HashSet::new();
+        deposit_collection_inventory(&mut entities[0], def, &mut recipient, &recipient_def, "food", &mut refilling);
+        assert_eq!(resource_amount(&entities[0], "food"), 29.0);
+        assert_eq!(resource_amount(&recipient, "food"), 20.0);
+        set_resource_amount(&mut recipient, "food", 0.0);
+        recipient_def.max_capacity.insert("food".into(), 100.0);
+        deposit_collection_inventory(&mut entities[0], def, &mut recipient, &recipient_def, "food", &mut refilling);
+        assert_eq!(resource_amount(&entities[0], "food"), 5.0);
+        assert_eq!(resource_amount(&recipient, "food"), 24.0);
+        assert!(collection_load(&entities[0], def, &["food"]).is_none());
+        // 55 left in source + 5 retained + 44 delivered + 1 consumed = initial 105.
+        assert_eq!(entities[1].resource_deposit.unwrap().remaining + resource_amount(&entities[0], "food") + 20.0 + resource_amount(&recipient, "food") + 1.0, 105.0);
+        set_resource_amount(&mut entities[0], "food", 98.0);
+        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, def, "food", 8.0), 0.0);
+        assert_eq!(resource_amount(&entities[0], "food"), 98.0, "legacy excess is retained");
+        assert_eq!(entities[1].resource_deposit.unwrap().remaining, 55.0);
+    }
+}
+
+#[cfg(test)]
+mod upkeep_first_sharing_tests {
+    use super::*;
+
+    fn content() -> ContentPack {
+        ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap()
+    }
+
+    fn entity(id: u64, kind: &str, x: f32, energy: f64) -> pb::Entity {
+        let mut entity = pb::Entity {
+            id, entity_type_id: kind.into(), owner_player_id: Uuid::nil().to_string(),
+            pos: Some(pb::Vec2 { x, y: 0.0 }), health: 100.0, ..Default::default()
+        };
+        set_resource_amount(&mut entity, "energy", energy);
+        entity
+    }
+
+    fn share(entities: &mut [pb::Entity], content: &ContentPack, refilling: &mut HashSet<(u64, String)>, operating: bool) {
+        share_local_resources(entities, content, &HashSet::new(), &HashSet::new(),
+            &HashMap::new(), &HashMap::new(), refilling, operating);
+    }
+
+    fn total(entities: &[pb::Entity]) -> f64 {
+        entities.iter().map(|entity| resource_amount(entity, "energy")).sum()
+    }
+
+    #[test]
+    fn operating_targets_include_sensors_and_respect_explicit_overrides_and_capacity() {
+        let content = content();
+        let mut pylon = content.get("defense_pylon").unwrap().clone();
+        assert_eq!(operating_target(&pylon, "energy"), 32.5);
+        assert_eq!(operating_target(content.get("collector_solar").unwrap(), "energy"), 1.0);
+        assert_eq!(operating_target(&pylon, "food"), 0.0);
+        pylon.max_capacity.insert("energy".into(), 10.0);
+        assert_eq!(operating_target(&pylon, "energy"), 10.0);
+        pylon.resource_reserves.insert("energy".into(), 5.0);
+        assert_eq!(operating_target(&pylon, "energy"), 5.0);
+        pylon.resource_reserves.insert("energy".into(), 0.0);
+        assert_eq!(operating_target(&pylon, "energy"), 0.0);
+    }
+
+    #[test]
+    fn distant_pylons_receive_upkeep_before_factory_bulk_and_do_not_starve() {
+        let content = content();
+        let mut entities = vec![entity(681, "habitat", 0.0, 900.0),
+            entity(724, "factory", 538.0, 2200.0),
+            entity(734, "defense_pylon", 2145.0, 0.0), entity(735, "defense_pylon", 2689.0, 0.0)];
+        set_resource_amount(&mut entities[0], "food", 3000.0);
+        set_resource_amount(&mut entities[0], "minerals", 1000.0);
+        let mut refilling = HashSet::new();
+        share(&mut entities, &content, &mut refilling, true);
+        assert_eq!(resource_amount(&entities[2], "energy"), 32.5);
+        assert_eq!(resource_amount(&entities[3], "energy"), 32.5);
+        assert_eq!(resource_amount(&entities[1], "energy"), 2200.0);
+        share(&mut entities, &content, &mut refilling, false);
+        assert_eq!(resource_amount(&entities[0], "energy"), 700.0);
+        assert_eq!(resource_amount(&entities[1], "energy"), 2335.0);
+        assert_eq!(total(&entities), 3100.0);
+        let settled = entities.clone();
+        for _ in 0..10 { share(&mut entities, &content, &mut refilling, false); }
+        assert_eq!(entities, settled, "bulk stock must not circulate between habitat and factory");
+        let mut fractional = HashMap::new();
+        for _ in 0..3600 {
+            share(&mut entities, &content, &mut refilling, true);
+            for entity in &mut entities {
+                let (missing, _) = pay_entity_upkeep(entity, content.get(&entity.entity_type_id).unwrap(), 1.0 / 60.0, &mut fractional);
+                assert!(missing.is_empty());
+            }
+            share(&mut entities, &content, &mut refilling, false);
+        }
+        assert_eq!(entities[2].health, 100.0);
+        assert_eq!(entities[3].health, 100.0);
+    }
+
+    #[test]
+    fn scarce_supply_equalizes_operating_coverage_and_preserves_donor_reserve() {
+        let mut content = content();
+        // Leave only 32.5 units available; the two empty pylons split them evenly.
+        content.entity_types.get_mut("habitat").unwrap().resource_sharing.as_mut().unwrap()
+            .resources.get_mut("energy").unwrap().reserve = 100.0;
+        let mut entities = vec![entity(1, "habitat", 0.0, 132.5),
+            entity(2, "defense_pylon", 10.0, 0.0), entity(3, "defense_pylon", 100.0, 0.0),
+            entity(4, "defense_pylon", 200.0, 30.0)];
+        share(&mut entities, &content, &mut HashSet::new(), true);
+        assert_eq!(resource_amount(&entities[0], "energy"), 100.0);
+        assert_eq!(resource_amount(&entities[1], "energy"), 16.25);
+        assert_eq!(resource_amount(&entities[2], "energy"), 16.25);
+        assert_eq!(resource_amount(&entities[3], "energy"), 30.0);
+        assert_eq!(total(&entities), 162.5);
+    }
+
+    #[test]
+    fn multiple_donors_fill_different_rate_buffers_proportionally_without_overfilling() {
+        let mut content = content();
+        content.entity_types.get_mut("habitat").unwrap().resource_sharing.as_mut().unwrap().resources
+            .get_mut("energy").unwrap().reserve = 100.0;
+        let mut entities = vec![entity(1, "habitat", 0.0, 123.5), entity(2, "habitat", 0.0, 123.5),
+            entity(3, "defense_pylon", 10.0, 0.0), entity(4, "defense_pylon_v2", 20.0, 0.0)];
+        share(&mut entities, &content, &mut HashSet::new(), true);
+        assert!((resource_amount(&entities[2], "energy") - 6.5).abs() < 1e-9);
+        assert!((resource_amount(&entities[3], "energy") - 40.5).abs() < 1e-9);
+        assert_eq!(total(&entities), 247.0);
+    }
+
+    #[test]
+    fn bulk_sharing_protects_active_targets_and_rejects_equal_priority_transfers() {
+        let mut content = content();
+        for kind in ["habitat", "factory"] {
+            let policy = content.entity_types.get_mut(kind).unwrap().resource_sharing.as_mut().unwrap().resources.get_mut("energy").unwrap();
+            policy.priority = 0;
+            policy.overflow_priority = Some(0);
+            policy.refill_below = 200.0;
+            policy.fill_to = 400.0;
+            policy.reserve = 0.0;
+        }
+        let mut entities = vec![entity(1, "habitat", 0.0, 600.0), entity(2, "factory", 10.0, 100.0)];
+        let mut refilling = HashSet::new();
+        share(&mut entities, &content, &mut refilling, false);
+        assert_eq!(resource_amount(&entities[0], "energy"), 600.0, "equal priorities cannot trade bulk stock");
+        content.entity_types.get_mut("factory").unwrap().resource_sharing.as_mut().unwrap().resources.get_mut("energy").unwrap().priority = 10;
+        share(&mut entities, &content, &mut refilling, false);
+        assert_eq!(resource_amount(&entities[0], "energy"), 300.0);
+        assert_eq!(resource_amount(&entities[1], "energy"), 400.0);
+        // Factory's refilling latch is active at 300: retain fill_to even for a higher-priority recipient.
+        set_resource_amount(&mut entities[1], "energy", 300.0);
+        set_resource_amount(&mut entities[0], "energy", 100.0);
+        refilling.insert((2, "energy".into()));
+        content.entity_types.get_mut("habitat").unwrap().resource_sharing.as_mut().unwrap().resources.get_mut("energy").unwrap().priority = 20;
+        share(&mut entities, &content, &mut refilling, false);
+        assert_eq!(resource_amount(&entities[1], "energy"), 300.0);
+        assert_eq!(resource_amount(&entities[0], "energy"), 100.0);
+    }
+
+    #[test]
+    fn food_buffers_and_mineral_upkeep_are_supplied_below_bulk_targets() {
+        let content = content();
+        let mut entities = vec![entity(1, "habitat", 0.0, 0.0),
+            entity(2, "worker", 10.0, 0.0), entity(3, "worker", 20.0, 0.0),
+            entity(4, "mineral_storage_container", 30.0, 0.0)];
+        set_resource_amount(&mut entities[0], "food", 210.0);
+        set_resource_amount(&mut entities[0], "minerals", 101.0);
+        share(&mut entities, &content, &mut HashSet::new(), true);
+        assert_eq!(resource_amount(&entities[1], "food"), 5.0);
+        assert_eq!(resource_amount(&entities[2], "food"), 5.0);
+        assert_eq!(resource_amount(&entities[3], "minerals"), 1.0);
+        assert_eq!(resource_amount(&entities[0], "food"), 200.0);
+        assert_eq!(resource_amount(&entities[0], "minerals"), 100.0);
+    }
+
+    #[test]
+    fn eligibility_preserves_range_ownership_health_and_upgrade_guards() {
+        let content = content();
+        let mut entities = vec![entity(1, "habitat", 0.0, 900.0),
+            entity(2, "defense_pylon", 4001.0, 0.0), entity(3, "defense_pylon", 10.0, 0.0),
+            entity(4, "defense_pylon", 10.0, 0.0), entity(5, "defense_pylon", 10.0, 0.0)];
+        entities[2].owner_player_id = Uuid::now_v7().to_string();
+        entities[3].health = 0.0;
+        share_local_resources(&mut entities, &content, &HashSet::new(), &HashSet::from([5]),
+            &HashMap::new(), &HashMap::new(), &mut HashSet::new(), true);
+        assert_eq!(resource_amount(&entities[0], "energy"), 900.0);
+        assert!(entities[1..].iter().all(|entity| resource_amount(entity, "energy") == 0.0));
     }
 }

@@ -14,7 +14,7 @@ it.each([
     pos: { x: id * 100, y: 0 },
     collector_state: {
       activity, resource_type: resource,
-      carry_amount: 0, carry_capacity: 0, effective_rate_per_second: 10,
+      effective_rate_per_second: 10,
     },
   }));
   const effects = collectors.flatMap((entity) => resolveParticleFlowEffects(entity, world));

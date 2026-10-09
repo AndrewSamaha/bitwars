@@ -91,14 +91,18 @@ pub struct CollectorState {
     pub activity: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub resource_type: ::prost::alloc::string::String,
+    /// Legacy snapshot migration only. New writers leave both fields zero;
+    /// current amounts and capacities come from entity inventory and content.
+    #[deprecated]
     #[prost(float, tag = "4")]
     pub carry_amount: f32,
+    #[deprecated]
     #[prost(float, tag = "5")]
     pub carry_capacity: f32,
     #[prost(float, tag = "6")]
     pub effective_rate_per_second: f32,
     /// The maintained Collect order, distinct from resource_type (the current
-    /// cargo/gathering resource shown above).
+    /// inventory/gathering resource shown above).
     #[prost(string, tag = "7")]
     pub assigned_resource_type: ::prost::alloc::string::String,
     #[prost(bool, tag = "8")]

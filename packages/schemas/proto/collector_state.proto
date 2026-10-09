@@ -7,11 +7,13 @@ message CollectorState {
   uint64 entity_id = 1;
   string activity = 2;
   string resource_type = 3;
-  float carry_amount = 4;
-  float carry_capacity = 5;
+  // Legacy snapshot migration only. New writers leave both fields zero;
+  // current amounts and capacities come from entity inventory and content.
+  float carry_amount = 4 [deprecated = true];
+  float carry_capacity = 5 [deprecated = true];
   float effective_rate_per_second = 6;
   // The maintained Collect order, distinct from resource_type (the current
-  // cargo/gathering resource shown above).
+  // inventory/gathering resource shown above).
   string assigned_resource_type = 7;
   bool assigned_nearest_compatible = 8;
   optional uint64 receiving_entity_id = 9;

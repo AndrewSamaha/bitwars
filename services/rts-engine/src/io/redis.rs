@@ -78,10 +78,6 @@ pub struct CollectorUiState {
     #[serde(default)]
     pub resource_type: String,
     #[serde(default)]
-    pub carry_amount: f32,
-    #[serde(default)]
-    pub carry_capacity: f32,
-    #[serde(default)]
     pub effective_rate_per_second: f32,
     #[serde(default)]
     pub assigned_resource_type: String,
@@ -698,11 +694,7 @@ impl RedisClient {
             .await
             .unwrap_or_else(|_| "0-0".to_string());
 
-        let state = GameState {
-            tick: snapshot.tick as u64,
-            entities: snapshot.entities,
-            technologies: Default::default(),
-        };
+        let (state, collector_states) = restore_snapshot(snapshot)?;
 
         info!(
             game_id = %self.game_id,
@@ -712,7 +704,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary, snapshot.collector_states)))
+        Ok(Some((state, boundary, collector_states)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -1038,5 +1030,82 @@ impl RedisClient {
             },
             None => Ok(None),
         }
+    }
+}
+
+
+/// Legacy cargo is folded into inventory once; new snapshots write zero cargo.
+fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<CollectorState>)> {
+    let mut entities: std::collections::HashMap<_, _> = snapshot.entities.iter_mut()
+        .map(|entity| (entity.id, entity)).collect();
+    for collector in &mut snapshot.collector_states {
+        anyhow::ensure!(collector.carry_amount.is_finite() && collector.carry_amount >= 0.0,
+            "invalid legacy cargo on entity {}", collector.entity_id);
+        if collector.carry_amount > 0.0 {
+            anyhow::ensure!(!collector.resource_type.is_empty(), "legacy cargo has no resource type");
+            if let Some(entity) = entities.get_mut(&collector.entity_id) {
+                let amount = crate::engine::state::resource_amount(entity, &collector.resource_type)
+                    + collector.carry_amount as f64;
+                anyhow::ensure!(amount.is_finite(), "legacy cargo overflows inventory");
+                crate::engine::state::set_resource_amount(entity, &collector.resource_type, amount);
+            }
+        }
+        collector.carry_amount = 0.0;
+        collector.carry_capacity = 0.0;
+    }
+    Ok((GameState {
+        tick: snapshot.tick as u64,
+        entities: snapshot.entities,
+        technologies: snapshot.player_technologies.into_iter()
+            .map(|player| (player.player_id, player.technology_ids.into_iter().collect())).collect(),
+    }, snapshot.collector_states))
+}
+
+#[cfg(test)]
+#[allow(deprecated)]
+mod inventory_restore_tests {
+    use super::*;
+    use crate::engine::state::{resource_amount, set_resource_amount};
+
+    #[test]
+    fn legacy_cargo_is_merged_once_without_clamping_or_losing_technologies() {
+        let mut entity = pb::Entity { id: 718, ..Default::default() };
+        set_resource_amount(&mut entity, "food", 48.0);
+        let snapshot = Snapshot {
+            tick: 42,
+            entities: vec![entity],
+            collector_states: vec![CollectorState {
+                entity_id: 718, resource_type: "food".into(), carry_amount: 50.0,
+                carry_capacity: 50.0, activity: "moving_to_dropoff".into(), ..Default::default()
+            }],
+            player_technologies: vec![PlayerTechnologyState {
+                player_id: "andrew".into(), technology_ids: vec!["neutrino_sensors".into()],
+            }],
+            ..Default::default()
+        };
+        let decoded = Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap();
+        let (state, collectors) = restore_snapshot(decoded).unwrap();
+        assert_eq!(state.tick, 42);
+        assert_eq!(resource_amount(&state.entities[0], "food"), 98.0);
+        assert!(state.technologies["andrew"].contains("neutrino_sensors"));
+        assert_eq!(collectors[0].activity, "moving_to_dropoff");
+        assert_eq!(collectors[0].carry_amount, 0.0);
+        assert_eq!(collectors[0].carry_capacity, 0.0);
+        let next_snapshot = Snapshot { entities: state.entities, collector_states: collectors, ..Default::default() };
+        let (restored, _) = restore_snapshot(Snapshot::decode(next_snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(resource_amount(&restored.entities[0], "food"), 98.0);
+    }
+
+    #[test]
+    fn invalid_legacy_cargo_rejects_restore() {
+        for amount in [-1.0, f32::NAN, f32::INFINITY] {
+            let snapshot = Snapshot { collector_states: vec![CollectorState {
+                entity_id: 1, resource_type: "food".into(), carry_amount: amount, ..Default::default()
+            }], ..Default::default() };
+            assert!(restore_snapshot(snapshot).is_err());
+        }
+        assert!(restore_snapshot(Snapshot { collector_states: vec![CollectorState {
+            carry_amount: 1.0, ..Default::default()
+        }], ..Default::default() }).is_err());
     }
 }

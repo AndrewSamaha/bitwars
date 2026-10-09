@@ -110,8 +110,6 @@ export default function EntityDetailPanel() {
     {
       activity: string;
       resource_type: string;
-      carry_amount: number;
-      carry_capacity: number;
       effective_rate_per_second: number;
       assigned_resource_type?: string;
       assigned_nearest_compatible?: boolean;
@@ -133,8 +131,6 @@ export default function EntityDetailPanel() {
           | {
               activity?: string;
               resource_type?: string;
-              carry_amount?: number;
-              carry_capacity?: number;
               effective_rate_per_second?: number;
               assigned_resource_type?: string;
               assigned_nearest_compatible?: boolean;
@@ -160,8 +156,6 @@ export default function EntityDetailPanel() {
             idToCollectorState.set(id, {
               activity: String(collectorState.activity ?? "idle"),
               resource_type: String(collectorState.resource_type ?? ""),
-              carry_amount: Number(collectorState.carry_amount ?? 0),
-              carry_capacity: Number(collectorState.carry_capacity ?? 0),
               effective_rate_per_second: Number(collectorState.effective_rate_per_second ?? 0),
               assigned_resource_type: String(collectorState.assigned_resource_type ?? ""),
               assigned_nearest_compatible: Boolean(collectorState.assigned_nearest_compatible),
@@ -220,7 +214,7 @@ export default function EntityDetailPanel() {
   const entities = Array.from(game.world.with("id"));
   const carrierEntity = entities.find((e) => String(e.id) === firstId);
   const carrierDef = contentManager.getEntityType(idToType.get(firstId) ?? "");
-  const canTransport = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0 && (carrierDef?.collector?.carry_capacity ?? 0) > 0;
+  const canTransport = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0 && (carrierDef?.collector != null && (carrierDef.collector.transport_rate_per_second ?? 8) > 0);
   const transportSelection = deliverySelection?.kind === "Transport" ? deliverySelection : null;
   const deliveryEntity = transportSelection
     ? entities.find((e) => String(e.id) === transportSelection.donorId) : carrierEntity;
@@ -235,16 +229,11 @@ export default function EntityDetailPanel() {
       if (!deliveryAmounts.has(resource)) deliveryAmounts.set(resource, 0);
     }
   }
-  const cargo = deliveryEntity?.collector_state;
-  if (!transportSelection && cargo?.resource_type && cargo.carry_amount > 0) {
-    deliveryAmounts.set(cargo.resource_type, (deliveryAmounts.get(cargo.resource_type) ?? 0) + cargo.carry_amount);
-  }
   const deliveryOptions = [...deliveryAmounts.keys()].sort((a, b) =>
     (contentManager.getResourceType(a)?.order ?? 0) - (contentManager.getResourceType(b)?.order ?? 0)
     || a.localeCompare(b));
   const canDeliver = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0
-    && ((carrierEntity?.resources ?? []).some(resource => transferableResourceAmount(carrierEntity, carrierDef, resource.resource_type) > 0)
-      || (carrierEntity?.collector_state?.carry_amount ?? 0) > 0);
+    && (carrierEntity?.resources ?? []).some(resource => transferableResourceAmount(carrierEntity, carrierDef, resource.resource_type) > 0);
   const toggleDeliveryResource = (resource: string) => {
     const current = deliverySelection?.resourceTypeIds ?? [];
     actions.setSelectedAction({ ...deliverySelection, kind: deliverySelection?.kind ?? "Deliver", resourceTypeIds: current.includes(resource)
@@ -577,24 +566,18 @@ export default function EntityDetailPanel() {
                     {activeIntent?.kind === "transport" && activeIntent.transfer && (
                       <span className="font-mono text-muted-foreground">shipment: {activeIntent.transfer.resourceTypeIds.map((resource) => {
                         const inventory = transferableResourceAmount(entities.find((entity) => String(entity.id) === id), entityDef, resource);
-                        const collectionCargo = collectorState?.resource_type === resource ? collectorState.carry_amount : 0;
-                        return `${resource} ${(inventory + collectionCargo).toFixed(1)}`;
+                        return `${resource} ${inventory.toFixed(1)}`;
                       }).join(", ")}</span>
                     )}
                     {activeIntent?.kind === "transport" && collectorState && (
-                      <span className="font-mono text-muted-foreground">{collectorState.activity === "waiting_for_cargo_space" ? "Carry hold full; deliver existing cargo first" : collectorState.activity.replaceAll("_", " ")}</span>
-                    )}
-                    {collectorState && collectorState.carry_capacity > 0 && (
-                      <span className="font-mono text-muted-foreground">
-                        {activeIntent?.kind === "transport" ? "collection cargo" : "carry"}{collectorState.carry_amount > 0 && collectorState.resource_type ? ` (${collectorState.resource_type})` : ""}: {collectorState.carry_amount.toFixed(1)} / {collectorState.carry_capacity.toFixed(1)}
-                      </span>
+                      <span className="font-mono text-muted-foreground">{collectorState.activity.replaceAll("_", " ")}</span>
                     )}
                     {collectorState && (collectorState.assigned_nearest_compatible || collectorState.assigned_resource_type) && (
                       <span className="font-mono text-muted-foreground">
                         assigned: {collectorState.assigned_nearest_compatible ? "nearest" : collectorState.assigned_resource_type}
                       </span>
                     )}
-                    {collectorState && collectorState.carry_capacity <= 0 && (
+                    {collectorState && (
                       <span className="font-mono text-muted-foreground">
                         rate: {collectorState.effective_rate_per_second.toFixed(1)}/s
                       </span>

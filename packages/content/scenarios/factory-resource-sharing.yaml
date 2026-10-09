@@ -257,11 +257,9 @@ entities:
     y: -23262.486
   health: 200.0
   resources:
+    minerals: 50.0
     energy: 50.0
     food: 50.0
-  cargo:
-    resource: minerals
-    amount: 50.0
 - id: 682
   entity_type: raider
   owner: raiders
@@ -317,10 +315,7 @@ entities:
   health: 200.0
   resources:
     energy: 49.0
-    food: 48.0
-  cargo:
-    resource: food
-    amount: 50.0
+    food: 98.0
 - id: 689
   entity_type: collector_solar
   owner: player1

@@ -100,10 +100,7 @@ entities:
   health: 200.0
   resources:
     energy: 50.0
-    food: 50.0
-  cargo:
-    resource: food
-    amount: 50.0
+    food: 100.0
 - id: 487
   entity_type: worker
   owner: player1
@@ -132,10 +129,7 @@ entities:
   health: 200.0
   resources:
     energy: 50.0
-    food: 50.0
-  cargo:
-    resource: food
-    amount: 50.0
+    food: 100.0
 - id: 491
   entity_type: worker
   owner: player1
@@ -144,11 +138,9 @@ entities:
     y: 71928.66
   health: 200.0
   resources:
+    minerals: 50.0
     energy: 50.0
     food: 50.0
-  cargo:
-    resource: minerals
-    amount: 50.0
 - id: 492
   entity_type: collector_solar
   owner: player1
@@ -167,10 +159,7 @@ entities:
   health: 200.0
   resources:
     energy: 50.0
-    food: 50.0
-  cargo:
-    resource: food
-    amount: 50.0
+    food: 100.0
 - id: 494
   entity_type: collector_solar
   owner: player1

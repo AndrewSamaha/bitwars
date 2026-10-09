@@ -85,7 +85,7 @@ impl Scenario {
         &self,
         content: &ContentPack,
         bindings: &BTreeMap<String, String>,
-    ) -> Result<(GameState, HashMap<u64, CarryState>)> {
+    ) -> Result<GameState> {
         if self.version != 1 || self.id.is_empty() || self.name.is_empty() {
             bail!("scenario requires version 1, id and name");
         }
@@ -107,7 +107,6 @@ impl Scenario {
         }
         let mut ids = HashSet::new();
         let mut entities = Vec::new();
-        let mut carries = HashMap::new();
         for source in &self.entities {
             if source.id == 0 || source.id > 9_007_199_254_740_991 || !ids.insert(source.id) {
                 bail!("invalid or duplicate entity id: {}", source.id);
@@ -144,11 +143,12 @@ impl Scenario {
                     .map(|amount| pb::ResourceDeposit { amount, remaining: amount }),
                 resources: None,
             };
+            // Saved legacy stock may exceed capacity; only inflows enforce capacity.
             for (resource, amount) in &source.resources {
                 if !content.resource_types.contains_key(resource)
                     || !amount.is_finite()
                     || *amount < 0.0
-                    || *amount > resource_capacity(content, &source.entity_type, resource)
+                    || (*amount > 0.0 && resource_capacity(content, &source.entity_type, resource) <= 0.0)
                 {
                     bail!(
                         "invalid resource {resource} on entity {} (check capacity)",
@@ -158,26 +158,17 @@ impl Scenario {
                 set_resource_amount(&mut entity, resource, *amount);
             }
             if let Some(cargo) = &source.cargo {
-                let collector = def
-                    .collector
-                    .as_ref()
-                    .ok_or_else(|| anyhow!("cargo requires a collector"))?;
-                if !content.resource_types.contains_key(&cargo.resource)
+                if def.collector.is_none()
+                    || !content.resource_types.contains_key(&cargo.resource)
                     || !cargo.amount.is_finite()
                     || cargo.amount < 0.0
-                    || cargo.amount > collector.carry_capacity
+                    || resource_capacity(content, &source.entity_type, &cargo.resource) <= 0.0
                 {
-                    bail!("invalid cargo on entity {}", source.id);
+                    bail!("invalid legacy cargo on entity {}", source.id);
                 }
-                if cargo.amount > 0.0 {
-                    carries.insert(
-                        source.id,
-                        CarryState {
-                            resource_type: cargo.resource.clone(),
-                            amount: cargo.amount,
-                        },
-                    );
-                }
+                // Preserve legacy shipments, even if the combined stock exceeds capacity.
+                let amount = resource_amount(&entity, &cargo.resource) + cargo.amount as f64;
+                set_resource_amount(&mut entity, &cargo.resource, amount);
             }
             entities.push(entity);
         }
@@ -194,14 +185,7 @@ impl Scenario {
             }
             technologies.insert(owner.clone(), techs.iter().cloned().collect());
         }
-        Ok((
-            GameState {
-                tick: 0,
-                entities,
-                technologies,
-            },
-            carries,
-        ))
+        Ok(GameState { tick: 0, entities, technologies })
     }
 }
 
@@ -258,7 +242,7 @@ impl Engine {
             .content
             .as_ref()
             .ok_or_else(|| anyhow!("content unavailable"))?;
-        let (state, carries) = scenario.materialize(content, &bindings)?;
+        let state = scenario.materialize(content, &bindings)?;
         let intents = IntentManager::new(
             content.entity_types.clone(),
             self.cfg.default_stop_radius,
@@ -276,7 +260,6 @@ impl Engine {
         self.player_last_seq.clear();
         self.lifecycle_emitted.clear();
         self.joined_players = bindings.values().cloned().collect();
-        self.carry_by_entity = carries;
         self.transport_node_by_entity.clear();
         self.transport_wait_since_tick_by_entity.clear();
         self.maintenance_spend_fractional.clear();
@@ -285,37 +268,6 @@ impl Engine {
         self.resource_gain_total.clear();
         self.collector_ui_state_by_entity.clear();
         self.prev_collector_ui_state_by_entity.clear();
-        // Preserve captured cargo in the very first paused snapshot.
-        let cargo_views: Vec<_> = self
-            .carry_by_entity
-            .iter()
-            .map(|(id, cargo)| {
-                let capacity = self
-                    .state
-                    .entities
-                    .iter()
-                    .find(|entity| entity.id == *id)
-                    .and_then(|entity| {
-                        self.content
-                            .as_ref()?
-                            .get(&entity.entity_type_id)?
-                            .collector
-                            .as_ref()
-                    })
-                    .map_or(0.0, |collector| collector.carry_capacity);
-                (*id, cargo.clone(), capacity)
-            })
-            .collect();
-        for (id, cargo, capacity) in cargo_views {
-            self.set_collector_ui_state(
-                id,
-                COLLECTOR_ACTIVITY_IDLE,
-                &cargo.resource_type,
-                cargo.amount,
-                capacity,
-                0.0,
-            );
-        }
         self.collection_retry_tick_by_entity.clear();
         self.combat_effect_ui_state_by_entity.clear();
         self.prev_combat_effect_ui_state_by_entity.clear();
@@ -431,10 +383,7 @@ impl Engine {
                             .collect()
                     })
                     .unwrap_or_default(),
-                cargo: self.carry_by_entity.get(&entity.id).map(|carry| Cargo {
-                    resource: carry.resource_type.clone(),
-                    amount: carry.amount,
-                }),
+                cargo: None,
             })
             .collect();
         entities.sort_by_key(|entity| entity.id);
@@ -573,5 +522,52 @@ impl Engine {
             self.publish_runtime().await?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod inventory_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_scenario_cargo_merges_and_over_capacity_inventory_can_reload() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut scenario: Scenario = serde_yaml::from_str(r#"
+version: 1
+id: inventory-migration
+name: Inventory migration
+players: [player1]
+entities:
+  - id: 1
+    entity_type: worker
+    owner: player1
+    position: {x: 0, y: 0}
+    resources: {food: 48}
+    cargo: {resource: food, amount: 50}
+"#).unwrap();
+        let bindings = BTreeMap::from([("player1".into(), Uuid::now_v7().to_string())]);
+        let state = scenario.materialize(&content, &bindings).unwrap();
+        assert_eq!(resource_amount(&state.entities[0], "food"), 98.0);
+        scenario.entities[0].cargo = None;
+        scenario.entities[0].resources.insert("food".into(), 98.0);
+        let state = scenario.materialize(&content, &bindings).unwrap();
+        assert_eq!(resource_amount(&state.entities[0], "food"), 98.0);
+        scenario.entities[0].resources.insert("food".into(), f64::NAN);
+        assert!(scenario.materialize(&content, &bindings).is_err());
+    }
+
+    #[test]
+    fn bundled_scenarios_validate_with_shared_inventory() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/content/scenarios");
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("yaml") { continue; }
+            let scenario: Scenario = serde_yaml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let bindings = scenario.players.iter().map(|slot| (slot.clone(), Uuid::now_v7().to_string())).collect();
+            scenario.materialize(&content, &bindings).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        }
     }
 }
