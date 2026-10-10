@@ -598,6 +598,25 @@ mod transport_capacity_tests {
     use super::*;
 
     #[test]
+    fn military_factory_accepts_food_and_mineral_deliveries() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let def = content.get("military_factory").unwrap();
+        let refinery = def.refinery.as_ref().expect("military factory must be a delivery target");
+        let collector = CollectorSnapshot { id: 1, entity_type_id: "worker".into(), owner_player_id: "me".into(), x: 0.0, y: 0.0 };
+        let refineries = [RefinerySnapshot {
+            id: 2, entity_type_id: "military_factory".into(), owner_player_id: "me".into(), x: 10.0, y: 0.0,
+            accepts: refinery.accepts.clone(), max_capacity: def.max_capacity.clone(),
+        }];
+        let entities = [pb::Entity { id: 2, entity_type_id: "military_factory".into(), ..Default::default() }];
+        let allowed = content.get("worker").unwrap().collector.as_ref().unwrap().deposit_entity_types.as_slice();
+        for resource in ["food", "minerals"] {
+            assert_eq!(Engine::pick_best_refinery(&collector, &refineries, &entities, resource, allowed,
+                &content, &mut HashSet::new()).map(|target| target.id), Some(2));
+        }
+    }
+
+    #[test]
     fn overflow_deliveries_yield_to_other_receivers_and_use_remaining_capacity() {
         let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();

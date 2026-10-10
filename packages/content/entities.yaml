@@ -816,6 +816,10 @@ entity_types:
       energy: 4000
       food: 500
       minerals: 2500
+    refinery:
+      accepts:
+        - food
+        - minerals
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
