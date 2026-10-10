@@ -11,6 +11,26 @@ afterEach(() => {
 });
 
 describe("log", () => {
+  it("links the entity label in a starvation message with and without timestamps", async () => {
+    const context = {
+      realPlayerId: "player-a", effectivePlayerId: "player-a", actingAsId: null,
+      sessionStatus: "active" as const,
+      messageLog: [
+        { title: "Collection blocked", message: "Waiting for space.", timestamp: 1 },
+        { title: "Resource starvation", message: "worker 680 is taking damage because it lacks resources for maintenance.", timestamp: 2,
+          focusEntityId: "680", focusLabel: "worker 680" },
+      ],
+      logout: async () => "", su: () => {}, exitSu: () => {},
+    };
+    for (const command of ["log", "log -ts"]) {
+      const result = await executeTerminalCommand(command, context);
+      expect(result.links).toHaveLength(1);
+      const link = result.links![0];
+      expect(result.output.slice(link.start, link.end)).toBe("worker 680");
+      expect(link.entityId).toBe("680");
+    }
+  });
+
   it("retains the latest 100 messages and prints them with optional original timestamps", async () => {
     let messageLog: MessageLogEntry[] = [];
     for (let index = 0; index < 105; index += 1) {

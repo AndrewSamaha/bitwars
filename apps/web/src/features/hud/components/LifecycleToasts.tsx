@@ -56,8 +56,8 @@ export default function LifecycleToasts() {
 
   useEffect(() => {
     const shownStarvationWarnings = new Set<string>();
-    const showToast = (title: string, message: string, focusEntityId: string) => {
-      pushMessageLog({ title, message, timestamp: Date.now() });
+    const showToast = (title: string, message: string, focusEntityId: string, focusLabel?: string) => {
+      pushMessageLog({ title, message, timestamp: Date.now(), focusEntityId, focusLabel });
       const toast = { title, message, focusEntityId, id: nextId.current++, entering: true };
       setToasts((current) => [...current.slice(-2), toast]);
       window.requestAnimationFrame(() => {
@@ -89,6 +89,7 @@ export default function LifecycleToasts() {
         "Resource starvation",
         `${entity.entity_type_id ?? "Entity"} ${entityId} is taking damage because it lacks resources for maintenance.`,
         entityId,
+        `${entity.entity_type_id ?? "Entity"} ${entityId}`,
       );
     };
     window.addEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);

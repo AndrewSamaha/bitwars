@@ -10,6 +10,7 @@ import { useHUD } from "@/features/hud/components/HUDContext";
 import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { executeTerminalCommand } from "@/features/hud/terminal/commands";
+import { dispatchCenterCameraOnEntity } from "@/features/gamestate/events";
 import { useSession } from "@/features/users/components/identity/SessionContext";
 
 const SHOW_STREAM_COUNTER = false;
@@ -73,7 +74,7 @@ export default function TerminalPanel() {
           su,
           exitSu,
         });
-        actions.pushCommandHistory({ command: result.sessionEnded ? "" : cmd, output: result.output });
+        actions.pushCommandHistory({ command: result.sessionEnded ? "" : cmd, output: result.output, links: result.links });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         actions.pushCommandHistory({ command: "", output: message });
@@ -149,7 +150,30 @@ export default function TerminalPanel() {
                   </div>
                 )}
                 {entry.output && (
-                  <div className="whitespace-pre-line text-green-400 mb-1">{entry.output}</div>
+                  <div className="whitespace-pre-line text-green-400 mb-1">
+                    {entry.links?.length ? (() => {
+                      let offset = 0;
+                      const parts: React.ReactNode[] = [];
+                      for (const link of entry.links) {
+                        parts.push(entry.output.slice(offset, link.start));
+                        parts.push(
+                          <button
+                            key={link.start}
+                            type="button"
+                            className="cursor-pointer text-cyan-300 underline hover:text-cyan-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                            title={`Focus entity ${link.entityId}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              dispatchCenterCameraOnEntity(link.entityId);
+                            }}
+                          >{entry.output.slice(link.start, link.end)}</button>,
+                        );
+                        offset = link.end;
+                      }
+                      parts.push(entry.output.slice(offset));
+                      return parts;
+                    })() : entry.output}
+                  </div>
                 )}
               </div>
             ))}

@@ -13,6 +13,7 @@ import React, {
 import type { Application, Container } from "pixi.js";
 import type { Entity } from "@/features/gamestate/world";
 import { appendMessageLog, type MessageLogEntry } from "@/features/hud/messageLog";
+import type { TerminalOutputLink } from "@/features/hud/terminal/commands";
 //
 // Types
 //
@@ -21,6 +22,7 @@ export type EntityId = string;
 export type CommandHistory = {
   command: string;
   output: string;
+  links?: TerminalOutputLink[];
 };
 
 export type HUDPanels = {

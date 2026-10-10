@@ -21,8 +21,11 @@ export type TerminalCommandContext = {
 
 export type TerminalCommandResult = {
   output: string;
+  links?: TerminalOutputLink[];
   sessionEnded?: boolean;
 };
+
+export type TerminalOutputLink = { start: number; end: number; entityId: string };
 
 type TerminalCommand = {
   name: string;
@@ -103,10 +106,23 @@ const commands: TerminalCommand[] = [
         return { output: "usage: log [-ts]" };
       }
       const entries = context.messageLog ?? [];
-      return { output: entries.length === 0 ? "No messages logged." : entries.map((entry) => {
+      if (entries.length === 0) return { output: "No messages logged." };
+      const links: TerminalOutputLink[] = [];
+      let offset = 0;
+      const output = entries.map((entry) => {
         const prefix = args[0] === "-ts" ? `[${new Date(entry.timestamp).toLocaleString()}] ` : "";
-        return `${prefix}${entry.title}: ${entry.message}`;
-      }).join("\n") };
+        const line = `${prefix}${entry.title}: ${entry.message}`;
+        if (entry.focusEntityId && entry.focusLabel) {
+          const labelStart = entry.message.indexOf(entry.focusLabel);
+          if (labelStart !== -1) {
+            const start = offset + prefix.length + entry.title.length + 2 + labelStart;
+            links.push({ start, end: start + entry.focusLabel.length, entityId: entry.focusEntityId });
+          }
+        }
+        offset += line.length + 1;
+        return line;
+      }).join("\n");
+      return { output, links };
     },
   },
   {

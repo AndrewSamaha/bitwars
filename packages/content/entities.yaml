@@ -813,7 +813,9 @@ entity_types:
         - food_storage_container
   military_factory:
     max_capacity:
-      energy: 500
+      energy: 4000
+      food: 500
+      minerals: 2500
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -830,6 +832,16 @@ entity_types:
       range: 400
       cost_per_minute:
         energy: 0.1
+    resource_sharing:
+      range: 1000
+      wireless_receives:
+        - energy
+      resources:
+        energy:
+          priority: 0
+          refill_below: 3000
+          fill_to: 3000
+          reserve: 50
     builds:
       - entity_type_id: scout
         spend_rates:
