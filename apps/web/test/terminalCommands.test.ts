@@ -11,12 +11,13 @@ afterEach(() => {
 });
 
 describe("log", () => {
-  it("links the entity label in a starvation message with and without timestamps", async () => {
+  it("links entity labels in collection and starvation messages with and without timestamps", async () => {
     const context = {
       realPlayerId: "player-a", effectivePlayerId: "player-a", actingAsId: null,
       sessionStatus: "active" as const,
       messageLog: [
-        { title: "Collection blocked", message: "Waiting for space.", timestamp: 1 },
+        { title: "Collection blocked", message: "Collector 42 is too close to another active collector. Move it farther away and restart, or wait for an automatic retry.", timestamp: 1,
+          focusEntityId: "42", focusLabel: "Collector 42" },
         { title: "Resource starvation", message: "worker 680 is taking damage because it lacks resources for maintenance.", timestamp: 2,
           focusEntityId: "680", focusLabel: "worker 680" },
       ],
@@ -24,10 +25,11 @@ describe("log", () => {
     };
     for (const command of ["log", "log -ts"]) {
       const result = await executeTerminalCommand(command, context);
-      expect(result.links).toHaveLength(1);
-      const link = result.links![0];
-      expect(result.output.slice(link.start, link.end)).toBe("worker 680");
-      expect(link.entityId).toBe("680");
+      expect(result.links).toHaveLength(2);
+      expect(result.links!.map(link => [result.output.slice(link.start, link.end), link.entityId])).toEqual([
+        ["Collector 42", "42"],
+        ["worker 680", "680"],
+      ]);
     }
   });
 

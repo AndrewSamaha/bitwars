@@ -14,7 +14,6 @@ import {
 } from "@/features/gamestate/events";
 
 type Toast = { id: number; title: string; message: string; focusEntityId: string; entering?: boolean; leaving?: boolean; leavingTop?: number };
-const COLLECTION_WAITING_MESSAGE = "Too close to another active collector. Move it farther away and restart collection, or wait for space to open up. It will retry automatically while waiting.";
 
 export default function LifecycleToasts() {
   const { actions: { pushMessageLog } } = useHUD();
@@ -72,7 +71,9 @@ export default function LifecycleToasts() {
     };
     const onCollectionWaiting = (event: Event) => {
       const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
-      if (detail) showToast("Collection blocked", `${COLLECTION_WAITING_MESSAGE} Click to focus it.`, detail.collectorEntityId);
+      if (!detail) return;
+      const label = `Collector ${detail.collectorEntityId}`;
+      showToast("Collection blocked", `${label} is too close to another active collector. Move it farther away and restart, or wait for an automatic retry.`, detail.collectorEntityId, label);
     };
     const onTransferEndpointLost = (event: Event) => {
       const detail = (event as CustomEvent<{ carrierEntityId: string }>).detail;
