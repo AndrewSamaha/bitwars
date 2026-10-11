@@ -3,6 +3,7 @@ import { Application, Container, Graphics, RenderTexture, Sprite, Text } from "p
 import { useEffect, useRef, useState } from "react";
 import { game, type Entity } from "@/features/gamestate/world";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
+import { buildProgressMetrics } from "@/features/build-state/buildProgressMetrics";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
@@ -900,6 +901,7 @@ export default function GameStage() {
         // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
           const nowMs = performance.now();
+          let renderedBuildUpdatedAt: number | undefined;
           renderRadiationRanges();
           const liveById = new Map<string, any>();
           for (const e of game.world.with("id", "pos")) {
@@ -1020,7 +1022,8 @@ export default function GameStage() {
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
             const isSelected = latestSelectorsRef.current.isSelected(id);
             const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
-            const buildProgress = buildProgressStore.getProgress(String((e as any).id));
+            const buildState = buildProgressStore.getSnapshot()[id];
+            const buildProgress = buildState?.progress;
             const isBuilding = ["build", "upgrade", "research"].includes(String((e as any).active_intent_kind).toLowerCase());
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if (((e as any).hover || isSelected) && !suppressHover) {
@@ -1059,6 +1062,7 @@ export default function GameStage() {
 
             let buildArc = container.children.find((c) => c.label === "buildArc") as Graphics | undefined;
             if (isBuilding && Number.isFinite(buildProgress)) {
+              renderedBuildUpdatedAt ??= buildState?.progress_updated_at_unix_ms;
               if (!buildArc) {
                 buildArc = new Graphics();
                 buildArc.label = "buildArc";
@@ -1132,6 +1136,7 @@ export default function GameStage() {
               prevY = wp.y;
             }
           }
+          return renderedBuildUpdatedAt;
         };
 
         type SelectionDrag = { startX: number; startY: number; shift: boolean; moveMode: boolean; ctrl: boolean };
@@ -1478,7 +1483,8 @@ export default function GameStage() {
             renderLasers(performance.now());
             renderSonarPings(performance.now());
             despawnExplosions.update(performance.now());
-            render();
+            const renderedBuildUpdatedAt = render();
+            buildProgressMetrics.recordRenderedFrame(renderedBuildUpdatedAt);
             drawMeasurement();
 
             // Keep fog aligned with post-tick entity positions. During an active

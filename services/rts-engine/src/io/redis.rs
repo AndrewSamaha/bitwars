@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use prost::Message;
 use redis::{AsyncCommands, Value as RedisValue};
@@ -13,15 +14,18 @@ use crate::pb::{
     LifecycleEvent, PlayerResourceLedger, PlayerTechnologyState, ResourceEntry, Snapshot,
 };
 
+fn current_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 // ── M2: Per-entity tracking types ───────────────────────────────────────────
 //
-// These structs are serialised as JSON (not protobuf) because they are only
-// read on the **reconnect path**, never on the hot tick loop.  Protobuf is
-// preferred for anything on the tick-critical path (deltas, snapshots,
-// lifecycle events) where decode speed and wire size matter.  For reconnect
-// data that is written once per intent state-change and read once per
-// reconnect, JSON keeps the code simple and the data human-readable in
-// redis-cli / RedisInsight without a separate decode step.
+// These structs are serialised as JSON (not protobuf) for reconnect data and
+// the active-intent progress lookup. Protobuf remains the format for streamed
+// deltas, snapshots, and lifecycle events.
 
 /// Snapshot of a single entity's active intent, persisted to Redis so the
 /// reconnect handshake can report what the server is currently executing.
@@ -43,6 +47,9 @@ pub struct EntityActiveIntent {
     pub blueprint_id: Option<String>,
     #[serde(default)]
     pub progress: Option<f32>,
+    /// Wall-clock time when the authoritative progress value was recorded.
+    #[serde(default)]
+    pub progress_updated_at_unix_ms: Option<u64>,
     /// Progress represented by the most recently saved world/resource snapshot.
     #[serde(default)]
     pub snapshot_progress: Option<f32>,
@@ -823,6 +830,7 @@ impl RedisClient {
             move_target,
             blueprint_id: construction.as_ref().map(|(target, _, _)| target.clone()),
             progress: construction.as_ref().map(|(_, _, progress)| *progress),
+            progress_updated_at_unix_ms: construction.as_ref().map(|_| current_unix_ms()),
             snapshot_progress: construction.as_ref().map(|(_, _, progress)| *progress),
             collect_resource_type_id: collect_assignment
                 .as_ref()
@@ -872,6 +880,7 @@ impl RedisClient {
         entry.intent_kind = intent_kind.to_string();
         entry.blueprint_id = Some(target_entity_type_id.to_string());
         entry.progress = Some(progress.clamp(0.0, 1.0));
+        entry.progress_updated_at_unix_ms = Some(current_unix_ms());
         let json = serde_json::to_string(&entry)?;
         let _: () = self.conn.hset(&key, &field, json).await?;
         Ok(())

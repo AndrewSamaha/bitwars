@@ -21,6 +21,7 @@ it("reads only requested IDs and filters other players' progress", async () => {
       intent_kind: "build",
       blueprint_id: "ship",
       progress: 0.5,
+      progress_updated_at_unix_ms: 1_234_567,
     }),
     JSON.stringify({
       entity_id: 711,
@@ -39,7 +40,19 @@ it("reads only requested IDs and filters other players' progress", async () => {
     "710",
     "711",
   );
-  expect(await response.json()).toEqual({
-    build_state_by_entity: { "710": { blueprint_id: "ship", progress: 0.5 } },
-  });
+  expect(await response.json()).toEqual(
+    expect.objectContaining({
+      build_state_by_entity: {
+        "710": {
+          blueprint_id: "ship",
+          progress: 0.5,
+          progress_updated_at_unix_ms: 1_234_567,
+        },
+      },
+      server_time_ms: expect.any(Number),
+    }),
+  );
+  expect(response.headers.get("Server-Timing")).toMatch(
+    /redis;dur=.*route;dur=/,
+  );
 });

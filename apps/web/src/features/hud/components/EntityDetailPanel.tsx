@@ -10,6 +10,7 @@ import { GAMESTATE_UPDATED_EVENT, type GameStateUpdatedDetail } from "@/features
 import { transferableResourceAmount } from "@/features/hud/resourceInventory";
 import { canAffordAction } from "@/features/hud/actionResources";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
+import { buildProgressMetrics } from "@/features/build-state/buildProgressMetrics";
 
 const GAMESTATE_UI_REFRESH_INTERVAL_MS = 100;
 
@@ -245,6 +246,14 @@ export default function EntityDetailPanel() {
     if (isSelectedEntityBuilding) buildProgressStore.setIds(source, [firstId]);
     return () => buildProgressStore.removeSource(source);
   }, [firstId, isSelectedEntityBuilding]);
+
+  useEffect(() => {
+    if (!isSelectedEntityBuilding || !buildStateById[firstId]) return;
+    const frame = requestAnimationFrame(() => {
+      buildProgressMetrics.recordPanelPaint(buildStateById[firstId]?.progress_updated_at_unix_ms);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [buildStateById, firstId, isSelectedEntityBuilding]);
 
   const onClickAction = (val: ActionDef["value"]) => {
     if (val === "Measure") {

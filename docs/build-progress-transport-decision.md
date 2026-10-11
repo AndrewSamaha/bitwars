@@ -14,6 +14,81 @@ or SSE is cheaper at game scale. The server request timings in the dev log are
 not a transport comparison: they omit browser scheduling, bytes, Redis work,
 and the latency from an engine update to a painted progress arc.
 
+## Baseline capture (500 ms polling)
+
+The initial freshness target is **p95 displayed progress age at or below
+500 ms**. The engine updates progress every tick, so most intermediate values
+are intentionally skipped. Measure how old the value on screen is, rather than
+waiting for every engine value to appear.
+
+The engine writes `progress_updated_at_unix_ms` with each active build,
+upgrade, or research update. The v3 endpoint passes it through, includes
+`server_time_ms` for a browser/server clock-offset estimate, and reports Redis
+and route durations in `Server-Timing`. The browser recorder samples the age of
+the progress arc on rendered frames, the selected-entity panel at its next
+animation frame, fetch duration, response-body bytes, and frame time. It does not record
+anything until started.
+
+1. Run the updated engine and web app. Restarting the engine in its default
+   configuration resets game state, so use a disposable match or the normal
+   restore procedure. Existing intents written by an older engine have no
+   timestamp; a live progress update from the updated engine is needed.
+2. Open the game as a player, start a build or research job that is actively
+   advancing, and select the entity. In Chrome DevTools Console, run
+   `window.bitwarsBuildProgressMetrics.start()`. Let it advance for at least
+   60 seconds. A resource-starved or paused job can show an old but still
+   correct value; capture that condition separately.
+3. Run `window.bitwarsBuildProgressMetrics.stop()` and save its JSON result
+   alongside the player count, active-build count, browser/network conditions,
+   game ID, and whether the entity was selected. A `renderedAgeSamples` value of
+   zero means there was no timestamped active progress to measure.
+4. Capture idle time separately to measure background request cost. Repeat
+   the advancing-progress capture for the scenarios below, then compare p95 displayed
+   age with 500 ms. The recorder reports application response-body bytes; use
+   Chrome Network's transferred-size column when wire bytes matter. Use engine
+   tick telemetry and host/Redis monitoring for the server-side capacity
+   measures in the table below.
+
+The age calculation estimates browser/server clock offset from each response.
+The engine and Next.js hosts must have synchronized clocks; otherwise their
+clock skew appears as progress age. Record that clock setup with the results.
+
+### First reported capture
+
+One browser run was reported with the 500 ms shared poll. The workload details
+(player count, active-build count, network conditions, and selection state) were
+not recorded, so treat this as a single-client baseline, not a scale test.
+
+| Measure | Result |
+| --- | ---: |
+| Duration / requests | 217.7 s / 416 |
+| Requests / response body | 114.6 per min / 27.4 KiB per min |
+| Unchanged responses | 0% |
+| Fetch / Redis / route p95 | 33.8 / 2.4 / 6.1 ms |
+| Rendered arc age p50 / p95 | 273 / 500.5 ms (12,496 samples) |
+| Selected-panel age p95 | 41.5 ms (205 paint samples) |
+| Frame interval p95 / frames over 33 ms | 18.9 ms / 0.2% |
+| Estimated server clock offset | 8 ms |
+| Recorder's 500 ms target check | `false` |
+
+The rendered-age p95 is **0.5 ms above** the target. That is a literal miss,
+but too small to justify a transport change from one run; timing jitter,
+sampling, and clock-offset estimation could readily account for it. The
+273 ms median and approximately 500 ms p95 are consistent with a 500 ms poll.
+The endpoint and Redis timings are small relative to the freshness budget, and
+the observed frame metrics show no obvious browser-rendering regression in this
+run. The 0% unchanged figure applies to this capture only; measure an idle
+period separately. Panel age is sampled only on panel paints, whereas arc age
+is sampled on rendered frames, so their p95 values are not directly comparable.
+
+**Recommendation for now:** keep the shared 500 ms poll and do not add SSE
+progress events or slow polling based on this capture alone. Repeat an active
+build capture with workload metadata, collect an idle capture, then measure
+several builds and concurrent clients. If repeated rendered-age p95 values
+materially exceed 500 ms, investigate scheduling and end-to-end delay before
+choosing a transport. Compare a slower poll and throttled, owner-filtered SSE
+only under matched workloads, using the capacity and correctness criteria below.
+
 ## Decision criteria
 
 Measure these for the same workload and report median and p95 where applicable:

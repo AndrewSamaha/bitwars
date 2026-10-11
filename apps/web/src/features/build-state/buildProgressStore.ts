@@ -1,9 +1,17 @@
-export type BuildState = { blueprint_id: string; progress: number };
+import { buildProgressMetrics } from "./buildProgressMetrics";
+
+export type BuildState = {
+  blueprint_id: string;
+  progress: number;
+  progress_updated_at_unix_ms?: number;
+};
 export type BuildStateById = Record<string, BuildState>;
 
 const POLL_INTERVAL_MS = 500;
 
 async function fetchBuildStates(ids: string[]): Promise<BuildStateById> {
+  const sentAtMs = Date.now();
+  const startedAt = performance.now();
   const response = await fetch(
     `/api/v3/build-state?ids=${encodeURIComponent(ids.join(","))}`,
     {
@@ -12,9 +20,22 @@ async function fetchBuildStates(ids: string[]): Promise<BuildStateById> {
   );
   if (!response.ok)
     throw new Error(`Build state request failed: ${response.status}`);
-  const data = (await response.json()) as {
+  const body = await response.text();
+  const receivedAtMs = Date.now();
+  const data = JSON.parse(body) as {
     build_state_by_entity?: BuildStateById;
+    server_time_ms?: number;
   };
+  if (buildProgressMetrics.enabled) {
+    buildProgressMetrics.recordRequest(
+      sentAtMs,
+      receivedAtMs,
+      performance.now() - startedAt,
+      new TextEncoder().encode(body).length,
+      data.server_time_ms,
+      response.headers.get("Server-Timing"),
+    );
+  }
   return data.build_state_by_entity ?? {};
 }
 
@@ -25,7 +46,9 @@ function sameStates(left: BuildStateById, right: BuildStateById): boolean {
     leftIds.every(
       (id) =>
         left[id]?.blueprint_id === right[id]?.blueprint_id &&
-        left[id]?.progress === right[id]?.progress,
+        left[id]?.progress === right[id]?.progress &&
+        left[id]?.progress_updated_at_unix_ms ===
+          right[id]?.progress_updated_at_unix_ms,
     )
   );
 }
@@ -110,7 +133,12 @@ export class BuildProgressStore {
     this.inFlight = true;
     try {
       const states = await this.load(ids);
-      if (revision === this.idsRevision) this.publish(states);
+      if (revision === this.idsRevision) {
+        buildProgressMetrics.recordAppliedResponse(
+          !sameStates(this.snapshot, states),
+        );
+        this.publish(states);
+      }
     } catch {
       // Keep the last known progress through transient request failures.
     } finally {

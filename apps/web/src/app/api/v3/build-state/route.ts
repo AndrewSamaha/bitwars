@@ -11,6 +11,7 @@ const DEFAULT_GAME_ID = "demo-001";
 
 /** Returns build progress for requested entities owned by the authenticated player. */
 export async function GET(request: Request) {
+  const routeStarted = performance.now();
   try {
     const { auth, res } = await requireAuthOr401();
     if (res) return res;
@@ -32,15 +33,25 @@ export async function GET(request: Request) {
     ].map(String);
     const build_state_by_entity: Record<
       string,
-      { blueprint_id: string; progress: number }
+      {
+        blueprint_id: string;
+        progress: number;
+        progress_updated_at_unix_ms?: number;
+      }
     > = {};
-    if (ids.length === 0) return NextResponse.json({ build_state_by_entity });
+    if (ids.length === 0)
+      return NextResponse.json({
+        build_state_by_entity,
+        server_time_ms: Date.now(),
+      });
 
     const gameId = getEnv("GAME_ID", DEFAULT_GAME_ID);
+    const redisStarted = performance.now();
     const entries = await redis.hmget(
       `rts:match:${gameId}:active_intents`,
       ...ids,
     );
+    const redisMs = performance.now() - redisStarted;
     for (let index = 0; index < ids.length; index++) {
       const id = ids[index];
       const json = entries[index];
@@ -57,13 +68,23 @@ export async function GET(request: Request) {
         build_state_by_entity[id] = {
           blueprint_id: entry.blueprint_id,
           progress: Number(entry.progress ?? 0),
+          ...(Number.isSafeInteger(entry.progress_updated_at_unix_ms)
+            ? { progress_updated_at_unix_ms: entry.progress_updated_at_unix_ms }
+            : {}),
         };
       } catch {
         // Ignore malformed tracking entries.
       }
     }
 
-    return NextResponse.json({ build_state_by_entity });
+    return NextResponse.json(
+      { build_state_by_entity, server_time_ms: Date.now() },
+      {
+        headers: {
+          "Server-Timing": `redis;dur=${redisMs.toFixed(2)}, route;dur=${(performance.now() - routeStarted).toFixed(2)}`,
+        },
+      },
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },
