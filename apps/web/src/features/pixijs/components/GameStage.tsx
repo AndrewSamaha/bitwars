@@ -2,6 +2,8 @@
 import { Application, Container, Graphics, RenderTexture, Sprite, Text } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { game, type Entity } from "@/features/gamestate/world";
+import { buildProgressStore } from "@/features/build-state/buildProgressStore";
+import { buildProgressMetrics } from "@/features/build-state/buildProgressMetrics";
 import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
@@ -55,7 +57,7 @@ const MINIMAP_MY_COLOR = 0x44_aa_ff;
 const MINIMAP_HOSTILE_COLOR = 0xef_44_44;
 const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
 const MINIMAP_STAR_YELLOW_COLOR = 0xff_dd_22;
-const BUILD_PROGRESS_POLL_MS = 500;
+const BUILD_PROGRESS_SCAN_MS = 500;
 const FOG_COLOR = 0x67_6b_73;
 const FOG_ALPHA = 0.20;
 const FOG_ZOOM_SETTLE_MS = 150;
@@ -711,31 +713,15 @@ export default function GameStage() {
         (waypointContainer as any).label = 'waypoints';
         worldContainer.addChild(waypointContainer);
 
-        const buildProgressByEntity = new Map<string, number>();
-        let lastBuildProgressPollAt = 0;
-        let buildProgressRequestInFlight = false;
-        const refreshBuildProgress = (nowMs: number) => {
-          if (buildProgressRequestInFlight || nowMs - lastBuildProgressPollAt < BUILD_PROGRESS_POLL_MS) return;
+        const buildProgressSource = Symbol("rendered build entities");
+        let lastBuildProgressScanAt = -BUILD_PROGRESS_SCAN_MS;
+        const refreshBuildProgressIds = (nowMs: number) => {
+          if (nowMs - lastBuildProgressScanAt < BUILD_PROGRESS_SCAN_MS) return;
+          lastBuildProgressScanAt = nowMs;
           const entityIds = Array.from(game.world.with("id"))
             .filter((entity) => ["build", "upgrade", "research"].includes(String((entity as any).active_intent_kind).toLowerCase()))
             .map((entity) => String((entity as any).id));
-          if (entityIds.length === 0) {
-            buildProgressByEntity.clear();
-            return;
-          }
-          lastBuildProgressPollAt = nowMs;
-          buildProgressRequestInFlight = true;
-          void fetch(`/api/v2/build-state?ids=${encodeURIComponent(entityIds.join(","))}`, { cache: "no-store" })
-            .then(async (response) => response.ok ? response.json() : {})
-            .then((data: { build_state_by_entity?: Record<string, { progress?: number }> }) => {
-              buildProgressByEntity.clear();
-              for (const [id, state] of Object.entries(data.build_state_by_entity ?? {})) {
-                const progress = Number(state.progress);
-                if (Number.isFinite(progress)) buildProgressByEntity.set(id, progress);
-              }
-            })
-            .catch(() => {})
-            .finally(() => { buildProgressRequestInFlight = false; });
+          buildProgressStore.setIds(buildProgressSource, entityIds);
         };
 
         // Keyboard shortcuts for local modes and commands.
@@ -915,6 +901,7 @@ export default function GameStage() {
         // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
           const nowMs = performance.now();
+          let renderedBuildUpdatedAt: number | undefined;
           renderRadiationRanges();
           const liveById = new Map<string, any>();
           for (const e of game.world.with("id", "pos")) {
@@ -1035,7 +1022,8 @@ export default function GameStage() {
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
             const isSelected = latestSelectorsRef.current.isSelected(id);
             const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
-            const buildProgress = buildProgressByEntity.get(String((e as any).id));
+            const buildState = buildProgressStore.getSnapshot()[id];
+            const buildProgress = buildState?.progress;
             const isBuilding = ["build", "upgrade", "research"].includes(String((e as any).active_intent_kind).toLowerCase());
             reconcileEntityRenderEffects(container, e as Entity, performance.now());
             if (((e as any).hover || isSelected) && !suppressHover) {
@@ -1074,6 +1062,7 @@ export default function GameStage() {
 
             let buildArc = container.children.find((c) => c.label === "buildArc") as Graphics | undefined;
             if (isBuilding && Number.isFinite(buildProgress)) {
+              renderedBuildUpdatedAt ??= buildState?.progress_updated_at_unix_ms;
               if (!buildArc) {
                 buildArc = new Graphics();
                 buildArc.label = "buildArc";
@@ -1147,6 +1136,7 @@ export default function GameStage() {
               prevY = wp.y;
             }
           }
+          return renderedBuildUpdatedAt;
         };
 
         type SelectionDrag = { startX: number; startY: number; shift: boolean; moveMode: boolean; ctrl: boolean };
@@ -1473,7 +1463,7 @@ export default function GameStage() {
             // M5.2: Transform the cached border every frame, then redraw only
             // when its sampling basis is old enough or has drifted materially.
             const now = performance.now();
-            refreshBuildProgress(now);
+            refreshBuildProgressIds(now);
             const camX = worldContainer.position.x;
             const camY = worldContainer.position.y;
             const camScale = worldContainer.scale.x;
@@ -1493,7 +1483,8 @@ export default function GameStage() {
             renderLasers(performance.now());
             renderSonarPings(performance.now());
             despawnExplosions.update(performance.now());
-            render();
+            const renderedBuildUpdatedAt = render();
+            buildProgressMetrics.recordRenderedFrame(renderedBuildUpdatedAt);
             drawMeasurement();
 
             // Keep fog aligned with post-tick entity positions. During an active
@@ -1513,6 +1504,7 @@ export default function GameStage() {
         return () => {
           if (destroyed) return;
           destroyed = true;
+          buildProgressStore.removeSource(buildProgressSource);
           app.canvas.removeEventListener("dblclick", onDoubleClick);
           app.canvas.removeEventListener("wheel", onWheel);
           app.canvas.removeEventListener("pointerleave", onMeasurePointerLeave);
