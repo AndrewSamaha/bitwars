@@ -5,9 +5,12 @@ export type StreamEntity = {
   entity_type_id?: string;
   owner_player_id?: string;
   health?: number;
+  damage_type?: string;
   pos?: Pos;
   vel?: Pos;
   force?: Pos;
+  resources?: Array<{ resource_type: string; amount: number }>;
+  resource_deposit?: { amount: number; remaining: number } | null;
 };
 
 type EntityType = {
@@ -40,11 +43,17 @@ type DeltaPayload = {
 const idOf = (id: number | string) => String(id);
 const hasPosition = (entity: StreamEntity): entity is StreamEntity & { pos: Pos } =>
   Number.isFinite(entity.pos?.x) && Number.isFinite(entity.pos?.y);
+const forClient = (entity: StreamEntity, playerId: string, withinSensors: boolean): StreamEntity => {
+  const visible = entity.owner_player_id === playerId ? { ...entity } : (({ resources: _resources, ...rest }) => rest)(entity);
+  if (entity.resource_deposit !== undefined && !withinSensors) visible.resource_deposit = null;
+  return visible;
+};
 
 /** Projects authoritative state into one player's visible world. */
 export class VisibilityFilter {
   private entities = new Map<string, StreamEntity>();
   private visible = new Set<string>();
+  private withinSensors = new Set<string>();
 
   constructor(
     readonly playerId: string,
@@ -56,9 +65,10 @@ export class VisibilityFilter {
     this.entities = new Map(snapshot.entities.map((entity) => [idOf(entity.id), { ...entity }]));
     this.ownedTechnologies = new Set(snapshot.player_technologies?.find((state) => state.player_id === this.playerId)?.technology_ids ?? []);
     this.visible = this.currentlyVisible();
+    this.withinSensors = this.currentlyWithinSensors();
     return {
       ...snapshot,
-      entities: snapshot.entities.filter((entity) => this.visible.has(idOf(entity.id))),
+      entities: snapshot.entities.filter((entity) => this.visible.has(idOf(entity.id))).map((entity) => forClient(entity, this.playerId, this.withinSensors.has(idOf(entity.id)))),
       player_ledgers: snapshot.player_ledgers?.filter((ledger) => ledger.player_id === this.playerId),
       collector_states: snapshot.collector_states?.filter((state) => this.visible.has(idOf(state.entity_id))),
       combat_effect_states: snapshot.combat_effect_states?.filter((state) => this.visible.has(idOf(state.entity_id))),
@@ -81,19 +91,29 @@ export class VisibilityFilter {
     }
 
     const nowVisible = this.currentlyVisible();
+    const nowWithinSensors = this.currentlyWithinSensors();
     const updates: StreamEntity[] = [];
     for (const [key, entity] of this.entities) {
       if (!wasVisible.has(key) && nowVisible.has(key)) {
-        updates.push(entity);
+        updates.push(forClient(entity, this.playerId, nowWithinSensors.has(key)));
       } else if (wasVisible.has(key) && !nowVisible.has(key)) {
         hidden.push(entity.id);
+      } else if (nowVisible.has(key) && entity.resource_deposit && this.withinSensors.has(key) !== nowWithinSensors.has(key)) {
+        updates.push({ id: entity.id, resource_deposit: nowWithinSensors.has(key) ? entity.resource_deposit : null });
       }
     }
     for (const update of delta.updates) {
       const key = idOf(update.id);
-      if (wasVisible.has(key) && nowVisible.has(key)) updates.push(update);
+      if (!wasVisible.has(key) || !nowVisible.has(key)) continue;
+      // Sparse deltas usually omit owner_player_id, so use the merged entity
+      // state above when deciding whether this client may receive inventory.
+      const entity = this.entities.get(key)!;
+      const projected = forClient({ ...update, owner_player_id: entity.owner_player_id }, this.playerId, nowWithinSensors.has(key));
+      if (update.owner_player_id === undefined) delete projected.owner_player_id;
+      updates.push(projected);
     }
     this.visible = nowVisible;
+    this.withinSensors = nowWithinSensors;
 
     const collector_state_updates = delta.collector_state_updates?.filter((state) => nowVisible.has(idOf(state.entity_id)));
     const combat_effect_state_updates = delta.combat_effect_state_updates?.filter((state) => nowVisible.has(idOf(state.entity_id)));
@@ -115,6 +135,20 @@ export class VisibilityFilter {
       if (dx * dx + dy * dy <= source.range * source.range) return true;
     }
     return false;
+  }
+
+  private currentlyWithinSensors(): Set<string> {
+    const visible = new Set<string>();
+    const sources = this.sensorSources();
+    for (const [key, entity] of this.entities) {
+      if (!hasPosition(entity)) continue;
+      if (sources.some(source => {
+        const dx = source.pos.x - entity.pos.x;
+        const dy = source.pos.y - entity.pos.y;
+        return dx * dx + dy * dy <= source.range * source.range;
+      })) visible.add(key);
+    }
+    return visible;
   }
 
   private currentlyVisible(): Set<string> {

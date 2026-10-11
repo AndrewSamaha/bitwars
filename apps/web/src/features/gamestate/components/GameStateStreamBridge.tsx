@@ -1,14 +1,13 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useLogger } from "@/lib/axiom/client";
 import { game, RADIATION_DAMAGE_VISUAL_LINGER_MS, type Entity } from "../world";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
-import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
+import { dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -16,11 +15,10 @@ type Pos = { x: number; y: number };
 type CollectorStatePayload = {
   activity: string;
   resource_type: string;
-  carry_amount: number;
-  carry_capacity: number;
   effective_rate_per_second: number;
   assigned_resource_type?: string;
   assigned_nearest_compatible?: boolean;
+  receiving_entity_id?: number | string | null;
   updated_tick?: number;
 };
 type StreamCollectorStatePayload = CollectorStatePayload & { entity_id: number | string };
@@ -36,9 +34,6 @@ function collectorStateFromStream({ entity_id: _entityId, ...state }: StreamColl
   return state;
 }
 
-type ResourceEntryPayload = { resource_type: string; amount: number; spend_total?: number; gain_total?: number };
-type PlayerLedgerPayload = { player_id: string; resources: ResourceEntryPayload[] };
-
 type SnapshotPayload = {
   type: "snapshot";
   tick: number | string;
@@ -50,8 +45,9 @@ type SnapshotPayload = {
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
+    resources?: Array<{ resource_type: string; amount: number }>;
+    resource_deposit?: { amount: number; remaining: number } | null;
   }>;
-  player_ledgers?: PlayerLedgerPayload[];
   collector_states?: StreamCollectorStatePayload[];
   combat_effect_states?: CombatEffectStatePayload[];
 };
@@ -66,6 +62,9 @@ type DeltaPayload = {
     entity_type_id?: string;
     owner_player_id?: string;
     health?: number;
+    damage_type?: string;
+    resources?: Array<{ resource_type: string; amount: number }>;
+    resource_deposit?: { amount: number; remaining: number } | null;
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
@@ -112,11 +111,10 @@ function isWithinRadiationRange(target: Entity): boolean {
 // - On snapshot: clears previously-streamed entities and repopulates them
 // - On delta: upserts entities by id and patches provided components
 export default function GameStateStreamBridge() {
+  const [worldGeneration, setWorldGeneration] = useState(0);
   const log = useLogger();
   const hud = useHUD();
-  const { player } = usePlayer();
   const { effectivePlayerId, actingAsId } = useSession();
-  const RESOURCE_LEDGER_POLL_MS = 2000;
   // Track entities we added so we can update/remove them precisely
   const byIdRef = useRef<Map<string, Entity>>(new Map());
   const knownEntityIdsRef = useRef<Set<string>>(new Set());
@@ -124,69 +122,15 @@ export default function GameStateStreamBridge() {
   const streamIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
   const firstDeltaLoggedRef = useRef<number>(0);
   const mountedAtRef = useRef<number>(Date.now());
-  /** M7: Current player id — from /me (player.id) first, fallback to reconnect handshake. */
+  /** Current effective player ID, with reconnect handshake fallback. */
   const currentPlayerIdRef = useRef<string | null>(null);
   /** M8b: authoritative active intent overlays keyed by entity id. */
   const activeIntentByEntityRef = useRef<Map<string, ActiveIntentOverlay>>(new Map());
   log.info("GameStateStreamBridge:init", { streamId: streamIdRef.current });
 
-  // M7: Single source for "my" player id and resources from /me — set ref and apply resource_ledger to HUD when player loads.
   useEffect(() => {
     currentPlayerIdRef.current = effectivePlayerId;
-    if (!actingAsId && player?.resource_ledger && Object.keys(player.resource_ledger).length > 0) {
-      console.log("[GameStateStreamBridge] setResources from /me", player.resource_ledger);
-      hud.actions.setResources(player.resource_ledger);
-    }
-  }, [effectivePlayerId, actingAsId, player?.resource_ledger, hud.actions]);
-
-  // M8: Live deltas do not include player_ledgers, so poll /me for authoritative
-  // resource totals and keep the HUD in sync during active collection.
-  useEffect(() => {
-    let mounted = true;
-    let timer: number | undefined;
-    let requestInFlight = false;
-
-    const syncResourcesFromMe = async () => {
-      // Never start a second /me request while Redis is slow or unavailable.
-      // setInterval otherwise produces an unbounded queue of identical calls.
-      if (actingAsId || !currentPlayerIdRef.current || requestInFlight) return;
-      requestInFlight = true;
-      try {
-        const res = await fetch("/api/players/me", {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          resource_ledger?: Record<string, number>;
-          resource_spend_totals?: Record<string, { gain: number; spend: number }>;
-        };
-        const ledger = data?.resource_ledger;
-        if (!mounted) return;
-        if (ledger && Object.keys(ledger).length > 0) hud.actions.setResources(ledger);
-        if (data.resource_spend_totals && Object.keys(data.resource_spend_totals).length > 0) {
-          window.dispatchEvent(new CustomEvent("bitwars:resource-flow-totals", {
-            detail: data.resource_spend_totals,
-          }));
-        }
-      } catch {
-        // keep stream/render path resilient on transient /me failures
-      } finally {
-        requestInFlight = false;
-      }
-    };
-
-    timer = window.setInterval(() => {
-      void syncResourcesFromMe();
-    }, RESOURCE_LEDGER_POLL_MS);
-    void syncResourcesFromMe();
-
-    return () => {
-      mounted = false;
-      if (timer !== undefined) window.clearInterval(timer);
-    };
-  }, [actingAsId, hud.actions, RESOURCE_LEDGER_POLL_MS]);
+  }, [effectivePlayerId]);
 
   useEffect(() => {
     const byId = byIdRef.current;
@@ -237,10 +181,23 @@ export default function GameStateStreamBridge() {
       console.log(`[GameState] ${label}`, { myPlayerId, entityCount: entities.length, entities });
     };
 
-    const applySnapshot = (payload: SnapshotPayload) => {
+    const applySnapshot = (payload: SnapshotPayload & { run_id?: string; paused?: boolean }) => {
+      const worldChanged = !!payload.run_id && payload.run_id !== game.runId;
+      if (worldChanged) {
+        intentQueue.resetForWorld(payload.run_id);
+        hud.actions.clearSelection();
+        hud.actions.setSelectedAction(null);
+        underAttackEntityIdsRef.current.clear();
+        game.runId = payload.run_id!;
+        knownEntityIdsRef.current.clear();
+        activeIntentByEntityRef.current.clear();
+        hud.actions.setHovered(null);
+        hud.actions.setTooltip(null);
+      }
+      game.paused = !!payload.paused;
       // Remove old streamed entities (and destroy any attached sprites)
       for (const [id, ent] of byId) {
-        if (ent.remembered) continue;
+        if (ent.remembered && !worldChanged) continue;
         try {
           // @ts-ignore - sprite is optional
           ent.sprite?.destroy?.();
@@ -266,6 +223,8 @@ export default function GameStateStreamBridge() {
           if (s.entity_type_id !== undefined) remembered.entity_type_id = s.entity_type_id;
           if (s.owner_player_id !== undefined) remembered.owner_player_id = s.owner_player_id;
           if (s.health !== undefined) remembered.health = s.health;
+          if (s.resources !== undefined) remembered.resources = s.resources;
+          if (s.resource_deposit !== undefined) remembered.resource_deposit = s.resource_deposit;
           if (s.pos) remembered.pos = { x: s.pos.x, y: s.pos.y };
           if (s.vel) remembered.vel = { x: s.vel.x, y: s.vel.y };
           if (collectorState) remembered.collector_state = collectorStateFromStream(collectorState);
@@ -277,6 +236,8 @@ export default function GameStateStreamBridge() {
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
           ...(s.owner_player_id !== undefined ? { owner_player_id: s.owner_player_id } : {}),
           ...(s.health !== undefined ? { health: s.health } : {}),
+          ...(s.resource_deposit !== undefined ? { resource_deposit: s.resource_deposit } : {}),
+          ...(s.resources !== undefined ? { resources: s.resources } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
           ...(collectorState ? { collector_state: collectorStateFromStream(collectorState) } : {}),
@@ -287,28 +248,6 @@ export default function GameStateStreamBridge() {
         byId.set(normalizeId(s.id), ent);
       }
       refreshIntentOverlays();
-      // M7: Apply server resource state for current player to HUD
-      const playerId = currentPlayerIdRef.current;
-      const ledgers = payload.player_ledgers ?? [];
-      if (playerId && ledgers.length > 0) {
-        const myLedger = ledgers.find((pl) => pl.player_id === playerId);
-        if (myLedger?.resources?.length) {
-          const patch: Record<string, number> = {};
-          for (const r of myLedger.resources) {
-            if (r.resource_type && typeof r.amount === "number") patch[r.resource_type] = r.amount;
-            else if (r.resource_type && typeof r.amount === "string") patch[r.resource_type] = Number(r.amount) || 0;
-          }
-          if (Object.keys(patch).length > 0) {
-            console.log("[GameStateStreamBridge] setResources from snapshot", patch);
-            hud.actions.setResources(patch);
-          }
-          const resourceFlowTotals = Object.fromEntries(myLedger.resources.map((resource) => [
-            resource.resource_type,
-            { gain: Number(resource.gain_total ?? 0), spend: Number(resource.spend_total ?? 0) },
-          ]));
-          window.dispatchEvent(new CustomEvent("bitwars:resource-flow-totals", { detail: resourceFlowTotals }));
-        }
-      }
       log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("bitwars:snapshot-applied"));
@@ -318,6 +257,10 @@ export default function GameStateStreamBridge() {
       if (!game.ready) {
         game.ready = true;
         log.info("GameStateStreamBridge:world:ready", { streamId: streamIdRef.current });
+      }
+      if (worldChanged) {
+        const owned = payload.entities.find(entity => entity.owner_player_id === effectivePlayerId);
+        if (owned) dispatchCenterCameraOnEntity(normalizeId(owned.id));
       }
       if (DEBUG_LOG_GAMESTATE_ENTITIES) logEntitiesAndOwnership("after snapshot");
     };
@@ -374,13 +317,20 @@ export default function GameStateStreamBridge() {
             else { existing.vel.x = u.vel.x; existing.vel.y = u.vel.y; }
           }
           if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
+          if (u.resources !== undefined) existing.resources = u.resources;
+          if (u.resource_deposit !== undefined) existing.resource_deposit = u.resource_deposit;
           if (u.health !== undefined) {
             const playerId = currentPlayerIdRef.current;
             if (existing.health !== undefined && u.health < existing.health
-              && existing.owner_player_id === playerId && playerId
-              && !underAttackEntityIdsRef.current.has(key)) {
-              underAttackEntityIdsRef.current.add(key);
-              dispatchEntityUnderAttack(existing);
+              && existing.owner_player_id === playerId && playerId) {
+              if (u.damage_type === "resource_starvation") {
+                dispatchEntityResourceStarvation({ ...existing, health: u.health });
+              } else if (u.damage_type === "radiation") {
+                dispatchEntityRadiationDamage({ ...existing, health: u.health });
+              } else if (!underAttackEntityIdsRef.current.has(key)) {
+                underAttackEntityIdsRef.current.add(key);
+                dispatchEntityUnderAttack(existing);
+              }
             }
             // Health decreases arrive every engine tick. Refresh liveness, but
             // only start a new particle timeline after the prior plume expires.
@@ -404,6 +354,8 @@ export default function GameStateStreamBridge() {
             ...(u.entity_type_id ? { entity_type_id: u.entity_type_id } : {}),
             ...(u.owner_player_id !== undefined ? { owner_player_id: u.owner_player_id } : {}),
             ...(u.health !== undefined ? { health: u.health } : {}),
+            ...(u.resource_deposit !== undefined ? { resource_deposit: u.resource_deposit } : {}),
+            ...(u.resources !== undefined ? { resources: u.resources } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),
           };
@@ -516,6 +468,9 @@ export default function GameStateStreamBridge() {
           const intentId = payload.intentId ?? "";
           const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
           const reason = typeof payload.reason === "number" ? payload.reason : Number(payload.reason);
+          if (entityIdFromCmd != null && state === LIFECYCLE_STATE_CANCELED && reason === 10) {
+            dispatchTransferEndpointLost(String(entityIdFromCmd));
+          }
           const minimumDistanceViolation = payload.minimumDistanceViolation;
           if (
             entityIdFromCmd != null
@@ -611,7 +566,7 @@ export default function GameStateStreamBridge() {
       // M2: On every open (initial + reconnect), reconcile the intent queue
       // with the server's tracking state so we don't duplicate or skip intents.
       intentQueue.reconcileWithServer().then(async (handshake) => {
-        if (handshake) {
+        if (handshake && es.readyState !== EventSource.CLOSED) {
           if (!effectivePlayerId && handshake.player_id) currentPlayerIdRef.current = handshake.player_id;
           log.info("GameStateStreamBridge:reconnect:ok", {
             streamId: streamIdRef.current,
@@ -672,6 +627,23 @@ export default function GameStateStreamBridge() {
       log.warn("GameStateStreamBridge:es:error", { streamId: streamIdRef.current, readyState: rs });
     };
 
+    const onWorldReset = (event: MessageEvent) => {
+      const payload = JSON.parse(event.data);
+      if (payload.run_id === game.runId) return;
+      es.close();
+      intentQueue.resetForWorld(payload.run_id);
+      hud.actions.clearSelection();
+      hud.actions.setSelectedAction(null);
+      game.ready = false;
+      setWorldGeneration(generation => generation + 1);
+    };
+    const onRuntime = (event: MessageEvent) => {
+      const payload = JSON.parse(event.data);
+      if (payload.run_id && payload.run_id !== game.runId) { onWorldReset(event); return; }
+      game.paused = !!payload.paused;
+    };
+    es.addEventListener("world-reset", onWorldReset as EventListener);
+    es.addEventListener("runtime", onRuntime as EventListener);
     es.addEventListener("snapshot", onSnapshot as EventListener);
     es.addEventListener("delta", onDelta as EventListener);
     es.addEventListener("laser-shot", onLaserShot as EventListener);
@@ -687,6 +659,8 @@ export default function GameStateStreamBridge() {
       es.removeEventListener("lifecycle", onLifecycle as EventListener);
       es.removeEventListener("open", onOpen as EventListener);
       es.removeEventListener("error", onError as EventListener);
+      es.removeEventListener("world-reset", onWorldReset as EventListener);
+      es.removeEventListener("runtime", onRuntime as EventListener);
       es.close();
 
       // Clean up streamed entities we created (and destroy sprites)
@@ -706,7 +680,7 @@ export default function GameStateStreamBridge() {
         log.info("GameStateStreamBridge:world:not-ready", { streamId: streamIdRef.current });
       }
     };
-  }, [actingAsId, effectivePlayerId]);
+  }, [actingAsId, effectivePlayerId, worldGeneration]);
 
   // This component does not render anything; it just wires data into the ECS.
   return null;

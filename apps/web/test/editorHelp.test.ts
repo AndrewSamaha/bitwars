@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { completionHelp, contentSchemas, hoverHelp, type ContentKind } from "../src/lib/content/editorHelp";
+import { resourceSharingPolicyErrors, resourceReserveErrors, unknownEntityFieldErrors } from "../src/lib/content/schemaValidation";
 
 function hover(source: string, kind: ContentKind = "entity") {
   const offset = source.indexOf("|");
@@ -11,6 +12,44 @@ function complete(source: string, kind: ContentKind = "entity") {
 }
 
 describe("content editor help", () => {
+  it("documents sharing policies and validates thresholds against resource capacity", () => {
+    const source = "resource_sharing:\n  resources:\n    energy:\n      |";
+    expect(complete(source).suggestions.map(item => item.label).sort()).toEqual(["fill_to", "overflow_priority", "priority", "refill_below", "reserve"]);
+    expect(hover("resource_sharing:\n  resources:\n    energy:\n      |reserve: 50")).toContain("Keep this stock");
+    expect(hover("resource_sharing:\n  resources:\n    energy:\n      |overflow_priority: -1")).toContain("surplus");
+    const policy = { priority: 10, refill_below: 700, fill_to: 900, reserve: 900 };
+    const entity = (changes = {}, resource = "energy") => ({
+      max_capacity: { energy: 1000 },
+      resource_sharing: { range: 4000, resources: { [resource]: { ...policy, ...changes } } },
+    });
+    expect(unknownEntityFieldErrors(entity())).toEqual([]);
+    expect(resourceSharingPolicyErrors(entity(), new Set(["energy"]))).toEqual([]);
+    expect(resourceSharingPolicyErrors(entity({ overflow_priority: -1 }))).toEqual([]);
+    expect(resourceSharingPolicyErrors(entity({ overflow_priority: null }))).toEqual([]);
+    for (const changes of [{ refill_below: -1 }, { refill_below: 901 }, { fill_to: 1001 }, { reserve: -1 },
+      { reserve: 1001 }, { priority: 0.5 }, { fill_to: NaN }, { fill_to: undefined },
+      { overflow_priority: 0.5 }, { overflow_priority: "1" }, { overflow_priority: 2147483648 }]) {
+      expect(resourceSharingPolicyErrors(entity(changes)).length).toBeGreaterThan(0);
+    }
+    expect(resourceSharingPolicyErrors(entity({}, "unknown"), new Set(["energy"])).join(" ")).toContain("unknown resource");
+    expect(resourceSharingPolicyErrors({ ...entity(), max_capacity: { energy: 0 } })[0]).toContain("positive max_capacity");
+    expect(unknownEntityFieldErrors(entity({ typo: 1 }))[0]).toContain("typo");
+    expect(resourceSharingPolicyErrors({ resource_sharing: { range: 4000 } })).toEqual([]);
+  });
+
+  it("documents and validates shared-inventory upkeep reserves", () => {
+    expect(complete("|").suggestions.map((item) => item.label)).toContain("resource_reserves");
+    expect(hover("resource_reserves:\n  |food: 5")).toContain("upkeep buffers");
+    const entity = (reserve: unknown) => ({ max_capacity: { food: 50 }, resource_reserves: { food: reserve } });
+    for (const reserve of [0, 5, 50]) expect(resourceReserveErrors(entity(reserve), new Set(["food"]))).toEqual([]);
+    for (const reserve of [-1, 51, NaN, Infinity, "5", null]) expect(resourceReserveErrors(entity(reserve)).length).toBeGreaterThan(0);
+    expect(resourceReserveErrors({})).toEqual([]);
+    expect(resourceReserveErrors({ resource_reserves: [] }).length).toBeGreaterThan(0);
+    expect(resourceReserveErrors(entity(5), new Set(["energy"])).join(" ")).toContain("unknown resource");
+    expect(resourceReserveErrors({ resource_reserves: { food: 5 } }).join(" ")).toContain("max_capacity");
+    expect(unknownEntityFieldErrors(entity(5))).toEqual([]);
+  });
+
   it("documents every property and enum choice in both generated schemas", () => {
     function audit(node: unknown, path: string) {
       if (!node || typeof node !== "object") return;
@@ -78,4 +117,17 @@ describe("content editor help", () => {
     const help = completionHelp(text, start, start + 3, "entity");
     expect(help.suggestions.find((item) => item.label === "range")?.insertText).toBe("range");
   });
+  it("documents shared per-resource capacity and retires the separate cargo limit", () => {
+    expect(hover("|max_capacity:\n  food: 50")).toContain("shipments and upkeep");
+    const keys = complete("collector:\n  |").suggestions.map((item) => item.label);
+    expect(keys).toContain("transport_rate_per_second");
+    expect(keys).not.toContain("carry_capacity");
+  });
+
+  it("explains upkeep-first supply and the donor's bulk protection", () => {
+    expect(hover("|resource_reserves:\n  energy: 5")).toContain("one minute of upkeep");
+    expect(hover("resource_sharing:\n  resources:\n    energy:\n      |priority: 10")).toContain("higher effective priority than the donor");
+    expect(hover("resource_sharing:\n  resources:\n    energy:\n      |fill_to: 900")).toContain("operating supply may draw below it");
+  });
+
 });

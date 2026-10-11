@@ -51,6 +51,9 @@ export async function GET() {
 
     const GAME_ID = getEnv("GAME_ID", DEFAULT_GAME_ID);
 
+    const runtimeValue = await redis.get(`rts:match:${GAME_ID}:runtime`);
+    const gameRuntime = runtimeValue ? JSON.parse(runtimeValue) : {};
+
     // Read server_tick from the latest snapshot metadata
     const snapshotMetaKey = `snapshot_meta:${GAME_ID}`;
     const meta: Record<string, string> = await (redis as any).hgetall(snapshotMetaKey) ?? {};
@@ -76,6 +79,7 @@ export async function GET() {
       player_id: string;
       started_tick: number;
       intent_kind: string;
+      transfer_route?: { donor_id: number; target_id: number; resource_type_ids: string[] };
       move_target?: { x: number; y: number };
       blueprint_id?: string;
       progress?: number;
@@ -93,6 +97,7 @@ export async function GET() {
             player_id: String(entry.player_id ?? ""),
             started_tick: Number(entry.started_tick ?? 0),
             intent_kind: String(entry.intent_kind ?? ""),
+            ...(entry.transfer_route ? { transfer_route: entry.transfer_route } : {}),
             ...(typeof entry.blueprint_id === "string" ? { blueprint_id: entry.blueprint_id } : {}),
             ...(Number.isFinite(Number(entry.progress)) ? { progress: Number(entry.progress) } : {}),
             ...(mt && Number.isFinite(Number(mt?.x)) && Number.isFinite(Number(mt?.y))
@@ -106,6 +111,7 @@ export async function GET() {
     }
 
     return NextResponse.json({
+      run_id: gameRuntime.run_id ?? "",
       server_tick: serverTick,
       protocol_version: ENGINE_PROTOCOL_MAJOR,
       content_version: contentVersion,

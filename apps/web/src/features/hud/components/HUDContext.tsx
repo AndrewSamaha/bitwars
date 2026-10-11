@@ -12,21 +12,17 @@ import React, {
 
 import type { Application, Container } from "pixi.js";
 import type { Entity } from "@/features/gamestate/world";
+import { appendMessageLog, type MessageLogEntry } from "@/features/hud/messageLog";
+import type { TerminalOutputLink } from "@/features/hud/terminal/commands";
 //
 // Types
 //
 export type EntityId = string;
 
-export type Resources = {
-  gold: number;
-  wood: number;
-  stone: number;
-  [k: string]: number; // extensible
-};
-
 export type CommandHistory = {
   command: string;
   output: string;
+  links?: TerminalOutputLink[];
 };
 
 export type HUDPanels = {
@@ -40,16 +36,18 @@ export type HUDPanels = {
 export type HUDState = {
   selectedEntities: EntityId[];     // ordered array if you care about last-selected
   selectedSet: Set<EntityId>;       // fast membership checks
-  selectedAction: "Move" | "Repair" | null;
-  resources: Resources;
+  selectedAction: "Move" | "Repair" | { kind: "Deliver" | "Transport"; resourceTypeIds: string[]; donorId?: string } | null;
+  isMeasuring: boolean;
   panels: HUDPanels;
   // Misc ephemeral HUD data
   hoveredEntity: Entity | null;
   tooltip?: string | null;
   // Terminal state
   isTerminalOpen: boolean;
+  isTerminalWide: boolean;
   currentCommand: string;
   commandHistory: CommandHistory[];
+  messageLog: MessageLogEntry[];
   // PixiJS Stuff
   app: Application | null;
   camera: Container | null;
@@ -62,7 +60,7 @@ const defaultState: HUDState = {
   selectedEntities: [],
   selectedSet: new Set(),
   selectedAction: null,
-  resources: { gold: 0, wood: 0, stone: 0 },
+  isMeasuring: false,
   panels: {
     minimapOpen: true,
     inventoryOpen: false,
@@ -72,11 +70,13 @@ const defaultState: HUDState = {
   hoveredEntity: null,
   tooltip: null,
   isTerminalOpen: true,
+  isTerminalWide: false,
   currentCommand: "",
   commandHistory: [
     { command: "", output: "BitWars Terminal v1.0.0\nType 'help' for available commands.\n" },
   ],
   app: null,
+  messageLog: [],
   camera: null,
 };
 
@@ -89,19 +89,21 @@ type Action =
   | { type: "SELECT_REMOVE"; ids: EntityId[] }                    // remove from selection
   | { type: "SELECT_CLEAR" }
   | { type: "ACTION_SET"; value: HUDState["selectedAction"] }
-  | { type: "RES_SET"; patch: Partial<Resources> }                // set/patch resource values
-  | { type: "RES_DELTA"; delta: Partial<Resources> }              // increment/decrement resources
+  | { type: "MEASURE_SET"; value: boolean }
   | { type: "PANEL_SET"; key: keyof HUDPanels; value: boolean }
   | { type: "PANEL_TOGGLE"; key: keyof HUDPanels }
   | { type: "HOVER_SET"; entity: Entity | null }
   | { type: "TOOLTIP_SET"; text: string | null }
   | { type: "APP_SET"; app: Application | null }
+  | { type: "APP_CLEAR"; app: Application }
   | { type: "CAMERA_SET"; camera: Container | null }
   // Terminal actions
   | { type: "TERMINAL_SET_OPEN"; open: boolean }
   | { type: "TERMINAL_TOGGLE" }
+  | { type: "TERMINAL_TOGGLE_WIDTH" }
   | { type: "TERMINAL_SET_INPUT"; value: string }
   | { type: "TERMINAL_PUSH_HISTORY"; entry: CommandHistory }
+  | { type: "MESSAGE_LOG_PUSH"; entry: MessageLogEntry }
   | { type: "HYDRATE"; state: HUDState };                         // for persistence restore
 
 //
@@ -128,24 +130,10 @@ function reducer(state: HUDState, action: Action): HUDState {
       return { ...state, selectedEntities: [], selectedSet: new Set() };
 
     case "ACTION_SET":
-      return { ...state, selectedAction: action.value };
+      return { ...state, selectedAction: action.value, isMeasuring: action.value ? false : state.isMeasuring };
 
-    case "RES_SET": {
-      const next: Resources = { ...state.resources };
-      for (const [k, v] of Object.entries(action.patch)) {
-        if (typeof v === "number") {
-          next[k] = v;
-        }
-      }
-      return { ...state, resources: next };
-    }
-    case "RES_DELTA": {
-      const next: Resources = { ...state.resources };
-      for (const [k, v] of Object.entries(action.delta)) {
-        next[k] = (next[k] ?? 0) + (v ?? 0);
-      }
-      return { ...state, resources: next };
-    }
+    case "MEASURE_SET":
+      return { ...state, isMeasuring: action.value, selectedAction: action.value ? null : state.selectedAction };
 
     case "PANEL_SET":
       return { ...state, panels: { ...state.panels, [action.key]: action.value } };
@@ -160,10 +148,13 @@ function reducer(state: HUDState, action: Action): HUDState {
       return { ...state, tooltip: action.text };
 
     case "TERMINAL_SET_OPEN":
-      return { ...state, isTerminalOpen: action.open };
+      return { ...state, isTerminalOpen: action.open, isTerminalWide: action.open ? state.isTerminalWide : false };
 
     case "TERMINAL_TOGGLE":
-      return { ...state, isTerminalOpen: !state.isTerminalOpen };
+      return { ...state, isTerminalOpen: !state.isTerminalOpen, isTerminalWide: false };
+
+    case "TERMINAL_TOGGLE_WIDTH":
+      return state.isTerminalOpen ? { ...state, isTerminalWide: !state.isTerminalWide } : state;
 
     case "TERMINAL_SET_INPUT":
       return { ...state, currentCommand: action.value };
@@ -171,15 +162,22 @@ function reducer(state: HUDState, action: Action): HUDState {
     case "TERMINAL_PUSH_HISTORY":
       return { ...state, commandHistory: [...state.commandHistory, action.entry] };
 
+    case "MESSAGE_LOG_PUSH":
+      return { ...state, messageLog: appendMessageLog(state.messageLog, action.entry) };
+
     case "HYDRATE":
       // Rebuild Set from plain array if coming from JSON
       return {
         ...action.state,
+        messageLog: (action.state.messageLog ?? []).slice(-100),
         selectedSet: new Set(action.state.selectedEntities),
       };
 
     case "APP_SET":
       return { ...state, app: action.app };
+
+    case "APP_CLEAR":
+      return state.app === action.app ? { ...state, app: null, camera: null, hoveredEntity: null } : state;
 
     case "CAMERA_SET":
       return { ...state, camera: action.camera };
@@ -214,8 +212,7 @@ type HUDContextValue = {
     removeSelection: (ids: EntityId[]) => void;
     clearSelection: () => void;
     setSelectedAction: (value: HUDState["selectedAction"]) => void;
-    setResources: (patch: Partial<Resources>) => void;
-    deltaResources: (delta: Partial<Resources>) => void;
+    setMeasuring: (value: boolean) => void;
     setPanel: (key: keyof HUDPanels, value: boolean) => void;
     togglePanel: (key: keyof HUDPanels) => void;
     setHovered: (entity: Entity | null) => void;
@@ -223,9 +220,12 @@ type HUDContextValue = {
     // Terminal
     setTerminalOpen: (open: boolean) => void;
     toggleTerminal: () => void;
+    toggleTerminalWidth: () => void;
     setTerminalInput: (value: string) => void;
     pushCommandHistory: (entry: CommandHistory) => void;
+    pushMessageLog: (entry: MessageLogEntry) => void;
     setApp: (app: Application | null) => void;
+    clearApp: (app: Application) => void;
     setCamera: (camera: Container | null) => void;
   };
   selectors: {
@@ -233,12 +233,13 @@ type HUDContextValue = {
     selectionCount: number;
     isSelected: (id: EntityId) => boolean;
     selectedAction: HUDState["selectedAction"];
+    isMeasuring: boolean;
     selectedEntities: EntityId[];
     firstSelectedId: EntityId | null;
     isPanelOpen: (key: keyof HUDPanels) => boolean;
-    getResource: (key: keyof Resources) => number;
     // Terminal
     isTerminalOpen: boolean;
+    isTerminalWide: boolean;
     currentCommand: string;
     commandHistory: CommandHistory[];
     camera: Container | null;
@@ -305,9 +306,7 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       removeSelection: (ids: EntityId[]) => dispatch({ type: "SELECT_REMOVE", ids }),
       clearSelection: () => dispatch({ type: "SELECT_CLEAR" }),
       setSelectedAction: (value: HUDState["selectedAction"]) => dispatch({ type: "ACTION_SET", value }),
-
-      setResources: (patch: Partial<Resources>) => dispatch({ type: "RES_SET", patch }),
-      deltaResources: (delta: Partial<Resources>) => dispatch({ type: "RES_DELTA", delta }),
+      setMeasuring: (value: boolean) => dispatch({ type: "MEASURE_SET", value }),
 
       setPanel: (key: keyof HUDPanels, value: boolean) => dispatch({ type: "PANEL_SET", key, value }),
       togglePanel: (key: keyof HUDPanels) => dispatch({ type: "PANEL_TOGGLE", key }),
@@ -315,13 +314,16 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       setHovered: (entity: Entity | null) => dispatch({ type: "HOVER_SET", entity }),
       setTooltip: (text: string | null) => dispatch({ type: "TOOLTIP_SET", text }),
       setApp: (app: Application | null) => dispatch({ type: "APP_SET", app }),
+      clearApp: (app: Application) => dispatch({ type: "APP_CLEAR", app }),
       setCamera: (camera: Container | null) => dispatch({ type: "CAMERA_SET", camera }),
 
       // Terminal
       setTerminalOpen: (open: boolean) => dispatch({ type: "TERMINAL_SET_OPEN", open }),
       toggleTerminal: () => dispatch({ type: "TERMINAL_TOGGLE" }),
+      toggleTerminalWidth: () => dispatch({ type: "TERMINAL_TOGGLE_WIDTH" }),
       setTerminalInput: (value: string) => dispatch({ type: "TERMINAL_SET_INPUT", value }),
       pushCommandHistory: (entry: CommandHistory) => dispatch({ type: "TERMINAL_PUSH_HISTORY", entry }),
+      pushMessageLog: (entry: MessageLogEntry) => dispatch({ type: "MESSAGE_LOG_PUSH", entry }),
     }),
     []
   );
@@ -333,12 +335,13 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       selectionCount: state.selectedEntities.length,
       isSelected: (id: EntityId) => state.selectedSet.has(id),
       selectedAction: state.selectedAction,
+      isMeasuring: state.isMeasuring,
       selectedEntities: state.selectedEntities,
       firstSelectedId: state.selectedEntities.length > 0 ? state.selectedEntities[0]! : null,
       isPanelOpen: (key: keyof HUDPanels) => !!state.panels[key],
-      getResource: (key: keyof Resources) => state.resources[key] ?? 0,
       // Terminal
       isTerminalOpen: state.isTerminalOpen,
+      isTerminalWide: state.isTerminalWide,
       currentCommand: state.currentCommand,
       commandHistory: state.commandHistory,
       hoveredEntity: state.hoveredEntity,
@@ -349,10 +352,11 @@ export function HUDProvider({ children, persistKey = "hud", persist = false }: H
       state.selectedEntities.length,
       state.selectedSet,
       state.selectedAction,
+      state.isMeasuring,
       state.selectedEntities,
       state.panels,
-      state.resources,
       state.isTerminalOpen,
+      state.isTerminalWide,
       state.currentCommand,
       state.commandHistory,
       state.hoveredEntity,

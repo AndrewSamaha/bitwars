@@ -41,6 +41,7 @@ technologies:
       energy: 1
 entity_types:
   theta:
+    max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
     z_index: -10
@@ -59,17 +60,17 @@ entity_types:
         min_effective_distance: 0
         full_damage_distance: 700
         max_effective_distance: 1200
-        damage_per_second: 6
+        damage_per_second: 20
     resource_node:
       resource_type: energy
       collection_mode: proximity
       min_effective_distance: 350
       max_effective_distance: 1600
   planet_blue:
+    max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
     z_index: -2
-    suppress_hover: true
     stop_radius: 1
     mass: 500
     health: 100
@@ -77,11 +78,15 @@ entity_types:
       scale: 4
     resource_node:
       resource_type: food
+      amount: 2000
       collection_mode: transport
       max_simultaneous_collectors: 1
       min_effective_distance: 20
       max_effective_distance: 50
+    builds:
+      - entity_type_id: dead_planet_blue
   star_yellow:
+    max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
     visibility_range: 40000
@@ -94,22 +99,20 @@ entity_types:
       scale: 15
     radiation_sources:
       - radiation_type: stellar_heat
-        min_effective_distance_border_color: null
         min_effective_distance_fill_color: "#ef4444"
-        full_damage_distance_border_color: null
         full_damage_distance_fill_color: "#f97316"
-        max_effective_distance_border_color: null
         max_effective_distance_fill_color: "#facc15"
         min_effective_distance: 0
         full_damage_distance: 900
         max_effective_distance: 1200
-        damage_per_second: 2
+        damage_per_second: 10
     resource_node:
       resource_type: energy
       collection_mode: proximity
       min_effective_distance: 10
       max_effective_distance: 1500
   minerals:
+    max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
     z_index: -1
@@ -121,11 +124,16 @@ entity_types:
       scale: 3
     resource_node:
       resource_type: minerals
+      amount: 10000
       collection_mode: transport
       max_simultaneous_collectors: 1
       min_effective_distance: 20
       max_effective_distance: 50
+    builds:
+      - entity_type_id: asteroid
   collector_solar:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     speed: 20
     stop_radius: 1
@@ -159,10 +167,16 @@ entity_types:
           - habitat
       proximity_rate_per_second: 3
       transport_rate_per_second: 0
-      carry_capacity: 0
     upgrades:
       - entity_type_id: collector_solar_v2
   worker:
+    resource_reserves:
+      food: 5
+      energy: 5
+    max_capacity:
+      energy: 50
+      food: 50
+      minerals: 50
     fog_memory: forget_when_hidden
     speed: 90
     stop_radius: 0.75
@@ -196,10 +210,12 @@ entity_types:
         - minerals
         - food
       transport_rate_per_second: 8
-      carry_capacity: 50
       deposit_entity_types:
         - processor
         - habitat
+        - factory
+        - military_factory
+        - food_storage_container
     repair:
       range: 150
       cost_per_min:
@@ -231,13 +247,48 @@ entity_types:
         spend_rates:
           minerals: 1.2
           energy: 1.2
+      - entity_type_id: food_storage_container
+        spend_rates:
+          minerals: 1
+          energy: 1
+      - entity_type_id: mineral_storage_container
+        spend_rates:
+          minerals: 1
+          energy: 1
   habitat:
+    max_capacity:
+      energy: 1000
+      food: 3000
+      minerals: 1000
+    resource_sharing:
+      range: 4000
+      wireless_receives:
+        - energy
+      resources:
+        energy:
+          priority: 10
+          overflow_priority: -1
+          refill_below: 700
+          fill_to: 900
+          reserve: 100
+        food:
+          priority: 10
+          overflow_priority: -1
+          refill_below: 2500
+          fill_to: 2900
+          reserve: 200
+        minerals:
+          priority: 10
+          overflow_priority: -1
+          refill_below: 700
+          fill_to: 900
+          reserve: 100
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
     mass: 4
     health: 400
-    hull_radius: 50
+    hull_radius: 90
     visual:
       scale: 2
     combat_targetable: true
@@ -260,6 +311,8 @@ entity_types:
           priority: 0
     maintenance_cost_per_minute:
       food: 60
+      energy: 10
+      minerals: 5
     sensor:
       range: 4000
       cost_per_minute:
@@ -279,7 +332,6 @@ entity_types:
         - energy
       proximity_rate_per_second: 5
       transport_rate_per_second: 0
-      carry_capacity: 0
       minimum_distance:
         value: 800
         retry_after_ms: 1000
@@ -290,6 +342,10 @@ entity_types:
     researches:
       - neutrino_sensors
   processor:
+    max_capacity:
+      energy: 500
+      food: 500
+      minerals: 10000
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -329,6 +385,24 @@ entity_types:
       range: 400
       cost_per_minute:
         energy: 0.1
+    max_capacity:
+      energy: 3000
+      food: 500
+      minerals: 3000
+    refinery:
+      accepts:
+        - food
+        - minerals
+    resource_sharing:
+      range: 1000
+      wireless_receives:
+        - energy
+      resources:
+        energy:
+          priority: 0
+          refill_below: 3000
+          fill_to: 3000
+          reserve: 50
     builds:
       - entity_type_id: scout
         spend_rates:
@@ -355,6 +429,8 @@ entity_types:
           minerals: 2
           energy: 2
   scout:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 500
     stop_radius: 0.5
@@ -382,6 +458,7 @@ entity_types:
     builds:
       - entity_type_id: scout_long_range
   raider:
+    max_capacity: {}
     fog_memory: forget_when_hidden
     speed: 110
     stop_radius: 0.5
@@ -405,8 +482,10 @@ entity_types:
     sensor:
       range: 1200
       cost_per_minute:
-        energy: 2.5
+        energy: 0
   defense_pylon_v2:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     build_cost:
       minerals: 100
@@ -437,12 +516,14 @@ entity_types:
     upgrades:
       - entity_type_id: defense_pylon_v3
   defense_pylon:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     build_cost:
       minerals: 100
       energy: 50
     maintenance_cost_per_minute:
-      energy: 100
+      energy: 30
     speed: 5
     stop_radius: 0.5
     mass: 1
@@ -469,6 +550,8 @@ entity_types:
     builds:
       - entity_type_id: waypoint
   collector_solar_v2:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     speed: 20
     stop_radius: 1
@@ -505,8 +588,9 @@ entity_types:
           - habitat
       proximity_rate_per_second: 15
       transport_rate_per_second: 0
-      carry_capacity: 0
   defense_pylon_v3:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     build_cost:
       minerals: 100
@@ -535,6 +619,8 @@ entity_types:
       cost_per_minute:
         energy: 2.5
   fighter_v1:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 400
     stop_radius: 0.5
@@ -563,6 +649,8 @@ entity_types:
       scale: 1
       rotate_deg: 90
   heavy_fighter:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 400
     stop_radius: 0.5
@@ -591,6 +679,8 @@ entity_types:
       scale: 1
       rotate_deg: 90
   battleship:
+    max_capacity:
+      energy: 500
     fog_memory: forget_when_hidden
     speed: 400
     stop_radius: 0.5
@@ -622,6 +712,8 @@ entity_types:
         - space_age
         - neutrino_sensors
   science_vessel:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 500
     stop_radius: 0.5
@@ -652,6 +744,8 @@ entity_types:
       - neutrino_sensors
       - solar_efficiency_1
   scout_long_range:
+    max_capacity:
+      energy: 100
     fog_memory: forget_when_hidden
     speed: 500
     stop_radius: 0.5
@@ -679,6 +773,13 @@ entity_types:
       cost_per_minute:
         energy: 2.5
   resource_transport:
+    resource_reserves:
+      food: 5
+      energy: 5
+    max_capacity:
+      energy: 90
+      food: 90
+      minerals: 90
     fog_memory: forget_when_hidden
     speed: 80
     stop_radius: 2
@@ -704,11 +805,21 @@ entity_types:
         - minerals
         - food
       transport_rate_per_second: 8
-      carry_capacity: 90
       deposit_entity_types:
         - processor
         - habitat
+        - factory
+        - military_factory
+        - food_storage_container
   military_factory:
+    max_capacity:
+      energy: 4000
+      food: 500
+      minerals: 2500
+    refinery:
+      accepts:
+        - food
+        - minerals
     fog_memory: forget_when_hidden
     speed: 60
     stop_radius: 0.5
@@ -725,6 +836,16 @@ entity_types:
       range: 400
       cost_per_minute:
         energy: 0.1
+    resource_sharing:
+      range: 1000
+      wireless_receives:
+        - energy
+      resources:
+        energy:
+          priority: 0
+          refill_below: 3000
+          fill_to: 3000
+          reserve: 50
     builds:
       - entity_type_id: scout
         spend_rates:
@@ -751,6 +872,13 @@ entity_types:
           minerals: 2
           energy: 2
   marine_worker:
+    resource_reserves:
+      food: 5
+      energy: 5
+    max_capacity:
+      energy: 40
+      food: 40
+      minerals: 40
     fog_memory: forget_when_hidden
     speed: 90
     stop_radius: 0.75
@@ -784,10 +912,12 @@ entity_types:
         - minerals
         - food
       transport_rate_per_second: 8
-      carry_capacity: 40
       deposit_entity_types:
         - processor
         - habitat
+        - factory
+        - military_factory
+        - food_storage_container
     repair:
       range: 150
       cost_per_min:
@@ -820,6 +950,7 @@ entity_types:
           minerals: 1.2
           energy: 1.2
   waypoint:
+    max_capacity: {}
     fog_memory: forget_when_hidden
     build_cost:
       minerals: 20
@@ -838,3 +969,87 @@ entity_types:
     visual:
       scale: 0.8
     visibility_range: 10000
+  asteroid:
+    max_capacity: {}
+    fog_memory: retain_last_known
+    speed: 0
+    z_index: -1
+    stop_radius: 1
+    mass: 500
+    health: 100
+    visibility_range: 1000
+    visual:
+      scale: 2.5
+  food_storage_container:
+    max_capacity:
+      food: 1000
+      minerals: 100
+      energy: 100
+    fog_memory: forget_when_hidden
+    speed: 60
+    stop_radius: 0.5
+    mass: 7
+    health: 50
+    hull_radius: 16
+    visual:
+      scale: 1.5
+    build_cost:
+      minerals: 100
+      energy: 100
+    sensor:
+      range: 400
+      cost_per_minute:
+        energy: 0.1
+    combat_targetable: true
+    maintenance_cost_per_minute:
+      energy: 1
+      minerals: 1
+    refinery:
+      accepts:
+        - minerals
+        - food
+  dead_planet_blue:
+    max_capacity: {}
+    fog_memory: retain_last_known
+    speed: 0
+    z_index: -2
+    stop_radius: 1
+    mass: 500
+    health: 100
+    visual:
+      scale: 4
+    resource_node:
+      resource_type: minerals
+      amount: 1000
+      collection_mode: transport
+      max_simultaneous_collectors: 1
+      min_effective_distance: 20
+      max_effective_distance: 50
+  mineral_storage_container:
+    max_capacity:
+      food: 100
+      minerals: 1000
+      energy: 100
+    fog_memory: forget_when_hidden
+    speed: 60
+    stop_radius: 0.5
+    mass: 7
+    health: 50
+    hull_radius: 16
+    visual:
+      scale: 1.5
+    build_cost:
+      minerals: 100
+      energy: 100
+    sensor:
+      range: 400
+      cost_per_minute:
+        energy: 0.1
+    combat_targetable: true
+    maintenance_cost_per_minute:
+      energy: 1
+      minerals: 1
+    refinery:
+      accepts:
+        - minerals
+        - food

@@ -6,9 +6,12 @@ export const ENTITY_EXPLODED_EVENT = "bitwars:entity-exploded";
 export const ENTITY_DETECTED_EVENT = "bitwars:entity-detected";
 export const BUILD_COMPLETED_EVENT = "bitwars:build-completed";
 export const MINIMUM_DISTANCE_VIOLATION_EVENT = "bitwars:minimum-distance-violation";
+export const TRANSFER_ENDPOINT_LOST_EVENT = "bitwars:transfer-endpoint-lost";
 export const COLLECTION_WAITING_EVENT = "bitwars:collection-waiting";
 export const CENTER_CAMERA_ON_ENTITY_EVENT = "bitwars:center-camera-on-entity";
 export const ENTITY_UNDER_ATTACK_EVENT = "bitwars:entity-under-attack";
+export const ENTITY_RESOURCE_STARVATION_EVENT = "bitwars:entity-resource-starvation";
+export const ENTITY_RADIATION_DAMAGE_EVENT = "bitwars:entity-radiation-damage";
 
 export type GameStateUpdatedDetail = { entityIds?: string[] };
 export type MinimumDistanceViolationDetail = {
@@ -50,6 +53,14 @@ export function dispatchEntityUnderAttack(entity: Entity) {
   window.dispatchEvent(new CustomEvent<Entity>(ENTITY_UNDER_ATTACK_EVENT, { detail: entity }));
 }
 
+export function dispatchEntityResourceStarvation(entity: Entity) {
+  window.dispatchEvent(new CustomEvent<Entity>(ENTITY_RESOURCE_STARVATION_EVENT, { detail: entity }));
+}
+
+export function dispatchEntityRadiationDamage(entity: Entity) {
+  window.dispatchEvent(new CustomEvent<Entity>(ENTITY_RADIATION_DAMAGE_EVENT, { detail: entity }));
+}
+
 /** Emitted when a non-owned entity enters this client's sensor coverage. */
 export function dispatchEntityDetected(entity: Entity) {
   if (!entity.pos) return;
@@ -72,4 +83,8 @@ export function dispatchCollectionWaiting(detail: CollectionWaitingDetail) {
 
 export function dispatchCenterCameraOnEntity(entityId: string) {
   window.dispatchEvent(new CustomEvent<string>(CENTER_CAMERA_ON_ENTITY_EVENT, { detail: entityId }));
+}
+
+export function dispatchTransferEndpointLost(carrierEntityId: string) {
+  window.dispatchEvent(new CustomEvent(TRANSFER_ENDPOINT_LOST_EVENT, { detail: { carrierEntityId } }));
 }

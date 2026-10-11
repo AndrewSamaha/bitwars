@@ -6,7 +6,21 @@ use prost::Message;
 
 /// Convert a protobuf snapshot to a WorldState
 pub fn from_snapshot_proto(snapshot: &[u8]) -> Result<WorldState> {
-    let snapshot = Snapshot::decode(snapshot)?;
+    let mut snapshot = Snapshot::decode(snapshot)?;
+    for cargo in &snapshot.collector_states {
+        anyhow::ensure!(cargo.carry_amount.is_finite() && cargo.carry_amount >= 0.0, "invalid legacy cargo");
+        if cargo.carry_amount > 0.0 {
+            anyhow::ensure!(!cargo.resource_type.is_empty(), "legacy cargo has no resource type");
+            if let Some(entity) = snapshot.entities.iter_mut().find(|entity| entity.id == cargo.entity_id) {
+                let inventory = entity.resources.get_or_insert_with(Default::default);
+                if let Some(entry) = inventory.resources.iter_mut().find(|entry| entry.resource_type == cargo.resource_type) {
+                    entry.amount += cargo.carry_amount as f64;
+                } else {
+                    inventory.resources.push(crate::pb::ResourceAmount { resource_type: cargo.resource_type.clone(), amount: cargo.carry_amount as f64 });
+                }
+            }
+        }
+    }
     let ledger = snapshot
         .player_ledgers
         .iter()

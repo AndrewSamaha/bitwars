@@ -12,6 +12,7 @@ export type EntityId = { id: number | string };
 export type EntityTypeId = { entity_type_id?: string };
 export type OwnerPlayerId = { owner_player_id?: string };
 export type Health = { health?: number };
+export type ResourceAmountView = { resource_type: string; amount: number };
 /** Client-only radiation presentation state. */
 export type RadiationDamagePresentation = {
   radiation_damage_last_at?: number;
@@ -31,11 +32,10 @@ export type CollectorStateView = {
   collector_state?: {
     activity: string;
     resource_type: string;
-    carry_amount: number;
-    carry_capacity: number;
     effective_rate_per_second: number;
     assigned_resource_type?: string;
     assigned_nearest_compatible?: boolean;
+    receiving_entity_id?: number | string | null;
     updated_tick?: number;
   };
 };
@@ -56,6 +56,7 @@ export type Entity = Partial<
   EntityTypeId &
   OwnerPlayerId &
   Health &
+  { resources?: ResourceAmountView[]; resource_deposit?: { amount: number; remaining: number } | null } &
   FogMemoryView &
   RadiationDamagePresentation &
   ActiveIntentView &
@@ -72,10 +73,13 @@ class GameWorld {
   last = performance.now();
   // Render/tick should wait until the first snapshot has been applied
   ready = false;
+  runId = "";
+  paused = false;
 
   tick(now: number) {
     const dt = (now - this.last) / 1000; // seconds
     this.last = now;
+    if (this.paused) return;
 
     // Proto-shaped movement (pos: {x,y}, vel: {x,y})
     for (const e of this.world.with("pos", "vel").without("remembered")) {

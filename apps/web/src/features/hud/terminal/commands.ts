@@ -1,5 +1,7 @@
 import { game } from "@/features/gamestate/world";
+import { contentManager } from "@/features/content/contentManager";
 import type { SessionStatus } from "@/features/users/components/identity/SessionContext";
+import type { MessageLogEntry } from "@/features/hud/messageLog";
 
 const SYSTEM_OWNERS = [
   { id: "raiders", name: "Raiders" },
@@ -11,6 +13,7 @@ export type TerminalCommandContext = {
   effectivePlayerId: string | null;
   actingAsId: string | null;
   sessionStatus: SessionStatus;
+  messageLog?: readonly MessageLogEntry[];
   logout: () => Promise<string>;
   su: (playerId: string) => void;
   exitSu: () => void;
@@ -18,8 +21,11 @@ export type TerminalCommandContext = {
 
 export type TerminalCommandResult = {
   output: string;
+  links?: TerminalOutputLink[];
   sessionEnded?: boolean;
 };
+
+export type TerminalOutputLink = { start: number; end: number; entityId: string };
 
 type TerminalCommand = {
   name: string;
@@ -92,6 +98,78 @@ async function resolveSuTarget(input: string): Promise<{ id: string; name: strin
 
 const commands: TerminalCommand[] = [
   {
+    name: "log",
+    description: "Show the last 100 toast messages: log [-ts] (include timestamps)",
+    requiresAuth: true,
+    run: (args, context) => {
+      if (args.length > 1 || (args.length === 1 && args[0] !== "-ts")) {
+        return { output: "usage: log [-ts]" };
+      }
+      const entries = context.messageLog ?? [];
+      if (entries.length === 0) return { output: "No messages logged." };
+      const links: TerminalOutputLink[] = [];
+      let offset = 0;
+      const output = entries.map((entry) => {
+        const prefix = args[0] === "-ts" ? `[${new Date(entry.timestamp).toLocaleString()}] ` : "";
+        const line = `${prefix}${entry.title}: ${entry.message}`;
+        if (entry.focusEntityId && entry.focusLabel) {
+          const labelStart = entry.message.indexOf(entry.focusLabel);
+          if (labelStart !== -1) {
+            const start = offset + prefix.length + entry.title.length + 2 + labelStart;
+            links.push({ start, end: start + entry.focusLabel.length, entityId: entry.focusEntityId });
+          }
+        }
+        offset += line.length + 1;
+        return line;
+      }).join("\n");
+      return { output, links };
+    },
+  },
+  {
+    name: "scenario",
+    description: "scenario list|status|validate <id>|load <id>|reload|pause|resume|step [ticks]|bookmark <id> [tags...] [--entities=1,2]",
+    requiresAuth: true,
+    run: async (args) => {
+      const [action = "status", id, ...rest] = args;
+      if (["list", "status"].includes(action)) {
+        const response = await fetch("/api/content/scenarios", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) return { output: data.error ?? "Unable to access scenarios" };
+        return { output: action === "status" ? JSON.stringify(data.runtime, null, 2)
+          : data.scenarios.map((item: { id: string; name: string; tags?: string[] }) => `${item.id}: ${item.name} [${(item.tags ?? []).join(", ")}]`).join("\n") || "No scenarios" };
+      }
+      if (!["validate", "load", "reload", "pause", "resume", "step", "bookmark"].includes(action)
+        || (["validate", "load", "bookmark"].includes(action) && !id)
+        || (["reload", "pause", "resume"].includes(action) && args.length > 1)
+        || (["validate", "load"].includes(action) && args.length > 2)
+        || (action === "step" && (args.length > 2 || (id !== undefined && !/^\d+$/.test(id)))))
+        return { output: "usage: scenario list|status|validate <id>|load <id>|reload|pause|resume|step [ticks]|bookmark <id> [tags...] [--entities=1,2]" };
+      const body: Record<string, unknown> = { action, run_id: game.runId || undefined };
+      if (["validate", "load", "bookmark"].includes(action)) body.id = id;
+      if (action === "step") body.ticks = id === undefined ? 1 : Number(id);
+      if (action === "bookmark") {
+        body.tags = rest.filter(tag => !tag.startsWith("--entities="));
+        const selected = rest.find(argument => argument.startsWith("--entities="));
+        if (selected) body.entity_ids = selected.slice("--entities=".length).split(",").map(Number);
+      }
+      const response = await fetch("/api/content/scenarios", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      let data = await response.json();
+      if (!response.ok && response.status !== 202) return { output: `scenario: ${data.error ?? "Command failed"}` };
+      const requestId = data.request_id;
+      const deadline = Date.now() + 10_000;
+      while (data.pending && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        const result = await fetch(`/api/content/scenarios?request_id=${encodeURIComponent(requestId)}`, { cache: "no-store" });
+        data = await result.json();
+        if (!result.ok && result.status !== 202) return { output: `scenario: ${data.error ?? "Could not read result"}` };
+      }
+      if (data.pending) return { output: `scenario: request ${requestId} is pending; check that the engine is running.` };
+      if (!data.ok) return { output: `scenario: ${data.error}` };
+      return { output: data.result?.saved_id ? `Bookmark saved: ${data.result.saved_id}`
+        : `${action} accepted. ${JSON.stringify(data.result?.runtime ?? {})}` };
+    },
+  },
+  {
     name: "debug",
     description: "Lua capture: debug <on|off|state> [owner id] (defaults to current owner)",
     requiresAuth: true,
@@ -152,6 +230,56 @@ const commands: TerminalCommand[] = [
     description: "List your units",
     requiresAuth: true,
     run: (_args, context) => ({ output: listOwnedEntities(context.effectivePlayerId) }),
+  },
+  {
+    name: "desc",
+    description: "Show an entity's health and resources: desc <entity_id|entity_type[index]>",
+    requiresAuth: true,
+    run: (args, context) => {
+      if (args.length !== 1) {
+        return { output: "usage: desc <entity_id|entity_type[index]>" };
+      }
+      const selector = args[0];
+      const entities = [...game.world.with("id")];
+      let entity = /^\d+$/.test(selector)
+        ? entities.find((candidate) => String(candidate.id) === selector)
+        : undefined;
+      if (!/^\d+$/.test(selector)) {
+        const match = /^([a-zA-Z0-9_-]+)(?:\[(\d+)\])?$/.exec(selector);
+        if (!match) return { output: "usage: desc <entity_id|entity_type[index]>" };
+        const [, entityTypeId, indexText] = match;
+        const matches = entities
+          .filter((candidate) => candidate.owner_player_id === context.realPlayerId)
+          .filter((candidate) => candidate.entity_type_id === entityTypeId)
+          .sort((a, b) => Number(a.id) - Number(b.id));
+        const index = indexText === undefined ? 0 : Number(indexText);
+        entity = matches[index];
+        if (!entity) {
+          return { output: `desc: ${entityTypeId}[${index}] not found (${matches.length} owned)` };
+        }
+      }
+      if (!entity) return { output: `desc: entity ${args[0]} not found in your visible world` };
+      if (entity.owner_player_id !== context.realPlayerId) {
+        return { output: "desc: resource inventory is only available for entities you own" };
+      }
+
+      const maxHealth = contentManager.getEntityType(entity.entity_type_id ?? "")?.health;
+      const health = Number((entity.health ?? 0).toFixed(3));
+      const amounts = new Map((entity.resources ?? []).map(({ resource_type, amount }) => [resource_type, amount]));
+      const resourceTypes = contentManager.getContent()?.resource_types ?? {};
+      const resourceIds = [...new Set([...Object.keys(resourceTypes), ...amounts.keys()])].sort((a, b) =>
+        (resourceTypes[a]?.order ?? Number.MAX_SAFE_INTEGER) - (resourceTypes[b]?.order ?? Number.MAX_SAFE_INTEGER)
+        || a.localeCompare(b),
+      );
+      const lines = resourceIds.map((id) => `${id}: ${Number((amounts.get(id) ?? 0).toFixed(3))}`);
+      return {
+        output: [
+          `Entity ${entity.id} (${entity.entity_type_id ?? "unknown"})`,
+          `health: ${health}/${maxHealth === undefined ? "?" : Number(maxHealth.toFixed(3))}`,
+          ...lines,
+        ].join("\n"),
+      };
+    },
   },
   {
     name: "who",

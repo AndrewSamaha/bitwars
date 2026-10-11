@@ -1,0 +1,5956 @@
+version: 1
+id: ready-for-migration
+name: ready-for-migration
+tags: []
+players:
+- player1
+technologies:
+  player1:
+  - space_age
+entities:
+- id: 1
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 9982.991
+    y: 74266.44
+  health: 100.0
+  resources: {}
+- id: 2
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -42809.035
+    y: -14894.153
+  health: 100.0
+  resources: {}
+- id: 3
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 15946.563
+    y: 33801.49
+  health: 100.0
+  resources: {}
+- id: 4
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 24885.99
+    y: 84948.86
+  health: 100.0
+  resources: {}
+- id: 5
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -1946.7319
+    y: 30381.68
+  health: 100.0
+  resources: {}
+- id: 6
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -46885.34
+    y: 8879.98
+  health: 100.0
+  resources: {}
+- id: 7
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -86653.05
+    y: 49816.957
+  health: 100.0
+  resources: {}
+- id: 8
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -24584.781
+    y: 31935.05
+  health: 100.0
+  resources: {}
+- id: 9
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -25519.645
+    y: -67029.24
+  health: 100.0
+  resources: {}
+- id: 10
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 28793.463
+    y: 35996.188
+  health: 100.0
+  resources: {}
+- id: 11
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -1504.2943
+    y: 4403.0005
+  health: 100.0
+  resources: {}
+- id: 12
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -98474.26
+    y: -8694.222
+  health: 100.0
+  resources: {}
+- id: 13
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 62612.74
+    y: 12509.647
+  health: 100.0
+  resources: {}
+- id: 14
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 62628.37
+    y: -52056.906
+  health: 100.0
+  resources: {}
+- id: 15
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -19701.236
+    y: 166039.64
+  health: 100.0
+  resources: {}
+- id: 16
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 7120.0117
+    y: 85826.914
+  health: 100.0
+  resources: {}
+- id: 17
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -24984.467
+    y: -64293.812
+  health: 100.0
+  resources: {}
+- id: 18
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -21034.355
+    y: -22211.506
+  health: 100.0
+  resources: {}
+- id: 19
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 15986.082
+    y: 47682.543
+  health: 100.0
+  resources: {}
+- id: 20
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 1674.299
+    y: 49835.03
+  health: 100.0
+  resources: {}
+- id: 21
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -26394.885
+    y: -47506.293
+  health: 100.0
+  resources: {}
+- id: 22
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -20911.86
+    y: 16053.215
+  health: 100.0
+  resources: {}
+- id: 23
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -4789.7197
+    y: -6661.9854
+  health: 100.0
+  resources: {}
+- id: 24
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -70914.69
+    y: -35337.75
+  health: 100.0
+  resources: {}
+- id: 25
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 12960.967
+    y: 35749.527
+  health: 100.0
+  resources: {}
+- id: 26
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 28900.562
+    y: -30837.246
+  health: 100.0
+  resources: {}
+- id: 27
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -84626.82
+    y: 36003.445
+  health: 100.0
+  resources: {}
+- id: 28
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -48101.67
+    y: -23785.018
+  health: 100.0
+  resources: {}
+- id: 29
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -29616.867
+    y: 7637.137
+  health: 100.0
+  resources: {}
+- id: 30
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 82843.11
+    y: -10852.016
+  health: 100.0
+  resources: {}
+- id: 31
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 830.40356
+    y: 143125.22
+  health: 100.0
+  resources: {}
+- id: 33
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -9776.105
+    y: 37846.223
+  health: 100.0
+  resources: {}
+- id: 34
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 9664.167
+    y: 36295.133
+  health: 100.0
+  resources: {}
+- id: 35
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 6905.842
+    y: 10576.803
+  health: 100.0
+  resources: {}
+- id: 36
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -28130.057
+    y: 66930.195
+  health: 100.0
+  resources: {}
+- id: 37
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 77362.85
+    y: 63163.74
+  health: 100.0
+  resources: {}
+- id: 38
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 8772.938
+    y: -370.52518
+  health: 100.0
+  resources: {}
+- id: 39
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 22082.297
+    y: 43169.55
+  health: 100.0
+  resources: {}
+- id: 40
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 23711.344
+    y: -96042.57
+  health: 100.0
+  resources: {}
+- id: 41
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 26525.816
+    y: -55400.285
+  health: 100.0
+  resources: {}
+- id: 42
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -77804.83
+    y: 39990.53
+  health: 100.0
+  resources: {}
+- id: 43
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 73121.914
+    y: -10589.372
+  health: 100.0
+  resources: {}
+- id: 44
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -16098.142
+    y: 43137.035
+  health: 100.0
+  resources: {}
+- id: 45
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -78218.1
+    y: -34742.465
+  health: 100.0
+  resources: {}
+- id: 46
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 4601.381
+    y: 73662.62
+  health: 100.0
+  resources: {}
+- id: 47
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -61134.19
+    y: 76867.32
+  health: 100.0
+  resources: {}
+- id: 48
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 18608.057
+    y: 57165.15
+  health: 100.0
+  resources: {}
+- id: 49
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 27121.188
+    y: 15482.413
+  health: 100.0
+  resources: {}
+- id: 50
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -6157.6724
+    y: -52271.664
+  health: 100.0
+  resources: {}
+- id: 51
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 76570.46
+    y: 14969.78
+  health: 100.0
+  resources: {}
+- id: 52
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 86463.62
+    y: 21614.93
+  health: 100.0
+  resources: {}
+- id: 53
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -106466.555
+    y: -22037.621
+  health: 100.0
+  resources: {}
+- id: 54
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -45460.0
+    y: 29365.387
+  health: 100.0
+  resources: {}
+- id: 55
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 78369.31
+    y: 39025.375
+  health: 100.0
+  resources: {}
+- id: 56
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -89596.06
+    y: 50476.676
+  health: 100.0
+  resources: {}
+- id: 57
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 15249.145
+    y: 9800.583
+  health: 100.0
+  resources: {}
+- id: 58
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -24073.299
+    y: -77834.734
+  health: 100.0
+  resources: {}
+- id: 59
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -15166.906
+    y: -35605.965
+  health: 100.0
+  resources: {}
+- id: 60
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 93558.59
+    y: -22481.902
+  health: 100.0
+  resources: {}
+- id: 61
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -9243.69
+    y: -87827.9
+  health: 100.0
+  resources: {}
+- id: 62
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 35201.68
+    y: 71469.02
+  health: 100.0
+  resources: {}
+- id: 63
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -148159.72
+    y: 19579.688
+  health: 100.0
+  resources: {}
+- id: 64
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -37882.26
+    y: 2150.2705
+  health: 100.0
+  resources: {}
+- id: 65
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 65996.53
+    y: 36923.844
+  health: 100.0
+  resources: {}
+- id: 66
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -36694.44
+    y: -44797.79
+  health: 100.0
+  resources: {}
+- id: 67
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 60668.33
+    y: 70844.64
+  health: 100.0
+  resources: {}
+- id: 68
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 25786.955
+    y: -23375.451
+  health: 100.0
+  resources: {}
+- id: 69
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -36289.92
+    y: -12811.826
+  health: 100.0
+  resources: {}
+- id: 70
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -77818.336
+    y: -30411.99
+  health: 100.0
+  resources: {}
+- id: 71
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -5316.503
+    y: 33804.355
+  health: 100.0
+  resources: {}
+- id: 72
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -38099.758
+    y: 89369.05
+  health: 100.0
+  resources: {}
+- id: 73
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 3450.4893
+    y: 17852.553
+  health: 100.0
+  resources: {}
+- id: 74
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -12982.505
+    y: 19252.873
+  health: 100.0
+  resources: {}
+- id: 75
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -45787.375
+    y: 90654.266
+  health: 100.0
+  resources: {}
+- id: 76
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -22356.223
+    y: 59505.734
+  health: 100.0
+  resources: {}
+- id: 77
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 5166.4683
+    y: -62356.45
+  health: 100.0
+  resources: {}
+- id: 78
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -640.8647
+    y: 66743.305
+  health: 100.0
+  resources: {}
+- id: 79
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -36410.42
+    y: 81047.68
+  health: 100.0
+  resources: {}
+- id: 81
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -4190.81
+    y: -52995.977
+  health: 100.0
+  resources: {}
+- id: 82
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 34416.77
+    y: 36718.53
+  health: 100.0
+  resources: {}
+- id: 83
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 12614.267
+    y: 20400.326
+  health: 100.0
+  resources: {}
+- id: 84
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -40670.48
+    y: 41856.387
+  health: 100.0
+  resources: {}
+- id: 85
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -30845.03
+    y: -35349.86
+  health: 100.0
+  resources: {}
+- id: 86
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 94343.945
+    y: -76265.62
+  health: 100.0
+  resources: {}
+- id: 87
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 16916.72
+    y: -39661.426
+  health: 100.0
+  resources: {}
+- id: 88
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -12217.7705
+    y: -88920.14
+  health: 100.0
+  resources: {}
+- id: 89
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -80822.07
+    y: 17393.016
+  health: 100.0
+  resources: {}
+- id: 90
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -16248.945
+    y: -22421.78
+  health: 100.0
+  resources: {}
+- id: 91
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -31531.473
+    y: -43738.234
+  health: 100.0
+  resources: {}
+- id: 92
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -92563.89
+    y: 87565.44
+  health: 100.0
+  resources: {}
+- id: 93
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -83968.46
+    y: -59806.016
+  health: 100.0
+  resources: {}
+- id: 94
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 29490.074
+    y: 20761.525
+  health: 100.0
+  resources: {}
+- id: 95
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -55473.434
+    y: -62349.004
+  health: 100.0
+  resources: {}
+- id: 96
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -35245.215
+    y: -32728.895
+  health: 100.0
+  resources: {}
+- id: 97
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 89157.6
+    y: -10626.813
+  health: 100.0
+  resources: {}
+- id: 98
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -3979.541
+    y: 32641.303
+  health: 100.0
+  resources: {}
+- id: 99
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 28968.49
+    y: 27782.201
+  health: 100.0
+  resources: {}
+- id: 100
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -77685.21
+    y: 11901.104
+  health: 100.0
+  resources: {}
+- id: 101
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 54617.973
+    y: -49342.914
+  health: 100.0
+  resources: {}
+- id: 102
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 59275.992
+    y: -51429.574
+  health: 100.0
+  resources: {}
+- id: 103
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -20482.072
+    y: 42950.188
+  health: 100.0
+  resources: {}
+- id: 104
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 33139.664
+    y: 33525.652
+  health: 100.0
+  resources: {}
+- id: 105
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -49452.707
+    y: 91143.28
+  health: 100.0
+  resources: {}
+- id: 106
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 67945.8
+    y: 34073.688
+  health: 100.0
+  resources: {}
+- id: 107
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 1354.172
+    y: 2971.7544
+  health: 100.0
+  resources: {}
+- id: 108
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -19639.525
+    y: -23716.559
+  health: 100.0
+  resources: {}
+- id: 109
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -14284.344
+    y: 16192.07
+  health: 100.0
+  resources: {}
+- id: 110
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -81105.5
+    y: 41279.11
+  health: 100.0
+  resources: {}
+- id: 111
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -78819.39
+    y: -26985.393
+  health: 100.0
+  resources: {}
+- id: 112
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -44619.22
+    y: 40080.477
+  health: 100.0
+  resources: {}
+- id: 113
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -24854.652
+    y: -51224.863
+  health: 100.0
+  resources: {}
+- id: 114
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 19370.54
+    y: 46733.145
+  health: 100.0
+  resources: {}
+- id: 115
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -80159.1
+    y: -38334.5
+  health: 100.0
+  resources: {}
+- id: 116
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 7694.397
+    y: 32323.285
+  health: 100.0
+  resources: {}
+- id: 117
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -33395.105
+    y: -16029.391
+  health: 100.0
+  resources: {}
+- id: 118
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 22317.34
+    y: -20512.184
+  health: 100.0
+  resources: {}
+- id: 119
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -8549.419
+    y: 40870.043
+  health: 100.0
+  resources: {}
+- id: 120
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 14603.873
+    y: 29973.94
+  health: 100.0
+  resources: {}
+- id: 121
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 7955.2725
+    y: 76439.555
+  health: 100.0
+  resources: {}
+- id: 122
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 3636.1616
+    y: 145200.78
+  health: 100.0
+  resources: {}
+- id: 123
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -43140.5
+    y: 33163.17
+  health: 100.0
+  resources: {}
+- id: 124
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -30041.04
+    y: -31029.777
+  health: 100.0
+  resources: {}
+- id: 125
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 19186.531
+    y: 10882.639
+  health: 100.0
+  resources: {}
+- id: 126
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -14703.713
+    y: -38996.688
+  health: 100.0
+  resources: {}
+- id: 127
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -10054.3955
+    y: -85026.125
+  health: 100.0
+  resources: {}
+- id: 128
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 32559.156
+    y: -30619.049
+  health: 100.0
+  resources: {}
+- id: 129
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -20981.283
+    y: -77887.93
+  health: 100.0
+  resources: {}
+- id: 130
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -26421.174
+    y: 63536.8
+  health: 100.0
+  resources: {}
+- id: 131
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -6315.3296
+    y: -48243.195
+  health: 100.0
+  resources: {}
+- id: 132
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 73095.516
+    y: -6543.031
+  health: 100.0
+  resources: {}
+- id: 133
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 19583.033
+    y: -41179.664
+  health: 100.0
+  resources: {}
+- id: 134
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 93619.95
+    y: -10193.481
+  health: 100.0
+  resources: {}
+- id: 135
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -43859.938
+    y: -24984.97
+  health: 100.0
+  resources: {}
+- id: 136
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -3802.05
+    y: 27178.988
+  health: 100.0
+  resources: {}
+- id: 137
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 34527.027
+    y: 67968.61
+  health: 100.0
+  resources: {}
+- id: 138
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -82234.64
+    y: 21591.814
+  health: 100.0
+  resources: {}
+- id: 139
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 28741.117
+    y: 85938.81
+  health: 100.0
+  resources: {}
+- id: 140
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 12212.982
+    y: 32774.336
+  health: 100.0
+  resources: {}
+- id: 141
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 21350.06
+    y: -93816.88
+  health: 100.0
+  resources: {}
+- id: 142
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -38416.105
+    y: 84787.81
+  health: 100.0
+  resources: {}
+- id: 143
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -23561.945
+    y: 18292.602
+  health: 100.0
+  resources: {}
+- id: 144
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -87211.58
+    y: 33515.47
+  health: 100.0
+  resources: {}
+- id: 145
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -53753.418
+    y: -58800.27
+  health: 100.0
+  resources: {}
+- id: 146
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 60777.7
+    y: 74926.875
+  health: 100.0
+  resources: {}
+- id: 147
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -57562.46
+    y: 75983.61
+  health: 100.0
+  resources: {}
+- id: 148
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -91052.73
+    y: 83960.37
+  health: 100.0
+  resources: {}
+- id: 149
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 65436.195
+    y: 11275.435
+  health: 100.0
+  resources: {}
+- id: 151
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 7282.9634
+    y: 6440.093
+  health: 100.0
+  resources: {}
+- id: 152
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -16236.881
+    y: 164257.67
+  health: 100.0
+  resources: {}
+- id: 153
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -20169.172
+    y: -25310.482
+  health: 100.0
+  resources: {}
+- id: 154
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -8315.18
+    y: 33174.812
+  health: 100.0
+  resources: {}
+- id: 155
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -75427.836
+    y: 9255.115
+  health: 100.0
+  resources: {}
+- id: 156
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -31881.982
+    y: 5246.8506
+  health: 100.0
+  resources: {}
+- id: 157
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 72290.0
+    y: 15458.971
+  health: 100.0
+  resources: {}
+- id: 158
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -36256.746
+    y: -41779.5
+  health: 100.0
+  resources: {}
+- id: 159
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -40087.94
+    y: -11873.328
+  health: 100.0
+  resources: {}
+- id: 160
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -49526.82
+    y: 11009.307
+  health: 100.0
+  resources: {}
+- id: 161
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 33019.074
+    y: 20670.75
+  health: 100.0
+  resources: {}
+- id: 162
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 23385.025
+    y: -54881.902
+  health: 100.0
+  resources: {}
+- id: 163
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 2164.3408
+    y: -63720.23
+  health: 100.0
+  resources: {}
+- id: 164
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 5500.2656
+    y: 20205.352
+  health: 100.0
+  resources: {}
+- id: 165
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -32324.754
+    y: -31241.969
+  health: 100.0
+  resources: {}
+- id: 166
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -99345.53
+    y: -4528.3984
+  health: 100.0
+  resources: {}
+- id: 167
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 98572.266
+    y: -75106.49
+  health: 100.0
+  resources: {}
+- id: 168
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -74532.42
+    y: -36132.32
+  health: 100.0
+  resources: {}
+- id: 169
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 83330.47
+    y: -15263.287
+  health: 100.0
+  resources: {}
+- id: 170
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -109043.12
+    y: -23919.139
+  health: 100.0
+  resources: {}
+- id: 171
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -34752.53
+    y: -41711.13
+  health: 100.0
+  resources: {}
+- id: 172
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 8377.086
+    y: 2913.6682
+  health: 100.0
+  resources: {}
+- id: 173
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 878.63666
+    y: 70566.125
+  health: 100.0
+  resources: {}
+- id: 174
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 8409.66
+    y: 82595.67
+  health: 100.0
+  resources: {}
+- id: 175
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 10332.475
+    y: 78489.664
+  health: 100.0
+  resources: {}
+- id: 176
+  entity_type: theta
+  owner: universe
+  position:
+    x: 121259.67
+    y: 66128.91
+  health: 100.0
+  resources: {}
+- id: 177
+  entity_type: theta
+  owner: universe
+  position:
+    x: -63070.723
+    y: 17653.027
+  health: 100.0
+  resources: {}
+- id: 178
+  entity_type: theta
+  owner: universe
+  position:
+    x: 21886.738
+    y: 57436.92
+  health: 100.0
+  resources: {}
+- id: 179
+  entity_type: theta
+  owner: universe
+  position:
+    x: 37199.12
+    y: 12631.327
+  health: 100.0
+  resources: {}
+- id: 180
+  entity_type: theta
+  owner: universe
+  position:
+    x: 30494.564
+    y: -10114.209
+  health: 100.0
+  resources: {}
+- id: 181
+  entity_type: theta
+  owner: universe
+  position:
+    x: 16329.81
+    y: 2669.5288
+  health: 100.0
+  resources: {}
+- id: 182
+  entity_type: theta
+  owner: universe
+  position:
+    x: -58388.61
+    y: -25818.246
+  health: 100.0
+  resources: {}
+- id: 183
+  entity_type: theta
+  owner: universe
+  position:
+    x: 110106.32
+    y: 6957.6836
+  health: 100.0
+  resources: {}
+- id: 184
+  entity_type: theta
+  owner: universe
+  position:
+    x: -12850.701
+    y: -50762.61
+  health: 100.0
+  resources: {}
+- id: 185
+  entity_type: theta
+  owner: universe
+  position:
+    x: 16913.342
+    y: 26493.064
+  health: 100.0
+  resources: {}
+- id: 186
+  entity_type: theta
+  owner: universe
+  position:
+    x: 20236.45
+    y: 40604.926
+  health: 100.0
+  resources: {}
+- id: 187
+  entity_type: theta
+  owner: universe
+  position:
+    x: -36117.7
+    y: 17943.895
+  health: 100.0
+  resources: {}
+- id: 188
+  entity_type: theta
+  owner: universe
+  position:
+    x: 47723.95
+    y: 29064.576
+  health: 100.0
+  resources: {}
+- id: 189
+  entity_type: theta
+  owner: universe
+  position:
+    x: -84084.04
+    y: -40545.805
+  health: 100.0
+  resources: {}
+- id: 190
+  entity_type: theta
+  owner: universe
+  position:
+    x: -25923.037
+    y: -102699.766
+  health: 100.0
+  resources: {}
+- id: 191
+  entity_type: theta
+  owner: universe
+  position:
+    x: -25892.021
+    y: -30586.602
+  health: 100.0
+  resources: {}
+- id: 192
+  entity_type: theta
+  owner: universe
+  position:
+    x: 41698.484
+    y: -62025.19
+  health: 100.0
+  resources: {}
+- id: 193
+  entity_type: theta
+  owner: universe
+  position:
+    x: -61078.492
+    y: -2984.142
+  health: 100.0
+  resources: {}
+- id: 194
+  entity_type: theta
+  owner: universe
+  position:
+    x: 63104.867
+    y: -36846.32
+  health: 100.0
+  resources: {}
+- id: 195
+  entity_type: theta
+  owner: universe
+  position:
+    x: -3306.9739
+    y: -31514.676
+  health: 100.0
+  resources: {}
+- id: 196
+  entity_type: theta
+  owner: universe
+  position:
+    x: 79252.46
+    y: 34709.992
+  health: 100.0
+  resources: {}
+- id: 197
+  entity_type: theta
+  owner: universe
+  position:
+    x: -23935.023
+    y: -73009.13
+  health: 100.0
+  resources: {}
+- id: 198
+  entity_type: theta
+  owner: universe
+  position:
+    x: -17715.191
+    y: -49295.113
+  health: 100.0
+  resources: {}
+- id: 199
+  entity_type: theta
+  owner: universe
+  position:
+    x: 80570.27
+    y: 28224.484
+  health: 100.0
+  resources: {}
+- id: 200
+  entity_type: theta
+  owner: universe
+  position:
+    x: -46919.66
+    y: 19795.133
+  health: 100.0
+  resources: {}
+- id: 201
+  entity_type: theta
+  owner: universe
+  position:
+    x: -3454.535
+    y: -14190.545
+  health: 100.0
+  resources: {}
+- id: 202
+  entity_type: theta
+  owner: universe
+  position:
+    x: -18174.068
+    y: -55421.637
+  health: 100.0
+  resources: {}
+- id: 203
+  entity_type: theta
+  owner: universe
+  position:
+    x: -12489.021
+    y: 46773.195
+  health: 100.0
+  resources: {}
+- id: 204
+  entity_type: theta
+  owner: universe
+  position:
+    x: -485.50757
+    y: 15481.228
+  health: 100.0
+  resources: {}
+- id: 205
+  entity_type: theta
+  owner: universe
+  position:
+    x: -22528.879
+    y: -43559.137
+  health: 100.0
+  resources: {}
+- id: 206
+  entity_type: theta
+  owner: universe
+  position:
+    x: 17849.303
+    y: 32742.68
+  health: 100.0
+  resources: {}
+- id: 207
+  entity_type: theta
+  owner: universe
+  position:
+    x: 53458.457
+    y: -64634.312
+  health: 100.0
+  resources: {}
+- id: 208
+  entity_type: theta
+  owner: universe
+  position:
+    x: -888.9931
+    y: -33239.0
+  health: 100.0
+  resources: {}
+- id: 209
+  entity_type: theta
+  owner: universe
+  position:
+    x: 5389.274
+    y: 5408.069
+  health: 50.000443
+  resources: {}
+- id: 210
+  entity_type: theta
+  owner: universe
+  position:
+    x: -73933.54
+    y: 6446.616
+  health: 100.0
+  resources: {}
+- id: 211
+  entity_type: theta
+  owner: universe
+  position:
+    x: -45490.27
+    y: -43608.508
+  health: 100.0
+  resources: {}
+- id: 212
+  entity_type: theta
+  owner: universe
+  position:
+    x: -9607.764
+    y: 126505.67
+  health: 100.0
+  resources: {}
+- id: 213
+  entity_type: theta
+  owner: universe
+  position:
+    x: -25109.102
+    y: -55365.4
+  health: 100.0
+  resources: {}
+- id: 214
+  entity_type: theta
+  owner: universe
+  position:
+    x: 20422.975
+    y: 57672.145
+  health: 100.0
+  resources: {}
+- id: 215
+  entity_type: theta
+  owner: universe
+  position:
+    x: -42779.16
+    y: -84921.56
+  health: 100.0
+  resources: {}
+- id: 216
+  entity_type: theta
+  owner: universe
+  position:
+    x: -4926.7847
+    y: 42212.06
+  health: 100.0
+  resources: {}
+- id: 217
+  entity_type: theta
+  owner: universe
+  position:
+    x: 44618.48
+    y: 59528.08
+  health: 100.0
+  resources: {}
+- id: 218
+  entity_type: theta
+  owner: universe
+  position:
+    x: 13428.4795
+    y: -40440.793
+  health: 100.0
+  resources: {}
+- id: 219
+  entity_type: theta
+  owner: universe
+  position:
+    x: -23005.242
+    y: -28053.863
+  health: 100.0
+  resources: {}
+- id: 220
+  entity_type: theta
+  owner: universe
+  position:
+    x: -53769.082
+    y: 16942.58
+  health: 100.0
+  resources: {}
+- id: 221
+  entity_type: theta
+  owner: universe
+  position:
+    x: 64207.6
+    y: -11744.956
+  health: 100.0
+  resources: {}
+- id: 222
+  entity_type: theta
+  owner: universe
+  position:
+    x: 700.80634
+    y: 18922.967
+  health: 100.0
+  resources: {}
+- id: 223
+  entity_type: theta
+  owner: universe
+  position:
+    x: 20520.014
+    y: 36737.457
+  health: 100.0
+  resources: {}
+- id: 224
+  entity_type: theta
+  owner: universe
+  position:
+    x: 3107.626
+    y: 26285.299
+  health: 100.0
+  resources: {}
+- id: 225
+  entity_type: theta
+  owner: universe
+  position:
+    x: 58913.94
+    y: 51909.6
+  health: 100.0
+  resources: {}
+- id: 226
+  entity_type: theta
+  owner: universe
+  position:
+    x: -109838.484
+    y: 7307.9805
+  health: 100.0
+  resources: {}
+- id: 227
+  entity_type: theta
+  owner: universe
+  position:
+    x: -37969.84
+    y: -3417.6897
+  health: 100.0
+  resources: {}
+- id: 228
+  entity_type: theta
+  owner: universe
+  position:
+    x: -45441.23
+    y: 27037.68
+  health: 100.0
+  resources: {}
+- id: 229
+  entity_type: theta
+  owner: universe
+  position:
+    x: -40066.41
+    y: -17339.59
+  health: 100.0
+  resources: {}
+- id: 230
+  entity_type: theta
+  owner: universe
+  position:
+    x: -15037.023
+    y: 7786.1206
+  health: 100.0
+  resources: {}
+- id: 231
+  entity_type: theta
+  owner: universe
+  position:
+    x: 16842.053
+    y: 24746.62
+  health: 100.0
+  resources: {}
+- id: 232
+  entity_type: theta
+  owner: universe
+  position:
+    x: -116823.3
+    y: 24769.17
+  health: 100.0
+  resources: {}
+- id: 233
+  entity_type: theta
+  owner: universe
+  position:
+    x: 37791.06
+    y: 1929.8254
+  health: 100.0
+  resources: {}
+- id: 234
+  entity_type: theta
+  owner: universe
+  position:
+    x: -42751.895
+    y: 55797.97
+  health: 100.0
+  resources: {}
+- id: 235
+  entity_type: theta
+  owner: universe
+  position:
+    x: 62996.81
+    y: -21882.83
+  health: 100.0
+  resources: {}
+- id: 236
+  entity_type: theta
+  owner: universe
+  position:
+    x: 87235.41
+    y: 41571.7
+  health: 100.0
+  resources: {}
+- id: 237
+  entity_type: theta
+  owner: universe
+  position:
+    x: 5742.9097
+    y: 65605.87
+  health: 100.0
+  resources: {}
+- id: 238
+  entity_type: theta
+  owner: universe
+  position:
+    x: -79874.336
+    y: 18588.582
+  health: 100.0
+  resources: {}
+- id: 239
+  entity_type: theta
+  owner: universe
+  position:
+    x: 48692.555
+    y: 76470.54
+  health: 100.0
+  resources: {}
+- id: 240
+  entity_type: theta
+  owner: universe
+  position:
+    x: 56909.465
+    y: 12701.562
+  health: 100.0
+  resources: {}
+- id: 241
+  entity_type: theta
+  owner: universe
+  position:
+    x: -21841.588
+    y: -79749.56
+  health: 100.0
+  resources: {}
+- id: 242
+  entity_type: theta
+  owner: universe
+  position:
+    x: 109291.76
+    y: 32515.693
+  health: 100.0
+  resources: {}
+- id: 243
+  entity_type: theta
+  owner: universe
+  position:
+    x: -13891.801
+    y: -115897.51
+  health: 100.0
+  resources: {}
+- id: 244
+  entity_type: theta
+  owner: universe
+  position:
+    x: -43526.297
+    y: -427.59036
+  health: 100.0
+  resources: {}
+- id: 245
+  entity_type: theta
+  owner: universe
+  position:
+    x: -65133.71
+    y: 6632.955
+  health: 100.0
+  resources: {}
+- id: 246
+  entity_type: theta
+  owner: universe
+  position:
+    x: -2796.1377
+    y: 5583.7476
+  health: 100.0
+  resources: {}
+- id: 247
+  entity_type: theta
+  owner: universe
+  position:
+    x: -40793.93
+    y: 80263.67
+  health: 100.0
+  resources: {}
+- id: 248
+  entity_type: theta
+  owner: universe
+  position:
+    x: -30706.701
+    y: -25073.393
+  health: 100.0
+  resources: {}
+- id: 249
+  entity_type: theta
+  owner: universe
+  position:
+    x: 53853.668
+    y: -45378.37
+  health: 16.64836
+  resources: {}
+- id: 250
+  entity_type: theta
+  owner: universe
+  position:
+    x: -105434.02
+    y: -88457.91
+  health: 100.0
+  resources: {}
+- id: 251
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -12987.949
+    y: 555.338
+  health: 100.0
+  resources: {}
+- id: 252
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 24948.223
+    y: -26954.555
+  health: 100.0
+  resources: {}
+- id: 253
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3911.7476
+    y: 13735.185
+  health: 100.0
+  resources: {}
+- id: 254
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -48625.062
+    y: -12956.697
+  health: 100.0
+  resources: {}
+- id: 255
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 87180.64
+    y: 5513.9785
+  health: 100.0
+  resources: {}
+- id: 256
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -28861.932
+    y: -73612.8
+  health: 100.0
+  resources: {}
+- id: 257
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -8752.182
+    y: 76196.23
+  health: 100.0
+  resources: {}
+- id: 258
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 12476.432
+    y: -95952.62
+  health: 100.0
+  resources: {}
+- id: 259
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -41783.49
+    y: 86222.99
+  health: 100.0
+  resources: {}
+- id: 260
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 89953.336
+    y: 17569.738
+  health: 100.0
+  resources: {}
+- id: 261
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 64888.953
+    y: 101573.305
+  health: 100.0
+  resources: {}
+- id: 262
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -320.42282
+    y: -37630.062
+  health: 100.0
+  resources: {}
+- id: 263
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 40406.934
+    y: -37066.414
+  health: 100.0
+  resources: {}
+- id: 264
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -68078.67
+    y: 37277.78
+  health: 100.0
+  resources: {}
+- id: 265
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -31220.793
+    y: -50530.61
+  health: 100.0
+  resources: {}
+- id: 266
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -127645.68
+    y: 33549.375
+  health: 100.0
+  resources: {}
+- id: 267
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 8135.2974
+    y: 13231.075
+  health: 100.0
+  resources: {}
+- id: 268
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -46112.57
+    y: -32772.918
+  health: 100.0
+  resources: {}
+- id: 269
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 57907.863
+    y: 10915.749
+  health: 100.0
+  resources: {}
+- id: 270
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 33210.0
+    y: 32838.766
+  health: 100.0
+  resources: {}
+- id: 272
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 7298.309
+    y: 14660.183
+  health: 100.0
+  resources: {}
+- id: 273
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -39139.56
+    y: 4776.9663
+  health: 100.0
+  resources: {}
+- id: 274
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -21183.914
+    y: 10078.295
+  health: 100.0
+  resources: {}
+- id: 275
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -46338.75
+    y: 63122.312
+  health: 100.0
+  resources: {}
+- id: 276
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -37494.625
+    y: 13165.2295
+  health: 100.0
+  resources: {}
+- id: 277
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -17755.1
+    y: -26722.086
+  health: 100.0
+  resources: {}
+- id: 278
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -23522.666
+    y: -47699.645
+  health: 100.0
+  resources: {}
+- id: 279
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -12851.547
+    y: -26451.697
+  health: 100.0
+  resources: {}
+- id: 280
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 63939.613
+    y: 24238.463
+  health: 100.0
+  resources: {}
+- id: 281
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 66835.06
+    y: -63509.36
+  health: 100.0
+  resources: {}
+- id: 282
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -19825.502
+    y: -66533.18
+  health: 100.0
+  resources: {}
+- id: 283
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 57971.91
+    y: 2555.5486
+  health: 100.0
+  resources: {}
+- id: 284
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -22833.822
+    y: 15208.752
+  health: 100.0
+  resources: {}
+- id: 285
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 2997.1187
+    y: -42592.504
+  health: 100.0
+  resources: {}
+- id: 286
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 87027.914
+    y: -44664.473
+  health: 100.0
+  resources: {}
+- id: 287
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 42759.258
+    y: 14356.343
+  health: 100.0
+  resources: {}
+- id: 288
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -31170.363
+    y: -61537.742
+  health: 100.0
+  resources: {}
+- id: 289
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 60153.387
+    y: -106094.72
+  health: 100.0
+  resources: {}
+- id: 290
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -63639.523
+    y: 9227.868
+  health: 100.0
+  resources: {}
+- id: 291
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -11962.538
+    y: -15334.577
+  health: 100.0
+  resources: {}
+- id: 292
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -19825.576
+    y: -30485.533
+  health: 100.0
+  resources: {}
+- id: 293
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 125544.26
+    y: -42267.215
+  health: 100.0
+  resources: {}
+- id: 294
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -329.36047
+    y: 68900.21
+  health: 100.0
+  resources: {}
+- id: 295
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -27162.219
+    y: -31239.443
+  health: 100.0
+  resources: {}
+- id: 296
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -193.26628
+    y: -50556.074
+  health: 100.0
+  resources: {}
+- id: 297
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -39789.406
+    y: 54272.64
+  health: 100.0
+  resources: {}
+- id: 298
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 33279.54
+    y: -7835.7275
+  health: 100.0
+  resources: {}
+- id: 299
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 35011.793
+    y: -31843.062
+  health: 100.0
+  resources: {}
+- id: 300
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 69530.14
+    y: 3610.2346
+  health: 100.0
+  resources: {}
+- id: 301
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -72148.83
+    y: -42915.785
+  health: 100.0
+  resources: {}
+- id: 302
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 20749.854
+    y: 100635.15
+  health: 100.0
+  resources: {}
+- id: 303
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -25305.938
+    y: 22250.697
+  health: 100.0
+  resources: {}
+- id: 304
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -46955.523
+    y: 83943.086
+  health: 100.0
+  resources: {}
+- id: 305
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -9580.665
+    y: -47465.645
+  health: 100.0
+  resources: {}
+- id: 306
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -26058.018
+    y: 39735.414
+  health: 100.0
+  resources: {}
+- id: 307
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -13280.609
+    y: 3149.8489
+  health: 100.0
+  resources: {}
+- id: 308
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -52201.062
+    y: 5957.8594
+  health: 100.0
+  resources: {}
+- id: 309
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -47912.504
+    y: 50779.156
+  health: 100.0
+  resources: {}
+- id: 310
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -79372.94
+    y: 35330.44
+  health: 100.0
+  resources: {}
+- id: 311
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -27736.379
+    y: 10229.179
+  health: 100.0
+  resources: {}
+- id: 312
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -21609.53
+    y: -9596.224
+  health: 100.0
+  resources: {}
+- id: 313
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -1598.179
+    y: -1430.7466
+  health: 100.0
+  resources: {}
+- id: 314
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 77118.48
+    y: 87553.16
+  health: 100.0
+  resources: {}
+- id: 315
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -61468.215
+    y: 1918.8468
+  health: 100.0
+  resources: {}
+- id: 316
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 8511.038
+    y: 27880.299
+  health: 100.0
+  resources: {}
+- id: 317
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -15589.807
+    y: 84201.19
+  health: 100.0
+  resources: {}
+- id: 318
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -73474.11
+    y: -28531.8
+  health: 100.0
+  resources: {}
+- id: 319
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 71744.48
+    y: -48655.3
+  health: 100.0
+  resources: {}
+- id: 320
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -54826.176
+    y: -98588.945
+  health: 100.0
+  resources: {}
+- id: 321
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -29281.111
+    y: 23498.895
+  health: 100.0
+  resources: {}
+- id: 322
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -100850.305
+    y: -37111.344
+  health: 100.0
+  resources: {}
+- id: 323
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -17093.174
+    y: -74075.68
+  health: 100.0
+  resources: {}
+- id: 324
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -52266.16
+    y: 43604.5
+  health: 100.0
+  resources: {}
+- id: 325
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -44258.953
+    y: -58502.145
+  health: 100.0
+  resources: {}
+- id: 326
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 84302.03
+    y: 40685.945
+  health: 100.0
+  resources: {}
+- id: 327
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -50.803726
+    y: 41584.414
+  health: 100.0
+  resources: {}
+- id: 328
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 4909.065
+    y: -16387.57
+  health: 100.0
+  resources: {}
+- id: 329
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 27897.025
+    y: -34835.184
+  health: 100.0
+  resources: {}
+- id: 330
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 15367.855
+    y: 27224.498
+  health: 100.0
+  resources: {}
+- id: 331
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -3937.509
+    y: 27266.236
+  health: 100.0
+  resources: {}
+- id: 332
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -99613.75
+    y: 80200.72
+  health: 100.0
+  resources: {}
+- id: 333
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 58306.242
+    y: 26424.498
+  health: 100.0
+  resources: {}
+- id: 334
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 36804.164
+    y: -33145.957
+  health: 100.0
+  resources: {}
+- id: 335
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -19538.605
+    y: -75305.57
+  health: 100.0
+  resources: {}
+- id: 336
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 61106.01
+    y: -95669.97
+  health: 100.0
+  resources: {}
+- id: 337
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -94539.07
+    y: 27029.87
+  health: 100.0
+  resources: {}
+- id: 338
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 16631.852
+    y: 17632.674
+  health: 100.0
+  resources: {}
+- id: 339
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -24484.598
+    y: 62337.934
+  health: 100.0
+  resources: {}
+- id: 340
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -94318.42
+    y: 26705.547
+  health: 100.0
+  resources: {}
+- id: 341
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 49100.285
+    y: 86503.63
+  health: 100.0
+  resources: {}
+- id: 342
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 15388.956
+    y: -606.9757
+  health: 100.0
+  resources: {}
+- id: 343
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 17371.902
+    y: 34875.992
+  health: 100.0
+  resources: {}
+- id: 344
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3946.8933
+    y: -8343.804
+  health: 100.0
+  resources: {}
+- id: 345
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 13418.579
+    y: 37681.434
+  health: 100.0
+  resources: {}
+- id: 346
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 18399.555
+    y: 28311.135
+  health: 100.0
+  resources: {}
+- id: 347
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 30040.648
+    y: -88743.09
+  health: 100.0
+  resources: {}
+- id: 348
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 10064.438
+    y: -55026.23
+  health: 100.0
+  resources: {}
+- id: 350
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 25927.852
+    y: 8319.852
+  health: 100.0
+  resources: {}
+- id: 351
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -56488.258
+    y: 112182.31
+  health: 100.0
+  resources: {}
+- id: 352
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -41161.992
+    y: 72235.05
+  health: 100.0
+  resources: {}
+- id: 353
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 40331.836
+    y: -56061.312
+  health: 100.0
+  resources: {}
+- id: 354
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -31502.055
+    y: 41532.88
+  health: 100.0
+  resources: {}
+- id: 355
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 44040.24
+    y: -14416.529
+  health: 100.0
+  resources: {}
+- id: 356
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3361.2012
+    y: 38716.773
+  health: 100.0
+  resources: {}
+- id: 357
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -28219.838
+    y: 488.2935
+  health: 100.0
+  resources: {}
+- id: 358
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 5420.0967
+    y: 59457.047
+  health: 100.0
+  resources: {}
+- id: 359
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 58444.703
+    y: -38368.66
+  health: 100.0
+  resources: {}
+- id: 360
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 87132.78
+    y: 5340.8047
+  health: 100.0
+  resources: {}
+- id: 361
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 14101.438
+    y: -94960.63
+  health: 100.0
+  resources: {}
+- id: 362
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 6283.754
+    y: 13605.44
+  health: 100.0
+  resources: {}
+- id: 363
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -10880.055
+    y: 11343.421
+  health: 100.0
+  resources: {}
+- id: 364
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 8152.664
+    y: -79304.05
+  health: 100.0
+  resources: {}
+- id: 365
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 61215.652
+    y: 6200.327
+  health: 100.0
+  resources: {}
+- id: 366
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -54790.5
+    y: 41317.234
+  health: 100.0
+  resources: {}
+- id: 367
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 27779.43
+    y: -78147.19
+  health: 100.0
+  resources: {}
+- id: 368
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 87912.83
+    y: -86057.4
+  health: 100.0
+  resources: {}
+- id: 369
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 105036.164
+    y: -39789.766
+  health: 100.0
+  resources: {}
+- id: 370
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -737.76154
+    y: -69637.76
+  health: 100.0
+  resources: {}
+- id: 371
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 110294.37
+    y: -84747.87
+  health: 100.0
+  resources: {}
+- id: 372
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -24533.58
+    y: 51139.19
+  health: 100.0
+  resources: {}
+- id: 373
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 21606.041
+    y: 16462.896
+  health: 100.0
+  resources: {}
+- id: 375
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 18276.66
+    y: 53210.277
+  health: 100.0
+  resources: {}
+- id: 376
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -62553.055
+    y: -23924.105
+  health: 100.0
+  resources: {}
+- id: 377
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -49908.14
+    y: 51416.098
+  health: 100.0
+  resources: {}
+- id: 378
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -58659.25
+    y: 11868.468
+  health: 100.0
+  resources: {}
+- id: 379
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -43196.76
+    y: 5315.1626
+  health: 100.0
+  resources: {}
+- id: 380
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -55131.45
+    y: 20177.3
+  health: 100.0
+  resources: {}
+- id: 381
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -12464.983
+    y: -60222.05
+  health: 100.0
+  resources: {}
+- id: 383
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 27298.197
+    y: -73892.74
+  health: 100.0
+  resources: {}
+- id: 384
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 2391.6836
+    y: -58697.582
+  health: 100.0
+  resources: {}
+- id: 385
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 69689.945
+    y: 18237.027
+  health: 100.0
+  resources: {}
+- id: 386
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -22913.494
+    y: -74386.91
+  health: 100.0
+  resources: {}
+- id: 387
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 156881.02
+    y: 98637.68
+  health: 100.0
+  resources: {}
+- id: 388
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -68044.57
+    y: -57126.72
+  health: 100.0
+  resources: {}
+- id: 389
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 60960.48
+    y: 13853.6455
+  health: 100.0
+  resources: {}
+- id: 390
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -85448.42
+    y: 53084.004
+  health: 100.0
+  resources: {}
+- id: 391
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 46902.527
+    y: 24272.74
+  health: 100.0
+  resources: {}
+- id: 392
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -69496.94
+    y: 22869.342
+  health: 100.0
+  resources: {}
+- id: 393
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -41617.203
+    y: 5090.1772
+  health: 100.0
+  resources: {}
+- id: 394
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -83920.7
+    y: 15746.979
+  health: 100.0
+  resources: {}
+- id: 395
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 24515.586
+    y: 30709.682
+  health: 100.0
+  resources: {}
+- id: 396
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 40874.18
+    y: 33732.004
+  health: 100.0
+  resources: {}
+- id: 397
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 37686.42
+    y: -58385.47
+  health: 100.0
+  resources: {}
+- id: 398
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -3118.305
+    y: -54692.637
+  health: 100.0
+  resources: {}
+- id: 399
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -51866.562
+    y: 21203.186
+  health: 100.0
+  resources: {}
+- id: 400
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 121092.34
+    y: 40615.26
+  health: 100.0
+  resources: {}
+- id: 401
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 52613.734
+    y: 93443.5
+  health: 100.0
+  resources: {}
+- id: 402
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -41837.7
+    y: 26488.729
+  health: 100.0
+  resources: {}
+- id: 403
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -23947.287
+    y: 57223.668
+  health: 100.0
+  resources: {}
+- id: 404
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3660.5532
+    y: -21421.723
+  health: 100.0
+  resources: {}
+- id: 405
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -55263.438
+    y: -7062.404
+  health: 100.0
+  resources: {}
+- id: 406
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -66932.67
+    y: -15063.73
+  health: 100.0
+  resources: {}
+- id: 407
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -7858.6743
+    y: -22562.826
+  health: 100.0
+  resources: {}
+- id: 408
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -18334.203
+    y: -133529.1
+  health: 100.0
+  resources: {}
+- id: 409
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 73052.35
+    y: -64141.746
+  health: 100.0
+  resources: {}
+- id: 410
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -1121.355
+    y: 17890.348
+  health: 100.0
+  resources: {}
+- id: 411
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -38786.434
+    y: 147050.05
+  health: 100.0
+  resources: {}
+- id: 412
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -56014.516
+    y: 10706.365
+  health: 100.0
+  resources: {}
+- id: 413
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -40051.312
+    y: 4806.0254
+  health: 100.0
+  resources: {}
+- id: 414
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -16131.636
+    y: 41297.426
+  health: 100.0
+  resources: {}
+- id: 416
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 92488.08
+    y: -137381.75
+  health: 100.0
+  resources: {}
+- id: 417
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 71682.414
+    y: 40721.85
+  health: 100.0
+  resources: {}
+- id: 418
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 28756.402
+    y: -73141.69
+  health: 100.0
+  resources: {}
+- id: 419
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 2454.595
+    y: 11569.745
+  health: 100.0
+  resources: {}
+- id: 420
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -60851.383
+    y: -20558.947
+  health: 100.0
+  resources: {}
+- id: 421
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 27535.438
+    y: 43987.73
+  health: 100.0
+  resources: {}
+- id: 422
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -11063.497
+    y: -30794.43
+  health: 100.0
+  resources: {}
+- id: 423
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -16004.88
+    y: -47838.46
+  health: 100.0
+  resources: {}
+- id: 424
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 76816.48
+    y: -112369.836
+  health: 100.0
+  resources: {}
+- id: 425
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 23222.959
+    y: 5031.6045
+  health: 100.0
+  resources: {}
+- id: 426
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -67610.414
+    y: -13745.616
+  health: 100.0
+  resources: {}
+- id: 427
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -10172.566
+    y: -51593.49
+  health: 100.0
+  resources: {}
+- id: 428
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -17051.016
+    y: -17131.182
+  health: 100.0
+  resources: {}
+- id: 430
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -180189.1
+    y: 66940.37
+  health: 100.0
+  resources: {}
+- id: 431
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 14386.437
+    y: -124455.05
+  health: 100.0
+  resources: {}
+- id: 432
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 52629.78
+    y: -18519.736
+  health: 100.0
+  resources: {}
+- id: 433
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 5658.1577
+    y: -15010.617
+  health: 100.0
+  resources: {}
+- id: 434
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -79713.77
+    y: 26092.047
+  health: 100.0
+  resources: {}
+- id: 435
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 6886.255
+    y: -55852.94
+  health: 100.0
+  resources: {}
+- id: 436
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -10550.662
+    y: 56924.06
+  health: 100.0
+  resources: {}
+- id: 437
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 32968.055
+    y: -22636.482
+  health: 100.0
+  resources: {}
+- id: 438
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -120523.92
+    y: 45260.668
+  health: 100.0
+  resources: {}
+- id: 439
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 103216.164
+    y: -5431.638
+  health: 100.0
+  resources: {}
+- id: 440
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 12705.706
+    y: 54563.066
+  health: 100.0
+  resources: {}
+- id: 441
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 91939.086
+    y: 65623.17
+  health: 100.0
+  resources: {}
+- id: 442
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 10696.152
+    y: 69712.75
+  health: 100.0
+  resources: {}
+- id: 443
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -3551.2876
+    y: 45763.85
+  health: 100.0
+  resources: {}
+- id: 444
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 38855.21
+    y: -12326.431
+  health: 100.0
+  resources: {}
+- id: 445
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 19461.781
+    y: 30193.68
+  health: 100.0
+  resources: {}
+- id: 446
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 18154.824
+    y: 1010.5328
+  health: 100.0
+  resources: {}
+- id: 447
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 24958.22
+    y: -7199.09
+  health: 100.0
+  resources: {}
+- id: 448
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -63050.68
+    y: -6337.299
+  health: 100.0
+  resources: {}
+- id: 449
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 24688.666
+    y: -16023.097
+  health: 100.0
+  resources: {}
+- id: 450
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 80240.79
+    y: -51003.17
+  health: 100.0
+  resources: {}
+- id: 451
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -87866.75
+    y: 37606.664
+  health: 100.0
+  resources: {}
+- id: 452
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 70170.445
+    y: 80538.24
+  health: 100.0
+  resources: {}
+- id: 453
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -23670.217
+    y: 19182.209
+  health: 100.0
+  resources: {}
+- id: 454
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -17732.67
+    y: 127619.19
+  health: 100.0
+  resources: {}
+- id: 455
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -27515.168
+    y: 15101.806
+  health: 100.0
+  resources: {}
+- id: 456
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -16964.385
+    y: 73967.984
+  health: 100.0
+  resources: {}
+- id: 457
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 68048.305
+    y: 13435.43
+  health: 100.0
+  resources: {}
+- id: 458
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -68763.94
+    y: -21094.084
+  health: 100.0
+  resources: {}
+- id: 459
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -28267.414
+    y: -5639.9316
+  health: 100.0
+  resources: {}
+- id: 460
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -43809.91
+    y: 123819.95
+  health: 100.0
+  resources: {}
+- id: 461
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 137732.3
+    y: 79497.266
+  health: 100.0
+  resources: {}
+- id: 462
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -27412.352
+    y: -53983.27
+  health: 100.0
+  resources: {}
+- id: 463
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -20452.451
+    y: 25571.598
+  health: 100.0
+  resources: {}
+- id: 464
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 30703.363
+    y: 36083.895
+  health: 100.0
+  resources: {}
+- id: 465
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 10740.906
+    y: 44551.168
+  health: 100.0
+  resources: {}
+- id: 466
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 17886.705
+    y: 6053.784
+  health: 100.0
+  resources: {}
+- id: 467
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 25760.238
+    y: -21505.062
+  health: 100.0
+  resources: {}
+- id: 468
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 60347.16
+    y: -55366.035
+  health: 100.0
+  resources: {}
+- id: 469
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -79902.984
+    y: 7531.007
+  health: 100.0
+  resources: {}
+- id: 470
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 64705.086
+    y: 56136.566
+  health: 100.0
+  resources: {}
+- id: 471
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -56623.33
+    y: -85165.32
+  health: 100.0
+  resources: {}
+- id: 472
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -57611.285
+    y: 21124.783
+  health: 100.0
+  resources: {}
+- id: 473
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -32023.82
+    y: -86666.85
+  health: 100.0
+  resources: {}
+- id: 474
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -89973.82
+    y: 56077.48
+  health: 100.0
+  resources: {}
+- id: 475
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 24986.488
+    y: -39941.996
+  health: 100.0
+  resources: {}
+- id: 476
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 40963.074
+    y: -22972.691
+  health: 100.0
+  resources: {}
+- id: 477
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 5216.9756
+    y: -46953.184
+  health: 100.0
+  resources: {}
+- id: 478
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 33031.566
+    y: -38169.16
+  health: 100.0
+  resources: {}
+- id: 479
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -10636.359
+    y: 56988.29
+  health: 100.0
+  resources: {}
+- id: 480
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 1339.6486
+    y: -35857.44
+  health: 100.0
+  resources: {}
+- id: 481
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -45343.824
+    y: 51691.18
+  health: 100.0
+  resources: {}
+- id: 482
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32879.164
+    y: 68371.77
+  health: 100.0
+  resources: {}
+- id: 483
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -54732.207
+    y: -46753.137
+  health: 100.0
+  resources: {}
+- id: 484
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4090.7454
+    y: 22141.268
+  health: 100.0
+  resources: {}
+- id: 485
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 54263.613
+    y: 9144.552
+  health: 100.0
+  resources: {}
+- id: 486
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -74226.02
+    y: 35176.59
+  health: 100.0
+  resources: {}
+- id: 487
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -24412.953
+    y: -48578.12
+  health: 100.0
+  resources: {}
+- id: 488
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -52234.625
+    y: 75067.63
+  health: 100.0
+  resources: {}
+- id: 489
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 5781.4585
+    y: 117743.93
+  health: 100.0
+  resources: {}
+- id: 490
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -61669.527
+    y: 9334.214
+  health: 100.0
+  resources: {}
+- id: 491
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 28105.57
+    y: -16382.403
+  health: 100.0
+  resources: {}
+- id: 492
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -12424.828
+    y: -59086.434
+  health: 100.0
+  resources: {}
+- id: 493
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -44157.87
+    y: 9406.015
+  health: 100.0
+  resources: {}
+- id: 494
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -82334.65
+    y: 75640.97
+  health: 100.0
+  resources: {}
+- id: 495
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 94826.984
+    y: -39921.746
+  health: 100.0
+  resources: {}
+- id: 496
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 48532.65
+    y: 30513.3
+  health: 100.0
+  resources: {}
+- id: 497
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4466.942
+    y: -17036.15
+  health: 100.0
+  resources: {}
+- id: 498
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -21888.365
+    y: 57708.49
+  health: 100.0
+  resources: {}
+- id: 499
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 15384.965
+    y: 105856.96
+  health: 100.0
+  resources: {}
+- id: 500
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -30261.61
+    y: 12708.576
+  health: 100.0
+  resources: {}
+- id: 501
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 30833.762
+    y: 23377.146
+  health: 100.0
+  resources: {}
+- id: 502
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -44255.63
+    y: -9395.911
+  health: 100.0
+  resources: {}
+- id: 503
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -32282.6
+    y: -31391.693
+  health: 100.0
+  resources: {}
+- id: 504
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 1956.9615
+    y: 30413.588
+  health: 100.0
+  resources: {}
+- id: 505
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -38763.855
+    y: -59425.23
+  health: 100.0
+  resources: {}
+- id: 506
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -46999.92
+    y: 104570.5
+  health: 100.0
+  resources: {}
+- id: 507
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 45767.508
+    y: -1370.9269
+  health: 100.0
+  resources: {}
+- id: 508
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -79545.266
+    y: -10673.851
+  health: 100.0
+  resources: {}
+- id: 509
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 47023.51
+    y: -37600.145
+  health: 100.0
+  resources: {}
+- id: 510
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -6197.954
+    y: -44272.383
+  health: 100.0
+  resources: {}
+- id: 511
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -23384.93
+    y: 11942.902
+  health: 100.0
+  resources: {}
+- id: 512
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 38901.277
+    y: -39646.96
+  health: 100.0
+  resources: {}
+- id: 513
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 78437.35
+    y: -71294.41
+  health: 100.0
+  resources: {}
+- id: 514
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53621.445
+    y: 44962.285
+  health: 100.0
+  resources: {}
+- id: 515
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 14962.265
+    y: 73100.766
+  health: 100.0
+  resources: {}
+- id: 516
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -40462.094
+    y: 27775.492
+  health: 100.0
+  resources: {}
+- id: 517
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 23458.525
+    y: -25684.203
+  health: 100.0
+  resources: {}
+- id: 518
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 15359.264
+    y: -54962.27
+  health: 100.0
+  resources: {}
+- id: 519
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -91154.44
+    y: -65811.77
+  health: 100.0
+  resources: {}
+- id: 520
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 86760.36
+    y: 52081.16
+  health: 100.0
+  resources: {}
+- id: 521
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 18600.662
+    y: 1159.6375
+  health: 100.0
+  resources: {}
+- id: 522
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 91291.68
+    y: 28188.25
+  health: 100.0
+  resources: {}
+- id: 523
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -46997.863
+    y: 22518.893
+  health: 100.0
+  resources: {}
+- id: 524
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 101778.07
+    y: 77513.64
+  health: 100.0
+  resources: {}
+- id: 525
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4113.766
+    y: 83135.445
+  health: 100.0
+  resources: {}
+- id: 526
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 55539.293
+    y: -9266.068
+  health: 100.0
+  resources: {}
+- id: 527
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -78397.64
+    y: -41912.062
+  health: 100.0
+  resources: {}
+- id: 528
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -106879.36
+    y: -34728.414
+  health: 100.0
+  resources: {}
+- id: 529
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -61366.598
+    y: 44585.527
+  health: 100.0
+  resources: {}
+- id: 530
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 228.35083
+    y: 102169.71
+  health: 100.0
+  resources: {}
+- id: 531
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 7898.688
+    y: 28418.36
+  health: 100.0
+  resources: {}
+- id: 532
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 2371.0396
+    y: -59924.48
+  health: 100.0
+  resources: {}
+- id: 533
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -55759.766
+    y: 28695.705
+  health: 100.0
+  resources: {}
+- id: 534
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 29492.562
+    y: -69772.125
+  health: 100.0
+  resources: {}
+- id: 535
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -26445.342
+    y: 902.6401
+  health: 100.0
+  resources: {}
+- id: 536
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -6566.3145
+    y: -95200.67
+  health: 100.0
+  resources: {}
+- id: 537
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -8225.057
+    y: -29537.81
+  health: 100.0
+  resources: {}
+- id: 538
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 31587.201
+    y: 31832.03
+  health: 100.0
+  resources: {}
+- id: 539
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 74943.27
+    y: 77982.98
+  health: 100.0
+  resources: {}
+- id: 540
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 56524.152
+    y: 35892.004
+  health: 100.0
+  resources: {}
+- id: 541
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 97064.68
+    y: -29187.193
+  health: 100.0
+  resources: {}
+- id: 542
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -103935.06
+    y: 42667.734
+  health: 100.0
+  resources: {}
+- id: 543
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2821.2837
+    y: 82132.03
+  health: 100.0
+  resources: {}
+- id: 544
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -27620.822
+    y: -22413.086
+  health: 100.0
+  resources: {}
+- id: 545
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 89548.66
+    y: 6234.3696
+  health: 100.0
+  resources: {}
+- id: 546
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -32073.555
+    y: 28596.48
+  health: 100.0
+  resources: {}
+- id: 547
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 55406.348
+    y: 65107.992
+  health: 100.0
+  resources: {}
+- id: 548
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -15163.309
+    y: 51016.387
+  health: 100.0
+  resources: {}
+- id: 549
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 8604.461
+    y: -6767.006
+  health: 100.0
+  resources: {}
+- id: 550
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 13316.412
+    y: -55144.8
+  health: 100.0
+  resources: {}
+- id: 551
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53524.555
+    y: -32497.943
+  health: 100.0
+  resources: {}
+- id: 552
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -100256.45
+    y: 9521.565
+  health: 100.0
+  resources: {}
+- id: 553
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 19611.797
+    y: -76180.16
+  health: 100.0
+  resources: {}
+- id: 554
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 167.60464
+    y: -12803.615
+  health: 100.0
+  resources: {}
+- id: 555
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -67870.05
+    y: -73222.04
+  health: 100.0
+  resources: {}
+- id: 556
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -26951.83
+    y: 52180.14
+  health: 100.0
+  resources: {}
+- id: 558
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -35540.758
+    y: -16158.284
+  health: 100.0
+  resources: {}
+- id: 559
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 22943.717
+    y: -6804.5244
+  health: 100.0
+  resources: {}
+- id: 560
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -58411.223
+    y: -121160.4
+  health: 100.0
+  resources: {}
+- id: 561
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4880.8384
+    y: 12344.213
+  health: 100.0
+  resources: {}
+- id: 562
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 128540.266
+    y: 24502.484
+  health: 100.0
+  resources: {}
+- id: 564
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 2315.674
+    y: -45345.074
+  health: 100.0
+  resources: {}
+- id: 565
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -107324.32
+    y: 53392.27
+  health: 100.0
+  resources: {}
+- id: 566
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -1660.9604
+    y: -29222.182
+  health: 100.0
+  resources: {}
+- id: 567
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 42507.918
+    y: 58453.332
+  health: 100.0
+  resources: {}
+- id: 568
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -69814.86
+    y: 51696.39
+  health: 100.0
+  resources: {}
+- id: 569
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 80656.99
+    y: 47172.332
+  health: 100.0
+  resources: {}
+- id: 570
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -33439.86
+    y: -72782.305
+  health: 100.0
+  resources: {}
+- id: 571
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -1694.9803
+    y: -5234.721
+  health: 100.0
+  resources: {}
+- id: 572
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 23066.014
+    y: 50343.234
+  health: 100.0
+  resources: {}
+- id: 573
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -10350.199
+    y: -68098.16
+  health: 100.0
+  resources: {}
+- id: 574
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 84491.13
+    y: -39166.684
+  health: 100.0
+  resources: {}
+- id: 575
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 39360.426
+    y: 30583.299
+  health: 100.0
+  resources: {}
+- id: 576
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -9026.204
+    y: 72506.54
+  health: 100.0
+  resources: {}
+- id: 577
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 80825.914
+    y: 13510.682
+  health: 100.0
+  resources: {}
+- id: 578
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 46590.355
+    y: 29670.986
+  health: 100.0
+  resources: {}
+- id: 579
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -46481.57
+    y: -38291.22
+  health: 100.0
+  resources: {}
+- id: 580
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -48600.773
+    y: 3342.7266
+  health: 100.0
+  resources: {}
+- id: 581
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -69519.93
+    y: 115732.03
+  health: 100.0
+  resources: {}
+- id: 582
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 25843.904
+    y: -64721.668
+  health: 100.0
+  resources: {}
+- id: 583
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -36135.215
+    y: 56679.88
+  health: 100.0
+  resources: {}
+- id: 584
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 43871.957
+    y: -77667.21
+  health: 100.0
+  resources: {}
+- id: 585
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 9325.821
+    y: 16672.318
+  health: 100.0
+  resources: {}
+- id: 586
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -65870.74
+    y: -45202.348
+  health: 100.0
+  resources: {}
+- id: 587
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 84642.06
+    y: -13882.017
+  health: 100.0
+  resources: {}
+- id: 588
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -50008.406
+    y: -80918.375
+  health: 100.0
+  resources: {}
+- id: 589
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 15499.05
+    y: -12771.496
+  health: 100.0
+  resources: {}
+- id: 590
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 10802.917
+    y: 1127.4473
+  health: 100.0
+  resources: {}
+- id: 591
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -81774.82
+    y: 8254.404
+  health: 100.0
+  resources: {}
+- id: 592
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 2973.4333
+    y: 72816.016
+  health: 100.0
+  resources: {}
+- id: 593
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -88331.08
+    y: -70514.734
+  health: 100.0
+  resources: {}
+- id: 594
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -32485.799
+    y: -14059.553
+  health: 100.0
+  resources: {}
+- id: 595
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 12833.894
+    y: 22091.24
+  health: 100.0
+  resources: {}
+- id: 596
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -8793.882
+    y: 15302.477
+  health: 100.0
+  resources: {}
+- id: 597
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32803.266
+    y: 50471.023
+  health: 100.0
+  resources: {}
+- id: 599
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -5687.356
+    y: -76560.98
+  health: 100.0
+  resources: {}
+- id: 600
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 55466.594
+    y: 45469.46
+  health: 100.0
+  resources: {}
+- id: 601
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 9646.354
+    y: -38251.25
+  health: 100.0
+  resources: {}
+- id: 602
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -7547.2173
+    y: 34800.805
+  health: 100.0
+  resources: {}
+- id: 603
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 7204.9546
+    y: 20471.85
+  health: 100.0
+  resources: {}
+- id: 604
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 7991.03
+    y: -20602.45
+  health: 100.0
+  resources: {}
+- id: 605
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -114372.55
+    y: 53214.434
+  health: 100.0
+  resources: {}
+- id: 606
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -3042.9114
+    y: -38799.375
+  health: 100.0
+  resources: {}
+- id: 607
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -45516.684
+    y: -9710.574
+  health: 100.0
+  resources: {}
+- id: 608
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -726.5365
+    y: 27600.32
+  health: 100.0
+  resources: {}
+- id: 609
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 9674.056
+    y: -57742.043
+  health: 100.0
+  resources: {}
+- id: 610
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 25764.63
+    y: -42960.5
+  health: 100.0
+  resources: {}
+- id: 611
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 16911.857
+    y: 40672.875
+  health: 100.0
+  resources: {}
+- id: 612
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 31890.727
+    y: 18572.328
+  health: 100.0
+  resources: {}
+- id: 613
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 26339.266
+    y: -68031.13
+  health: 100.0
+  resources: {}
+- id: 614
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -4946.8765
+    y: -50230.76
+  health: 100.0
+  resources: {}
+- id: 615
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 153.50864
+    y: -31161.314
+  health: 100.0
+  resources: {}
+- id: 616
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 22684.113
+    y: -56982.953
+  health: 100.0
+  resources: {}
+- id: 617
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 23793.916
+    y: 28667.516
+  health: 100.0
+  resources: {}
+- id: 618
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -45837.645
+    y: -32434.84
+  health: 100.0
+  resources: {}
+- id: 619
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 42635.562
+    y: 10096.916
+  health: 100.0
+  resources: {}
+- id: 620
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 14404.318
+    y: 18245.314
+  health: 100.0
+  resources: {}
+- id: 621
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -13654.548
+    y: -11277.281
+  health: 100.0
+  resources: {}
+- id: 622
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -8426.577
+    y: -19143.559
+  health: 100.0
+  resources: {}
+- id: 623
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 59053.863
+    y: 18849.078
+  health: 100.0
+  resources: {}
+- id: 624
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 38010.742
+    y: -1154.3264
+  health: 100.0
+  resources: {}
+- id: 625
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 85874.76
+    y: -80232.51
+  health: 100.0
+  resources: {}
+- id: 626
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -66122.43
+    y: -73152.625
+  health: 100.0
+  resources: {}
+- id: 627
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -5675.76
+    y: -79184.14
+  health: 100.0
+  resources: {}
+- id: 628
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -76502.305
+    y: 67972.11
+  health: 100.0
+  resources: {}
+- id: 629
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32932.82
+    y: 5293.85
+  health: 100.0
+  resources: {}
+- id: 630
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -49594.742
+    y: 15339.721
+  health: 100.0
+  resources: {}
+- id: 631
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 69679.516
+    y: 78979.23
+  health: 100.0
+  resources: {}
+- id: 632
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 112435.336
+    y: 39711.98
+  health: 100.0
+  resources: {}
+- id: 633
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -32673.59
+    y: 45796.957
+  health: 100.0
+  resources: {}
+- id: 634
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 72571.336
+    y: -7564.8774
+  health: 100.0
+  resources: {}
+- id: 635
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 30579.996
+    y: -28638.184
+  health: 100.0
+  resources: {}
+- id: 636
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -18002.078
+    y: 10683.548
+  health: 100.0
+  resources: {}
+- id: 637
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 35941.11
+    y: 67350.875
+  health: 100.0
+  resources: {}
+- id: 638
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 145612.23
+    y: -56526.305
+  health: 100.0
+  resources: {}
+- id: 639
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 3910.7441
+    y: -2616.0847
+  health: 100.0
+  resources: {}
+- id: 640
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 58372.15
+    y: -9045.841
+  health: 100.0
+  resources: {}
+- id: 641
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 40613.445
+    y: 95068.88
+  health: 100.0
+  resources: {}
+- id: 642
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 10554.967
+    y: -39352.57
+  health: 100.0
+  resources: {}
+- id: 643
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 37127.125
+    y: -5757.231
+  health: 100.0
+  resources: {}
+- id: 644
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -17423.771
+    y: -64448.44
+  health: 100.0
+  resources: {}
+- id: 645
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -101311.46
+    y: -3432.4731
+  health: 100.0
+  resources: {}
+- id: 646
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 43033.95
+    y: 38309.746
+  health: 100.0
+  resources: {}
+- id: 647
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -20629.984
+    y: 29067.08
+  health: 100.0
+  resources: {}
+- id: 648
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4193.9624
+    y: 31341.125
+  health: 100.0
+  resources: {}
+- id: 649
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -37188.824
+    y: -57425.805
+  health: 100.0
+  resources: {}
+- id: 650
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 9760.598
+    y: -50792.89
+  health: 100.0
+  resources: {}
+- id: 651
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 52193.383
+    y: -30689.107
+  health: 100.0
+  resources: {}
+- id: 652
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 48467.766
+    y: 47386.188
+  health: 100.0
+  resources: {}
+- id: 653
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 10701.217
+    y: 10302.349
+  health: 100.0
+  resources: {}
+- id: 654
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -25314.191
+    y: -14402.517
+  health: 100.0
+  resources: {}
+- id: 655
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 94529.18
+    y: 1582.6104
+  health: 100.0
+  resources: {}
+- id: 656
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -88895.41
+    y: -5646.5005
+  health: 100.0
+  resources: {}
+- id: 657
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -28467.64
+    y: -37593.477
+  health: 100.0
+  resources: {}
+- id: 658
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 68928.66
+    y: -6946.2935
+  health: 100.0
+  resources: {}
+- id: 659
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 50356.594
+    y: -18205.393
+  health: 100.0
+  resources: {}
+- id: 660
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -115267.234
+    y: 38822.6
+  health: 100.0
+  resources: {}
+- id: 661
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 14416.133
+    y: -55041.633
+  health: 100.0
+  resources: {}
+- id: 662
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -32241.658
+    y: 33279.203
+  health: 100.0
+  resources: {}
+- id: 663
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -37678.676
+    y: 42665.344
+  health: 100.0
+  resources: {}
+- id: 664
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 34048.418
+    y: 24477.324
+  health: 100.0
+  resources: {}
+- id: 665
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 9773.507
+    y: 23212.943
+  health: 100.0
+  resources: {}
+- id: 666
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 27861.594
+    y: -28854.393
+  health: 100.0
+  resources: {}
+- id: 667
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 35504.152
+    y: -17807.24
+  health: 100.0
+  resources: {}
+- id: 668
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 45527.914
+    y: 8899.513
+  health: 100.0
+  resources: {}
+- id: 669
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -63828.395
+    y: 52101.57
+  health: 100.0
+  resources: {}
+- id: 670
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -8579.57
+    y: -5287.64
+  health: 100.0
+  resources: {}
+- id: 671
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -17525.71
+    y: 17266.822
+  health: 100.0
+  resources: {}
+- id: 672
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -14166.959
+    y: 23470.9
+  health: 100.0
+  resources: {}
+- id: 673
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 12116.21
+    y: 16238.436
+  health: 100.0
+  resources: {}
+- id: 674
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -46697.684
+    y: 47230.406
+  health: 100.0
+  resources: {}
+- id: 675
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -35724.67
+    y: 64049.27
+  health: 100.0
+  resources: {}
+- id: 676
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -34237.855
+    y: -44055.57
+  health: 100.0
+  resources: {}
+- id: 677
+  entity_type: habitat
+  owner: player1
+  position:
+    x: -33463.137
+    y: -43747.32
+  health: 400.0
+  resources:
+    energy: 1000.0
+    food: 2650.3699293651916
+    minerals: 897.9907073974609
+- id: 678
+  entity_type: worker
+  owner: player1
+  position:
+    x: -34188.652
+    y: -44062.133
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 5.0
+- id: 679
+  entity_type: worker
+  owner: player1
+  position:
+    x: -35901.652
+    y: -42109.113
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 50.0
+- id: 680
+  entity_type: worker
+  owner: player1
+  position:
+    x: -34189.402
+    y: -44062.03
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 5.0
+    minerals: 35.33333517611027
+- id: 681
+  entity_type: scout
+  owner: player1
+  position:
+    x: -34399.45
+    y: -43045.652
+  health: 60.0
+  resources:
+    energy: 100.0
+- id: 682
+  entity_type: worker
+  owner: player1
+  position:
+    x: -34940.043
+    y: -43002.035
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 49.0
+- id: 683
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 30710.068
+    y: 57333.105
+  health: 40.0
+  resources: {}
+- id: 684
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -35661.473
+    y: -43770.934
+  health: 100.0
+  resources:
+    energy: 1.0
+- id: 685
+  entity_type: worker
+  owner: player1
+  position:
+    x: -34768.08
+    y: -43160.25
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 5.0
+- id: 686
+  entity_type: worker
+  owner: player1
+  position:
+    x: -33915.348
+    y: -44098.574
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 5.0
+- id: 687
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -35414.086
+    y: -44621.984
+  health: 100.0
+  resources:
+    energy: 1.0
+- id: 688
+  entity_type: worker
+  owner: player1
+  position:
+    x: -33469.215
+    y: -44212.094
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 5.0
+- id: 690
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -32812.785
+    y: -43863.37
+  health: 100.0
+  resources:
+    energy: 1.0
+- id: 691
+  entity_type: worker
+  owner: player1
+  position:
+    x: -34267.016
+    y: -43710.668
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 5.0
+- id: 692
+  entity_type: mineral_storage_container
+  owner: player1
+  position:
+    x: -34962.855
+    y: -43969.68
+  health: 50.0
+  resources:
+    energy: 100.0
+    minerals: 1000.0
+- id: 693
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -32524.578
+    y: -44661.434
+  health: 100.0
+  resources:
+    energy: 1.0
+- id: 694
+  entity_type: worker
+  owner: player1
+  position:
+    x: -35326.098
+    y: -42643.555
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 50.0
+- id: 695
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -3216.7717
+    y: 24048.3
+  health: 40.0
+  resources: {}
+- id: 696
+  entity_type: food_storage_container
+  owner: player1
+  position:
+    x: -34614.914
+    y: -44059.383
+  health: 50.0
+  resources:
+    energy: 100.0
+    food: 1000.0
+    minerals: 100.0
+- id: 697
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -32572.695
+    y: -44855.082
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 698
+  entity_type: worker
+  owner: player1
+  position:
+    x: -33797.312
+    y: -44114.4
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 5.0
+    minerals: 50.0
+- id: 699
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -32925.05
+    y: -42967.527
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 700
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -6468.7686
+    y: 18637.545
+  health: 40.0
+  resources: {}
+- id: 701
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -36422.81
+    y: -43415.8
+  health: 100.0
+  resources:
+    energy: 1.0
+- id: 702
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -35311.434
+    y: -44900.547
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 703
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -36566.887
+    y: -43163.695
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 704
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -34790.113
+    y: -43749.824
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 705
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -4585.4717
+    y: 22141.469
+  health: 40.0
+  resources: {}
+- id: 706
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -34834.945
+    y: -44581.598
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 707
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -34983.074
+    y: -41601.477
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 708
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -75163.73
+    y: -58222.977
+  health: 40.0
+  resources: {}
+- id: 709
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -34141.414
+    y: -44519.84
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 710
+  entity_type: factory
+  owner: player1
+  position:
+    x: -35329.3
+    y: -44151.96
+  health: 150.0
+  resources:
+    energy: 3000.0
+    food: 500.0
+    minerals: 3000.0
+- id: 711
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 36744.906
+    y: 66426.375
+  health: 40.0
+  resources: {}
+- id: 712
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -32695.182
+    y: -42690.37
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 713
+  entity_type: mineral_storage_container
+  owner: player1
+  position:
+    x: -35064.3
+    y: -44250.402
+  health: 50.0
+  resources:
+    energy: 100.0
+    minerals: 1000.0
+- id: 714
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -34524.54
+    y: -41753.953
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 715
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -32652.732
+    y: -42834.562
+  health: 100.0
+  resources:
+    energy: 216.05111081153154
+- id: 716
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -51385.91
+    y: 14077.262
+  health: 40.0
+  resources: {}
+- id: 717
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -31679.002
+    y: -42406.402
+  health: 100.0
+  resources:
+    energy: 500.0
+- id: 718
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -35318.19
+    y: -43718.457
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 719
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -26854.848
+    y: -70014.49
+  health: 40.0
+  resources: {}
+- id: 720
+  entity_type: worker
+  owner: player1
+  position:
+    x: -33764.176
+    y: -43535.46
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 33.0
+- id: 721
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -31874.2
+    y: -42140.016
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 722
+  entity_type: worker
+  owner: player1
+  position:
+    x: -33877.4
+    y: -44208.535
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 38.0
+- id: 723
+  entity_type: food_storage_container
+  owner: player1
+  position:
+    x: -34767.11
+    y: -44234.043
+  health: 50.0
+  resources:
+    energy: 100.0
+    food: 1000.0
+    minerals: 100.0
+- id: 724
+  entity_type: worker
+  owner: player1
+  position:
+    x: -33597.97
+    y: -43785.01
+  health: 200.0
+  resources:
+    energy: 5.0
+    food: 5.0
+- id: 725
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -19010.355
+    y: -75933.58
+  health: 40.0
+  resources: {}
+- id: 726
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -31811.115
+    y: -45050.824
+  health: 100.0
+  resources:
+    energy: 500.0
+- id: 728
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -31608.975
+    y: -45022.277
+  health: 500.0
+  resources:
+    energy: 500.0
+- id: 729
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 29864.486
+    y: 57016.285
+  health: 40.0
+  resources: {}
+- id: 730
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -8464.434
+    y: 4195.4785
+  health: 40.0
+  resources: {}
+- id: 731
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -17696.219
+    y: -39862.5
+  health: 40.0
+  resources: {}
+- id: 732
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 43476.426
+    y: -54521.65
+  health: 40.0
+  resources: {}
+- id: 733
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 74449.4
+    y: 22967.27
+  health: 40.0
+  resources: {}
+- id: 734
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -3176.9146
+    y: 11686.52
+  health: 40.0
+  resources: {}
+- id: 735
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -21130.922
+    y: -39825.94
+  health: 40.0
+  resources: {}
+- id: 736
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 69743.195
+    y: 32658.434
+  health: 40.0
+  resources: {}
+- id: 737
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -57251.29
+    y: -2784.3904
+  health: 40.0
+  resources: {}
+- id: 738
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 41810.65
+    y: -43921.65
+  health: 40.0
+  resources: {}
+- id: 739
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -52671.27
+    y: -11408.889
+  health: 40.0
+  resources: {}
+- id: 740
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -51139.03
+    y: 3410.3884
+  health: 40.0
+  resources: {}
+- id: 742
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -33362.195
+    y: 7414.5283
+  health: 40.0
+  resources: {}
+- id: 743
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -16540.967
+    y: -30138.275
+  health: 40.0
+  resources: {}
+- id: 744
+  entity_type: food_storage_container
+  owner: player1
+  position:
+    x: -34239.934
+    y: -43650.48
+  health: 50.0
+  resources:
+    energy: 100.0
+    food: 704.0
+    minerals: 100.0
+- id: 745
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -8279.918
+    y: -18851.824
+  health: 40.0
+  resources: {}
+- id: 746
+  entity_type: military_factory
+  owner: player1
+  position:
+    x: -33701.85
+    y: -43557.18
+  health: 150.0
+  resources:
+    energy: 500.0
+- id: 747
+  entity_type: factory
+  owner: player1
+  position:
+    x: -33500.496
+    y: -44153.977
+  health: 150.0
+  resources:
+    energy: 3000.0
+    minerals: 1283.542579650879
+- id: 748
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -3323.8137
+    y: 765.175
+  health: 40.0
+  resources: {}
+- id: 749
+  entity_type: heavy_fighter
+  owner: player1
+  position:
+    x: -33680.12
+    y: -43542.902
+  health: 100.0
+  resources:
+    energy: 100.0
+captured_tick: 255637

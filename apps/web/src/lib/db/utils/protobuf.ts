@@ -23,17 +23,19 @@ export const mapDeltaToJson = (d: Delta) => ({
       ...(u.force ? { force: { x: u.force.x, y: u.force.y } } : {}),
       ...(uAny.ownerPlayerId !== undefined ? { owner_player_id: uAny.ownerPlayerId } : {}),
       ...(uAny.health !== undefined ? { health: uAny.health } : {}),
+      ...(u.damageType ? { damage_type: u.damageType } : {}),
+      ...(u.resourceDeposit ? { resource_deposit: { amount: u.resourceDeposit.amount, remaining: u.resourceDeposit.remaining } } : {}),
+      ...(u.resources ? { resources: u.resources.resources.map((r) => ({ resource_type: r.resourceType, amount: r.amount })) } : {}),
     };
   }),
   collector_state_updates: (d.collectorStateUpdates ?? []).map((state) => ({
     entity_id: biToNumOrStr(state.entityId),
     activity: state.activity,
     resource_type: state.resourceType,
-    carry_amount: state.carryAmount,
-    carry_capacity: state.carryCapacity,
     effective_rate_per_second: state.effectiveRatePerSecond,
     assigned_resource_type: state.assignedResourceType,
     assigned_nearest_compatible: state.assignedNearestCompatible,
+    receiving_entity_id: state.receivingEntityId === undefined ? null : biToNumOrStr(state.receivingEntityId),
   })),
   combat_effect_state_updates: (d.combatEffectStateUpdates ?? []).map((state) => ({
     entity_id: biToNumOrStr(state.entityId),
@@ -54,6 +56,8 @@ export const mapEntityToJson = (e: Entity) => {
     ...(e.force ? { force: { x: e.force.x, y: e.force.y } } : {}),
     ...(eAny.ownerPlayerId !== undefined ? { owner_player_id: eAny.ownerPlayerId } : {}),
     ...(eAny.health !== undefined ? { health: eAny.health } : {}),
+    ...(e.resourceDeposit ? { resource_deposit: { amount: e.resourceDeposit.amount, remaining: e.resourceDeposit.remaining } } : {}),
+    ...(e.resources ? { resources: e.resources.resources.map((r) => ({ resource_type: r.resourceType, amount: r.amount })) } : {}),
   };
 };
 
@@ -76,11 +80,10 @@ export const mapSnapshotToJson = (s: Snapshot) => {
       entity_id: biToNumOrStr(state.entityId),
       activity: state.activity,
       resource_type: state.resourceType,
-      carry_amount: state.carryAmount,
-      carry_capacity: state.carryCapacity,
       effective_rate_per_second: state.effectiveRatePerSecond,
       assigned_resource_type: state.assignedResourceType,
       assigned_nearest_compatible: state.assignedNearestCompatible,
+      receiving_entity_id: state.receivingEntityId === undefined ? null : biToNumOrStr(state.receivingEntityId),
     })),
     combat_effect_states: (s.combatEffectStates ?? []).map((state) => ({
       entity_id: biToNumOrStr(state.entityId),

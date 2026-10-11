@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
-import { BuildIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
+import { BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
 import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
@@ -115,10 +115,15 @@ export async function POST(req: NextRequest) {
 
     const gameId = process.env.GAME_ID || "demo-001";
     const stream = `rts:match:${gameId}:intents`;
+    const runtimeValue = await redis.get(`rts:match:${gameId}:runtime`);
+    const gameRuntime = runtimeValue ? JSON.parse(runtimeValue) : null;
+    if (gameRuntime?.run_id && body.run_id !== gameRuntime.run_id) {
+      return NextResponse.json({ error: "world changed; wait for the new snapshot" }, { status: 409 });
+    }
 
     const t = (body?.type ?? "").toString();
-    if (t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research") {
-      return NextResponse.json({ error: "unsupported type; expected Move, Collect, Build, Upgrade, Repair, or Research" }, { status: 400 });
+    if (t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport") {
+      return NextResponse.json({ error: "unsupported type; expected Move, Collect, Build, Upgrade, Repair, Research, Deliver, or Transport" }, { status: 400 });
     }
 
     const entityIdVal = body?.entity_id;
@@ -141,8 +146,16 @@ export async function POST(req: NextRequest) {
     if (t === "Research" && !String(body?.technology_id ?? "").trim()) {
       return NextResponse.json({ error: "missing required field for Research: technology_id" }, { status: 400 });
     }
-    if (t === "Repair" && (!Number.isInteger(Number(body?.target_id)) || Number(body.target_id) <= 0)) {
-      return NextResponse.json({ error: "target_id must be a positive integer for Repair" }, { status: 400 });
+    if ((t === "Repair" || t === "Deliver" || t === "Transport") && (!Number.isInteger(Number(body?.target_id)) || Number(body.target_id) <= 0)) {
+      return NextResponse.json({ error: `target_id must be a positive integer for ${t}` }, { status: 400 });
+    }
+    if ((t === "Deliver" || t === "Transport") && (!Array.isArray(body.resource_type_ids)
+      || body.resource_type_ids.length === 0 || body.resource_type_ids.length > 64
+      || body.resource_type_ids.some((id: unknown) => typeof id !== "string" || !id.trim()))) {
+      return NextResponse.json({ error: "Deliver requires at least one resource_type_ids entry" }, { status: 400 });
+    }
+    if (t === "Transport" && (!Number.isSafeInteger(Number(body?.donor_id)) || Number(body.donor_id) <= 0)) {
+      return NextResponse.json({ error: "Transport requires a positive donor_id" }, { status: 400 });
     }
     const resourceTypeId = typeof body?.resource_type_id === "string" ? body.resource_type_id.trim() : "";
     const nearestCompatible = body?.nearest_compatible === true;
@@ -234,6 +247,18 @@ export async function POST(req: NextRequest) {
         payload: { case: "upgrade", value: upgrade },
       });
       bytes = toBinary(IntentEnvelopeSchema, envelope);
+    } else if (t === "Deliver" || t === "Transport") {
+      const delivery = create(DeliverIntentSchema, {
+        entityId, targetId: BigInt(body.target_id),
+        donorId: t === "Transport" ? BigInt(body.donor_id) : 0n,
+        resourceTypeIds: [...new Set<string>(body.resource_type_ids)],
+      });
+      const envelope = create(IntentEnvelopeSchema, {
+        clientCmdId: clientCmdBytes, intentId: new Uint8Array(), playerId,
+        clientSeq: BigInt(clientSeqVal), serverTick: 0n, protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
+        payload: { case: "deliver", value: delivery },
+      });
+      bytes = toBinary(IntentEnvelopeSchema, envelope);
     } else if (t === "Research") {
       const research = create(ResearchIntentSchema, { entityId, technologyId: String(body.technology_id) });
       const envelope = create(IntentEnvelopeSchema, {
@@ -260,7 +285,7 @@ export async function POST(req: NextRequest) {
       bytes = toBinary(IntentEnvelopeSchema, envelope);
     }
 
-    const id = await (redis as any).xaddBuffer(stream, "MAXLEN", "~", 10000, "*", "data", Buffer.from(bytes));
+    const id = await (redis as any).xaddBuffer(stream, "MAXLEN", "~", 10000, "*", "data", Buffer.from(bytes), "run_id", body.run_id || "");
 
     return NextResponse.json({ ok: true, id: id?.toString?.() ?? String(id) });
   } catch (e: any) {

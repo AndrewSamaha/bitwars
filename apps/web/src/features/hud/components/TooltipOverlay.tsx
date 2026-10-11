@@ -92,15 +92,11 @@ export function TooltipOverlay() {
     | {
         activity?: string;
         resource_type?: string;
-        carry_amount?: number;
-        carry_capacity?: number;
         effective_rate_per_second?: number;
       }
     | undefined;
   const activity = String(collectorState?.activity ?? "idle");
   const resourceType = String(collectorState?.resource_type ?? "");
-  const carryAmount = Number(collectorState?.carry_amount ?? 0);
-  const carryCapacity = Number(collectorState?.carry_capacity ?? 0);
   const effectiveRate = Number(collectorState?.effective_rate_per_second ?? 0);
   const ownerPlayerId = String((hoveredEntity as any).owner_player_id ?? "");
   const ownerPlayerName = playerNamesById[ownerPlayerId];
@@ -108,6 +104,10 @@ export function TooltipOverlay() {
   const health = Number((hoveredEntity as any).health);
   const maxHealth = contentManager.getEntityType(entityTypeId)?.health;
   const healthFraction = typeof maxHealth === "number" && maxHealth > 0 ? health / maxHealth : null;
+  const inventory = ownerPlayerId === player?.id ? ((hoveredEntity as any).resources as Array<{resource_type: string; amount: number}> | undefined) : undefined;
+  const capacities = (contentManager.getEntityType(entityTypeId) as any)?.max_capacity as Record<string, number> | undefined;
+  const deposit = (hoveredEntity as any).resource_deposit as { amount: number; remaining: number } | null | undefined;
+  const depositResource = contentManager.getEntityType(entityTypeId)?.resource_node?.resource_type;
   const rememberedAt = (hoveredEntity as any).remembered?.last_seen_at as number | undefined;
 
   return (
@@ -136,13 +136,17 @@ export function TooltipOverlay() {
             : ""}
         </div>
       )}
+      {rememberedAt === undefined && deposit && depositResource && (
+        <div><b>{depositResource}:</b> {deposit.remaining.toFixed(1)} / {deposit.amount.toFixed(1)}</div>
+      )}
+      {ownerPlayerId === player?.id && Object.entries(capacities ?? {}).filter(([, capacity]) => capacity > 0).map(([resource_type, capacity]) => {
+        const amount = inventory?.find((resource) => resource.resource_type === resource_type)?.amount ?? 0;
+        return <div key={resource_type}><b>{resource_type}:</b> {Number(amount).toFixed(1)} / {capacity}</div>;
+      })}
       <div><b>pos:</b> {Math.round(hoveredEntity.pos?.x ?? 0)}, {Math.round(hoveredEntity.pos?.y ?? 0)}</div>
       <div><b>vel:</b> {Math.round(hoveredEntity.vel?.x ?? 0)}, {Math.round(hoveredEntity.vel?.y ?? 0)}</div>
       {collectorState && <div><b>collector:</b> {activity}{resourceType ? ` (${resourceType})` : ""}</div>}
-      {collectorState && carryCapacity > 0 && (
-        <div><b>carry:</b> {carryAmount.toFixed(1)} / {carryCapacity.toFixed(1)}</div>
-      )}
-      {collectorState && carryCapacity <= 0 && (
+      {collectorState && (
         <div><b>rate:</b> {effectiveRate.toFixed(1)}/s</div>
       )}
     </div>

@@ -54,6 +54,15 @@ pub struct EntityActiveIntent {
     /// Placement point for an in-progress build.
     #[serde(default)]
     pub build_location: Option<IntentPoint>,
+    #[serde(default)]
+    pub transfer_route: Option<TransferRoute>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransferRoute {
+    pub donor_id: u64,
+    pub target_id: u64,
+    pub resource_type_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,15 +78,13 @@ pub struct CollectorUiState {
     #[serde(default)]
     pub resource_type: String,
     #[serde(default)]
-    pub carry_amount: f32,
-    #[serde(default)]
-    pub carry_capacity: f32,
-    #[serde(default)]
     pub effective_rate_per_second: f32,
     #[serde(default)]
     pub assigned_resource_type: String,
     #[serde(default)]
     pub assigned_nearest_compatible: bool,
+    #[serde(default)]
+    pub receiving_entity_id: Option<u64>,
     #[serde(default)]
     pub updated_tick: u64,
 }
@@ -102,6 +109,12 @@ pub struct GameplayEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attacker: Option<GameplayEntityRef>,
     pub cause: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub damage_amount: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub missing_resource_types: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_entity_id: Option<u64>,
     pub position: IntentPoint,
     /// Internal delivery policy; the web API removes this before responding.
     pub recipients: Vec<String>,
@@ -132,6 +145,8 @@ pub struct AllTrackingState {
 
 pub struct RedisClient {
     pub game_id: String,
+    pub run_id: String,
+    pub scenario_mode: bool,
     conn: redis::aio::MultiplexedConnection,
 }
 
@@ -242,7 +257,7 @@ impl RedisClient {
         let client = redis::Client::open(url.to_string())?;
         let conn = client.get_multiplexed_async_connection().await?;
         info!("Connected to Redis at {}", url);
-        Ok(Self { game_id, conn })
+        Ok(Self { game_id, conn, run_id: String::new(), scenario_mode: false })
     }
 
     pub async fn publish_delta(&mut self, delta: &Delta) -> anyhow::Result<String> {
@@ -273,19 +288,34 @@ impl RedisClient {
         &mut self,
         event: &GameplayEvent,
     ) -> anyhow::Result<String> {
-        let data = serde_json::to_vec(event)?;
+        self.publish_gameplay_events(std::slice::from_ref(event))
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("gameplay event batch returned no stream ID"))
+    }
+
+    pub async fn publish_gameplay_events(
+        &mut self,
+        events: &[GameplayEvent],
+    ) -> anyhow::Result<Vec<String>> {
+        if events.is_empty() {
+            return Ok(Vec::new());
+        }
         let stream = self.gameplay_events_stream();
-        let id: String = redis::cmd("XADD")
-            .arg(&stream)
-            .arg("MAXLEN")
-            .arg("~")
-            .arg(100_000)
-            .arg("*")
-            .arg("data")
-            .arg(data)
-            .query_async(&mut self.conn)
-            .await?;
-        Ok(id)
+        let mut pipeline = redis::pipe();
+        for event in events {
+            pipeline
+                .cmd("XADD")
+                .arg(&stream)
+                .arg("MAXLEN")
+                .arg("~")
+                .arg(100_000)
+                .arg("*")
+                .arg("data")
+                .arg(serde_json::to_vec(event)?);
+        }
+        Ok(pipeline.query_async(&mut self.conn).await?)
     }
 
     pub async fn publish_event_record(
@@ -316,8 +346,14 @@ impl RedisClient {
         collector_states: Vec<CollectorState>,
         combat_effect_states: Vec<CombatEffectState>,
     ) -> anyhow::Result<()> {
-        let player_ledgers = state
-            .ledger
+        let mut inventory_totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
+        for entity in &state.entities {
+            if !crate::spawn_config::is_player_owner(&entity.owner_player_id) { continue; }
+            for entry in entity.resources.as_ref().into_iter().flat_map(|inventory| &inventory.resources) {
+                *inventory_totals.entry(entity.owner_player_id.clone()).or_default().entry(entry.resource_type.clone()).or_default() += entry.amount.floor() as i64;
+            }
+        }
+        let player_ledgers = inventory_totals
             .iter()
             .map(|(player_id, resources)| {
                 let mut entries: Vec<ResourceEntry> = resources
@@ -371,20 +407,22 @@ impl RedisClient {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
-        let _: () = self.conn.set(&snap_key, bytes.clone()).await?;
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64;
 
-        let _: () = redis::cmd("HSET")
-            .arg(&meta_key)
+        let _: () = redis::pipe().atomic()
+            .cmd("SET").arg(&snap_key).arg(&bytes).ignore()
+            .cmd("HSET").arg(&meta_key)
             .arg("tick")
             .arg(state.tick as i64)
             .arg("boundary_stream_id")
             .arg(boundary_stream_id)
+            .arg("run_id")
+            .arg(&self.run_id)
             .arg("updated_at_ms")
-            .arg(now_ms)
+            .arg(now_ms).ignore()
             .query_async(&mut self.conn)
             .await?;
 
@@ -463,6 +501,43 @@ impl RedisClient {
         Ok(())
     }
 
+
+    pub async fn pop_scenario_command(&mut self) -> anyhow::Result<Option<String>> {
+        Ok(self.conn.lpop(format!("rts:match:{}:scenario_commands", self.game_id), None).await?)
+    }
+    pub async fn publish_scenario_result(&mut self, request_id: &str, value: &str) -> anyhow::Result<()> {
+        let _: () = self.conn.set_ex(format!("rts:match:{}:scenario_result:{}", self.game_id, request_id), value, 300).await?;
+        Ok(())
+    }
+    pub async fn publish_runtime(&mut self, value: &str) -> anyhow::Result<()> {
+        let _: () = self.conn.set(format!("rts:match:{}:runtime", self.game_id), value).await?;
+        Ok(())
+    }
+    pub async fn read_runtime(&mut self) -> anyhow::Result<Option<String>> {
+        Ok(self.conn.get(format!("rts:match:{}:runtime", self.game_id)).await?)
+    }
+    pub async fn save_scenario_template(&mut self, value: &str) -> anyhow::Result<()> {
+        let _: () = self.conn.set(format!("rts:match:{}:scenario_template", self.game_id), value).await?;
+        Ok(())
+    }
+    pub async fn read_scenario_template(&mut self) -> anyhow::Result<Option<String>> {
+        Ok(self.conn.get(format!("rts:match:{}:scenario_template", self.game_id)).await?)
+    }
+    pub async fn publish_world_reset(&mut self, run_id: &str) -> anyhow::Result<String> {
+        let data = serde_json::json!({ "type": "world-reset", "run_id": run_id }).to_string();
+        Ok(redis::cmd("XADD").arg(self.events_stream()).arg("*").arg("data").arg(data).query_async(&mut self.conn).await?)
+    }
+    pub async fn reset_scenario_tracking(&mut self) -> anyhow::Result<()> {
+        // Keep the events stream: existing SSE readers need the world-reset marker.
+        let keys = vec![self.intents_stream(), self.gameplay_events_stream(), self.snapshots_stream(),
+            self.player_seq_key(), self.active_intents_key(), self.pending_joins_key(),
+            self.pending_raider_spawns_key(), self.join_requested_key(), self.legacy_collector_state_key()];
+        let _: () = redis::cmd("DEL").arg(keys).query_async(&mut self.conn).await?;
+        let dedupe: Vec<String> = redis::cmd("KEYS").arg(format!("rts:match:{}:dedupe:*", self.game_id)).query_async(&mut self.conn).await?;
+        if !dedupe.is_empty() { let _: () = redis::cmd("DEL").arg(dedupe).query_async(&mut self.conn).await?; }
+        Ok(())
+    }
+
     /// Read new intent entries from the intents stream without blocking the caller.
     /// Returns a Vec of (stream_entry_id, payload_bytes) pairs so the caller can
     /// advance the cursor entry-by-entry (needed for tick-bounded ingress in M1).
@@ -507,6 +582,11 @@ impl RedisClient {
                                         continue;
                                     };
                                     if let RedisValue::Bulk(fieldvals) = &parts[1] {
+                                        let epoch = fieldvals.chunks_exact(2).find_map(|pair| match (&pair[0], &pair[1]) {
+                                            (RedisValue::Data(key), RedisValue::Data(value)) if key == b"run_id" => Some(value.as_slice()),
+                                            _ => None,
+                                        });
+                                        let valid = epoch.map_or(!self.scenario_mode, |epoch| epoch == self.run_id.as_bytes());
                                         let mut i = 0;
                                         while i + 1 < fieldvals.len() {
                                             let field = &fieldvals[i];
@@ -516,7 +596,7 @@ impl RedisClient {
                                                     if let RedisValue::Data(payload) = value {
                                                         out.push((
                                                             entry_id.clone(),
-                                                            payload.clone(),
+                                                            if valid { payload.clone() } else { Vec::new() },
                                                         ));
                                                     }
                                                 }
@@ -555,6 +635,9 @@ impl RedisClient {
             self.pending_raider_spawns_key(),
             self.join_requested_key(),
             self.legacy_collector_state_key(),
+            format!("rts:match:{}:runtime", self.game_id),
+            format!("rts:match:{}:scenario_template", self.game_id),
+            format!("rts:match:{}:scenario_commands", self.game_id),
         ];
         info!(game_id = %self.game_id, keys = ?keys, "flushing game streams (clean start)");
         for key in &keys {
@@ -611,25 +694,7 @@ impl RedisClient {
             .await
             .unwrap_or_else(|_| "0-0".to_string());
 
-        let ledger = snapshot
-            .player_ledgers
-            .iter()
-            .map(|pl| {
-                let resources = pl
-                    .resources
-                    .iter()
-                    .map(|e| (e.resource_type.clone(), e.amount))
-                    .collect();
-                (pl.player_id.clone(), resources)
-            })
-            .collect();
-
-        let state = GameState {
-            tick: snapshot.tick as u64,
-            entities: snapshot.entities,
-            ledger,
-            technologies: Default::default(),
-        };
+        let (state, collector_states) = restore_snapshot(snapshot)?;
 
         info!(
             game_id = %self.game_id,
@@ -639,7 +704,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary, snapshot.collector_states)))
+        Ok(Some((state, boundary, collector_states)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -678,6 +743,11 @@ impl RedisClient {
                                         }
                                     }
                                     if let RedisValue::Bulk(fieldvals) = &parts[1] {
+                                        let epoch = fieldvals.chunks_exact(2).find_map(|pair| match (&pair[0], &pair[1]) {
+                                            (RedisValue::Data(key), RedisValue::Data(value)) if key == b"run_id" => Some(value.as_slice()),
+                                            _ => None,
+                                        });
+                                        let valid = epoch.map_or(!self.scenario_mode, |epoch| epoch == self.run_id.as_bytes());
                                         let mut i = 0;
                                         while i + 1 < fieldvals.len() {
                                             let field = &fieldvals[i];
@@ -742,7 +812,6 @@ impl RedisClient {
         move_target: Option<IntentPoint>,
         collect_assignment: Option<(String, bool)>,
         construction: Option<(String, Option<IntentPoint>, f32)>,
-        ttl_secs: u64,
     ) -> anyhow::Result<()> {
         let entry = EntityActiveIntent {
             entity_id,
@@ -760,21 +829,29 @@ impl RedisClient {
                 .map(|(resource, _)| resource.clone()),
             collect_nearest_compatible: collect_assignment.map(|(_, nearest)| nearest),
             build_location: construction.and_then(|(_, location, _)| location),
+            transfer_route: None,
         };
         let json = serde_json::to_string(&entry)?;
         let key = self.active_intents_key();
         let field = entity_id.to_string();
-        let _: () = redis::cmd("HSET")
-            .arg(&key)
-            .arg(&field)
-            .arg(&json)
-            .query_async(&mut self.conn)
-            .await?;
+        // Active collection and construction can run indefinitely. Remove any
+        // expiry left by older engines in the same write as the new order.
+        let _: () = redis::pipe().atomic()
+            .cmd("HSET").arg(&key).arg(&field).arg(&json).ignore()
+            .cmd("PERSIST").arg(&key).ignore()
+            .query_async(&mut self.conn).await?;
+        Ok(())
+    }
 
-        // Refresh the TTL on the whole hash each time we write, so the safety
-        // net stays well ahead of the most recent activity.
-        let ttl: i64 = ttl_secs.try_into().unwrap_or(i64::MAX);
-        let _: () = self.conn.expire(&key, ttl).await?;
+    pub async fn persist_transfer_route(&mut self, entity_id: u64, delivery: &pb::DeliverIntent) -> anyhow::Result<()> {
+        let key = self.active_intents_key();
+        let json: Option<String> = self.conn.hget(&key, entity_id.to_string()).await?;
+        if let Some(json) = json {
+            let mut entry: EntityActiveIntent = serde_json::from_str(&json)?;
+            entry.transfer_route = Some(TransferRoute { donor_id: delivery.donor_id, target_id: delivery.target_id,
+                resource_type_ids: delivery.resource_type_ids.clone() });
+            let _: () = self.conn.hset(key, entity_id.to_string(), serde_json::to_string(&entry)?).await?;
+        }
         Ok(())
     }
 
@@ -800,7 +877,7 @@ impl RedisClient {
         Ok(())
     }
 
-    /// Tie restored construction progress to the ledger saved in the same world snapshot.
+    /// Tie restored construction progress to the inventories saved in the same world snapshot.
     pub async fn checkpoint_construction_progress(
         &mut self,
         progress_by_entity: &HashMap<u64, f32>,
@@ -953,5 +1030,82 @@ impl RedisClient {
             },
             None => Ok(None),
         }
+    }
+}
+
+
+/// Legacy cargo is folded into inventory once; new snapshots write zero cargo.
+fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<CollectorState>)> {
+    let mut entities: std::collections::HashMap<_, _> = snapshot.entities.iter_mut()
+        .map(|entity| (entity.id, entity)).collect();
+    for collector in &mut snapshot.collector_states {
+        anyhow::ensure!(collector.carry_amount.is_finite() && collector.carry_amount >= 0.0,
+            "invalid legacy cargo on entity {}", collector.entity_id);
+        if collector.carry_amount > 0.0 {
+            anyhow::ensure!(!collector.resource_type.is_empty(), "legacy cargo has no resource type");
+            if let Some(entity) = entities.get_mut(&collector.entity_id) {
+                let amount = crate::engine::state::resource_amount(entity, &collector.resource_type)
+                    + collector.carry_amount as f64;
+                anyhow::ensure!(amount.is_finite(), "legacy cargo overflows inventory");
+                crate::engine::state::set_resource_amount(entity, &collector.resource_type, amount);
+            }
+        }
+        collector.carry_amount = 0.0;
+        collector.carry_capacity = 0.0;
+    }
+    Ok((GameState {
+        tick: snapshot.tick as u64,
+        entities: snapshot.entities,
+        technologies: snapshot.player_technologies.into_iter()
+            .map(|player| (player.player_id, player.technology_ids.into_iter().collect())).collect(),
+    }, snapshot.collector_states))
+}
+
+#[cfg(test)]
+#[allow(deprecated)]
+mod inventory_restore_tests {
+    use super::*;
+    use crate::engine::state::{resource_amount, set_resource_amount};
+
+    #[test]
+    fn legacy_cargo_is_merged_once_without_clamping_or_losing_technologies() {
+        let mut entity = pb::Entity { id: 718, ..Default::default() };
+        set_resource_amount(&mut entity, "food", 48.0);
+        let snapshot = Snapshot {
+            tick: 42,
+            entities: vec![entity],
+            collector_states: vec![CollectorState {
+                entity_id: 718, resource_type: "food".into(), carry_amount: 50.0,
+                carry_capacity: 50.0, activity: "moving_to_dropoff".into(), ..Default::default()
+            }],
+            player_technologies: vec![PlayerTechnologyState {
+                player_id: "andrew".into(), technology_ids: vec!["neutrino_sensors".into()],
+            }],
+            ..Default::default()
+        };
+        let decoded = Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap();
+        let (state, collectors) = restore_snapshot(decoded).unwrap();
+        assert_eq!(state.tick, 42);
+        assert_eq!(resource_amount(&state.entities[0], "food"), 98.0);
+        assert!(state.technologies["andrew"].contains("neutrino_sensors"));
+        assert_eq!(collectors[0].activity, "moving_to_dropoff");
+        assert_eq!(collectors[0].carry_amount, 0.0);
+        assert_eq!(collectors[0].carry_capacity, 0.0);
+        let next_snapshot = Snapshot { entities: state.entities, collector_states: collectors, ..Default::default() };
+        let (restored, _) = restore_snapshot(Snapshot::decode(next_snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(resource_amount(&restored.entities[0], "food"), 98.0);
+    }
+
+    #[test]
+    fn invalid_legacy_cargo_rejects_restore() {
+        for amount in [-1.0, f32::NAN, f32::INFINITY] {
+            let snapshot = Snapshot { collector_states: vec![CollectorState {
+                entity_id: 1, resource_type: "food".into(), carry_amount: amount, ..Default::default()
+            }], ..Default::default() };
+            assert!(restore_snapshot(snapshot).is_err());
+        }
+        assert!(restore_snapshot(Snapshot { collector_states: vec![CollectorState {
+            carry_amount: 1.0, ..Default::default()
+        }], ..Default::default() }).is_err());
     }
 }

@@ -37,6 +37,19 @@ pub struct EntityTypeDef {
     pub mass: f32,
     /// Hull hit points before the entity is destroyed.
     pub health: f32,
+    /// Maximum local inventory by resource type, shared by collection, shipments and upkeep.
+    /// Required for every entity type. Each resource has its own limit; there is no shared cargo quota.
+    pub max_capacity: HashMap<String, f32>,
+    /// Per-resource upkeep buffers in the shared inventory. Automatic supply tops up only to this stock;
+    /// sharing, delivery and transport loading retain it. Upkeep and explicit action costs may consume it.
+    /// Each entry requires a known resource with positive max_capacity and 0 <= reserve <= capacity.
+    /// Omitted entries use one minute of upkeep (at least one whole unit, capped at capacity) for automatic operating supply.
+    /// This is entity-type configuration, not another resource balance.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub resource_reserves: HashMap<String, f64>,
+    /// Supplies operating buffers before bulk stock to nearby same-owner entities.
+    #[serde(default)]
+    pub resource_sharing: Option<ResourceSharingDef>,
     /// Physical hull radius in world units used by contact attacks. Defaults to 0.
     /// Independent of visual scale and movement-order stop radius.
     #[serde(default)]
@@ -80,7 +93,7 @@ pub struct EntityTypeDef {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub build_cost: HashMap<String, f32>,
     /// Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.
-    /// Charged to the owner while active; balances stop at zero without accruing debt. Omitted means free upkeep.
+    /// Charged to the entity inventory while active; balances stop at zero without accruing debt. Omitted means free upkeep.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub maintenance_cost_per_minute: HashMap<String, f32>,
     /// Optional area sensor. Its operating costs are charged continuously.
@@ -103,6 +116,41 @@ pub struct EntityTypeDef {
     /// Technology IDs this entity can research. Omitted or empty means it cannot perform research.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub researches: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceSharingDef {
+    /// Maximum distance for outgoing resource sharing and wireless receipt.
+    pub range: f32,
+    /// Resource types this entity can receive wirelessly from nearby collectors.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wireless_receives: Vec<String>,
+    /// Optional per-resource receiving targets, bulk priorities and outgoing reserves.
+    /// Automatic sharing supplies operating buffers first, before upkeep is charged.
+    /// Bulk donations protect the donor's receiving target and go only to strictly higher effective receiving priorities.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub resources: HashMap<String, ResourceSharingPolicy>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ResourceSharingPolicy {
+    /// Higher priorities receive bulk supply first; distance then entity ID break ties.
+    /// Bulk sharing requires higher effective priority than the donor. Operating buffers are supplied first regardless of priority.
+    pub priority: i32,
+    /// Optional priority for accepting surplus up to max_capacity when not actively refilling. Omitted means no overflow requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow_priority: Option<i32>,
+    /// Start requesting below this stock; keep requesting until fill_to is reached. Must be between zero and fill_to.
+    /// Also the donor's minimum retained stock for bulk sharing when not actively refilling.
+    pub refill_below: f64,
+    /// Stop refilling at this stock. Must not exceed this resource's max_capacity.
+    /// Retained by bulk donors while actively refilling; operating supply may draw below it.
+    pub fill_to: f64,
+    /// Keep this stock when sharing outward, in addition to protecting accrued upkeep and the operating buffer. Must be between zero and max_capacity.
+    /// Bulk sharing also protects the donor's own refill target.
+    pub reserve: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -391,15 +439,13 @@ pub struct CollectorDef {
     /// Resource type ids this collector can gather.
     #[serde(default)]
     pub collects: Vec<String>,
-    /// Units/second gathered in transport mode while in gather band.
+    /// Units/second gathered into local inventory in transport mode while in gather band.
+    /// Zero disables transport collection and maintained resource transport. Limited by max_capacity.
     #[serde(default = "default_transport_rate_per_second")]
     pub transport_rate_per_second: f32,
     /// Units/second gathered in proximity mode while in effective band.
     #[serde(default = "default_proximity_rate_per_second")]
     pub proximity_rate_per_second: f32,
-    /// Max carried amount for transport mode before deposit run.
-    #[serde(default = "default_carry_capacity")]
-    pub carry_capacity: f32,
     /// Optional allowed refinery entity type ids for transport deposits.
     /// Empty means any refinery that accepts the resource.
     #[serde(default)]
@@ -425,6 +471,9 @@ pub struct MinimumDistanceDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceNodeDef {
+    /// Initial finite resource stock. Omitted means unlimited; spawn configuration may override it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount: Option<f64>,
     /// Resource ID produced by this source; must be included in the collector's collects list.
     pub resource_type: String,
     /// Whether gathering fills cargo for delivery (transport) or credits resources directly (proximity).
@@ -516,10 +565,6 @@ fn default_proximity_rate_per_second() -> f32 {
     6.0
 }
 
-fn default_carry_capacity() -> f32 {
-    100.0
-}
-
 fn default_max_effective_distance() -> f32 {
     120.0
 }
@@ -547,6 +592,7 @@ impl ContentPack {
         let file: ContentFile = serde_yaml::from_str(&raw)
             .with_context(|| format!("failed to parse content pack YAML: {}", path.display()))?;
 
+        validate_resource_content(&file.entity_types, &file.resource_types)?;
         validate_upgrades(&file.entity_types)?;
         validate_technologies(&file.entity_types, &file.technologies)?;
 
@@ -580,6 +626,49 @@ impl ContentPack {
     pub fn get_resource_type(&self, resource_type_id: &str) -> Option<&ResourceTypeDef> {
         self.resource_types.get(resource_type_id)
     }
+}
+
+fn validate_resource_content(
+    entity_types: &HashMap<String, EntityTypeDef>,
+    resource_types: &HashMap<String, ResourceTypeDef>,
+) -> Result<()> {
+    for (id, def) in entity_types {
+        if def.max_capacity.values().any(|capacity| !capacity.is_finite() || *capacity < 0.0) {
+            anyhow::bail!("entity type {id} has an invalid max_capacity");
+        }
+        for (resource, reserve) in &def.resource_reserves {
+            let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64;
+            if !resource_types.contains_key(resource) || capacity <= 0.0
+                || !reserve.is_finite() || *reserve < 0.0 || *reserve > capacity {
+                anyhow::bail!("entity type {id} resource_reserves.{resource} requires a known resource, positive capacity and 0 <= reserve <= capacity");
+            }
+        }
+        if let Some(sharing) = &def.resource_sharing {
+            if !sharing.range.is_finite() || sharing.range < 0.0 {
+                anyhow::bail!("entity type {id} has an invalid resource_sharing.range");
+            }
+            for resource in &sharing.wireless_receives {
+                if !resource_types.contains_key(resource) {
+                    anyhow::bail!("entity type {id} wireless_receives unknown resource {resource}");
+                }
+                if !def.max_capacity.contains_key(resource) {
+                    anyhow::bail!("entity type {id} wireless_receives {resource} without capacity");
+                }
+            }
+            for (resource, policy) in &sharing.resources {
+                let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64;
+                if !resource_types.contains_key(resource) || capacity <= 0.0 {
+                    anyhow::bail!("entity type {id} sharing policy {resource} needs a known resource with positive capacity");
+                }
+                if !policy.refill_below.is_finite() || !policy.fill_to.is_finite() || !policy.reserve.is_finite()
+                    || policy.refill_below < 0.0 || policy.refill_below > policy.fill_to || policy.fill_to > capacity
+                    || policy.reserve < 0.0 || policy.reserve > capacity {
+                    anyhow::bail!("entity type {id} sharing policy {resource} requires 0 <= refill_below <= fill_to <= capacity and 0 <= reserve <= capacity");
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_requirement(
@@ -637,6 +726,9 @@ fn validate_technologies(
     }
     for (entity_id, entity) in entity_types {
         if let Some(node) = entity.resource_node.as_ref() {
+            if node.amount.is_some_and(|amount| !amount.is_finite() || amount < 0.0) {
+                anyhow::bail!("entity type {entity_id} has an invalid resource node amount");
+            }
             if let Some(limit) = node.max_simultaneous_collectors {
                 if limit == 0 || node.collection_mode != CollectionMode::Transport {
                     anyhow::bail!(
@@ -769,6 +861,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn validates_inventory_reserves_against_known_resources_and_capacity() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut def = content.get("worker").unwrap().clone();
+        for (resource, amount) in [("food", -1.0), ("food", 51.0), ("food", f64::NAN), ("food", f64::INFINITY), ("unknown", 5.0)] {
+            def.resource_reserves = HashMap::from([(resource.into(), amount)]);
+            assert!(validate_resource_content(&HashMap::from([("worker".into(), def.clone())]), &content.resource_types).is_err());
+        }
+        for amount in [0.0, 5.0, 50.0] {
+            def.resource_reserves = HashMap::from([("food".into(), amount)]);
+            assert!(validate_resource_content(&HashMap::from([("worker".into(), def.clone())]), &content.resource_types).is_ok());
+        }
+        def.max_capacity.remove("food");
+        assert!(validate_resource_content(&HashMap::from([("worker".into(), def)]), &content.resource_types).is_err());
+    }
+
+    #[test]
+    fn sharing_policy_validation_rejects_invalid_targets_and_resources() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut def = content.get("habitat").unwrap().clone();
+        for (refill_below, fill_to, reserve) in [(-1.0, 900.0, 900.0), (901.0, 900.0, 900.0),
+            (700.0, 1001.0, 900.0), (700.0, 900.0, -1.0), (700.0, 900.0, 1001.0), (f64::NAN, 900.0, 900.0)] {
+            def.resource_sharing.as_mut().unwrap().resources.insert("energy".into(), ResourceSharingPolicy {
+                priority: 10, overflow_priority: None, refill_below, fill_to, reserve,
+            });
+            assert!(validate_resource_content(&HashMap::from([("habitat".into(), def.clone())]), &content.resource_types).is_err());
+        }
+        def = content.get("habitat").unwrap().clone();
+        let policy = def.resource_sharing.as_mut().unwrap().resources.remove("energy").unwrap();
+        def.resource_sharing.as_mut().unwrap().resources.insert("unknown".into(), policy);
+        assert!(validate_resource_content(&HashMap::from([("habitat".into(), def)]), &content.resource_types).is_err());
+    }
+
+    #[test]
     fn rejects_unknown_entity_and_nested_combat_fields() {
         let entity_error = serde_yaml::from_str::<EntityTypeDef>(
             "fog_memory: forget_when_hidden\nspeed: 1\nstop_radius: 1\nmass: 1\nhealth: 1\nnot_a_real_field: true\n",
@@ -789,6 +916,9 @@ mod tests {
         types.insert(
             "worker".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
                 stop_radius: 0.75,
@@ -819,6 +949,9 @@ mod tests {
         types.insert(
             "scout".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
                 stop_radius: 0.5,
@@ -861,6 +994,9 @@ mod tests {
         types_a.insert(
             "worker".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
                 stop_radius: 0.75,
@@ -891,6 +1027,9 @@ mod tests {
         types_a.insert(
             "scout".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
                 stop_radius: 0.5,
@@ -923,6 +1062,9 @@ mod tests {
         types_b.insert(
             "scout".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
                 stop_radius: 0.5,
@@ -953,6 +1095,9 @@ mod tests {
         types_b.insert(
             "worker".into(),
             EntityTypeDef {
+                max_capacity: HashMap::new(),
+                resource_reserves: HashMap::new(),
+                resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
                 stop_radius: 0.75,

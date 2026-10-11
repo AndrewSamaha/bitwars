@@ -405,6 +405,9 @@ mod tests {
 
     fn content() -> ContentPack {
         let raider = EntityTypeDef {
+            resource_reserves: HashMap::new(),
+            max_capacity: HashMap::new(),
+            resource_sharing: None,
             fog_memory: Default::default(),
             speed: 10.0,
             stop_radius: 0.5,
@@ -459,6 +462,8 @@ mod tests {
 
     fn entity(id: u64, kind: &str, owner: &str, x: f32, health: f32) -> Entity {
         Entity {
+            resource_deposit: None,
+            resources: None,
             id,
             entity_type_id: kind.to_string(),
             pos: Some(Vec2 { x, y: 0.0 }),

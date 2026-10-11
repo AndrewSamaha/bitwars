@@ -14,7 +14,7 @@ export const PlayerSchema = z.object({
   lastSeenMs: z.number(),
   detail: z.record(z.string(), z.unknown()).optional(),
   detailVersion: z.tuple([z.number(), z.number(), z.number()]).optional(),
-  /** M7: Server-computed resource ledger from latest snapshot (included by GET /api/players/me). */
+  /** M7: Reporting-only inventory totals from the latest snapshot (included by GET /api/players/me). */
   resource_ledger: z.record(z.string(), z.number()).optional(),
 });
 

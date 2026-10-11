@@ -54,6 +54,8 @@ export default function IntentQueuePanel() {
                   <span>
                     {state.active.kind === "collect"
                       ? "collecting"
+                      : state.active.kind === "deliver"
+                        ? "delivering"
                       : state.active.kind === "repair"
                         ? "repairing"
                         : state.active.kind === "build"

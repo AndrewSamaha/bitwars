@@ -30,7 +30,7 @@ export type QueuedMoveIntent = {
   createdAt: number;
 };
 
-export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "unknown";
+export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "unknown";
 
 export type ActiveIntentInfo = {
   clientCmdId: string;
@@ -38,6 +38,7 @@ export type ActiveIntentInfo = {
   /** Collect intents keep an entity busy but do not have a location to render. */
   kind: ActiveIntentKind;
   target?: { x: number; y: number };
+  transfer?: { donorId: number; targetId: number; resourceTypeIds: string[] };
   intentId?: string;      // server-assigned, set on ACCEPTED
   serverTick?: string;    // set on ACCEPTED
 };
@@ -48,11 +49,22 @@ export type PerEntityState = {
 };
 
 type PersistedState = {
+  runId?: string;
   clientSeq: number;
   entities: Record<string, PerEntityState>;
 };
 
 export type SendIntentParams =
+  | {
+      kind: "Deliver" | "Transport";
+      donorId?: number;
+      entityId: number;
+      targetId: number;
+      resourceTypeIds: string[];
+      clientCmdId: string;
+      clientSeq: number;
+      policy: IntentPolicyName;
+    }
   | {
       kind: "Move";
       entityId: number;
@@ -109,6 +121,7 @@ type StateChangeListener = () => void;
 // ── M2: Reconnect handshake response shape ─────────────────────────────────
 
 export type ReconnectHandshake = {
+  run_id?: string;
   server_tick: number;
   protocol_version: number;
   content_version: string;          // M4: xxh3 hex hash of server content pack
@@ -121,6 +134,7 @@ export type ReconnectHandshake = {
     player_id: string;
     started_tick: number;
     intent_kind?: string;
+    transfer_route?: { donor_id: number; target_id: number; resource_type_ids: string[] };
     move_target?: { x: number; y: number };
     blueprint_id?: string;
     progress?: number;
@@ -140,16 +154,30 @@ const LIFECYCLE_REASON_ENTITY_BUSY = 7;
 
 class IntentQueueManager {
   private clientSeq = 0;
+  private runId = "";
+  private worldGeneration = 0;
   private entities = new Map<string, PerEntityState>();
   private storageKey: string;
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
-  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair" | "research">();
+  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
     this.restore();
+  }
+
+  resetForWorld(runId?: string) {
+    if (runId && runId === this.runId) return;
+    this.runId = runId ?? "";
+    this.worldGeneration++;
+    this.clientSeq = 0;
+    this.entities.clear();
+    this.cmdToEntity.clear();
+    this.cmdToKind.clear();
+    this.persist();
+    this.notify();
   }
 
   // ── Wiring ─────────────────────────────────────────────────────────────
@@ -222,6 +250,21 @@ class IntentQueueManager {
   ) {
     const clientCmdId = uuidv7();
     this.sendCollectNow(entityId, clientCmdId, assignment, policy);
+  }
+
+  /** Deliver currently held resources in one trip. */
+  handleDeliverCommand(entityId: number, targetId: number, resourceTypeIds: string[], donorId?: number) {
+    const clientCmdId = uuidv7();
+    const state = this.getOrCreate(entityId);
+    state.queue = [];
+    state.active = { clientCmdId, entityId, kind: donorId ? "transport" : "deliver", ...(donorId ? { transfer: { donorId, targetId, resourceTypeIds } } : {}) };
+    this.clientSeq++;
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.cmdToKind.set(clientCmdId, donorId ? "transport" : "deliver");
+    this.persist();
+    this.notify();
+    void this.sendCallback?.({ kind: donorId ? "Transport" : "Deliver", donorId, entityId, targetId, resourceTypeIds,
+      clientCmdId, clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
   /** Start repairing a selected friendly target immediately. */
@@ -320,6 +363,7 @@ class IntentQueueManager {
    * protocol_version, or null if the fetch failed.
    */
   async reconcileWithServer(): Promise<ReconnectHandshake | null> {
+    const generation = this.worldGeneration;
     let handshake: ReconnectHandshake;
     try {
       const resp = await fetch("/api/v2/reconnect");
@@ -332,6 +376,9 @@ class IntentQueueManager {
       console.warn("[IntentQueue] reconnect handshake error:", err);
       return null;
     }
+
+    if (generation !== this.worldGeneration) return null;
+    if (handshake.run_id && handshake.run_id !== this.runId) this.resetForWorld(handshake.run_id);
 
     // 1. Advance clientSeq so future sends aren't rejected as out-of-order
     if (handshake.last_processed_client_seq > this.clientSeq) {
@@ -351,20 +398,9 @@ class IntentQueueManager {
       entityId: number,
       serverActive: (typeof handshake.active_intents)[0],
     ): ActiveIntentInfo => {
-      const kind: ActiveIntentKind =
-        serverActive.intent_kind?.toLowerCase() === "collect"
-          ? "collect"
-          : serverActive.intent_kind?.toLowerCase() === "move"
-            ? "move"
-            : serverActive.intent_kind?.toLowerCase() === "build"
-              ? "build"
-            : serverActive.intent_kind?.toLowerCase() === "repair"
-              ? "repair"
-              : serverActive.intent_kind?.toLowerCase() === "upgrade"
-                ? "upgrade"
-                : serverActive.intent_kind?.toLowerCase() === "research"
-                  ? "research"
-              : "unknown";
+      const intentKind = serverActive.intent_kind?.toLowerCase() ?? "";
+      const kind: ActiveIntentKind = ["move", "collect", "build", "repair", "upgrade", "research", "deliver", "transport"].includes(intentKind)
+        ? intentKind as ActiveIntentKind : "unknown";
       const moveTarget = serverActive.move_target;
       const target =
         kind === "move" &&
@@ -374,11 +410,14 @@ class IntentQueueManager {
           ? { x: moveTarget.x, y: moveTarget.y }
           : undefined;
 
+      this.cmdToEntity.set(serverActive.client_cmd_id, entityId);
+      if (kind !== "unknown") this.cmdToKind.set(serverActive.client_cmd_id, kind);
       return {
         clientCmdId: serverActive.client_cmd_id,
         entityId,
         kind,
         ...(target ? { target } : {}),
+        ...(serverActive.transfer_route ? { transfer: { donorId: serverActive.transfer_route.donor_id, targetId: serverActive.transfer_route.target_id, resourceTypeIds: serverActive.transfer_route.resource_type_ids } } : {}),
         intentId: serverActive.intent_id,
         serverTick: String(serverActive.started_tick),
       };
@@ -510,7 +549,7 @@ class IntentQueueManager {
     return typeof v === "number" ? v : null;
   }
 
-  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | "research" | null {
+  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | null {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 
@@ -634,6 +673,7 @@ class IntentQueueManager {
     try {
       const data: PersistedState = {
         clientSeq: this.clientSeq,
+        runId: this.runId,
         entities: Object.fromEntries(this.entities),
       };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
@@ -647,12 +687,13 @@ class IntentQueueManager {
       if (!raw) return;
       const data = JSON.parse(raw) as PersistedState;
       this.clientSeq = data.clientSeq || 0;
+      this.runId = data.runId || "";
       this.entities = new Map(
         Object.entries(data.entities || {}).map(([entityId, state]) => {
           const active = state.active;
           // Old persisted active intents did not record their kind. Leave them
           // target-less until reconnect reconciliation classifies them.
-          if (active && !["move", "collect", "build", "upgrade", "repair", "research"].includes(active.kind)) {
+          if (active && !["move", "collect", "build", "upgrade", "repair", "research", "deliver", "transport"].includes(active.kind)) {
             return [entityId, { ...state, active: { ...active, kind: "unknown", target: undefined } }];
           }
           return [entityId, state];

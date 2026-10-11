@@ -33,6 +33,14 @@ export async function emitEventFromBuffer(
   logErr: (...args: any[]) => void,
   visibility?: VisibilityFilter,
 ): Promise<void> {
+  // Engine control markers share the durable stream with protobuf game events.
+  if (dataBuf[0] === 123) {
+    try {
+      const marker = JSON.parse(dataBuf.toString());
+      if (marker.type === "world-reset") await channel.write(sseFormat({ event: "world-reset", id, data: marker }));
+    } catch (error) { logErr("control marker decode error", error); }
+    return;
+  }
   const record = bufferToEventsStreamRecord(dataBuf);
   if (!record || !record.record) {
     logErr("events record decode error", { id });

@@ -1,5 +1,5 @@
 "use client";
-import { Application, Container, Graphics, RenderTexture, Sprite } from "pixi.js";
+import { Application, Container, Graphics, RenderTexture, Sprite, Text } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { game, type Entity } from "@/features/gamestate/world";
 import LoadingAnimation from "@/components/LoadingAnimation";
@@ -28,6 +28,7 @@ import { gameEntityScale } from "@/features/pixijs/renderer/entityScale";
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
 import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog";
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
+import { selectEntitiesOfTypeInView } from "@/features/pixijs/utils/typeSelection";
 import { minimapOffsetToWorld, worldToMinimapOffset } from "@/features/pixijs/utils/minimap";
 import {
   CELL_SIZE,
@@ -79,7 +80,7 @@ export default function GameStage() {
   const [moveDebug, setMoveDebug] = useState<string>("idle");
   const { effectivePlayerId } = useSession();
   const {
-    actions: { setHovered, setApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction, setTerminalOpen },
+    actions: { setHovered, setApp, clearApp, setCamera, setSelection, addSelection, removeSelection, setSelectedAction, setMeasuring, setTerminalOpen },
     selectors,
     refs: { inputRef },
   } = useHUD();
@@ -144,6 +145,15 @@ export default function GameStage() {
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
+            } : params.kind === "Deliver" || params.kind === "Transport" ? {
+              type: params.kind,
+              donor_id: params.donorId,
+              entity_id: params.entityId,
+              target_id: params.targetId,
+              resource_type_ids: params.resourceTypeIds,
+              client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq,
+              policy: params.policy,
             } : {
               type: "Repair",
               entity_id: params.entityId,
@@ -156,11 +166,14 @@ export default function GameStage() {
       await fetch('/api/v1/intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, as_player_id: myPlayerIdRef.current }),
+        body: JSON.stringify({ ...payload, run_id: game.runId, as_player_id: myPlayerIdRef.current }),
       });
     });
 
+    let cancelled = false;
     const initWorld = async () => {
+        const textureCache = await loadGameEntityTextures();
+        if (cancelled) return;
         const updateMoveDebug = (message: string, payload?: Record<string, unknown>) => {
           if (!DEBUG_MOVE_INPUT) return;
           const suffix = payload ? ` ${JSON.stringify(payload)}` : "";
@@ -174,6 +187,10 @@ export default function GameStage() {
             resolution: window.devicePixelRatio || 1,
             autoDensity: true,
         });
+        if (cancelled) {
+          app.destroy({ removeView: true }, { children: true, texture: false });
+          return;
+        }
         setApp(app);
         ref.current!.appendChild(app.canvas);
 
@@ -485,6 +502,20 @@ export default function GameStage() {
         selectionBoxGraphics.eventMode = "none";
         app.stage.addChild(selectionBoxGraphics);
 
+        const measureGraphics = new Graphics();
+        measureGraphics.eventMode = "none";
+        const measureLabel = new Text({
+          text: "",
+          style: { fontFamily: "monospace", fontSize: 14, fontWeight: "bold", fill: 0xffffff,
+            stroke: { color: 0x111827, width: 4 } },
+        });
+        measureLabel.anchor.set(0.5, 1);
+        measureLabel.eventMode = "none";
+        app.stage.addChild(measureGraphics, measureLabel);
+        let measurePointer: { x: number; y: number } | null = null;
+        const onMeasurePointerLeave = () => { measurePointer = null; };
+        app.canvas.addEventListener("pointerleave", onMeasurePointerLeave);
+
         function worldToMinimapPx(
           wx: number,
           wy: number,
@@ -707,15 +738,21 @@ export default function GameStage() {
             .finally(() => { buildProgressRequestInFlight = false; });
         };
 
-        // Keyboard: M to set Move, C to issue Collect, Escape to clear; WASD/arrows to pan (M5.1/M8)
+        // Keyboard shortcuts for local modes and commands.
         const onKeyDown = (ev: KeyboardEvent) => {
           const sel = latestSelectorsRef.current;
           if ((ev.key === "i" || ev.key === "I") && !isFocusInEditable()) {
             setTerminalOpen(true);
             requestAnimationFrame(() => inputRef.current?.focus());
             ev.preventDefault();
-          } else if (ev.key === 'm' || ev.key === 'M') {
-            if (sel.hasSelection) setSelectedAction('Move');
+          } else if (ev.code === "KeyD" && !isFocusInEditable() && sel.selectionCount === 1) {
+            if (!ev.repeat) setMeasuring(!sel.isMeasuring);
+            ev.preventDefault();
+          } else if (ev.code === "KeyM" && !isFocusInEditable()) {
+            if (sel.hasSelection) {
+              setSelectedAction('Move');
+              ev.preventDefault();
+            }
           } else if (ev.key === 'c' || ev.key === 'C') {
             if (sel.hasSelection) {
               window.dispatchEvent(new Event("bitwars:open-collect-picker"));
@@ -728,6 +765,7 @@ export default function GameStage() {
             if (canRepair) setSelectedAction("Repair");
           } else if (ev.key === 'Escape') {
             setSelectedAction(null);
+            setMeasuring(false);
           } else if (ev.code === "Space" && !isFocusInEditable()) {
             const myId = myPlayerIdRef.current;
             if (!myId) return;
@@ -808,7 +846,6 @@ export default function GameStage() {
         };
         app.canvas.addEventListener("wheel", onWheel, { passive: false });
 
-        const textureCache = await loadGameEntityTextures();
         const paletteIdByOwner = new Map<string, string>();
         const requestedPaletteOwners = new Set<string>();
 
@@ -844,6 +881,24 @@ export default function GameStage() {
             if (String((e as any).id) === id) return e as any;
           }
           return null;
+        };
+
+        const drawMeasurement = () => {
+          measureGraphics.clear();
+          measureLabel.visible = false;
+          const sel = latestSelectorsRef.current;
+          if (!sel.isMeasuring || sel.selectionCount !== 1 || !measurePointer) return;
+          const entity = findLiveEntityById(sel.firstSelectedId ?? "");
+          if (!entity?.pos) return;
+          const start = worldContainer.toGlobal(entity.pos);
+          const end = measurePointer;
+          const target = worldContainer.toLocal(end);
+          const distance = Math.hypot(target.x - entity.pos.x, target.y - entity.pos.y);
+          measureGraphics.moveTo(start.x, start.y).lineTo(end.x, end.y)
+            .stroke({ width: 2, color: 0xffd166, alpha: 0.95 });
+          measureLabel.text = `${distance.toFixed(1)} units`;
+          measureLabel.position.set((start.x + end.x) / 2, (start.y + end.y) / 2 - 8);
+          measureLabel.visible = true;
         };
 
         const destroyRenderRef = (id: string) => {
@@ -1101,6 +1156,7 @@ export default function GameStage() {
         let selectionDrag: SelectionDrag | null = null;
         let cameraDrag: CameraDrag | null = null;
         let entityPress: EntityPress | null = null;
+        let selectionTapId: string | null = null;
         let minimapDrag: MinimapDrag | null = null;
         const SELECTION_DRAG_THRESHOLD_PX = 4;
 
@@ -1135,6 +1191,7 @@ export default function GameStage() {
           const live = findLiveEntityById(press.id);
           const ownerId = (live as any)?.owner_player_id;
           if (!live || myPlayerIdRef.current == null || ownerId !== myPlayerIdRef.current) return;
+          selectionTapId = press.id;
           if (press.shift) {
             if (latestSelectorsRef.current.isSelected(press.id)) removeSelection([press.id]);
             else addSelection([press.id]);
@@ -1142,6 +1199,22 @@ export default function GameStage() {
             setSelection([press.id]);
           }
         };
+
+        const onDoubleClick = (event: MouseEvent) => {
+          if (event.button !== 0 || !selectionTapId) return;
+          const typeId = findLiveEntityById(selectionTapId)?.entity_type_id;
+          const playerId = myPlayerIdRef.current;
+          if (!typeId || !playerId) return;
+          const candidates = [];
+          for (const entity of game.world.with("id")) {
+            const visual = renderById.get(String(entity.id));
+            if (visual) candidates.push({ entity, bounds: visual.container.getBounds() });
+          }
+          const ids = selectEntitiesOfTypeInView(candidates, typeId, playerId, app.screen);
+          if (event.shiftKey) addSelection(ids);
+          else setSelection(ids);
+        };
+        app.canvas.addEventListener("dblclick", onDoubleClick);
 
         const dispatchMove = (global: { x: number; y: number }, shift: boolean, ctrl: boolean) => {
           const sel = latestSelectorsRef.current;
@@ -1169,6 +1242,35 @@ export default function GameStage() {
           if (!shift && !ctrl) setSelectedAction(null);
         };
 
+        const dispatchDeliver = (targetId: string) => {
+          const sel = latestSelectorsRef.current;
+          const delivery = typeof sel.selectedAction === "object" ? sel.selectedAction : null;
+          if (!delivery) return;
+          if (targetId === sel.firstSelectedId) { setSelectedAction(null); return; }
+          const target = findLiveEntityById(targetId);
+          if (delivery.kind === "Transport" && !delivery.donorId) {
+            const carrier = findLiveEntityById(sel.firstSelectedId ?? "");
+            const capacity = contentManager.getEntityType(carrier?.entity_type_id ?? "")?.max_capacity ?? {};
+            const targetCapacity = contentManager.getEntityType(target?.entity_type_id ?? "")?.max_capacity ?? {};
+            if (!target || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
+              || !Object.keys(targetCapacity).some(resource => targetCapacity[resource] > 0 && (capacity[resource] ?? 0) > 0)) return;
+            setSelectedAction({ kind: "Transport", donorId: targetId, resourceTypeIds: [] });
+            return;
+          }
+          if (!delivery.resourceTypeIds.length) return;
+          const definition = contentManager.getEntityType(target?.entity_type_id ?? "");
+          if (!target || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
+            || (delivery.kind === "Transport" ? targetId === delivery.donorId
+                || !delivery.resourceTypeIds.every(resource => (definition?.max_capacity?.[resource] ?? 0) > 0)
+              : !delivery.resourceTypeIds.some((r) => (definition?.max_capacity?.[r] ?? 0)
+                > (target.resources?.find((entry: { resource_type: string; amount: number }) => entry.resource_type === r)?.amount ?? 0)))) return;
+          const entityId = Number(sel.firstSelectedId);
+          if (Number.isSafeInteger(entityId) && Number.isSafeInteger(Number(targetId))) {
+            intentQueue.handleDeliverCommand(entityId, Number(targetId), delivery.resourceTypeIds, delivery.kind === "Transport" ? Number(delivery.donorId) : undefined);
+          }
+          setSelectedAction(null);
+        };
+
         const dispatchRepair = (targetId: string) => {
           const sel = latestSelectorsRef.current;
           const target = findLiveEntityById(targetId);
@@ -1192,6 +1294,7 @@ export default function GameStage() {
 
         // Stage click — selects, moves, or starts a camera/selection drag.
         app.stage.on('pointerdown', (ev: any) => {
+          selectionTapId = null;
           try {
             const global = ev.global;
             // A minimap drag keeps the grabbed world point beneath the pointer.
@@ -1239,6 +1342,11 @@ export default function GameStage() {
         });
 
         app.stage.on("pointermove", (ev: any) => {
+          const minimapPoint = minimapContainer.toLocal(ev.global);
+          measurePointer = Math.hypot(
+            minimapPoint.x - MINIMAP_RADIUS_PX,
+            minimapPoint.y - MINIMAP_RADIUS_PX,
+          ) <= MINIMAP_RADIUS_PX ? null : { x: ev.global.x, y: ev.global.y };
           if (minimapDrag) {
             minimapDrag.moved = true;
             moveCameraToMinimapPoint(ev.global, minimapDrag);
@@ -1270,6 +1378,10 @@ export default function GameStage() {
             const press = entityPress;
             entityPress = null;
             if (press) {
+              if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
+                dispatchDeliver(press.id);
+                return;
+              }
               if (latestSelectorsRef.current.selectedAction === "Repair") {
                 dispatchRepair(press.id);
                 return;
@@ -1278,7 +1390,7 @@ export default function GameStage() {
               return;
             }
             if (latestSelectorsRef.current.selectedAction === 'Move') dispatchMove(ev.global, false, false);
-            else if (latestSelectorsRef.current.selectedAction === "Repair") setSelectedAction(null);
+            else if (latestSelectorsRef.current.selectedAction === "Repair" || (latestSelectorsRef.current.selectedAction && typeof latestSelectorsRef.current.selectedAction === "object")) setSelectedAction(null);
             else setSelection([]);
             return;
           }
@@ -1295,11 +1407,19 @@ export default function GameStage() {
           const height = Math.abs(endY - drag.startY);
           if (width < SELECTION_DRAG_THRESHOLD_PX && height < SELECTION_DRAG_THRESHOLD_PX) {
             if (press) {
+              if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
+                dispatchDeliver(press.id);
+                return;
+              }
               if (latestSelectorsRef.current.selectedAction === "Repair") {
                 dispatchRepair(press.id);
                 return;
               }
               selectPressedEntity(press);
+              return;
+            }
+            if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
+              setSelectedAction(null);
               return;
             }
             if (drag.moveMode) dispatchMove(ev.global, drag.shift, drag.ctrl);
@@ -1374,6 +1494,7 @@ export default function GameStage() {
             renderSonarPings(performance.now());
             despawnExplosions.update(performance.now());
             render();
+            drawMeasurement();
 
             // Keep fog aligned with post-tick entity positions. During an active
             // zoom gesture, cap render-texture redraws while still updating often
@@ -1392,6 +1513,9 @@ export default function GameStage() {
         return () => {
           if (destroyed) return;
           destroyed = true;
+          app.canvas.removeEventListener("dblclick", onDoubleClick);
+          app.canvas.removeEventListener("wheel", onWheel);
+          app.canvas.removeEventListener("pointerleave", onMeasurePointerLeave);
           for (const id of Array.from(renderById.keys())) {
             destroyRenderRef(id);
           }
@@ -1408,19 +1532,16 @@ export default function GameStage() {
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });
           }
-          setApp(null);
-          setCamera(null);
+          clearApp(app);
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
-          app.canvas.removeEventListener("wheel", onWheel);
         };
     }
     let cleanup: (() => void) | undefined;
-    let cancelled = false;
     (async () => {
       cleanup = await initWorld();
       if (cancelled && cleanup) cleanup();
-    })();
+    })().catch((error) => console.error("Failed to initialize game renderer", error));
     return () => {
       cancelled = true;
       if (cleanup) cleanup();

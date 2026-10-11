@@ -6,7 +6,7 @@ import { configureMonacoYaml } from "monaco-yaml";
 import { parseDocument } from "yaml";
 import entitySchema from "@bitwars/content/entity.schema.json";
 import technologySchema from "@bitwars/content/technology.schema.json";
-import { entityCombatRangeWarnings } from "@/lib/content/schemaValidation";
+import { entityCombatRangeWarnings, resourceSharingPolicyErrors, resourceReserveErrors } from "@/lib/content/schemaValidation";
 import { completionHelp, hoverHelp } from "@/lib/content/editorHelp";
 
 let yamlConfigured = false;
@@ -37,7 +37,7 @@ const configureYaml: BeforeMount = (monaco) => {
   });
   monaco.languages.registerHoverProvider("yaml", {
     provideHover(model: editor.ITextModel, position: Position) {
-      if (!model.uri.toString().includes("file:///bitwars/")) return null;
+      if (!model.uri.toString().includes("file:///bitwars/") || /\.(scenario|spawn)\.yaml$/.test(model.uri.toString())) return null;
       const kind = model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
       const description = hoverHelp(model.getValue(), model.getOffsetAt(position), kind);
       return description ? { contents: [{ value: description }] } : null;
@@ -46,7 +46,7 @@ const configureYaml: BeforeMount = (monaco) => {
   monaco.languages.registerCompletionItemProvider("yaml", {
     triggerCharacters: [":", " ", "."],
     async provideCompletionItems(model: editor.ITextModel, position: Position) {
-      if (!model.uri.toString().includes("file:///bitwars/")) return { suggestions: [] };
+      if (!model.uri.toString().includes("file:///bitwars/") || /\.(scenario|spawn)\.yaml$/.test(model.uri.toString())) return { suggestions: [] };
       const segment = model.getLineContent(position.lineNumber).slice(0, position.column - 1).match(/[a-z0-9_-]*$/i)?.[0] ?? "";
       const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: position.column - segment.length, endColumn: position.column };
       const kind = model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
@@ -120,6 +120,14 @@ function updateContentMarkers(model: Parameters<OnMount>[0]["getModel"] extends 
     }];
   });
   monaco.editor.setModelMarkers(model, "bitwars-content-unknown-fields", markers);
+  const document = parseDocument(model.getValue());
+  const lines = model.getLinesContent();
+  monaco.editor.setModelMarkers(model, "bitwars-content-resource-sharing", document.errors.length ? []
+    : [...resourceSharingPolicyErrors(document.toJS()), ...resourceReserveErrors(document.toJS())].map((message) => {
+      const field = message.startsWith("resource_reserves") ? "resource_reserves:" : "resource_sharing:";
+      const line = Math.max(0, lines.findIndex((text) => text.startsWith(field)));
+      return { ...markerForLine(monaco, lines[line], line + 1, message), severity: monaco.MarkerSeverity.Error };
+    }));
   monaco.editor.setModelMarkers(
     model,
     "bitwars-content-combat-range-warnings",
@@ -156,7 +164,7 @@ export default function YamlEditor({ id, value, onChange, kind = "entity" }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
-  kind?: "entity" | "technology";
+  kind?: "entity" | "technology" | "scenario" | "spawn";
 }) {
   return <Editor
     beforeMount={configureYaml}

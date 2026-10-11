@@ -34,6 +34,7 @@ fn make_entity(id: u64, x: f32, y: f32) -> Entity {
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
         health: 100.0,
+        ..Default::default()
     }
 }
 
@@ -326,6 +327,7 @@ fn per_entity_type_speed() {
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
         health: 100.0,
+        ..Default::default()
     };
     let slow_entity = Entity {
         id: 2,
@@ -334,6 +336,7 @@ fn per_entity_type_speed() {
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
         health: 100.0,
+        ..Default::default()
     };
 
     let state = WorldState::new(0, vec![fast_entity, slow_entity]);

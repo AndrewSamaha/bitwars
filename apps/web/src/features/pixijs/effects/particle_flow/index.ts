@@ -106,14 +106,33 @@ export function resolveParticleFlowEffects(
   }
 
   const collectionEffect = world.getEntityType(entityTypeId)?.collector?.vfx;
+  const effects: ParticleFlowEffect[] = [];
   if (collectionEffect === "solar_proximity" && activity === "proximity_collecting") {
     const source = findNearestResourceSource(world, "energy", pos.x, pos.y);
-    return source ? [{
+    if (source) effects.push({
       key: `solar-collection-flow:${entity.id}`, kind: "particle_flow", sourceWorldPos: source,
       targetWorldPos: pos, color: SOLAR_COLLECTION_COLOR, glowColor: SOLAR_COLLECTION_GLOW_COLOR,
       coreColor: SOLAR_COLLECTION_CORE_COLOR, sizeMultiplier: SOLAR_COLLECTION_SIZE_MULTIPLIER,
       showTargetHalo: true,
-    }] : [];
+    });
+  }
+
+  if (collectionEffect === "solar_proximity" && entity.collector_state?.receiving_entity_id != null) {
+    const recipientId = String(entity.collector_state.receiving_entity_id);
+    const recipient = Array.from(world.entities()).find((candidate) => String(candidate.id) === recipientId);
+    if (recipient?.pos) {
+      effects.push({
+        key: `solar-transmission-flow:${entity.id}:${recipientId}`,
+        kind: "particle_flow",
+        sourceWorldPos: pos,
+        targetWorldPos: recipient.pos,
+        color: SOLAR_COLLECTION_COLOR,
+        glowColor: SOLAR_COLLECTION_GLOW_COLOR,
+        coreColor: SOLAR_COLLECTION_CORE_COLOR,
+        sizeMultiplier: SOLAR_COLLECTION_SIZE_MULTIPLIER,
+        showTargetHalo: true,
+      });
+    }
   }
 
   if (
@@ -130,7 +149,7 @@ export function resolveParticleFlowEffects(
     }] : [];
   }
 
-  return [];
+  return effects;
 }
 
 export function drawParticleFlowEffect(

@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useCallback, useState } from "react";
-import { ChevronLeft, ChevronRight, Terminal } from "lucide-react";
+import { useEffect, useCallback, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { audio } from "@/features/audio/audioManager";
@@ -10,6 +10,7 @@ import { useHUD } from "@/features/hud/components/HUDContext";
 import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { executeTerminalCommand } from "@/features/hud/terminal/commands";
+import { dispatchCenterCameraOnEntity } from "@/features/gamestate/events";
 import { useSession } from "@/features/users/components/identity/SessionContext";
 
 const SHOW_STREAM_COUNTER = false;
@@ -17,11 +18,14 @@ const SHOW_STREAM_COUNTER = false;
 export default function TerminalPanel() {
   const { player } = usePlayer();
   const { status, login, logout, effectivePlayerId, actingAsId, su, exitSu } = useSession();
-  const { selectors, actions, refs } = useHUD();
-  const { isTerminalOpen, currentCommand, commandHistory } = selectors;
+  const { state: { messageLog }, selectors, actions, refs } = useHUD();
+  const { isTerminalOpen, isTerminalWide, currentCommand, commandHistory } = selectors;
   const { terminalRef, inputRef } = refs;
   const realPlayerId = player?.id ?? null;
   const [commandRunning, setCommandRunning] = useState(false);
+  const submittedCommandsRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const historyDraftRef = useRef("");
 
   // Scroll to bottom when history changes
   useEffect(() => {
@@ -43,6 +47,8 @@ export default function TerminalPanel() {
       const cmd = currentCommand.trim();
       if (!cmd || commandRunning) return;
 
+      if (status !== "logged-out") submittedCommandsRef.current.push(cmd);
+      historyIndexRef.current = -1;
       actions.setTerminalInput("");
       setCommandRunning(true);
       try {
@@ -61,13 +67,14 @@ export default function TerminalPanel() {
           effectivePlayerId,
           actingAsId,
           sessionStatus: status,
+          messageLog,
           logout: () => logout(() => {
             actions.pushCommandHistory({ command: cmd, output: "Logging out…" });
           }),
           su,
           exitSu,
         });
-        actions.pushCommandHistory({ command: result.sessionEnded ? "" : cmd, output: result.output });
+        actions.pushCommandHistory({ command: result.sessionEnded ? "" : cmd, output: result.output, links: result.links });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         actions.pushCommandHistory({ command: "", output: message });
@@ -75,7 +82,7 @@ export default function TerminalPanel() {
         setCommandRunning(false);
       }
     },
-    [currentCommand, commandRunning, actions, realPlayerId, effectivePlayerId, actingAsId, status, login, logout, su, exitSu]
+    [currentCommand, commandRunning, actions, realPlayerId, effectivePlayerId, actingAsId, status, login, logout, su, exitSu, messageLog]
   );
 
   const handleTerminalClick = useCallback(() => {
@@ -85,16 +92,35 @@ export default function TerminalPanel() {
   }, [inputRef]);
 
   return (
-    <div className={`fixed left-4 top-4 bottom-4 z-50 ${isTerminalOpen ? "w-96" : "w-12"}`}>
+    <div
+      className={`fixed top-4 z-50 ${isTerminalWide ? "inset-x-4" : `left-4 ${isTerminalOpen ? "w-96" : "w-12"}`}`}
+      style={{ bottom: "calc(var(--bitwars-status-bar-height, 0px) + 1rem)" }}
+    >
       {/* Toggle Button */}
       <Button
         onClick={() => actions.toggleTerminal()}
         size="sm"
         variant="outline"
-        className="absolute right-0 mr-1 top-2 z-10 bg-card border-border hover:bg-accent"
+        className={`absolute ${isTerminalOpen ? "right-11" : "right-0"} mr-1 top-2 z-10 bg-card border-border hover:bg-accent`}
+        aria-label={isTerminalOpen ? "Close terminal" : "Open terminal"}
+        title={isTerminalOpen ? "Close terminal" : "Open terminal"}
       >
         {isTerminalOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </Button>
+
+      {isTerminalOpen && (
+        <Button
+          onClick={() => actions.toggleTerminalWidth()}
+          size="sm"
+          variant="outline"
+          className="absolute right-0 mr-1 top-2 z-10 bg-card border-border hover:bg-accent"
+          aria-label={isTerminalWide ? "Use skinny terminal" : "Use wide terminal"}
+          title={isTerminalWide ? "Use skinny terminal" : "Use wide terminal"}
+        >
+          {isTerminalWide ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+        </Button>
+      )}
+
 
       {/* Terminal Window */}
       {isTerminalOpen && (
@@ -124,7 +150,30 @@ export default function TerminalPanel() {
                   </div>
                 )}
                 {entry.output && (
-                  <div className="whitespace-pre-line text-green-400 mb-1">{entry.output}</div>
+                  <div className="whitespace-pre-line text-green-400 mb-1">
+                    {entry.links?.length ? (() => {
+                      let offset = 0;
+                      const parts: React.ReactNode[] = [];
+                      for (const link of entry.links) {
+                        parts.push(entry.output.slice(offset, link.start));
+                        parts.push(
+                          <button
+                            key={link.start}
+                            type="button"
+                            className="cursor-pointer text-cyan-300 underline hover:text-cyan-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                            title={`Focus entity ${link.entityId}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              dispatchCenterCameraOnEntity(link.entityId);
+                            }}
+                          >{entry.output.slice(link.start, link.end)}</button>,
+                        );
+                        offset = link.end;
+                      }
+                      parts.push(entry.output.slice(offset));
+                      return parts;
+                    })() : entry.output}
+                  </div>
                 )}
               </div>
             ))}
@@ -141,6 +190,28 @@ export default function TerminalPanel() {
                 autoComplete="off"
                 readOnly={commandRunning || status === "logging-out" || status === "logging-in"}
                 onKeyDown={(e) => {
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    const history = submittedCommandsRef.current;
+                    if (history.length === 0) return;
+                    if (historyIndexRef.current === -1) {
+                      historyDraftRef.current = currentCommand;
+                      historyIndexRef.current = history.length;
+                    }
+                    historyIndexRef.current = Math.max(0, historyIndexRef.current - 1);
+                    actions.setTerminalInput(history[historyIndexRef.current]);
+                  } else if (e.key === "ArrowDown") {
+                    if (historyIndexRef.current === -1) return;
+                    e.preventDefault();
+                    const nextIndex = historyIndexRef.current + 1;
+                    if (nextIndex >= submittedCommandsRef.current.length) {
+                      historyIndexRef.current = -1;
+                      actions.setTerminalInput(historyDraftRef.current);
+                    } else {
+                      historyIndexRef.current = nextIndex;
+                      actions.setTerminalInput(submittedCommandsRef.current[nextIndex]);
+                    }
+                  }
                   if (e.key === "Escape") e.currentTarget.blur();
                 }}
               />

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     io::redis::{CollectorUiState, CombatEffectUiState},
@@ -14,6 +14,8 @@ pub fn compute_delta(
     curr_combat_effect_states: &HashMap<u64, CombatEffectUiState>,
     eps_pos: f32,
     eps_vel: f32,
+    resource_starvation_damaged_entities: &HashMap<u64, Vec<String>>,
+    radiation_damaged_entities: &HashSet<u64>,
 ) -> Delta {
     let mut prev_by_id: HashMap<u64, &Entity> = HashMap::with_capacity(prev.entities.len());
     for e in &prev.entities {
@@ -30,6 +32,9 @@ pub fn compute_delta(
             owner_player_id: None,
             entity_type_id: None,
             health: None,
+            resource_deposit: None,
+            resources: None,
+            damage_type: None,
         };
 
         if let Some(pe) = prev_by_id.get(&ce.id) {
@@ -41,6 +46,17 @@ pub fn compute_delta(
             }
             if (pe.health - ce.health).abs() > f32::EPSILON {
                 ed.health = Some(ce.health);
+                if resource_starvation_damaged_entities.contains_key(&ce.id) {
+                    ed.damage_type = Some("resource_starvation".to_string());
+                } else if radiation_damaged_entities.contains(&ce.id) {
+                    ed.damage_type = Some("radiation".to_string());
+                }
+            }
+            if pe.resources != ce.resources {
+                ed.resources = ce.resources.clone();
+            }
+            if pe.resource_deposit != ce.resource_deposit {
+                ed.resource_deposit = ce.resource_deposit.clone();
             }
             if let (Some(cp), Some(pp)) = (&ce.pos, &pe.pos) {
                 if (cp.x - pp.x).abs() > eps_pos || (cp.y - pp.y).abs() > eps_pos {
@@ -71,6 +87,13 @@ pub fn compute_delta(
                 ed.owner_player_id = Some(ce.owner_player_id.clone());
             }
             ed.health = Some(ce.health);
+            if resource_starvation_damaged_entities.contains_key(&ce.id) {
+                ed.damage_type = Some("resource_starvation".to_string());
+            } else if radiation_damaged_entities.contains(&ce.id) {
+                ed.damage_type = Some("radiation".to_string());
+            }
+            ed.resources = ce.resources.clone();
+            ed.resource_deposit = ce.resource_deposit.clone();
         }
 
         if ed.pos.is_some()
@@ -79,6 +102,8 @@ pub fn compute_delta(
             || ed.owner_player_id.is_some()
             || ed.entity_type_id.is_some()
             || ed.health.is_some()
+            || ed.resources.is_some()
+            || ed.resource_deposit.is_some()
         {
             updates.push(ed);
         }
@@ -99,11 +124,10 @@ pub fn compute_delta(
                 .map(|previous| {
                     previous.activity != state.activity
                         || previous.resource_type != state.resource_type
-                        || previous.carry_amount != state.carry_amount
-                        || previous.carry_capacity != state.carry_capacity
                         || previous.effective_rate_per_second != state.effective_rate_per_second
                         || previous.assigned_resource_type != state.assigned_resource_type
                         || previous.assigned_nearest_compatible != state.assigned_nearest_compatible
+                        || previous.receiving_entity_id != state.receiving_entity_id
                 })
                 .unwrap_or(true)
         })
@@ -111,11 +135,12 @@ pub fn compute_delta(
             entity_id: *entity_id,
             activity: state.activity.clone(),
             resource_type: state.resource_type.clone(),
-            carry_amount: state.carry_amount,
-            carry_capacity: state.carry_capacity,
+            carry_amount: 0.0,
+            carry_capacity: 0.0,
             effective_rate_per_second: state.effective_rate_per_second,
             assigned_resource_type: state.assigned_resource_type.clone(),
             assigned_nearest_compatible: state.assigned_nearest_compatible,
+            receiving_entity_id: state.receiving_entity_id,
         })
         .collect();
     collector_state_updates.sort_by_key(|state| state.entity_id);
@@ -148,6 +173,8 @@ mod tests {
 
     fn entity(id: u64) -> Entity {
         Entity {
+            resource_deposit: None,
+            resources: None,
             id,
             entity_type_id: "worker".to_string(),
             pos: None,
@@ -159,17 +186,31 @@ mod tests {
     }
 
     #[test]
+    fn reports_deposit_depletion_and_round_trips_zero_stock() {
+        use prost::Message;
+        let mut source = entity(1);
+        source.resource_deposit = Some(crate::pb::ResourceDeposit { amount: 10.0, remaining: 1.0 });
+        let previous = GameState { tick: 1, entities: vec![source], technologies: HashMap::new() };
+        let mut current = previous.clone();
+        current.entities[0].resource_deposit.as_mut().unwrap().remaining = 0.0;
+        let delta = compute_delta(&previous, &current, &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(), 0.01, 0.01, &HashMap::new(), &HashSet::new());
+        assert_eq!(delta.updates.len(), 1);
+        let decoded = Delta::decode(delta.encode_to_vec().as_slice()).unwrap();
+        let deposit = decoded.updates[0].resource_deposit.as_ref().unwrap();
+        assert_eq!(deposit.amount, 10.0);
+        assert_eq!(deposit.remaining, 0.0);
+    }
+
+    #[test]
     fn reports_removed_entities_in_stable_id_order() {
         let previous = GameState {
             tick: 10,
             entities: vec![entity(9), entity(2), entity(5)],
-            ledger: HashMap::new(),
             technologies: HashMap::new(),
         };
         let current = GameState {
             tick: 11,
             entities: vec![entity(5)],
-            ledger: HashMap::new(),
             technologies: HashMap::new(),
         };
 
@@ -182,6 +223,8 @@ mod tests {
             &HashMap::new(),
             0.01,
             0.01,
+            &HashMap::new(),
+            &HashSet::new(),
         );
         assert!(delta.updates.is_empty());
         assert_eq!(delta.removed_entity_ids, vec![2, 9]);
@@ -192,17 +235,15 @@ mod tests {
         let state = GameState {
             tick: 10,
             entities: vec![entity(4)],
-            ledger: HashMap::new(),
             technologies: HashMap::new(),
         };
         let collector = CollectorUiState {
             activity: "gathering".to_string(),
             resource_type: "minerals".to_string(),
-            carry_amount: 2.0,
-            carry_capacity: 10.0,
             effective_rate_per_second: 0.0,
             assigned_resource_type: "minerals".to_string(),
             assigned_nearest_compatible: false,
+            receiving_entity_id: None,
             updated_tick: 10,
         };
         let previous = HashMap::from([(4, collector.clone())]);
@@ -218,10 +259,20 @@ mod tests {
             &combat_states,
             0.01,
             0.01,
+            &HashMap::new(),
+            &HashSet::new(),
         );
         assert!(unchanged.collector_state_updates.is_empty());
 
-        current.get_mut(&4).unwrap().carry_amount = 3.0;
+        let mut inventory_changed = state.clone();
+        crate::engine::state::set_resource_amount(&mut inventory_changed.entities[0], "minerals", 8.0);
+        let inventory_delta = compute_delta(&state, &inventory_changed, &previous, &current,
+            &combat_states, &combat_states, 0.01, 0.01, &HashMap::new(), &HashSet::new());
+        assert_eq!(inventory_delta.updates.len(), 1);
+        assert_eq!(inventory_delta.updates[0].resources.as_ref().unwrap().resources[0].amount, 8.0);
+        assert!(inventory_delta.collector_state_updates.is_empty(), "inventory changes need no duplicate cargo telemetry");
+
+        current.get_mut(&4).unwrap().resource_type = "food".into();
         let changed = compute_delta(
             &state,
             &state,
@@ -231,9 +282,11 @@ mod tests {
             &combat_states,
             0.01,
             0.01,
+            &HashMap::new(),
+            &HashSet::new(),
         );
         assert_eq!(changed.collector_state_updates.len(), 1);
         assert_eq!(changed.collector_state_updates[0].entity_id, 4);
-        assert_eq!(changed.collector_state_updates[0].carry_amount, 3.0);
+        assert_eq!(changed.collector_state_updates[0].resource_type, "food");
     }
 }

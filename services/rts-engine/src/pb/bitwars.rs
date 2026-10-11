@@ -24,6 +24,32 @@ pub struct Entity {
     /// current health; max health is defined by content
     #[prost(float, tag = "7")]
     pub health: f32,
+    /// local inventory; omitted from client projections for non-owned entities
+    #[prost(message, optional, tag = "8")]
+    pub resources: ::core::option::Option<ResourceInventory>,
+    /// finite source stock; visible within sensor coverage
+    #[prost(message, optional, tag = "9")]
+    pub resource_deposit: ::core::option::Option<ResourceDeposit>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ResourceDeposit {
+    /// initial sampled amount (the maximum)
+    #[prost(double, tag = "1")]
+    pub amount: f64,
+    #[prost(double, tag = "2")]
+    pub remaining: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResourceAmount {
+    #[prost(string, tag = "1")]
+    pub resource_type: ::prost::alloc::string::String,
+    #[prost(double, tag = "2")]
+    pub amount: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResourceInventory {
+    #[prost(message, repeated, tag = "1")]
+    pub resources: ::prost::alloc::vec::Vec<ResourceAmount>,
 }
 /// Sparse delta: only include fields that changed meaningfully.
 /// proto3 'optional' yields Option<T> in Rust (prost) and presence in TS.
@@ -46,6 +72,14 @@ pub struct EntityDelta {
     /// set when current health changes
     #[prost(float, optional, tag = "7")]
     pub health: ::core::option::Option<f32>,
+    /// set when local inventory changes
+    #[prost(message, optional, tag = "8")]
+    pub resources: ::core::option::Option<ResourceInventory>,
+    /// e.g. resource_starvation
+    #[prost(string, optional, tag = "9")]
+    pub damage_type: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "10")]
+    pub resource_deposit: ::core::option::Option<ResourceDeposit>,
 }
 /// Authoritative collector telemetry for one entity. This travels with the
 /// normal snapshot/delta stream instead of a separately polled UI side channel.
@@ -57,18 +91,24 @@ pub struct CollectorState {
     pub activity: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub resource_type: ::prost::alloc::string::String,
+    /// Legacy snapshot migration only. New writers leave both fields zero;
+    /// current amounts and capacities come from entity inventory and content.
+    #[deprecated]
     #[prost(float, tag = "4")]
     pub carry_amount: f32,
+    #[deprecated]
     #[prost(float, tag = "5")]
     pub carry_capacity: f32,
     #[prost(float, tag = "6")]
     pub effective_rate_per_second: f32,
     /// The maintained Collect order, distinct from resource_type (the current
-    /// cargo/gathering resource shown above).
+    /// inventory/gathering resource shown above).
     #[prost(string, tag = "7")]
     pub assigned_resource_type: ::prost::alloc::string::String,
     #[prost(bool, tag = "8")]
     pub assigned_nearest_compatible: bool,
+    #[prost(uint64, optional, tag = "9")]
+    pub receiving_entity_id: ::core::option::Option<u64>,
 }
 /// Authoritative presentation state for a continuous entity interaction.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -272,6 +312,19 @@ pub struct RepairIntent {
     #[prost(string, tag = "4")]
     pub player_id: ::prost::alloc::string::String,
 }
+/// Deliver currently held inventory and collection cargo to a friendly entity.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeliverIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub target_id: u64,
+    #[prost(string, repeated, tag = "3")]
+    pub resource_type_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Nonzero starts a maintained donor-to-recipient transport loop.
+    #[prost(uint64, tag = "4")]
+    pub donor_id: u64,
+}
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntentEnvelope {
@@ -295,7 +348,7 @@ pub struct IntentEnvelope {
     /// defaults to REPLACE_ACTIVE when omitted
     #[prost(enumeration = "IntentPolicy", tag = "7")]
     pub policy: i32,
-    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14, 16, 17")]
+    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14, 16, 17, 18")]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
 /// Nested message and enum types in `IntentEnvelope`.
@@ -316,13 +369,15 @@ pub mod intent_envelope {
         Upgrade(super::UpgradeIntent),
         #[prost(message, tag = "17")]
         Research(super::ResearchIntent),
+        #[prost(message, tag = "18")]
+        Deliver(super::DeliverIntent),
     }
 }
 /// Extensible Intent envelope.
 /// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Intent {
-    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
     pub kind: ::core::option::Option<intent::Kind>,
 }
 /// Nested message and enum types in `Intent`.
@@ -343,6 +398,8 @@ pub mod intent {
         Upgrade(super::UpgradeIntent),
         #[prost(message, tag = "7")]
         Research(super::ResearchIntent),
+        #[prost(message, tag = "8")]
+        Deliver(super::DeliverIntent),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -479,13 +536,26 @@ pub struct RepairState {
     #[prost(uint64, tag = "1")]
     pub target_id: u64,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeliverState {
+    #[prost(uint64, tag = "1")]
+    pub target_id: u64,
+    #[prost(string, repeated, tag = "2")]
+    pub resource_type_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "3")]
+    pub donor_id: u64,
+    #[prost(bool, tag = "4")]
+    pub returning_to_donor: bool,
+    #[prost(uint64, tag = "5")]
+    pub retry_tick: u64,
+}
 /// Unified per-entity execution container (one active at a time).
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ActionState {
     /// Echo original intent for correlation/observability (optional but useful)
     #[prost(message, optional, tag = "1")]
     pub intent: ::core::option::Option<Intent>,
-    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6, 7, 8")]
+    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6, 7, 8, 9")]
     pub exec: ::core::option::Option<action_state::Exec>,
 }
 /// Nested message and enum types in `ActionState`.
@@ -506,6 +576,8 @@ pub mod action_state {
         Upgrade(super::UpgradeState),
         #[prost(message, tag = "8")]
         Research(super::ResearchState),
+        #[prost(message, tag = "9")]
+        Deliver(super::DeliverState),
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
@@ -598,6 +670,7 @@ pub enum LifecycleReason {
     /// M6: entity not owned by issuing player
     NotOwned = 8,
     MinimumDistanceViolation = 9,
+    TransferEndpointLost = 10,
 }
 impl LifecycleReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -616,6 +689,7 @@ impl LifecycleReason {
             Self::EntityBusy => "ENTITY_BUSY",
             Self::NotOwned => "NOT_OWNED",
             Self::MinimumDistanceViolation => "MINIMUM_DISTANCE_VIOLATION",
+            Self::TransferEndpointLost => "TRANSFER_ENDPOINT_LOST",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -631,6 +705,7 @@ impl LifecycleReason {
             "ENTITY_BUSY" => Some(Self::EntityBusy),
             "NOT_OWNED" => Some(Self::NotOwned),
             "MINIMUM_DISTANCE_VIOLATION" => Some(Self::MinimumDistanceViolation),
+            "TRANSFER_ENDPOINT_LOST" => Some(Self::TransferEndpointLost),
             _ => None,
         }
     }

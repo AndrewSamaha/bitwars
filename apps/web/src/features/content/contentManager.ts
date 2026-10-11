@@ -54,6 +54,15 @@ export type EntityTypeDef = {
   suppress_hover?: boolean;
   /** Resources required to produce one instance of this entity type. */
   build_cost?: Record<string, number>;
+  /** Maximum local inventory per resource type. */
+  max_capacity?: Record<string, number>;
+  /** Operating targets retained in shared inventory; omitted entries use one minute of upkeep for automatic supply. */
+  resource_reserves?: Record<string, number>;
+  resource_sharing?: {
+    range: number;
+    wireless_receives?: string[];
+    resources?: Record<string, { priority: number; overflow_priority?: number | null; refill_below: number; fill_to: number; reserve: number }>;
+  };
   /** Per-resource upkeep charged to the owner, in units per minute. */
   maintenance_cost_per_minute?: Record<string, number>;
   repair?: {
@@ -81,8 +90,15 @@ export type EntityTypeDef = {
   requires_technologies?: TechnologyRequirement;
   researches?: string[];
   collector?: {
+    /** Units per second collected into inventory; zero disables transport collection. */
+    transport_rate_per_second?: number;
     vfx?: "solar_proximity" | "mineral_transport";
     collects?: string[];
+  };
+  resource_node?: {
+    resource_type: string;
+    collection_mode: "transport" | "proximity";
+    amount?: number;
   };
   radiation_sources?: Array<{
     radiation_type: string;

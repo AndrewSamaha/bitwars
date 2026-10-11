@@ -1,0 +1,27 @@
+version: 1
+id: wireless-energy
+name: Wireless energy and habitat sharing
+tags: [energy, sharing, maintenance]
+players: [player]
+technologies:
+  player: [space_age]
+entities:
+  - id: 1
+    entity_type: star_yellow
+    owner: universe
+    position: {x: 0, y: 0}
+  - id: 2
+    entity_type: collector_solar
+    owner: player
+    position: {x: 1250, y: 0}
+    resources: {energy: 25}
+  - id: 3
+    entity_type: habitat
+    owner: player
+    position: {x: 3500, y: 0}
+    resources: {energy: 10, food: 500, minerals: 500}
+  - id: 4
+    entity_type: worker
+    owner: player
+    position: {x: 3700, y: 0}
+    resources: {}
