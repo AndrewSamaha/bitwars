@@ -44,6 +44,7 @@ Expose a small, typed MCP tool surface:
 | `connect_player` | Bind a provisioned test identity, open its SSE stream, perform the handshake, and return an opaque handle plus readiness state. |
 | `observe_events` | Return a bounded batch since a cursor, optionally waiting briefly; report gaps/overflow explicitly. Include receive timestamps and raw-byte counts. |
 | `get_player_state` | Return the gateway's current player-visible state and connection/sequence status, derived from that player's stream and handshake. |
+| `set_progress_watch` | Set the union of owned entity IDs polled through `/api/v3/build-state`; an empty list stops polling. |
 | `send_intent` | Submit an action for an owned entity with the current `run_id`, next sequence, and unique command ID; return IDs needed to correlate lifecycle events. |
 | `disconnect_player` | Close the player's SSE stream, timers, and buffers and release the handle. |
 
@@ -111,10 +112,38 @@ burst test; run deliberate bursts separately.
 
 ## Implementation milestones
 
+The first gateway implementation is in
+[`packages/player-mcp`](../packages/player-mcp). It exposes the six tools
+above over local MCP stdio, uses the existing game HTTP/SSE endpoints, and
+has mocked game-endpoint and MCP protocol tests. The deterministic player,
+multi-player runner, and live disposable-match validation are still to do.
+The current gateway creates/logs in a `loadtest-*` account when
+`connect_player` is called; a future runner should provision accounts before
+the timed window and establish how to isolate or retire them afterward.
+
+To launch the MCP server from the repository root, explicitly opt in to
+game-state-changing actions:
+
+```bash
+BITWARS_PLAYER_MCP_ALLOW_WRITES=1 \
+BITWARS_PLAYER_MCP_BASE_URL=http://127.0.0.1:3000 \
+pnpm --filter @bitwars/player-mcp start
+```
+
+It speaks MCP on stdio, so a client launches this command and communicates on
+stdin/stdout; the startup message goes to stderr. Remote game URLs also
+require `BITWARS_PLAYER_MCP_ALLOW_REMOTE=1`. Only point it at a disposable
+match. `connect_player` returns a handle immediately; check
+`get_player_state.ready` or `observe_events.ready` before sending an intent.
+The gateway accepts up to 200 active handles by default and keeps a bounded
+event buffer per handle; `observe_events.gap` signals missed buffered events.
+
 1. Define the typed MCP operations, player-handle lifecycle, bounded event
    cursor semantics, and per-player metrics. Implement one gateway-backed
    player that joins, receives a snapshot, completes the reconnect handshake,
-   sends one valid intent, observes its lifecycle, and disconnects.
+   sends one valid intent, observes its lifecycle, and disconnects. Gateway
+   and mocked first-connect path implemented; live disposable-match validation
+   remains.
 2. Add reconnect/world-reset handling and progress polling, with tests for
    first connect, sequence reconciliation, ownership, missing events, and
    clean shutdown. Verify that each MCP player creates exactly one expected

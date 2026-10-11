@@ -188,6 +188,28 @@ importers:
 
   packages/content: {}
 
+  packages/player-mcp:
+    dependencies:
+      '@modelcontextprotocol/server':
+        specifier: ^2.0.0
+        version: 2.3.1
+      zod:
+        specifier: ^4.2.0
+        version: 4.6.6
+    devDependencies:
+      '@types/node':
+        specifier: ^20
+        version: 20.19.13
+      tsx:
+        specifier: ^4.20.5
+        version: 4.20.5
+      typescript:
+        specifier: ^5
+        version: 5.9.2
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9(@types/node@20.19.13)(lightningcss@1.30.1)(terser@5.50.0)
+
   packages/schemas:
     devDependencies:
       '@bufbuild/buf':
@@ -1433,6 +1455,14 @@ packages:
 
   '@miniplex/bucket@2.0.0':
     resolution: {integrity: sha512-jdAW0vG0tLel0dD0lyQqkQ4g4G9CscbVtenu35jB48fnVK3zmfFmQKIxXHsUvFs4KAN44UESAgaVOroTetFSRw==}
+
+  '@modelcontextprotocol/core@2.3.1':
+    resolution: {integrity: sha512-laVmIhPGpWi7rG9q+0UigblRN0Hws/Yjlb6qLFtVqryXVLkc4h+yN8z731POD2LnAGQlFe7/tXhUm7Bi0YB91g==}
+    engines: {node: '>=20'}
+
+  '@modelcontextprotocol/server@2.3.1':
+    resolution: {integrity: sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==}
+    engines: {node: '>=20'}
 
   '@monaco-editor/loader@1.7.0':
     resolution: {integrity: sha512-gIwR1HrJrrx+vfyOhYmCZ0/JcWqG5kbfG7+d3f/C1LXk2EvzAbHSg3MQ5lO2sMlo9izoAZ04shohfKLVT6crVA==}
@@ -5082,6 +5112,9 @@ packages:
   zod@4.1.5:
     resolution: {integrity: sha512-rcUUZqlLJgBC33IT3PNMgsCq6TzLQEG/Ei/KTCU0PedSWRMAXoOUN+4t/0H+Q8bdnLPdqUYnvboJT0bn/229qg==}
 
+  zod@4.6.6:
+    resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
+
 snapshots:
 
   '@adobe/css-tools@4.5.0': {}
@@ -6289,6 +6322,15 @@ snapshots:
   '@miniplex/bucket@2.0.0':
     dependencies:
       eventery: 0.0.4
+
+  '@modelcontextprotocol/core@2.3.1':
+    dependencies:
+      zod: 4.6.6
+
+  '@modelcontextprotocol/server@2.3.1':
+    dependencies:
+      '@modelcontextprotocol/core': 2.3.1
+      zod: 4.6.6
 
   '@monaco-editor/loader@1.7.0':
     dependencies:
@@ -9957,3 +9999,5 @@ snapshots:
   yocto-queue@1.2.2: {}
 
   zod@4.1.5: {}
+
+  zod@4.6.6: {}
