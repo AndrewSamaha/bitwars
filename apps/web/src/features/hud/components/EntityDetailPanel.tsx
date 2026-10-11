@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { game } from "@/features/gamestate/world";
 import { contentManager } from "@/features/content/contentManager";
@@ -9,20 +9,9 @@ import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { GAMESTATE_UPDATED_EVENT, type GameStateUpdatedDetail } from "@/features/gamestate/events";
 import { transferableResourceAmount } from "@/features/hud/resourceInventory";
 import { canAffordAction } from "@/features/hud/actionResources";
+import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 
 const GAMESTATE_UI_REFRESH_INTERVAL_MS = 100;
-type BuildState = { blueprint_id?: string; progress?: number };
-type BuildStateById = Record<string, BuildState>;
-
-function sameBuildStates(left: BuildStateById, right: BuildStateById): boolean {
-  const leftIds = Object.keys(left);
-  const rightIds = Object.keys(right);
-  if (leftIds.length !== rightIds.length) return false;
-  return leftIds.every((id) =>
-    right[id]?.blueprint_id === left[id]?.blueprint_id &&
-    right[id]?.progress === left[id]?.progress,
-  );
-}
 
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
@@ -35,7 +24,11 @@ export default function EntityDetailPanel() {
   const [upgradeMenuOpen, setUpgradeMenuOpen] = useState(false);
   const [researchMenuOpen, setResearchMenuOpen] = useState(false);
   const [collectMenuOpen, setCollectMenuOpen] = useState(false);
-  const [buildStateById, setBuildStateById] = useState<BuildStateById>({});
+  const buildStateById = useSyncExternalStore(
+    buildProgressStore.subscribe,
+    buildProgressStore.getSnapshot,
+    buildProgressStore.getSnapshot,
+  );
 
   useLayoutEffect(() => {
     const bar = statusBarRef.current;
@@ -248,40 +241,9 @@ export default function EntityDetailPanel() {
     ["build", "upgrade", "research"].includes((idToActiveIntent.get(firstId)?.kind ?? "").toLowerCase());
 
   useEffect(() => {
-    if (!isSelectedEntityBuilding) {
-      setBuildStateById({});
-      return;
-    }
-    let mounted = true;
-    let timer: number | undefined;
-    let requestInFlight = false;
-    const refresh = async () => {
-      if (requestInFlight) return;
-      requestInFlight = true;
-      try {
-        const response = await fetch(`/api/v2/build-state?ids=${encodeURIComponent(firstId)}`, {
-          cache: "no-store",
-        });
-        if (!response.ok || !mounted) return;
-        const data = (await response.json()) as {
-          build_state_by_entity?: BuildStateById;
-        };
-        const nextState = data.build_state_by_entity ?? {};
-        setBuildStateById((current) =>
-          sameBuildStates(current, nextState) ? current : nextState,
-        );
-      } catch {
-        // Keep build details resilient on transient fetch failures.
-      } finally {
-        requestInFlight = false;
-      }
-    };
-    void refresh();
-    timer = window.setInterval(() => void refresh(), 500);
-    return () => {
-      mounted = false;
-      if (timer !== undefined) window.clearInterval(timer);
-    };
+    const source = Symbol("selected build entity");
+    if (isSelectedEntityBuilding) buildProgressStore.setIds(source, [firstId]);
+    return () => buildProgressStore.removeSource(source);
   }, [firstId, isSelectedEntityBuilding]);
 
   const onClickAction = (val: ActionDef["value"]) => {

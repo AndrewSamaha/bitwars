@@ -152,7 +152,7 @@ const LIFECYCLE_REASON_ENTITY_BUSY = 7;
 
 // ── Manager ────────────────────────────────────────────────────────────────
 
-class IntentQueueManager {
+export class IntentQueueManager {
   private clientSeq = 0;
   private runId = "";
   private worldGeneration = 0;
@@ -377,7 +377,10 @@ class IntentQueueManager {
       return null;
     }
 
-    if (generation !== this.worldGeneration) return null;
+    // The first snapshot may initialize this same world while the handshake is
+    // in flight. In that case its reset is safe to reconcile against; only a
+    // response for a different world is stale.
+    if (generation !== this.worldGeneration && handshake.run_id !== this.runId) return null;
     if (handshake.run_id && handshake.run_id !== this.runId) this.resetForWorld(handshake.run_id);
 
     // 1. Advance clientSeq so future sends aren't rejected as out-of-order
