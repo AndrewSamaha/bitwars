@@ -21,6 +21,7 @@ type ScenarioResult = {
   success: boolean;
   duration_ms: number;
   error?: string;
+  failure?: { reason: string; [key: string]: unknown };
   cleanup_errors?: string[];
 };
 
@@ -35,6 +36,7 @@ type BotResult = {
   signal?: NodeJS.Signals | null;
   timed_out?: boolean;
   error?: string;
+  failure?: ScenarioResult["failure"];
   scenario_result?: ScenarioResult;
   stdout_log?: string;
   stderr_log?: string;
@@ -195,21 +197,27 @@ async function runBot(config: Config, index: number, live: Set<ChildProcess>, in
     try { scenarioResult = readScenarioResult(stdoutLog, name); }
     catch (error) { outcome.error = `${outcome.error ?? ""} cannot read scenario result: ${String(error)}`.trim(); }
     const succeeded = outcome.code === 0 && !outcome.timedOut && scenarioResult?.success === true;
+    const failure = succeeded ? undefined : scenarioResult?.failure ?? {
+      reason: outcome.timedOut ? "runner_timeout" : interrupted.aborted ? "runner_interrupted" :
+        outcome.error ? "process_error" : scenarioResult ? "scenario_failed" : "missing_scenario_result",
+    };
     const result: BotResult = {
       index, username: name, status: succeeded ? "succeeded" : "failed",
       started_at_ms: startedAt, ended_at_ms: Date.now(), pid: child.pid,
       exit_code: outcome.code, signal: outcome.signal, timed_out: outcome.timedOut,
-      ...(outcome.error ? { error: outcome.error } : {}),
+      ...(outcome.error || scenarioResult?.error ? { error: outcome.error ?? scenarioResult?.error } : {}),
+      ...(failure ? { failure } : {}),
       ...(scenarioResult ? { scenario_result: scenarioResult } : {}),
       stdout_log: stdoutLog, stderr_log: stderrLog,
     };
     log("bot_finished", { index, username: name, status: result.status, exit_code: result.exit_code,
-      signal: result.signal, timed_out: result.timed_out, run_id: scenarioResult?.run_id });
+      signal: result.signal, timed_out: result.timed_out, run_id: scenarioResult?.run_id,
+      ...(failure ? { failure, error: scenarioResult?.error ?? outcome.error } : {}) });
     return result;
   } catch (error) {
-    log("bot_finished", { index, username: name, status: "failed", error: String(error) });
+    log("bot_finished", { index, username: name, status: "failed", error: String(error), failure: { reason: "runner_error" } });
     return { index, username: name, status: "failed", started_at_ms: startedAt, ended_at_ms: Date.now(),
-      error: String(error), stdout_log: stdoutLog, stderr_log: stderrLog };
+      error: String(error), failure: { reason: "runner_error" }, stdout_log: stdoutLog, stderr_log: stderrLog };
   } finally {
     if (stdoutFd !== undefined) closeSync(stdoutFd);
     if (stderrFd !== undefined) closeSync(stderrFd);
@@ -251,17 +259,23 @@ export async function runBotRunner(config: Config): Promise<boolean> {
     const succeeded = results.filter(result => result.status === "succeeded").length;
     const failed = results.filter(result => result.status === "failed").length;
     const notStarted = results.filter(result => result.status === "not_started").length;
+    const failureReasons: Record<string, number> = {};
+    for (const result of results) {
+      if (result.status !== "failed") continue;
+      const reason = result.failure?.reason ?? "unknown";
+      failureReasons[reason] = (failureReasons[reason] ?? 0) + 1;
+    }
     const success = succeeded === config.count && !interruptSignal;
     const summaryPath = resolve(config.outputDir, "summary.json");
     const summary = { kind: "runner_result", run_tag: config.runTag, success, count: config.count,
       ramp_ms: config.rampMs, timeout_seconds: config.timeoutSeconds,
       cleanup_grace_seconds: config.cleanupGraceSeconds, base_url: config.baseUrl,
-      succeeded, failed, not_started: notStarted, interrupted_by: interruptSignal,
+      succeeded, failed, not_started: notStarted, failure_reasons: failureReasons, interrupted_by: interruptSignal,
       started_at_ms: startedAt, ended_at_ms: Date.now(), duration_ms: Date.now() - startedAt,
       output_dir: config.outputDir, results };
     writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, { flag: "wx", mode: 0o600 });
     log("runner_result", { run_tag: config.runTag, success, count: config.count, succeeded, failed,
-      not_started: notStarted, interrupted_by: interruptSignal, summary_path: summaryPath });
+      not_started: notStarted, failure_reasons: failureReasons, interrupted_by: interruptSignal, summary_path: summaryPath });
     return success;
   } finally {
     process.off("SIGINT", onSigint);

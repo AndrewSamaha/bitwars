@@ -35,6 +35,18 @@ export type CommandStatus = {
   updated_at_ms: number;
 };
 
+export type GameplayEvent = {
+  event_id: string;
+  event_type: string;
+  server_tick: number;
+  occurred_at_ms: number;
+  victim: { entity_id: number; entity_type_id: string; owner_player_id: string };
+  attacker?: { entity_id: number; entity_type_id: string; owner_player_id: string };
+  cause: string;
+};
+
+export type GameplayEventBatch = { events: GameplayEvent[]; next_cursor: string; has_more: boolean };
+
 export type CollectorState = Record<string, unknown> & { entity_id: number | string };
 
 export type WaitCondition =
@@ -184,6 +196,13 @@ export class PlayerGateway {
       ...init,
       headers: { Cookie: session.cookie, ...init.headers },
     });
+  }
+
+  async getGameplayEvents(handle: string, after: string): Promise<GameplayEventBatch> {
+    const response = await this.request(this.required(handle),
+      `/api/v2/gameplay-events?after=${encodeURIComponent(after)}`, { signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) throw new Error(`gameplay events request failed: HTTP ${response.status}`);
+    return await response.json() as GameplayEventBatch;
   }
 
   private required(handle: string): Session {

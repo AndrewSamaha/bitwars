@@ -99,6 +99,10 @@ function createServer() {
     description: "Read the HTTP receipt and latest lifecycle state for a command ID returned by send_intent.",
     inputSchema: handleSchema.extend({ client_cmd_id: z.string().uuid() }),
   }, ({ handle, client_cmd_id }) => tool(() => ({ command: gateway.getCommand(handle, client_cmd_id) }))());
+  server.registerTool("get_gameplay_events", {
+    description: "Read durable gameplay events visible to this player after a stream cursor, including entity destruction and its cause. Follow next_cursor while has_more is true.",
+    inputSchema: handleSchema.extend({ after: z.string().regex(/^\d+-\d+$/) }),
+  }, ({ handle, after }) => tool(() => gateway.getGameplayEvents(handle, after))());
   server.registerTool("wait_for_observation", {
     description: "Wait for a command, owned entity count, collector activity, or resource condition, then return the current observation.",
     inputSchema: handleSchema.extend({

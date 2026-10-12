@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use prost::Message;
@@ -242,6 +242,22 @@ impl RedisClient {
     /// M6: List of player_ids to spawn (backend RPUSHes, engine LPOPs).
     fn pending_joins_key(&self) -> String {
         format!("rts:match:{}:pending_joins", self.game_id)
+    }
+
+    /// Count distinct players with an unexpired SSE connection lease.
+    pub async fn connected_player_count(&mut self) -> anyhow::Result<usize> {
+        let key = format!("rts:match:{}:connected_player_leases", self.game_id);
+        let now = current_unix_ms();
+        let _: usize = redis::cmd("ZREMRANGEBYSCORE")
+            .arg(&key).arg("-inf").arg(now.saturating_sub(1))
+            .query_async(&mut self.conn).await?;
+        let members: Vec<String> = redis::cmd("ZRANGEBYSCORE")
+            .arg(&key).arg(now).arg("+inf")
+            .query_async(&mut self.conn).await?;
+        let players: HashSet<&str> = members.iter()
+            .filter_map(|member| member.split_once(':').map(|(player_id, _)| player_id))
+            .collect();
+        Ok(players.len())
     }
 
     /// Development-only requests to spawn NPC raiders. The web terminal writes

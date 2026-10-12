@@ -3,7 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import type { CallToolResult } from "@modelcontextprotocol/client";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CollectorState, CommandStatus, GameEntity, IntentInput, WaitCondition } from "./playerGateway.js";
+import type { CollectorState, CommandStatus, GameEntity, GameplayEvent, GameplayEventBatch, IntentInput, WaitCondition } from "./playerGateway.js";
 import type { PlayerChange } from "./observationJournal.js";
 
 type Observation = {
@@ -22,6 +22,31 @@ type ChangeBatch = { changes: PlayerChange[]; next_cursor: number; has_more: boo
 type IntentReceipt = { accepted_http: boolean; status: number; client_cmd_id: string; result: unknown };
 type Point = { x: number; y: number };
 export type BuildJob = { commandId: string; builderId: number; blueprintId: string; priorIds: Set<string>; priorCount: number };
+
+type Failure = {
+  reason: string;
+  entity_id?: number;
+  command_id?: string;
+  lifecycle_state?: number;
+  lifecycle_reason?: number;
+  server_tick?: string;
+  event_id?: string;
+  cause?: string;
+  attacker?: GameplayEvent["attacker"];
+  diagnostic_error?: string;
+};
+
+class CommandFailure extends Error {
+  constructor(readonly command: CommandStatus) {
+    super(`command ${command.client_cmd_id} for entity ${command.entity_id} ended in lifecycle state ${command.lifecycle_state} (reason ${command.lifecycle_reason ?? "unknown"})`);
+  }
+}
+
+class EntityMissingFailure extends Error {
+  constructor(readonly entityId: number, stage: string) {
+    super(`entity ${entityId} disappeared during ${stage}`);
+  }
+}
 
 type Config = {
   username: string;
@@ -113,6 +138,52 @@ export class ScriptedPlayer {
     await call(this.client, "disconnect_player", { handle: this.handle });
   }
 
+  async diagnoseFailure(error: unknown, startedAtMs: number): Promise<Failure> {
+    if (!(error instanceof CommandFailure) && !(error instanceof EntityMissingFailure)) return { reason: "workflow_error" };
+    const command = error instanceof CommandFailure ? error.command : undefined;
+    const entityId = command?.entity_id ?? (error instanceof EntityMissingFailure ? error.entityId : undefined);
+    if (entityId === undefined) return { reason: "workflow_error" };
+    const failure: Failure = command ? {
+      reason: command.lifecycle_state === 6 ? "command_interrupted" : "command_failed",
+      entity_id: entityId,
+      command_id: command.client_cmd_id,
+      lifecycle_state: command.lifecycle_state,
+      ...(command.lifecycle_reason === undefined ? {} : { lifecycle_reason: command.lifecycle_reason }),
+      ...(command.server_tick === undefined ? {} : { server_tick: command.server_tick }),
+    } : { reason: "entity_missing", entity_id: entityId };
+    if (command && command.lifecycle_state !== 6) return failure;
+    try {
+      // Include a minute before the bot launched to tolerate modest clock skew.
+      let cursor = `${Math.max(0, startedAtMs - 60_000)}-0`;
+      const diagnosticDeadline = Date.now() + 10_000;
+      for (let page = 0; page < 100; page++) {
+        if (Date.now() >= diagnosticDeadline) {
+          failure.diagnostic_error = "gameplay event scan exceeded ten seconds";
+          return failure;
+        }
+        const batch = await call<GameplayEventBatch>(this.client, "get_gameplay_events", { handle: this.handle, after: cursor });
+        const destroyed = batch.events.find(event =>
+          event.event_type === "entity_destroyed" && event.victim.entity_id === entityId &&
+          (!command?.server_tick || Number(event.server_tick) <= Number(command.server_tick)),
+        );
+        if (destroyed) {
+          failure.reason = destroyed.attacker && destroyed.attacker.owner_player_id !== destroyed.victim.owner_player_id
+            ? "entity_destroyed_by_other_player" : "entity_destroyed";
+          failure.event_id = destroyed.event_id;
+          failure.cause = destroyed.cause;
+          if (destroyed.attacker) failure.attacker = destroyed.attacker;
+          return failure;
+        }
+        if (!batch.has_more || batch.next_cursor === cursor) return failure;
+        cursor = batch.next_cursor;
+      }
+      failure.diagnostic_error = "gameplay event scan reached its 100-page limit";
+    } catch (diagnosticError) {
+      failure.diagnostic_error = String(diagnosticError);
+    }
+    return failure;
+  }
+
   private checkDeadline(stage: string): void {
     if (Date.now() >= this.deadline) throw new Error(`scenario deadline reached during ${stage}`);
   }
@@ -184,7 +255,7 @@ export class ScriptedPlayer {
       await this.observe();
       const command = await this.command(commandId);
       if (command.lifecycle_state === 3 || command.lifecycle_state === 5) return;
-      if (command.terminal) throw new Error(`command ${commandId} ended in lifecycle state ${command.lifecycle_state}`);
+      if (command.terminal) throw new CommandFailure(command);
       await this.wait({ type: "command_state", client_cmd_id: commandId, state: 3 });
     }
   }
@@ -195,7 +266,7 @@ export class ScriptedPlayer {
       const observation = await this.observe();
       const command = await this.command(commandId);
       if (command.terminal) {
-        if (command.lifecycle_state !== 5) throw new Error(`command ${commandId} ended in lifecycle state ${command.lifecycle_state}`);
+        if (command.lifecycle_state !== 5) throw new CommandFailure(command);
         return;
       }
       if (builderId !== undefined) {
@@ -214,7 +285,7 @@ export class ScriptedPlayer {
     await this.finished(commandId);
     while (true) {
       const entity = (await this.observe()).owned_entities.find(item => idOf(item) === entityId);
-      if (!entity) throw new Error(`moved entity ${entityId} disappeared`);
+      if (!entity) throw new EntityMissingFailure(entityId, "move");
       if (distance(pointOf(entity), target) <= 5) break;
       await new Promise(resolveDelay => setTimeout(resolveDelay, 500));
     }
@@ -226,6 +297,9 @@ export class ScriptedPlayer {
     await this.started(commandId);
     while (true) {
       const observation = await this.observe();
+      if (!observation.owned_entities.some(item => idOf(item) === entityId)) {
+        throw new EntityMissingFailure(entityId, "collection assignment");
+      }
       const state = observation.collector_states.find(item => Number(item.entity_id) === entityId);
       if (state?.assigned_resource_type === resourceTypeId && state.activity !== "idle") {
         log("collection_assigned", { entity_id: entityId, resource_type_id: resourceTypeId, activity: state.activity });
@@ -238,6 +312,9 @@ export class ScriptedPlayer {
   async waitForSolarCollection(entityId: number): Promise<void> {
     while (true) {
       const observation = await this.observe();
+      if (!observation.owned_entities.some(item => idOf(item) === entityId)) {
+        throw new EntityMissingFailure(entityId, "solar collection");
+      }
       const state = observation.collector_states.find(item => Number(item.entity_id) === entityId);
       if (state?.activity === "proximity_collecting" && state.resource_type === "energy" &&
           Number(state.effective_rate_per_second) > 0) {
@@ -327,7 +404,9 @@ export async function runDiscoveryScenario(player: ScriptedPlayer): Promise<void
   if (!star) throw new Error("no player-visible yellow star");
   const starPos = pointOf(star);
   const separation = distance(starPos, habitatStart);
-  if (separation <= RADIATION_RADIUS + 50) throw new Error("starting habitat is too close to the nearest star");
+  if (separation <= RADIATION_RADIUS + 50) {
+    throw new Error(`starting habitat ${String(habitat.id)} is ${Math.round(separation)} units from star ${String(star.id)}; required clearance is ${RADIATION_RADIUS + 50}`);
+  }
   const direction = { x: (habitatStart.x - starPos.x) / separation, y: (habitatStart.y - starPos.y) / separation };
   const solarSite = { x: starPos.x + direction.x * SOLAR_SITE_RADIUS, y: starPos.y + direction.y * SOLAR_SITE_RADIUS };
   const habitatSite = { x: starPos.x + direction.x * HABITAT_SITE_RADIUS, y: starPos.y + direction.y * HABITAT_SITE_RADIUS };
@@ -369,7 +448,7 @@ export async function runDiscoveryScenario(player: ScriptedPlayer): Promise<void
   await player.collect(idOf(solar), "energy");
   await player.waitForSolarCollection(idOf(solar));
   const activeSolar = (await player.observe()).owned_entities.find(item => idOf(item) === idOf(solar));
-  if (!activeSolar) throw new Error(`solar collector ${String(solar.id)} disappeared after collection started`);
+  if (!activeSolar) throw new EntityMissingFailure(idOf(solar), "solar collection");
   for (const source of await player.visible(["star_yellow", "theta"])) {
     if (distance(pointOf(source), pointOf(activeSolar)) < RADIATION_RADIUS + 100) {
       throw new Error(`collecting solar collector ${String(solar.id)} moved too close to source ${String(source.id)}`);
@@ -438,6 +517,7 @@ export async function runScriptedPlayer(config: Config): Promise<void> {
   const client = new Client({ name: "bitwars-scripted-player", version: "0.1.0" });
   let player: ScriptedPlayer | undefined;
   let workflowError: unknown;
+  let failure: Failure | undefined;
   let workflowCompleted = false;
   const cleanupErrors: string[] = [];
   try {
@@ -448,6 +528,7 @@ export async function runScriptedPlayer(config: Config): Promise<void> {
     workflowCompleted = true;
   } catch (error) {
     workflowError = error;
+    failure = player ? await player.diagnoseFailure(error, startedAt) : { reason: "workflow_error" };
   }
   if (player) {
     try { await player.disconnect(); }
@@ -460,6 +541,7 @@ export async function runScriptedPlayer(config: Config): Promise<void> {
     username: config.username, run_id: player?.run_id,
     success, duration_ms: Date.now() - startedAt,
     ...(workflowError === undefined ? {} : { error: String(workflowError) }),
+    ...(!success ? { failure: failure ?? { reason: "cleanup_failed" } } : {}),
     ...(cleanupErrors.length ? { cleanup_errors: cleanupErrors } : {}),
   });
   if (!success) throw workflowError ?? new Error(cleanupErrors.join("; ") || "scenario did not complete");

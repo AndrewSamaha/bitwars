@@ -7,6 +7,7 @@ import { logger, withAxiom } from "@/lib/axiom/server";
 import { requireAuthOr401 } from "@/features/users/utils/auth";
 import { redis } from "@/lib/db/connection";
 import { VisibilityFilter } from "@/lib/db/utils/visibility";
+import { trackPlayerConnection } from "@/lib/db/utils/player-presence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,7 +55,12 @@ export const GET = withAxiom(async (req: Request) => {
 
   // Set up connection and streaming logic
   (async () => {
+    let stopTracking: (() => Promise<void>) | undefined;
     try {
+      if (playerId) {
+        try { stopTracking = await trackPlayerConnection(GAME_ID, playerId); }
+        catch (error) { logger.warn("v2/stream:presence:start:error", { GAME_ID, playerId, error: String(error) }); }
+      }
       // (Handshake and boot delay removed; client now gates readiness.)
 
       const streamEvents = `rts:match:${GAME_ID}:events`;
@@ -142,6 +148,10 @@ export const GET = withAxiom(async (req: Request) => {
       logger.error("v2/stream:fatal", { GAME_ID, sid, error: (e as any)?.message || String(e) });
     } finally {
       await end();
+      if (stopTracking) {
+        try { await stopTracking(); }
+        catch (error) { logger.warn("v2/stream:presence:close:error", { GAME_ID, playerId, error: String(error) }); }
+      }
       logger.info("v2/stream:close", { GAME_ID, sid });
     }
   })();

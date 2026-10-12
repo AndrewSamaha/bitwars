@@ -42,7 +42,13 @@ The runner writes one stdout JSON record when each bot starts and finishes, then
 
 `summary.json` contains counts, timing, exit codes, signals, timeout flags, each bot's `scenario_result` when present, and log paths. A bot succeeds only when it exits with code 0 and emits a matching `scenario_result` with `success: true`. The runner exits with code 0 only if **all** requested bots succeed. Any failed, timed out, interrupted, or unstarted bot makes it exit with code 1. A configuration or output directory error also exits with code 1 and emits `runner_error` on stderr.
 
+Failed bots include a `failure` object in their `bot_finished` record and per-bot `summary.json` result. Its `reason` is a stable category. If a command's entity was destroyed or an entity disappeared during a step, the bot checks player-visible gameplay history and includes `entity_id`, `cause`, and the attacker entity and owner when known. An opposing player attack uses `reason: "entity_destroyed_by_other_player"`; an interrupted command without a matching destruction event uses `reason: "command_interrupted"`. The original error, command lifecycle fields, and event ID remain available for diagnosis. A history lookup problem appears as `diagnostic_error` and does not replace the original failure. Runner timeouts and missing bot results have their own failure reasons. The final `runner_result` and `summary.json` include `failure_reasons` counts.
+
+For example, a destroyed builder produces `failure: { "reason": "entity_destroyed_by_other_player", "entity_id": 896, "cause": "dismantle", "attacker": { "entity_id": 817, "owner_player_id": "..." } }` in its `bot_finished` record. The bot still exits with code 1 and has status `failed`.
+
 `Ctrl-C` stops new launches, signals active bot process groups, waits for their exit, and records unstarted bots in the summary. Bot stdout and stderr remain separate so concurrent runs do not interleave their step records. Logs and summaries live under ignored `.metrics/` by default; copy them elsewhere if they must be retained.
+
+The engine's Axiom `engine_tick_timing` and `engine_tick_phase_timing` records include `connected_player_count`, sampled at the end of each tick timing window. It counts distinct authenticated players with a live game SSE connection, so two tabs or streams for one player count once. Connections refresh a 30-second lease every 10 seconds; a crashed stream drops out after its lease expires. The **Engine Tick Timing** dashboard has p50 and p95 tick-duration scatter plots against this count. The plots only include records emitted after the updated web and engine services are running.
 
 ## Scaling path
 
