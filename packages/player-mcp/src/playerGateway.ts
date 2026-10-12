@@ -551,6 +551,24 @@ export class PlayerGateway {
     };
   }
 
+  getVisibleEntities(handle: string, entityTypeIds: string[] = []) {
+    const session = this.required(handle);
+    const types = new Set(entityTypeIds);
+    const entities = [...session.entities.values()]
+      .filter(item => types.size === 0 || (item.entity_type_id !== undefined && types.has(item.entity_type_id)))
+      .sort((left, right) => {
+        const a = String(left.id);
+        const b = String(right.id);
+        if (/^\d+$/.test(a) && /^\d+$/.test(b)) {
+          const first = BigInt(a);
+          const second = BigInt(b);
+          return first < second ? -1 : first > second ? 1 : 0;
+        }
+        return a < b ? -1 : a > b ? 1 : 0;
+      });
+    return { run_id: session.runId, tick: session.tick, ready: session.connected && session.snapshotSeen && session.handshakeSeen, entities };
+  }
+
   getCommand(handle: string, clientCmdId: string): CommandStatus | null {
     return this.required(handle).commands.get(clientCmdId) ?? null;
   }

@@ -6,6 +6,7 @@
   "scripts": {
     "start": "tsx src/server.ts",
     "bot": "node --import tsx src/deterministicPlayer.ts",
+    "scenario": "node --import tsx src/scriptedPlayer.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

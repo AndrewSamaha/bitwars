@@ -11,6 +11,7 @@ enabled_tools = [
   "observe_events",
   "get_player_state",
   "get_observation",
+  "get_visible_entities",
   "get_changes",
   "get_command",
   "wait_for_observation",

@@ -31,7 +31,7 @@ starts the local stdio server in `packages/player-mcp`, targets
 local Codex session, confirm `bitwars_player` is connected (`/mcp`) and use its
 tools for player actions; do not substitute direct game HTTP calls. The
 configured tool set includes `connect_player`, `get_observation`,
-`get_changes`, `get_command`, `wait_for_observation`, `set_progress_watch`,
+`get_visible_entities`, `get_changes`, `get_command`, `wait_for_observation`, `set_progress_watch`,
 `send_intent`, `disconnect_player`, and the legacy `get_player_state` and
 `observe_events` views.
 
@@ -125,3 +125,27 @@ The deterministic bot consumes `get_changes` and stops on a gap. Pass
 available for wall-clock runs. Record the returned observation and change
 stream when exact replay matters, since network timing still determines which
 tick a live bot first sees.
+
+## Scripted discovery bot
+
+The LLM-free scenario controller uses only the player MCP. It selects the
+starting habitat, workers, and nearest visible yellow star with stable ID
+tie-breaks, then performs the collection, safe movement, solar build and
+activation, habitat move, and worker production above. It checks command
+lifecycle and observed entity state between dependent actions and stops on a
+stream gap, run change, ambiguous entity selection, or unsafe route.
+The route and clearance calculations use the current content's 1,200-unit
+radiation boundary and worker/collector hull sizes; update those constants if
+the game content changes.
+
+```bash
+pnpm --filter @bitwars/player-mcp scenario -- \
+  --username loadtest-scenario-1 --allow-game-writes \
+  --timeout-seconds 1200
+```
+
+The command writes structured step records to stdout. It connects to the local
+game by default; a remote URL also requires `--allow-remote`. Running it joins
+and changes the active world. If the starting habitat is outside construction
+sharing range, the script moves it before beginning the solar build so the
+builder can draw resources.

@@ -83,6 +83,10 @@ function createServer() {
     description: "Read the current player observation and semantic change cursor. Equivalent to get_player_state.",
     inputSchema: handleSchema,
   }, ({ handle }) => tool(() => gateway.getPlayerState(handle))());
+  server.registerTool("get_visible_entities", {
+    description: "Read currently player-visible entities, optionally filtered by entity type. Includes neutral stars and resource nodes; never reveals hidden entities.",
+    inputSchema: handleSchema.extend({ entity_type_ids: z.array(z.string().min(1)).max(32).optional() }),
+  }, ({ handle, entity_type_ids }) => tool(() => gateway.getVisibleEntities(handle, entity_type_ids))());
   server.registerTool("get_changes", {
     description: "Read ordered, durable player changes after a semantic cursor. Include run_id when continuing a prior observation.",
     inputSchema: handleSchema.extend({

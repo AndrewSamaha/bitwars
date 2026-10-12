@@ -45,6 +45,7 @@ Expose a small, typed MCP tool surface:
 | `observe_events` | Return a bounded batch since a cursor, optionally waiting briefly; report gaps/overflow explicitly. Include receive timestamps and raw-byte counts. |
 | `get_player_state` | Return the gateway's current player-visible state and connection/sequence status, derived from that player's stream and handshake. |
 | `get_observation` | Return current owned entities, collector states, active intents, progress, run ID, and semantic cursor. |
+| `get_visible_entities` | Read currently player-visible entities, with optional entity type filtering. |
 | `get_changes` | Return durable semantic changes after a run-scoped cursor; report resync gaps. |
 | `get_command` | Return the HTTP receipt and latest lifecycle state for a submitted command. |
 | `wait_for_observation` | Wait up to 60 seconds for a command, entity count, collector activity, or resource condition. |
