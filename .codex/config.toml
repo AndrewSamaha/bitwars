@@ -10,6 +10,11 @@ enabled_tools = [
   "connect_player",
   "observe_events",
   "get_player_state",
+  "get_observation",
+  "get_changes",
+  "get_command",
+  "wait_for_observation",
+  "set_progress_watch",
   "send_intent",
   "disconnect_player",
 ]

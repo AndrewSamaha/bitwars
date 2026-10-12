@@ -44,6 +44,10 @@ Expose a small, typed MCP tool surface:
 | `connect_player` | Bind a provisioned test identity, open its SSE stream, perform the handshake, and return an opaque handle plus readiness state. |
 | `observe_events` | Return a bounded batch since a cursor, optionally waiting briefly; report gaps/overflow explicitly. Include receive timestamps and raw-byte counts. |
 | `get_player_state` | Return the gateway's current player-visible state and connection/sequence status, derived from that player's stream and handshake. |
+| `get_observation` | Return current owned entities, collector states, active intents, progress, run ID, and semantic cursor. |
+| `get_changes` | Return durable semantic changes after a run-scoped cursor; report resync gaps. |
+| `get_command` | Return the HTTP receipt and latest lifecycle state for a submitted command. |
+| `wait_for_observation` | Wait up to 60 seconds for a command, entity count, collector activity, or resource condition. |
 | `set_progress_watch` | Set the union of owned entity IDs polled through `/api/v3/build-state`; an empty list stops polling. |
 | `send_intent` | Submit an action for an owned entity with the current `run_id`, next sequence, and unique command ID; return IDs needed to correlate lifecycle events. |
 | `disconnect_player` | Close the player's SSE stream, timers, and buffers and release the handle. |
@@ -113,7 +117,7 @@ burst test; run deliberate bursts separately.
 ## Implementation milestones
 
 The first gateway implementation is in
-[`packages/player-mcp`](../packages/player-mcp). It exposes the six tools
+[`packages/player-mcp`](../packages/player-mcp). It exposes the tools
 above over local MCP stdio, uses the existing game HTTP/SSE endpoints, and
 has mocked game-endpoint and MCP protocol tests. A deterministic MCP client is
 also implemented there; the multi-player runner and live disposable-match

@@ -30,8 +30,10 @@ starts the local stdio server in `packages/player-mcp`, targets
 `http://127.0.0.1:3000`, opts into writes, and asks for tool approval. In a
 local Codex session, confirm `bitwars_player` is connected (`/mcp`) and use its
 tools for player actions; do not substitute direct game HTTP calls. The
-configured tool set is `connect_player`, `get_player_state`, `observe_events`,
-`send_intent`, and `disconnect_player`.
+configured tool set includes `connect_player`, `get_observation`,
+`get_changes`, `get_command`, `wait_for_observation`, `set_progress_watch`,
+`send_intent`, `disconnect_player`, and the legacy `get_player_state` and
+`observe_events` views.
 
 The gateway accepts `loadtest-*` usernames and logs in the player on connect.
 The requested mission authorizes the player actions listed here and the
@@ -67,13 +69,14 @@ part of the explicitly requested experiment.
    position from state/events to verify that the collector is outside the
    sun's radiation radius before continuing. Do not bypass MCP with direct
    HTTP.
-5. If safe placement is possible, build `collector_solar`, move the habitat
-   to a safe point near the same sun, and build two `worker` entities from the
+5. If safe placement is possible, build `collector_solar`. Identify the new
+   collector, issue its `Collect` intent for `energy`, and verify its activity.
+   Move the habitat to a safe point near the same sun, and build two `worker` entities from the
    habitat. Discover each new worker from subsequent state/events rather than
    guessing IDs, then issue the mineral and food collection intents. Confirm
    orders and resulting state, and disconnect the MCP player when finished.
 
-Use `observe_events` and `get_player_state` between dependent actions; do not
+Use `get_observation` and `wait_for_observation` between dependent actions; do not
 blindly batch the sequence. Keep a short record of entity IDs, chosen
 targets/distances, intent outcomes, and any missing state or tool capability.
 The world is shared and these intents mutate it by design. Record the active
@@ -82,3 +85,43 @@ the player identity or ownership is ambiguous, or the state indicates that
 these specific actions would interfere with unrelated play. Do not treat the
 fact that this is a shared world, by itself, as a reason to avoid the requested
 workflow experiment.
+
+## Observation contract for bots and agents
+
+`get_observation` returns the current owned entities, collector states, active
+intents, build progress, `run_id`, `tick`, and `change_cursor`. `get_changes`
+returns ordered semantic changes after a cursor: entity creation/removal,
+collector state transitions, command submission/lifecycle, and stream resyncs.
+The journal is stored on disk under `packages/player-mcp/.player-journal` by
+default (override with `BITWARS_PLAYER_MCP_JOURNAL_DIR`) and survives an MCP
+server restart. Keep the `run_id` with the cursor; pass both on each subsequent
+`get_changes` call. Start from the `change_cursor` in the first ready
+`get_observation`, then drain pages while `has_more` is true. Each MCP session
+records a resync boundary, so a cursor saved before a restart reports a gap.
+
+After `send_intent`, retain its `client_cmd_id`. `get_command` reports its HTTP
+receipt and latest lifecycle state; `wait_for_observation` can wait for that
+command to become terminal, for a new owned entity count, collector activity,
+or a resource threshold. Each wait is limited to 60 seconds; `met: false` means
+the condition was not reached during that wait, not that the command failed.
+For long builds, set a progress watch on the builder, repeat the wait as needed,
+and check `get_command` plus `get_observation.progress` between waits. Progress
+is a percentage and timestamp only; it does not explain a stall. The engine
+currently leaves a resource-stalled build `IN_PROGRESS` without publishing a
+`BLOCKED` lifecycle reason. Lifecycle states 5, 6, and 7 are terminal. For a solar
+collector, wait for the new `collector_solar` entity, inspect its position, then
+send `Collect` for `energy` from that entity and wait for its command lifecycle
+or collector activity. A completed build alone does not start collection.
+
+If `get_changes` reports `gap: true`, use its current `observation` to
+reconcile command IDs and entity state before acting again. A stream reconnect
+marks a possible gap, since upstream events could have been missed; the
+current snapshot restores state but cannot reconstruct every intervening
+transition. The legacy `observe_events` tool remains a bounded raw SSE debug
+view and can drop events under load.
+
+The deterministic bot consumes `get_changes` and stops on a gap. Pass
+`--step-ticks N` to schedule decisions in game ticks; `--step-ms` remains
+available for wall-clock runs. Record the returned observation and change
+stream when exact replay matters, since network timing still determines which
+tick a live bot first sees.

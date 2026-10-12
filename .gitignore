@@ -36,6 +36,7 @@ coverage/
 
 # metrics (latency probe, etc.)
 .metrics/
+**/.player-journal/
 
 # misc
 .DS_Store

@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { resolve } from "node:path";
+import { ObservationJournal, type PlayerChange } from "./observationJournal.js";
 
 export type GameEntity = {
   id: number | string;
@@ -16,6 +18,31 @@ export type PlayerEvent = {
   bytes: number;
   data: unknown;
 };
+
+export type CommandStatus = {
+  client_cmd_id: string;
+  run_id: string;
+  entity_id: number;
+  intent_type: IntentInput["type"];
+  client_seq: number;
+  accepted_http: boolean;
+  http_status: number;
+  lifecycle_state?: number;
+  lifecycle_reason?: number;
+  intent_id?: string;
+  server_tick?: string;
+  terminal: boolean;
+  updated_at_ms: number;
+};
+
+export type CollectorState = Record<string, unknown> & { entity_id: number | string };
+
+export type WaitCondition =
+  | { type: "command_terminal"; client_cmd_id: string }
+  | { type: "command_state"; client_cmd_id: string; state: number }
+  | { type: "entity_type_count"; entity_type_id: string; at_least: number }
+  | { type: "collector_activity"; entity_id: number; activity: string; resource_type_id?: string }
+  | { type: "resource_at_least"; entity_id: number; resource_type_id: string; amount: number };
 
 export type IntentInput =
   | { type: "Move"; entity_id: number; target: { x: number; y: number }; policy?: string }
@@ -41,6 +68,12 @@ type Session = {
   sending: boolean;
   generation: number;
   entities: Map<string, GameEntity>;
+  collectorStates: Map<string, CollectorState>;
+  commands: Map<string, CommandStatus>;
+  pendingLifecycles: Map<string, Record<string, unknown>[]>;
+  resyncRecordedGeneration: number;
+  journal?: ObservationJournal;
+  historyComplete: boolean;
   activeIntents: unknown[];
   progress: Record<string, unknown>;
   watchIds: string[];
@@ -67,6 +100,7 @@ type GatewayOptions = {
   maxEventBytes?: number;
   progressIntervalMs?: number;
   reconnectDelayMs?: number;
+  journalDir?: string;
 };
 
 function uuidV7(): string {
@@ -93,6 +127,14 @@ function entity(value: unknown): GameEntity | undefined {
   if (!data || (typeof data.id !== "number" && typeof data.id !== "string")) return undefined;
   return data as GameEntity;
 }
+
+function collectorState(value: unknown): CollectorState | undefined {
+  const data = object(value);
+  return data && (typeof data.entity_id === "number" || typeof data.entity_id === "string")
+    ? data as CollectorState : undefined;
+}
+
+const TERMINAL_LIFECYCLE_STATES = new Set([5, 6, 7]);
 
 function parseSseFrame(frame: string): { event: string; id?: string; data: unknown } | undefined {
   let event = "message";
@@ -123,6 +165,7 @@ export class PlayerGateway {
   private readonly maxEventBytes: number;
   private readonly progressIntervalMs: number;
   private readonly reconnectDelayMs: number;
+  private readonly journalDir: string;
 
   constructor(options: GatewayOptions) {
     this.baseUrl = new URL(options.baseUrl);
@@ -133,6 +176,7 @@ export class PlayerGateway {
     this.maxEventBytes = options.maxEventBytes ?? 2_000_000;
     this.progressIntervalMs = options.progressIntervalMs ?? 500;
     this.reconnectDelayMs = options.reconnectDelayMs ?? 500;
+    this.journalDir = options.journalDir ?? resolve(process.cwd(), ".player-journal");
   }
 
   private request(session: Session, path: string, init: RequestInit = {}): Promise<Response> {
@@ -146,6 +190,83 @@ export class PlayerGateway {
     const session = this.sessions.get(handle);
     if (!session || session.closed) throw new Error("unknown or closed player handle");
     return session;
+  }
+
+  private ensureJournal(session: Session, runId: string): void {
+    if (session.runId !== runId) {
+      session.commands.clear();
+      session.pendingLifecycles.clear();
+      session.activeIntents = [];
+      session.collectorStates.clear();
+      session.journal = undefined;
+      session.historyComplete = true;
+    }
+    if (session.journal) return;
+    try {
+      session.journal = new ObservationJournal(this.journalDir, session.username, runId);
+      for (const change of session.journal.all()) {
+        const command = object(change.data.command) as CommandStatus | undefined;
+        if (command?.client_cmd_id) session.commands.set(command.client_cmd_id, command);
+      }
+      session.journal.append({
+        run_id: runId, kind: "resync", received_at_ms: Date.now(),
+        data: { reason: session.journal.recoveredIncompleteRow ? "incomplete_journal_row" : "mcp_session_started" },
+      });
+    } catch (error) {
+      session.historyComplete = false;
+      session.lastError = `observation journal: ${String(error)}`;
+    }
+  }
+
+  private appendChange(session: Session, kind: PlayerChange["kind"], data: Record<string, unknown>): void {
+    if (!session.runId || !session.journal) return;
+    try {
+      session.journal.append({
+        run_id: session.runId, tick: session.tick, kind,
+        received_at_ms: Date.now(), data,
+      });
+    } catch (error) {
+      session.historyComplete = false;
+      session.lastError = `observation journal: ${String(error)}`;
+    }
+    this.wake(session);
+  }
+
+  private setActiveIntent(session: Session, command: CommandStatus): void {
+    if (command.lifecycle_state === 1) return;
+    const active = session.activeIntents.filter(item => {
+      const intent = object(item);
+      return command.terminal
+        ? intent?.client_cmd_id !== command.client_cmd_id
+        : intent?.entity_id !== command.entity_id;
+    });
+    if (!command.terminal) {
+      active.push({
+        entity_id: command.entity_id, intent_id: command.intent_id,
+        client_cmd_id: command.client_cmd_id, player_id: session.playerId,
+        started_tick: command.server_tick, intent_kind: command.intent_type.toLowerCase(),
+      });
+    }
+    session.activeIntents = active;
+  }
+
+  private applyLifecycle(session: Session, data: Record<string, unknown>): void {
+    const commandId = data.clientCmdId;
+    if (typeof commandId !== "string") return;
+    const previous = session.commands.get(commandId);
+    if (!previous) {
+      session.pendingLifecycles.set(commandId, [...(session.pendingLifecycles.get(commandId) ?? []), data]);
+      return;
+    }
+    const state = Number(data.state);
+    const command: CommandStatus = {
+      ...previous, lifecycle_state: state, lifecycle_reason: Number(data.reason),
+      intent_id: String(data.intentId ?? ""), server_tick: String(data.serverTick ?? ""),
+      terminal: TERMINAL_LIFECYCLE_STATES.has(state), updated_at_ms: Date.now(),
+    };
+    session.commands.set(commandId, command);
+    this.setActiveIntent(session, command);
+    this.appendChange(session, "lifecycle", { command, lifecycle: data });
   }
 
   async connectPlayer(username: string): Promise<{ handle: string; status: ReturnType<PlayerGateway["getPlayerState"]> }> {
@@ -174,6 +295,7 @@ export class PlayerGateway {
       handle, username, cookie: `player_token=${cookie}`, clientSeq: 0,
       connected: false, snapshotSeen: false, handshakeSeen: false,
       closed: false, sending: false, generation: 0, entities: new Map(),
+      collectorStates: new Map(), commands: new Map(), pendingLifecycles: new Map(), resyncRecordedGeneration: 0, historyComplete: true,
       activeIntents: [], progress: {}, watchIds: [], events: [], eventBytes: 0,
       nextCursor: 1, droppedEvents: 0, streamBytes: 0, progressRequests: 0,
       progressBytes: 0, progressPending: false, reconnects: 0, wake: new Set(),
@@ -195,10 +317,20 @@ export class PlayerGateway {
       session.abort?.abort();
       return;
     }
+    if (handshakeRunId) this.ensureJournal(session, handshakeRunId);
     session.runId = handshakeRunId || session.runId;
     session.playerId = typeof data.player_id === "string" ? data.player_id : session.playerId;
     session.clientSeq = Math.max(session.clientSeq, Number(data.last_processed_client_seq) || 0);
     session.activeIntents = Array.isArray(data.active_intents) ? data.active_intents : [];
+    for (const value of session.activeIntents) {
+      const active = object(value);
+      const commandId = active?.client_cmd_id;
+      if (typeof commandId !== "string") continue;
+      const command = session.commands.get(commandId);
+      if (command) session.commands.set(commandId, {
+        ...command, lifecycle_state: 3, terminal: false, updated_at_ms: Date.now(),
+      });
+    }
     session.handshakeSeen = true;
     this.wake(session);
   }
@@ -275,26 +407,69 @@ export class PlayerGateway {
           session.abort?.abort();
         });
       }
+      if (incomingRunId) this.ensureJournal(session, incomingRunId);
       session.runId = incomingRunId ?? session.runId;
       session.tick = data.tick as number | string | undefined;
+      if (session.reconnects > 0 && session.resyncRecordedGeneration !== session.generation) {
+        this.appendChange(session, "resync", { reason: "stream_reconnected", generation: session.generation });
+        session.resyncRecordedGeneration = session.generation;
+      }
       session.entities.clear();
+      session.collectorStates.clear();
       for (const item of Array.isArray(data.entities) ? data.entities : []) {
         const parsed = entity(item);
         if (parsed) session.entities.set(String(parsed.id), parsed);
       }
+      for (const item of Array.isArray(data.collector_states) ? data.collector_states : []) {
+        const parsed = collectorState(item);
+        if (parsed) session.collectorStates.set(String(parsed.entity_id), parsed);
+      }
       session.snapshotSeen = true;
     } else if (event.event === "delta" && data) {
       session.tick = data.tick as number | string | undefined;
-      for (const id of Array.isArray(data.removed_entity_ids) ? data.removed_entity_ids : []) session.entities.delete(String(id));
-      for (const id of Array.isArray(data.hidden_entity_ids) ? data.hidden_entity_ids : []) session.entities.delete(String(id));
+      for (const id of Array.isArray(data.removed_entity_ids) ? data.removed_entity_ids : []) {
+        const previous = session.entities.get(String(id));
+        if (previous?.owner_player_id === session.playerId) this.appendChange(session, "entity_removed", { entity_id: id });
+        session.entities.delete(String(id));
+        session.collectorStates.delete(String(id));
+      }
+      for (const id of Array.isArray(data.hidden_entity_ids) ? data.hidden_entity_ids : []) {
+        session.entities.delete(String(id));
+        session.collectorStates.delete(String(id));
+      }
       for (const item of Array.isArray(data.updates) ? data.updates : []) {
         const update = entity(item);
-        if (update) session.entities.set(String(update.id), { ...session.entities.get(String(update.id)), ...update });
+        if (!update) continue;
+        const previous = session.entities.get(String(update.id));
+        const merged = { ...previous, ...update };
+        session.entities.set(String(update.id), merged);
+        if (!previous && merged.owner_player_id === session.playerId) {
+          this.appendChange(session, "entity_created", { entity: merged });
+        }
       }
+      for (const item of Array.isArray(data.collector_state_updates) ? data.collector_state_updates : []) {
+        const update = collectorState(item);
+        if (!update) continue;
+        const id = String(update.entity_id);
+        const previous = session.collectorStates.get(id);
+        const merged = { ...previous, ...update };
+        session.collectorStates.set(id, merged);
+        if (session.entities.get(id)?.owner_player_id === session.playerId &&
+            JSON.stringify(previous) !== JSON.stringify(merged)) {
+          this.appendChange(session, "collector_state", { collector_state: merged });
+        }
+      }
+    } else if (event.event === "lifecycle" && data && data.playerId === session.playerId) {
+      this.applyLifecycle(session, data);
     } else if (event.event === "world-reset") {
+      this.appendChange(session, "world_reset", { reset: data ?? {} });
       session.snapshotSeen = false;
       session.handshakeSeen = false;
       session.entities.clear();
+      session.collectorStates.clear();
+      session.commands.clear();
+      session.pendingLifecycles.clear();
+      session.journal = undefined;
       session.progress = {};
       session.watchIds = [];
       session.runId = undefined;
@@ -346,6 +521,9 @@ export class PlayerGateway {
   getPlayerState(handle: string) {
     const session = this.required(handle);
     const owned = [...session.entities.values()].filter(item => item.owner_player_id === session.playerId);
+    const collectorStates = [...session.collectorStates.values()].filter(
+      item => session.entities.get(String(item.entity_id))?.owner_player_id === session.playerId,
+    );
     return {
       username: session.username,
       player_id: session.playerId,
@@ -356,9 +534,12 @@ export class PlayerGateway {
       ready: session.connected && session.snapshotSeen && session.handshakeSeen,
       visible_entity_count: session.entities.size,
       owned_entities: owned,
+      collector_states: collectorStates,
       active_intents: session.activeIntents,
       progress: session.progress,
       watched_entity_ids: session.watchIds,
+      change_cursor: session.journal?.cursor ?? 0,
+      history_complete: session.historyComplete,
       metrics: {
         stream_bytes: session.streamBytes,
         progress_requests: session.progressRequests,
@@ -367,6 +548,72 @@ export class PlayerGateway {
         dropped_events: session.droppedEvents,
       },
       last_error: session.lastError,
+    };
+  }
+
+  getCommand(handle: string, clientCmdId: string): CommandStatus | null {
+    return this.required(handle).commands.get(clientCmdId) ?? null;
+  }
+
+  getChanges(handle: string, cursor = 0, limit = 100, runId?: string) {
+    const session = this.required(handle);
+    const reset = Boolean(runId && runId !== session.runId);
+    if (reset || !session.journal || cursor > session.journal.cursor) {
+      return {
+        run_id: session.runId, changes: [], next_cursor: session.journal?.cursor ?? 0,
+        has_more: false, gap: true, observation: this.getPlayerState(handle),
+      };
+    }
+    const batch = session.journal.after(cursor, limit);
+    const gap = !session.historyComplete || session.journal.all().some(
+      change => change.cursor > cursor && change.kind === "resync",
+    );
+    return {
+      run_id: session.runId, ...batch, gap,
+      ...(gap ? { observation: this.getPlayerState(handle) } : {}),
+    };
+  }
+
+  private conditionMet(session: Session, condition: WaitCondition): boolean {
+    if (condition.type === "command_terminal") return !!session.commands.get(condition.client_cmd_id)?.terminal;
+    if (condition.type === "command_state") return session.commands.get(condition.client_cmd_id)?.lifecycle_state === condition.state;
+    if (condition.type === "entity_type_count") {
+      return [...session.entities.values()].filter(
+        item => item.owner_player_id === session.playerId && item.entity_type_id === condition.entity_type_id,
+      ).length >= condition.at_least;
+    }
+    if (condition.type === "collector_activity") {
+      const state = session.collectorStates.get(String(condition.entity_id));
+      return session.entities.get(String(condition.entity_id))?.owner_player_id === session.playerId &&
+        state?.activity === condition.activity &&
+        (!condition.resource_type_id || state?.resource_type === condition.resource_type_id);
+    }
+    const owned = session.entities.get(String(condition.entity_id));
+    if (!owned || owned.owner_player_id !== session.playerId) return false;
+    const resources = Array.isArray(owned.resources) ? owned.resources : [];
+    return resources.some(item => {
+      const resource = object(item);
+      return resource?.resource_type === condition.resource_type_id && Number(resource.amount) >= condition.amount;
+    });
+  }
+
+  async waitForObservation(handle: string, condition: WaitCondition, waitMs = 0, runId?: string) {
+    const session = this.required(handle);
+    const deadline = Date.now() + Math.min(Math.max(waitMs, 0), 60_000);
+    while (!session.closed && (!runId || runId === session.runId) && !this.conditionMet(session, condition)) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await new Promise<void>(resolve => {
+        const wake = () => { clearTimeout(timer); session.wake.delete(wake); resolve(); };
+        const timer = setTimeout(wake, remaining);
+        session.wake.add(wake);
+        if (this.conditionMet(session, condition) || session.closed || (runId && runId !== session.runId)) wake();
+      });
+    }
+    return {
+      met: !session.closed && (!runId || runId === session.runId) && this.conditionMet(session, condition),
+      run_changed: Boolean(runId && runId !== session.runId),
+      observation: this.getPlayerState(handle),
     };
   }
 
@@ -429,6 +676,18 @@ export class PlayerGateway {
       const body = await response.text();
       let result: unknown = body;
       try { result = JSON.parse(body); } catch { /* Preserve non-JSON errors. */ }
+      const command: CommandStatus = {
+        client_cmd_id: clientCmdId, run_id: session.runId, entity_id: input.entity_id,
+        intent_type: input.type, client_seq: clientSeq, accepted_http: response.ok,
+        http_status: response.status, terminal: !response.ok, updated_at_ms: Date.now(),
+      };
+      session.commands.set(clientCmdId, command);
+      this.appendChange(session, "command_submitted", { command });
+      const pending = session.pendingLifecycles.get(clientCmdId);
+      if (pending) {
+        session.pendingLifecycles.delete(clientCmdId);
+        for (const lifecycle of pending) this.applyLifecycle(session, lifecycle);
+      }
       return { accepted_http: response.ok, status: response.status, client_seq: clientSeq, client_cmd_id: clientCmdId, result };
     } finally {
       session.sending = false;

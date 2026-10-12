@@ -5,7 +5,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CallToolResult } from "@modelcontextprotocol/client";
 import { DeterministicPolicy, type PlayerProfile } from "./deterministicPolicy.js";
-import type { GameEntity, IntentInput, PlayerEvent } from "./playerGateway.js";
+import type { GameEntity, IntentInput } from "./playerGateway.js";
+import type { PlayerChange } from "./observationJournal.js";
 
 type BotConfig = {
   username: string;
@@ -14,6 +15,7 @@ type BotConfig = {
   baseUrl: string;
   durationSeconds: number;
   stepMs: number;
+  stepTicks?: number;
   jitterPercent: number;
   moveRadius: number;
   entityTypeId?: string;
@@ -31,12 +33,14 @@ type PlayerState = {
   connected: boolean;
   ready: boolean;
   owned_entities: GameEntity[];
+  change_cursor: number;
+  history_complete: boolean;
   progress: Record<string, unknown>;
   metrics: Record<string, number>;
   last_error?: string;
 };
 
-type EventBatch = { events: PlayerEvent[]; next_cursor: number; gap: boolean; ready: boolean };
+type ChangeBatch = { changes: PlayerChange[]; next_cursor: number; has_more: boolean; gap: boolean; run_id?: string; observation?: PlayerState };
 
 function parseArgs(argv: string[]): Map<string, string> {
   const result = new Map<string, string>();
@@ -95,6 +99,11 @@ function readConfig(argv: string[]): BotConfig | undefined {
     logPath: resolve(args.get("log-path") ?? `.metrics/player-mcp/${username}-${seed}.jsonl`),
     allowRemote,
   };
+  if (args.has("step-ticks")) {
+    const stepTicks = positiveNumber(args, "step-ticks", 1);
+    if (!Number.isSafeInteger(stepTicks)) throw new Error("--step-ticks must be a positive integer");
+    config.stepTicks = stepTicks;
+  }
   const entityTypeId = args.get("entity-type-id");
   const blueprintId = args.get("blueprint-id");
   if (entityTypeId) config.entityTypeId = entityTypeId;
@@ -110,7 +119,7 @@ function help(): string {
     "pnpm --filter @bitwars/player-mcp bot -- --username loadtest-a --seed run-1 --profile mover --allow-game-writes",
     "",
     "Options: --username --seed --profile observer|mover|builder --duration-seconds",
-    "        --step-ms --jitter-percent --move-radius --entity-type-id --blueprint-id",
+    "        --step-ms --step-ticks --jitter-percent --move-radius --entity-type-id --blueprint-id",
     "        --base-url --allow-remote --allow-game-writes --log-path",
   ].join("\n");
 }
@@ -134,9 +143,10 @@ function record(stream: ReturnType<typeof createWriteStream>, value: unknown): v
   stream.write(`${JSON.stringify(value)}\n`);
 }
 
-function lifecycle(event: PlayerEvent): { clientCmdId?: string; state?: number; reason?: string } | undefined {
-  if (event.event !== "lifecycle" || !event.data || typeof event.data !== "object") return undefined;
-  const data = event.data as Record<string, unknown>;
+function lifecycle(event: PlayerChange): { clientCmdId?: string; state?: number; reason?: string } | undefined {
+  if (event.kind !== "lifecycle") return undefined;
+  const data = event.data.lifecycle as Record<string, unknown> | undefined;
+  if (!data) return undefined;
   return {
     clientCmdId: typeof data.clientCmdId === "string" ? data.clientCmdId : undefined,
     state: Number.isFinite(Number(data.state)) ? Number(data.state) : undefined,
@@ -176,6 +186,7 @@ export async function runDeterministicPlayer(config: BotConfig): Promise<void> {
   let stopping = false;
   let cursor = 0;
   let nextActionAt = 0;
+  let nextActionTick: number | undefined;
   let actionsSent = 0;
   let actionsRejected = 0;
   let pendingBuild: { commandId: string; entityId: number } | undefined;
@@ -193,23 +204,32 @@ export async function runDeterministicPlayer(config: BotConfig): Promise<void> {
     record(log, { kind: "player_connected", timestamp_ms: Date.now(), handle });
 
     const deadline = Date.now() + config.durationSeconds * 1000;
-    let state = await call<PlayerState>(client, "get_player_state", { handle });
+    let state = await call<PlayerState>(client, "get_observation", { handle });
     while (!state.ready && !stopping && Date.now() < deadline) {
-      await call<EventBatch>(client, "observe_events", { handle, cursor, limit: 100, wait_ms: 500 });
-      state = await call<PlayerState>(client, "get_player_state", { handle });
+      await wait(100);
+      state = await call<PlayerState>(client, "get_observation", { handle });
     }
     if (!state.ready) throw new Error(`player did not become ready: ${state.last_error ?? "connection timeout"}`);
+    if (!state.history_complete) throw new Error("player observation history is incomplete");
+    cursor = state.change_cursor;
     record(log, { kind: "player_ready", timestamp_ms: Date.now(), player_id: state.player_id, run_id: state.run_id, tick: state.tick });
     nextActionAt = Date.now();
+    if (config.stepTicks !== undefined) {
+      const tick = Number(state.tick);
+      if (!Number.isSafeInteger(tick)) throw new Error("tick-based scheduling requires a safe integer game tick");
+      nextActionTick = tick;
+    }
 
     while (!stopping && Date.now() < deadline) {
       if (!state.ready) {
-        state = await call<PlayerState>(client, "get_player_state", { handle });
-        await call<EventBatch>(client, "observe_events", { handle, cursor, limit: 100, wait_ms: 500 });
+        await wait(100);
+        state = await call<PlayerState>(client, "get_observation", { handle });
         continue;
       }
 
-      if (Date.now() >= nextActionAt) {
+      const currentTick = Number(state.tick);
+      if (config.stepTicks !== undefined && !Number.isSafeInteger(currentTick)) throw new Error("game tick is not a safe integer");
+      if (config.stepTicks !== undefined ? currentTick >= nextActionTick! : Date.now() >= nextActionAt) {
         const randomStateBefore = policy.getRandomState();
         const decision = policy.decide({
           tick: state.tick,
@@ -246,34 +266,44 @@ export async function runDeterministicPlayer(config: BotConfig): Promise<void> {
             action: decision.action, result: response.result,
           });
         }
-        const maxJitter = Math.floor(config.stepMs * config.jitterPercent / 100);
+        const interval = config.stepTicks ?? config.stepMs;
+        const maxJitter = Math.floor(interval * config.jitterPercent / 100);
         const jitter = policy.nextJitter(maxJitter);
-        record(log, { kind: "schedule", timestamp_ms: Date.now(), next_delay_ms: config.stepMs + jitter, random_state: policy.getRandomState() });
-        nextActionAt = Date.now() + config.stepMs + jitter;
+        if (config.stepTicks !== undefined) {
+          nextActionTick = currentTick + config.stepTicks + jitter;
+          record(log, { kind: "schedule", timestamp_ms: Date.now(), next_tick: nextActionTick, random_state: policy.getRandomState() });
+        } else {
+          nextActionAt = Date.now() + config.stepMs + jitter;
+          record(log, { kind: "schedule", timestamp_ms: Date.now(), next_delay_ms: config.stepMs + jitter, random_state: policy.getRandomState() });
+        }
       }
 
-      const batch = await call<EventBatch>(client, "observe_events", {
-        handle, cursor, limit: 100, wait_ms: Math.min(500, Math.max(0, deadline - Date.now())),
+      const batch = await call<ChangeBatch>(client, "get_changes", {
+        handle, cursor, limit: 500, run_id: state.run_id,
       });
-      if (batch.gap) record(log, { kind: "event_gap", timestamp_ms: Date.now(), cursor, next_cursor: batch.next_cursor });
+      if (batch.gap) {
+        record(log, { kind: "observation_gap", timestamp_ms: Date.now(), cursor, next_cursor: batch.next_cursor, observation: batch.observation });
+        throw new Error("observation history has a gap; reconcile before continuing");
+      }
       cursor = batch.next_cursor;
-      for (const event of batch.events) {
+      for (const event of batch.changes) {
         const stateEvent = lifecycle(event);
         if (!stateEvent) continue;
-        record(log, { kind: "lifecycle", timestamp_ms: event.received_at_ms, event_cursor: event.cursor, event_id: event.id, ...stateEvent });
+        record(log, { kind: "lifecycle", timestamp_ms: event.received_at_ms, change_cursor: event.cursor, ...stateEvent });
         if (pendingBuild?.commandId === stateEvent.clientCmdId && stateEvent.state !== undefined && buildTerminalStates.has(stateEvent.state)) {
           if (stateEvent.state === 5) completedBuilds++;
           pendingBuild = undefined;
           await call(client, "set_progress_watch", { handle, entity_ids: [] });
         }
       }
-      state = await call<PlayerState>(client, "get_player_state", { handle });
+      state = await call<PlayerState>(client, "get_observation", { handle });
+      if (!batch.has_more) await wait(Math.min(100, Math.max(0, deadline - Date.now())));
     }
 
     record(log, {
       kind: "summary", timestamp_ms: Date.now(), duration_seconds: config.durationSeconds,
       actions_sent: actionsSent, actions_rejected: actionsRejected, completed_builds: completedBuilds,
-      player_state: handle ? await call(client, "get_player_state", { handle }) : undefined,
+      player_state: handle ? await call(client, "get_observation", { handle }) : undefined,
     });
   } finally {
     if (handle) {
