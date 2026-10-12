@@ -1,0 +1,25 @@
+[mcp_servers.bitwars_player]
+command = "node"
+args = ["--import", "tsx", "src/server.ts"]
+cwd = "/Users/andrew/Development/bitwars/packages/player-mcp"
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+default_tools_approval_mode = "approve"
+enabled = true
+enabled_tools = [
+  "connect_player",
+  "observe_events",
+  "get_player_state",
+  "get_observation",
+  "get_visible_entities",
+  "get_changes",
+  "get_command",
+  "wait_for_observation",
+  "set_progress_watch",
+  "send_intent",
+  "disconnect_player",
+]
+
+[mcp_servers.bitwars_player.env]
+BITWARS_PLAYER_MCP_BASE_URL = "http://127.0.0.1:3000"
+BITWARS_PLAYER_MCP_ALLOW_WRITES = "1"

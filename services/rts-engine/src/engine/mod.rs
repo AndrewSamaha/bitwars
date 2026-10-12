@@ -2074,7 +2074,26 @@ impl Engine {
         };
 
         let mut rng = rand::thread_rng();
-        let planets: Vec<_> = self
+        let loadout_idx = rng.gen_range(0..sc.loadouts.len());
+        let loadout = &sc.loadouts[loadout_idx];
+        // Spawned units can chain away from the habitat. Reserve enough room
+        // for every member of the loadout, including the last sampled unit.
+        let spawn_spread = sc.max_entity_spawn_distance
+            .max(sc.min_entity_spawn_distance)
+            .max(0.0)
+            * loadout.values().copied().sum::<usize>().saturating_sub(1) as f32;
+        let radiation_sources: Vec<(f32, f32, f32)> = self.state.entities.iter()
+            .filter_map(|entity| {
+                let pos = entity.pos.as_ref()?;
+                let definition = _content.get(&entity.entity_type_id)?;
+                let radius = definition.radiation_sources.iter()
+                    .filter(|source| source.damage_per_second > 0.0)
+                    .map(|source| source.max_effective_distance.max(0.0))
+                    .fold(0.0_f32, f32::max);
+                (radius > 0.0).then_some((pos.x, pos.y, radius + spawn_spread + 50.0))
+            })
+            .collect();
+        let mut planets: Vec<_> = self
             .state
             .entities
             .iter()
@@ -2082,18 +2101,30 @@ impl Engine {
                 (entity.entity_type_id == "planet_blue")
                     .then_some(entity.pos.as_ref())
                     .flatten()
+                    .map(|pos| (pos.x, pos.y))
             })
             .collect();
-        let Some(planet) = planets.choose(&mut rng) else {
+        if planets.is_empty() {
             anyhow::bail!("cannot spawn player: celestial field has no planet_blue");
+        }
+        planets.shuffle(&mut rng);
+        let spawn_position = planets.iter().find_map(|(planet_x, planet_y)| {
+            (0..64).find_map(|_| {
+                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                let dist = rng.gen_range(200.0..=800.0);
+                let x = planet_x + angle.cos() * dist;
+                let y = planet_y + angle.sin() * dist;
+                radiation_sources.iter().all(|(source_x, source_y, clearance)| {
+                    let dx = x - source_x;
+                    let dy = y - source_y;
+                    dx * dx + dy * dy >= clearance * clearance
+                }).then_some((x, y))
+            })
+        });
+        let Some((spawn_x, spawn_y)) = spawn_position else {
+            anyhow::bail!("cannot spawn player: no radiation-safe position near a planet");
         };
-        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-        let dist = rng.gen_range(200.0..=800.0);
-        let spawn_x = planet.x + angle.cos() * dist;
-        let spawn_y = planet.y + angle.sin() * dist;
 
-        let loadout_idx = rand::thread_rng().gen_range(0..sc.loadouts.len());
-        let loadout = &sc.loadouts[loadout_idx];
         if !sc.starting_resources.is_empty() {
             let recipient_type = &sc.starting_resources_recipient_type;
             if loadout.get(recipient_type).copied().unwrap_or(0) != 1 {
@@ -4910,6 +4941,13 @@ impl Engine {
                         .filter(|entity| entity.owner_player_id == RAIDERS_OWNER).count();
                     let player_entity_count = self.state.entities.iter()
                         .filter(|entity| is_player_owner(&entity.owner_player_id)).count();
+                    let connected_player_count = match self.redis.connected_player_count().await {
+                        Ok(count) => Some(count),
+                        Err(error) => {
+                            warn!(?error, "failed to read connected player count");
+                            None
+                        }
+                    };
                     let host_metrics = host_sampler.as_mut().expect("telemetry enabled").sample();
                     tokio::spawn(async move {
                         if let Err(error) = telemetry
@@ -4919,6 +4957,7 @@ impl Engine {
                                 entity_count,
                                 raider_entity_count,
                                 player_entity_count,
+                                connected_player_count,
                                 host_metrics,
                                 raider_ai_spatial_index_enabled,
                                 raider_ai_processed_p50,
