@@ -65,6 +65,13 @@ pub struct EntityActiveIntent {
     pub transfer_route: Option<TransferRoute>,
 }
 
+pub struct ConstructionProgressUpdate {
+    pub entity_id: u64,
+    pub intent_kind: &'static str,
+    pub target_entity_type_id: String,
+    pub progress: f32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransferRoute {
     pub donor_id: u64,
@@ -899,6 +906,55 @@ impl RedisClient {
         entry.progress_updated_at_unix_ms = Some(current_unix_ms());
         let json = serde_json::to_string(&entry)?;
         let _: () = self.conn.hset(&key, &field, json).await?;
+        Ok(())
+    }
+
+    /// Read and persist all advancing builds in two Redis round trips per tick.
+    pub async fn update_construction_progress_batch(
+        &mut self,
+        updates: &[ConstructionProgressUpdate],
+    ) -> anyhow::Result<()> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+        let key = self.active_intents_key();
+        let fields: Vec<String> = updates
+            .iter()
+            .map(|update| update.entity_id.to_string())
+            .collect();
+        let entries: Vec<Option<String>> = redis::cmd("HMGET")
+            .arg(&key)
+            .arg(&fields)
+            .query_async(&mut self.conn)
+            .await?;
+        anyhow::ensure!(entries.len() == updates.len(), "incomplete build progress read");
+        let mut write = redis::cmd("HSET");
+        write.arg(&key);
+        let mut write_count = 0;
+        let updated_at = current_unix_ms();
+        for (update, json) in updates.iter().zip(entries) {
+            let Some(json) = json else { continue };
+            let mut entry: EntityActiveIntent = match serde_json::from_str(&json) {
+                Ok(entry) => entry,
+                Err(error) => {
+                    warn!(
+                        ?error,
+                        entity_id = update.entity_id,
+                        "invalid build progress tracking entry"
+                    );
+                    continue;
+                }
+            };
+            entry.intent_kind = update.intent_kind.to_string();
+            entry.blueprint_id = Some(update.target_entity_type_id.clone());
+            entry.progress = Some(update.progress.clamp(0.0, 1.0));
+            entry.progress_updated_at_unix_ms = Some(updated_at);
+            write.arg(update.entity_id).arg(serde_json::to_string(&entry)?);
+            write_count += 1;
+        }
+        if write_count > 0 {
+            let _: usize = write.query_async(&mut self.conn).await?;
+        }
         Ok(())
     }
 

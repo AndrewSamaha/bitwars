@@ -19,8 +19,8 @@ use crate::content::{
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::{
-    CollectorUiState, CombatEffectUiState, GameplayEntityRef, GameplayEvent, IntentPoint,
-    RedisClient,
+    CollectorUiState, CombatEffectUiState, ConstructionProgressUpdate, GameplayEntityRef,
+    GameplayEvent, IntentPoint, RedisClient,
 };
 use crate::io::telemetry::{summarize_tick_durations, Telemetry};
 use crate::io::host_metrics::HostSampler;
@@ -860,6 +860,22 @@ fn record_tick_phase_duration(
             .entry(phase)
             .or_default()
             .push(duration);
+    }
+}
+
+fn record_tick_subphase(
+    samples: Option<&mut HashMap<bool, HashMap<&'static str, Vec<Duration>>>>,
+    raider_ai_spatial_index_enabled: bool,
+    phase: &'static str,
+    started: Option<Instant>,
+) {
+    if let Some(started) = started {
+        record_tick_phase_duration(
+            samples,
+            raider_ai_spatial_index_enabled,
+            phase,
+            started.elapsed(),
+        );
     }
 }
 
@@ -2617,6 +2633,7 @@ impl Engine {
         }
 
         let mut completed = Vec::new();
+        let mut progress_updates = Vec::new();
         for (
             entity_id,
             player_id,
@@ -2657,24 +2674,23 @@ impl Engine {
                     _ => continue,
                 }
             }
-            if let Err(error) = self
-                .redis
-                .update_construction_progress(
-                    entity_id,
-                    if is_upgrade { "upgrade" } else { "build" },
-                    &target_entity_type_id,
-                    new_progress,
-                )
-                .await
-            {
-                warn!(
-                    ?error,
-                    entity_id, "failed to update build progress tracking"
-                );
-            }
+            progress_updates.push(ConstructionProgressUpdate {
+                entity_id,
+                intent_kind: if is_upgrade { "upgrade" } else { "build" },
+                target_entity_type_id: target_entity_type_id.clone(),
+                progress: new_progress,
+            });
             if new_progress >= 1.0 {
                 completed.push((entity_id, player_id, target_entity_type_id, is_upgrade));
             }
+        }
+
+        if let Err(error) = self
+            .redis
+            .update_construction_progress_batch(&progress_updates)
+            .await
+        {
+            warn!(?error, "failed to update build progress tracking");
         }
 
         for (builder_id, player_id, target_entity_type_id, is_upgrade) in completed {
@@ -4764,12 +4780,35 @@ impl Engine {
                 "combat",
                 &mut phase_started,
             );
+            let subphase_started = phase_started.as_ref().map(|_| Instant::now());
             self.apply_repairs(dt).await;
+            record_tick_subphase(phase_durations.as_mut(), raider_ai_spatial_index_enabled,
+                "economy_repairs", subphase_started);
+
+            let subphase_started = phase_started.as_ref().map(|_| Instant::now());
             self.apply_resource_collection(dt).await;
+            record_tick_subphase(phase_durations.as_mut(), raider_ai_spatial_index_enabled,
+                "economy_collection", subphase_started);
+
+            let subphase_started = phase_started.as_ref().map(|_| Instant::now());
             self.advance_deliveries(dt).await;
+            record_tick_subphase(phase_durations.as_mut(), raider_ai_spatial_index_enabled,
+                "economy_deliveries", subphase_started);
+
+            let subphase_started = phase_started.as_ref().map(|_| Instant::now());
             self.advance_builds(dt).await;
+            record_tick_subphase(phase_durations.as_mut(), raider_ai_spatial_index_enabled,
+                "economy_builds", subphase_started);
+
+            let subphase_started = phase_started.as_ref().map(|_| Instant::now());
             self.advance_research(dt).await;
+            record_tick_subphase(phase_durations.as_mut(), raider_ai_spatial_index_enabled,
+                "economy_research", subphase_started);
+
+            let subphase_started = phase_started.as_ref().map(|_| Instant::now());
             let starvation_damage = self.maintain_and_share_resources(dt).await;
+            record_tick_subphase(phase_durations.as_mut(), raider_ai_spatial_index_enabled,
+                "economy_maintenance_sharing", subphase_started);
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,

@@ -50,6 +50,8 @@ For example, a destroyed builder produces `failure: { "reason": "entity_destroye
 
 The engine's Axiom `engine_tick_timing` and `engine_tick_phase_timing` records include `connected_player_count`, sampled at the end of each tick timing window. It counts distinct authenticated players with a live game SSE connection, so two tabs or streams for one player count once. Connections refresh a 30-second lease every 10 seconds; a crashed stream drops out after its lease expires. The **Engine Tick Timing** dashboard has p50 and p95 tick-duration scatter plots against this count. The plots only include records emitted after the updated web and engine services are running.
 
+The same dashboard has an **Economy subphase p95 duration** chart with separate series for repairs, collection, deliveries, builds, research, and maintenance/sharing. These six timings are nested within the existing total `economy` phase; each measures elapsed time including any awaited I/O. The chart receives data after the updated engine starts and publishes its next timing window.
+
 ## Scaling path
 
 This process model is simple to isolate and diagnose, but it uses roughly two processes and one gateway connection per bot. If process count, memory, connection count, or startup time becomes the limiting factor, a later runner can keep the same per-player result contract while using a shared gateway with multiple player handles. Measure those limits before making that change.
