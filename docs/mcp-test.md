@@ -144,8 +144,12 @@ pnpm --filter @bitwars/player-mcp scenario -- \
   --timeout-seconds 1200
 ```
 
-The command writes structured step records to stdout. It connects to the local
-game by default; a remote URL also requires `--allow-remote`. Running it joins
-and changes the active world. If the starting habitat is outside construction
+The command writes structured step records to stdout and ends with one
+`scenario_result` JSON record containing `success`, `username`, `run_id`, and
+`duration_ms`. Exit code 0 means the workflow and disconnect completed; exit
+code 1 means an action, observation, deadline, or cleanup failed. A process
+killed by a signal has a signal-derived status and may have no result record.
+It connects to the local game by default; a remote URL also requires
+`--allow-remote`. Running it joins and changes the active world. If the starting habitat is outside construction
 sharing range, the script moves it before beginning the solar build so the
 builder can draw resources.

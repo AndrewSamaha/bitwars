@@ -88,6 +88,8 @@ export class ScriptedPlayer {
     private readonly deadline: number,
   ) {}
 
+  get run_id(): string { return this.runId; }
+
   static async connect(client: Client, username: string, deadline: number): Promise<ScriptedPlayer> {
     const { handle } = await call<{ handle: string }>(client, "connect_player", { username });
     try {
@@ -378,7 +380,7 @@ export async function runDiscoveryScenario(player: ScriptedPlayer): Promise<void
   const secondWorker = await player.finishBuild(await player.startBuild(idOf(habitat), "worker"));
   await player.collect(idOf(firstWorker), "minerals");
   await player.collect(idOf(secondWorker), "food");
-  log("scenario_complete", {
+  log("workflow_complete", {
     habitat_id: habitat.id, star_id: star.id, solar_id: solar.id,
     initial_workers: workers.map(item => item.id), new_workers: [firstWorker.id, secondWorker.id],
   });
@@ -420,6 +422,7 @@ function parseConfig(argv: string[]): Config | undefined {
 }
 
 export async function runScriptedPlayer(config: Config): Promise<void> {
+  const startedAt = Date.now();
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
   const environment = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   const transport = new StdioClientTransport({
@@ -434,15 +437,32 @@ export async function runScriptedPlayer(config: Config): Promise<void> {
   });
   const client = new Client({ name: "bitwars-scripted-player", version: "0.1.0" });
   let player: ScriptedPlayer | undefined;
+  let workflowError: unknown;
+  let workflowCompleted = false;
+  const cleanupErrors: string[] = [];
   try {
     await client.connect(transport);
     log("scenario_start", { username: config.username, base_url: config.baseUrl });
     player = await ScriptedPlayer.connect(client, config.username, Date.now() + config.timeoutSeconds * 1_000);
     await runDiscoveryScenario(player);
-  } finally {
-    if (player) await player.disconnect().catch(error => log("disconnect_error", { error: String(error) }));
-    await client.close().catch(() => undefined);
+    workflowCompleted = true;
+  } catch (error) {
+    workflowError = error;
   }
+  if (player) {
+    try { await player.disconnect(); }
+    catch (error) { cleanupErrors.push(`disconnect: ${String(error)}`); }
+  }
+  try { await client.close(); }
+  catch (error) { cleanupErrors.push(`MCP client close: ${String(error)}`); }
+  const success = workflowCompleted && workflowError === undefined && cleanupErrors.length === 0;
+  log("scenario_result", {
+    username: config.username, run_id: player?.run_id,
+    success, duration_ms: Date.now() - startedAt,
+    ...(workflowError === undefined ? {} : { error: String(workflowError) }),
+    ...(cleanupErrors.length ? { cleanup_errors: cleanupErrors } : {}),
+  });
+  if (!success) throw workflowError ?? new Error(cleanupErrors.join("; ") || "scenario did not complete");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -451,7 +471,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (config) await runScriptedPlayer(config);
     else console.log("pnpm --filter @bitwars/player-mcp scenario -- --username loadtest-scenario-1 --allow-game-writes [--timeout-seconds 1200]");
   } catch (error) {
-    log("scenario_error", { error: String(error) });
     process.exitCode = 1;
   }
 }
