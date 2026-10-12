@@ -115,8 +115,9 @@ burst test; run deliberate bursts separately.
 The first gateway implementation is in
 [`packages/player-mcp`](../packages/player-mcp). It exposes the six tools
 above over local MCP stdio, uses the existing game HTTP/SSE endpoints, and
-has mocked game-endpoint and MCP protocol tests. The deterministic player,
-multi-player runner, and live disposable-match validation are still to do.
+has mocked game-endpoint and MCP protocol tests. A deterministic MCP client is
+also implemented there; the multi-player runner and live disposable-match
+validation remain.
 The current gateway creates/logs in a `loadtest-*` account when
 `connect_player` is called; a future runner should provision accounts before
 the timed window and establish how to isolate or retire them afterward.
@@ -138,6 +139,27 @@ match. `connect_player` returns a handle immediately; check
 The gateway accepts up to 200 active handles by default and keeps a bounded
 event buffer per handle; `observe_events.gap` signals missed buffered events.
 
+Run one seeded player from the repository root:
+
+```bash
+pnpm --filter @bitwars/player-mcp bot -- \
+  --username loadtest-run-a \
+  --seed run-1 \
+  --profile mover \
+  --duration-seconds 60 \
+  --allow-game-writes
+```
+
+The bot launches the MCP server as a child process and connects through MCP
+stdio. `observer` only joins and observes; `mover` submits seeded moves;
+`builder` submits one build at a time and needs `--blueprint-id`. Use
+`--entity-type-id` to restrict which owned entity can act. Timing defaults to
+1.5 seconds between decisions with seeded jitter; configure it with
+`--step-ms` and `--jitter-percent`. Each run appends decisions, their policy
+inputs, lifecycle events, intent results, and a summary to
+`.metrics/player-mcp/<username>-<seed>.jsonl`. The log excludes credentials.
+Choose a different username for each simultaneous player.
+
 1. Define the typed MCP operations, player-handle lifecycle, bounded event
    cursor semantics, and per-player metrics. Implement one gateway-backed
    player that joins, receives a snapshot, completes the reconnect handshake,
@@ -148,8 +170,10 @@ event buffer per handle; `observe_events.gap` signals missed buffered events.
    first connect, sequence reconciliation, ownership, missing events, and
    clean shutdown. Verify that each MCP player creates exactly one expected
    backend SSE connection and its own HTTP traffic.
-3. Add a seeded deterministic policy and replay log. Test that the same
-   recorded observations and seed produce the same decisions and action order.
+3. Add a seeded deterministic policy and replay log. Implemented for observer,
+   mover, and builder profiles; the log records the policy inputs, PRNG state,
+   decisions, command IDs, and lifecycle results. Formal replay verification
+   remains.
 4. Add the multi-player runner, account pool, profiles, concurrency ramp, and
    metrics export. First compare idle SSE and SSE-plus-polling, then add
    active intents and builds.

@@ -45,7 +45,16 @@ function tool(handler: () => Promise<unknown> | unknown) {
 }
 
 function createServer() {
-  const server = new McpServer({ name: "bitwars-player", version: "0.1.0" });
+  const server = new McpServer({
+    name: "bitwars-player",
+    version: "0.1.0",
+    instructions: [
+      "Bitwars is a real-time space strategy game. Players manage habitats and workers, gather resources, and build units and structures.",
+      "Resource nodes are identified by entity type: planet_blue provides food, minerals provides minerals, and star_yellow provides energy through proximity collection. Yellow stars also cause radiation damage within 1200 world units; keep entities well outside that radius.",
+      "After connect_player, wait until the player state or event stream reports ready before acting. Collect requires exactly one of resource_type_id or nearest_compatible. Build has no placement coordinate; completed products spawn near the builder, so inspect state or events for the resulting entity and position.",
+      "Player intents change the active game world. Use only an authorized disposable game and disconnect when finished.",
+    ].join(" "),
+  });
   server.registerTool("connect_player", {
     description: "Log in as a loadtest-* player and open its game SSE connection. Only use on a disposable game.",
     inputSchema: z.object({ username: z.string().regex(/^loadtest-[a-zA-Z0-9_-]{1,48}$/) }),
