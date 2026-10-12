@@ -239,16 +239,39 @@ fn collection_load(entity: &pb::Entity, def: &EntityTypeDef, preferred: &[&str])
         })
 }
 
+fn collection_entity_index(entities: &[pb::Entity]) -> HashMap<u64, usize> {
+    entities.iter().enumerate().map(|(index, entity)| (entity.id, index)).collect()
+}
+
+#[inline]
+fn collection_entity<'a>(
+    entities: &'a [pb::Entity],
+    entity_id: u64,
+    by_id: &HashMap<u64, usize>,
+) -> Option<&'a pb::Entity> {
+    by_id.get(&entity_id).and_then(|index| entities.get(*index))
+}
+
+#[inline]
+fn collection_entity_mut<'a>(
+    entities: &'a mut [pb::Entity],
+    entity_id: u64,
+    by_id: &HashMap<u64, usize>,
+) -> Option<&'a mut pb::Entity> {
+    by_id.get(&entity_id).and_then(|index| entities.get_mut(*index))
+}
+
 fn gather_transport_inventory(entities: &mut [pb::Entity], actor_id: u64, node_id: u64,
-    def: &EntityTypeDef, resource: &str, requested: f64) -> f64 {
+    def: &EntityTypeDef, resource: &str, requested: f64,
+    by_id: &HashMap<u64, usize>) -> f64 {
     if actor_id == node_id { return 0.0; }
-    let Some(actor) = entities.iter().find(|entity| entity.id == actor_id) else { return 0.0; };
+    let Some(actor) = collection_entity(entities, actor_id, by_id) else { return 0.0; };
     let current = resource_amount(actor, resource);
     let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64;
     let requested = requested.max(0.0).min((capacity - current).max(0.0));
-    let gathered = entities.iter_mut().find(|entity| entity.id == node_id)
+    let gathered = collection_entity_mut(entities, node_id, by_id)
         .map(|entity| take_from_deposit(entity, requested)).unwrap_or(0.0);
-    if let Some(actor) = entities.iter_mut().find(|entity| entity.id == actor_id) {
+    if let Some(actor) = collection_entity_mut(entities, actor_id, by_id) {
         set_resource_amount(actor, resource, current + gathered);
     }
     gathered
@@ -611,7 +634,7 @@ mod transport_capacity_tests {
         let entities = [pb::Entity { id: 2, entity_type_id: "military_factory".into(), ..Default::default() }];
         let allowed = content.get("worker").unwrap().collector.as_ref().unwrap().deposit_entity_types.as_slice();
         for resource in ["food", "minerals"] {
-            assert_eq!(Engine::pick_best_refinery(&collector, &refineries, &entities, resource, allowed,
+            assert_eq!(Engine::pick_best_refinery(&collector, &refineries, &entities, &collection_entity_index(&entities), resource, allowed,
                 &content, &mut HashSet::new()).map(|target| target.id), Some(2));
         }
     }
@@ -635,7 +658,7 @@ mod transport_capacity_tests {
         let mut entities = [pb::Entity { id: 2, entity_type_id: "habitat".into(), ..Default::default() },
             pb::Entity { id: 3, entity_type_id: "factory".into(), ..Default::default() }];
         let pick = |entities: &[pb::Entity], refilling: &mut HashSet<(u64, String)>| Engine::pick_best_refinery(
-            &collector, &refineries, entities, "minerals", &[], &content, refilling,
+            &collector, &refineries, entities, &collection_entity_index(entities), "minerals", &[], &content, refilling,
         ).map(|refinery| refinery.id);
         let mut refilling = HashSet::new();
         set_resource_amount(&mut entities[0], "minerals", 727.0);
@@ -685,7 +708,7 @@ mod transport_capacity_tests {
         let mut entities = [pb::Entity { id: 2, entity_type_id: "habitat".into(), ..Default::default() },
             pb::Entity { id: 3, entity_type_id: "factory".into(), ..Default::default() }];
         let pick = |entities: &[pb::Entity], refilling: &mut HashSet<(u64, String)>| Engine::pick_best_refinery(
-            &collector, &refineries, entities, "food", &["habitat".into(), "factory".into()], &content, refilling,
+            &collector, &refineries, entities, &collection_entity_index(entities), "food", &["habitat".into(), "factory".into()], &content, refilling,
         ).map(|refinery| refinery.id);
         let mut refilling = HashSet::new();
         set_resource_amount(&mut entities[0], "food", 70.0);
@@ -734,7 +757,7 @@ mod transport_capacity_tests {
             pb::Entity { id: 3, ..Default::default() },
         ];
         let pick = |entities: &[pb::Entity]| Engine::pick_best_refinery(
-            &collector, &refineries, entities, "minerals", &["habitat".into()],
+            &collector, &refineries, entities, &collection_entity_index(entities), "minerals", &["habitat".into()],
             &content, &mut HashSet::new(),
         ).map(|refinery| refinery.id);
 
@@ -813,8 +836,9 @@ mod transport_capacity_tests {
         };
         let nodes = [far.clone(), ResourceNodeSnapshot { id: 11, x: 10.0, ..far }];
         let collects = vec!["minerals".to_string()];
-        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(10), None, "minerals", false, &collects).unwrap().id, 10);
-        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(99), None, "minerals", false, &collects).unwrap().id, 11);
+        let node_by_id = nodes.iter().enumerate().map(|(index, node)| (node.id, index)).collect();
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(10), &node_by_id, None, "minerals", false, &collects).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(99), &node_by_id, None, "minerals", false, &collects).unwrap().id, 11);
     }
 }
 
@@ -3872,6 +3896,7 @@ impl Engine {
         collector: &CollectorSnapshot,
         nodes: &'a [ResourceNodeSnapshot],
         bound_id: Option<u64>,
+        node_by_id: &HashMap<u64, usize>,
         preferred_resource_type: Option<&str>,
         assigned_resource_type: &str,
         nearest_compatible: bool,
@@ -3887,7 +3912,12 @@ impl Engine {
                     node.resource_type == assigned_resource_type
                 }
         };
-        if let Some(node) = nodes.iter().filter(eligible).find(|node| Some(node.id) == bound_id) {
+        let bound_node = bound_id.and_then(|id| {
+            node_by_id.get(&id)
+                .and_then(|index| nodes.get(*index))
+                .filter(|node| eligible(node))
+        });
+        if let Some(node) = bound_node {
             return Some(node);
         }
         nodes.iter().filter(eligible).min_by(|a, b| {
@@ -3903,6 +3933,7 @@ impl Engine {
         collector: &CollectorSnapshot,
         refineries: &'a [RefinerySnapshot],
         entities: &[pb::Entity],
+        by_id: &HashMap<u64, usize>,
         resource_type: &str,
         allowed_entity_types: &[String],
         content: &ContentPack,
@@ -3920,7 +3951,7 @@ impl Engine {
             })
             .filter_map(|r| {
                 let capacity = r.max_capacity.get(resource_type).copied().unwrap_or(0.0) as f64;
-                let entity = entities.iter().find(|entity| entity.id == r.id)?;
+                let entity = collection_entity(entities, r.id, by_id)?;
                 if capacity - resource_amount(entity, resource_type) <= f64::EPSILON { return None; }
                 let def = content.get(&r.entity_type_id)?;
                 if sharing_request_room(entity, def, resource_type, refilling) <= f64::EPSILON { return None; }
@@ -4050,6 +4081,9 @@ impl Engine {
         if self.content.is_none() {
             return;
         }
+        // Collection only changes entity fields, so vector indexes remain valid
+        // until this call returns.
+        let entity_by_id = collection_entity_index(&self.state.entities);
         initialize_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), None, &mut rand::thread_rng());
         let collect_active_entities: HashSet<u64> = self
             .intents
@@ -4088,6 +4122,9 @@ impl Engine {
         let mut operating_collectors = HashSet::new();
         let mut gathering_by_node = HashMap::new();
         let nodes = self.build_resource_node_snapshots();
+        let node_by_id = nodes.iter().enumerate()
+            .map(|(index, node)| (node.id, index))
+            .collect::<HashMap<_, _>>();
         let refineries = self.build_refinery_snapshots();
         let collector_ids: HashSet<u64> = collectors.iter().map(|c| c.id).collect();
         self.transport_node_by_entity.retain(|id, _| collector_ids.contains(id));
@@ -4119,7 +4156,7 @@ impl Engine {
             let previous_resource = self.collector_ui_state_by_entity.get(&collector.id)
                 .map(|view| view.resource_type.as_str()).unwrap_or("");
             let assigned_resource = collection_assignments.get(&collector.id).map(|(resource, _)| resource.as_str()).unwrap_or("");
-            let load_snapshot = self.state.entities.iter().find(|entity| entity.id == collector.id)
+            let load_snapshot = collection_entity(&self.state.entities, collector.id, &entity_by_id)
                 .and_then(|entity| collection_load(entity, &def, &[previous_resource, assigned_resource]));
 
             // M8 (collect-intent model): autonomous collection only runs while
@@ -4148,7 +4185,7 @@ impl Engine {
 
             // Finish delivery trips before gathering again, including partial unloads.
             if let Some(ref carry) = load_snapshot {
-                let inventory_is_full = self.state.entities.iter().find(|entity| entity.id == collector.id)
+                let inventory_is_full = collection_entity(&self.state.entities, collector.id, &entity_by_id)
                     .is_some_and(|entity| resource_amount(entity, &carry.resource_type)
                         >= def.max_capacity.get(&carry.resource_type).copied().unwrap_or(0.0) as f64 - f64::EPSILON);
                 let source_depleted = self.transport_node_by_entity.get(&collector.id)
@@ -4163,6 +4200,7 @@ impl Engine {
                         &collector,
                         &refineries,
                         &self.state.entities,
+                        &entity_by_id,
                         &carry.resource_type,
                         &collector_def.deposit_entity_types,
                         self.content.as_ref().unwrap(),
@@ -4172,21 +4210,19 @@ impl Engine {
                             Self::distance_sq(collector.x, collector.y, refinery.x, refinery.y)
                                 .sqrt();
                         if dist <= DEPOSIT_DISTANCE {
-                            let mut actor = self.state.entities.iter().find(|entity| entity.id == collector.id).unwrap().clone();
-                            if let Some(recipient) = self.state.entities.iter_mut().find(|entity| entity.id == refinery.id) {
+                            let mut actor = collection_entity(&self.state.entities, collector.id, &entity_by_id).unwrap().clone();
+                            if let Some(recipient) = collection_entity_mut(&mut self.state.entities, refinery.id, &entity_by_id) {
                                 if let Some(recipient_def) = self.content.as_ref().and_then(|content| content.get(&recipient.entity_type_id)) {
                                     deposit_collection_inventory(&mut actor, &def, recipient, recipient_def, &carry.resource_type, &mut self.resource_refilling);
                                 }
                             }
-                            if let Some(entity) = self.state.entities.iter_mut().find(|entity| entity.id == collector.id) {
+                            if let Some(entity) = collection_entity_mut(&mut self.state.entities, collector.id, &entity_by_id) {
                                 entity.resources = actor.resources;
                             }
                             self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_DELIVERING, &carry.resource_type, 0.0);
-                            if let Some(entity) = self
-                                .state
-                                .entities
-                                .iter_mut()
-                                .find(|e| e.id == collector.id)
+                            if let Some(entity) = collection_entity_mut(
+                                &mut self.state.entities, collector.id, &entity_by_id,
+                            )
                             {
                                 let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                                 vel.x = 0.0;
@@ -4194,11 +4230,9 @@ impl Engine {
                             }
                             continue;
                         }
-                        if let Some(entity) = self
-                            .state
-                            .entities
-                            .iter_mut()
-                            .find(|e| e.id == collector.id)
+                        if let Some(entity) = collection_entity_mut(
+                            &mut self.state.entities, collector.id, &entity_by_id,
+                        )
                         {
                             Self::drive_velocity_toward(
                                 entity,
@@ -4213,11 +4247,9 @@ impl Engine {
                     }
                     // No valid refinery: hold position.
                     self.set_collector_ui_state(collector.id, "waiting_for_dropoff", &carry.resource_type, 0.0);
-                    if let Some(entity) = self
-                        .state
-                        .entities
-                        .iter_mut()
-                        .find(|e| e.id == collector.id)
+                    if let Some(entity) = collection_entity_mut(
+                        &mut self.state.entities, collector.id, &entity_by_id,
+                    )
                     {
                         let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                         vel.x = 0.0;
@@ -4236,6 +4268,7 @@ impl Engine {
                 &collector,
                 &nodes,
                 self.transport_node_by_entity.get(&collector.id).copied(),
+                &node_by_id,
                 preferred_resource_type,
                 assigned_resource_type,
                 *nearest_compatible,
@@ -4253,7 +4286,7 @@ impl Engine {
                             .entry(collector.id)
                             .or_insert(self.state.tick);
                         self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_WAITING_FOR_TURN, &node.resource_type, 0.0);
-                        if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
+                        if let Some(entity) = collection_entity_mut(&mut self.state.entities, collector.id, &entity_by_id) {
                             let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                             vel.x = 0.0;
                             vel.y = 0.0;
@@ -4262,24 +4295,21 @@ impl Engine {
                     }
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     let gathered = gather_transport_inventory(&mut self.state.entities, collector.id, node.id,
-                        &def, &node.resource_type, collector_def.transport_rate_per_second.max(0.0) as f64 * dt as f64);
+                        &def, &node.resource_type, collector_def.transport_rate_per_second.max(0.0) as f64 * dt as f64,
+                        &entity_by_id);
                     self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_GATHERING, &node.resource_type,
                         if dt > 0.0 { (gathered / dt as f64) as f32 } else { 0.0 });
-                    if let Some(entity) = self
-                        .state
-                        .entities
-                        .iter_mut()
-                        .find(|e| e.id == collector.id)
+                    if let Some(entity) = collection_entity_mut(
+                        &mut self.state.entities, collector.id, &entity_by_id,
+                    )
                     {
                         let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                         vel.x = 0.0;
                         vel.y = 0.0;
                     }
-                } else if let Some(entity) = self
-                    .state
-                    .entities
-                    .iter_mut()
-                    .find(|e| e.id == collector.id)
+                } else if let Some(entity) = collection_entity_mut(
+                    &mut self.state.entities, collector.id, &entity_by_id,
+                )
                 {
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     Self::drive_velocity_to_band(
@@ -4352,11 +4382,9 @@ impl Engine {
                             );
                         }
                         self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_WAITING_FOR_TURN, &node.resource_type, 0.0);
-                        if let Some(entity) = self
-                            .state
-                            .entities
-                            .iter_mut()
-                            .find(|e| e.id == collector.id)
+                        if let Some(entity) = collection_entity_mut(
+                            &mut self.state.entities, collector.id, &entity_by_id,
+                        )
                         {
                             let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                             vel.x = 0.0;
@@ -4367,31 +4395,27 @@ impl Engine {
                     self.collection_retry_tick_by_entity.remove(&collector.id);
                     operating_collectors.insert(collector.id);
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
-                    let current = self.state.entities.iter().find(|e| e.id == collector.id)
+                    let current = collection_entity(&self.state.entities, collector.id, &entity_by_id)
                         .map(|entity| resource_amount(entity, &node.resource_type)).unwrap_or(0.0);
                     let capacity = resource_capacity(self.content.as_ref().unwrap(), &collector.entity_type_id, &node.resource_type);
                     let requested = (rate as f64).min((capacity - current).max(0.0));
-                    let amount = self.state.entities.iter_mut().find(|entity| entity.id == node.id)
+                    let amount = collection_entity_mut(&mut self.state.entities, node.id, &entity_by_id)
                         .map(|entity| take_from_deposit(entity, requested)).unwrap_or(0.0);
-                    if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == collector.id) {
+                    if let Some(entity) = collection_entity_mut(&mut self.state.entities, collector.id, &entity_by_id) {
                         set_resource_amount(entity, &node.resource_type, current + amount);
                     }
                     self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING, &node.resource_type, collector_def.proximity_rate_per_second.max(0.0));
-                    if let Some(entity) = self
-                        .state
-                        .entities
-                        .iter_mut()
-                        .find(|e| e.id == collector.id)
+                    if let Some(entity) = collection_entity_mut(
+                        &mut self.state.entities, collector.id, &entity_by_id,
+                    )
                     {
                         let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                         vel.x = 0.0;
                         vel.y = 0.0;
                     }
-                } else if let Some(entity) = self
-                    .state
-                    .entities
-                    .iter_mut()
-                    .find(|e| e.id == collector.id)
+                } else if let Some(entity) = collection_entity_mut(
+                    &mut self.state.entities, collector.id, &entity_by_id,
+                )
                 {
                     self.collection_retry_tick_by_entity.remove(&collector.id);
                     Self::drive_velocity_to_band(
@@ -4409,11 +4433,9 @@ impl Engine {
                         .as_ref()
                         .map(|c| c.resource_type.as_str())
                         .unwrap_or(""), 0.0);
-                if let Some(entity) = self
-                    .state
-                    .entities
-                    .iter_mut()
-                    .find(|e| e.id == collector.id)
+                if let Some(entity) = collection_entity_mut(
+                    &mut self.state.entities, collector.id, &entity_by_id,
+                )
                 {
                     let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
                     vel.x = 0.0;
@@ -6081,10 +6103,11 @@ mod collection_inventory_tests {
         }];
         set_resource_amount(&mut entities[0], "food", 5.0);
         set_resource_amount(&mut entities[0], "energy", 50.0);
-        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, def, "food", 100.0), 45.0);
+        let by_id = collection_entity_index(&entities);
+        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, def, "food", 100.0, &by_id), 45.0);
         assert_eq!(resource_amount(&entities[0], "food"), 50.0);
         assert_eq!(entities[1].resource_deposit.unwrap().remaining, 55.0);
-        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, def, "food", 8.0), 0.0);
+        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, def, "food", 8.0, &by_id), 0.0);
         // Changing assignments or stopping collection does not move or erase inventory.
         let load = collection_load(&entities[0], def, &["minerals"]).unwrap();
         assert_eq!(load.resource_type, "food");
@@ -6109,7 +6132,7 @@ mod collection_inventory_tests {
         // 55 left in source + 5 retained + 44 delivered + 1 consumed = initial 105.
         assert_eq!(entities[1].resource_deposit.unwrap().remaining + resource_amount(&entities[0], "food") + 20.0 + resource_amount(&recipient, "food") + 1.0, 105.0);
         set_resource_amount(&mut entities[0], "food", 98.0);
-        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, def, "food", 8.0), 0.0);
+        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, def, "food", 8.0, &by_id), 0.0);
         assert_eq!(resource_amount(&entities[0], "food"), 98.0, "legacy excess is retained");
         assert_eq!(entities[1].resource_deposit.unwrap().remaining, 55.0);
     }

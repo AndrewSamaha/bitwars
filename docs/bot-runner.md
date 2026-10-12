@@ -52,6 +52,8 @@ The engine's Axiom `engine_tick_timing` and `engine_tick_phase_timing` records i
 
 The same dashboard has an **Economy subphase p95 duration** chart with separate series for repairs, collection, deliveries, builds, research, and maintenance/sharing. These six timings are nested within the existing total `economy` phase; each measures elapsed time including any awaited I/O. The chart receives data after the updated engine starts and publishes its next timing window.
 
+Collection uses per-tick entity and resource-node ID indexes. The **Economy subphase p95 duration** chart's `economy_collection` series includes the cost of building both indexes. Compare pressure-test runs with similar entity and active-collector counts, and allow a full timing window after starting the updated engine before reading the chart.
+
 ## Scaling path
 
 This process model is simple to isolate and diagnose, but it uses roughly two processes and one gateway connection per bot. If process count, memory, connection count, or startup time becomes the limiting factor, a later runner can keep the same per-player result contract while using a shared gateway with multiple player handles. Measure those limits before making that change.
