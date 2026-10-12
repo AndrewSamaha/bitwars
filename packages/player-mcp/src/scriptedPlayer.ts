@@ -32,6 +32,7 @@ type Failure = {
   server_tick?: string;
   event_id?: string;
   cause?: string;
+  attacker_player_id?: string;
   attacker?: GameplayEvent["attacker"];
   diagnostic_error?: string;
 };
@@ -171,7 +172,10 @@ export class ScriptedPlayer {
             ? "entity_destroyed_by_other_player" : "entity_destroyed";
           failure.event_id = destroyed.event_id;
           failure.cause = destroyed.cause;
-          if (destroyed.attacker) failure.attacker = destroyed.attacker;
+          if (destroyed.attacker) {
+            failure.attacker_player_id = destroyed.attacker.owner_player_id;
+            failure.attacker = destroyed.attacker;
+          }
           return failure;
         }
         if (!batch.has_more || batch.next_cursor === cursor) return failure;

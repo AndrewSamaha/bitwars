@@ -37,6 +37,7 @@ type BotResult = {
   timed_out?: boolean;
   error?: string;
   failure?: ScenarioResult["failure"];
+  attacker_player_id?: string;
   scenario_result?: ScenarioResult;
   stdout_log?: string;
   stderr_log?: string;
@@ -207,12 +208,14 @@ async function runBot(config: Config, index: number, live: Set<ChildProcess>, in
       exit_code: outcome.code, signal: outcome.signal, timed_out: outcome.timedOut,
       ...(outcome.error || scenarioResult?.error ? { error: outcome.error ?? scenarioResult?.error } : {}),
       ...(failure ? { failure } : {}),
+      ...(typeof failure?.attacker_player_id === "string" ? { attacker_player_id: failure.attacker_player_id } : {}),
       ...(scenarioResult ? { scenario_result: scenarioResult } : {}),
       stdout_log: stdoutLog, stderr_log: stderrLog,
     };
     log("bot_finished", { index, username: name, status: result.status, exit_code: result.exit_code,
       signal: result.signal, timed_out: result.timed_out, run_id: scenarioResult?.run_id,
-      ...(failure ? { failure, error: scenarioResult?.error ?? outcome.error } : {}) });
+      ...(failure ? { failure, error: scenarioResult?.error ?? outcome.error } : {}),
+      ...(result.attacker_player_id ? { attacker_player_id: result.attacker_player_id } : {}) });
     return result;
   } catch (error) {
     log("bot_finished", { index, username: name, status: "failed", error: String(error), failure: { reason: "runner_error" } });
