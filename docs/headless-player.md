@@ -121,11 +121,11 @@ The first gateway implementation is in
 [`packages/player-mcp`](../packages/player-mcp). It exposes the tools
 above over local MCP stdio, uses the existing game HTTP/SSE endpoints, and
 has mocked game-endpoint and MCP protocol tests. A deterministic MCP client is
-also implemented there; the multi-player runner and live disposable-match
-validation remain.
+also implemented there. The [scripted bot runner](bot-runner.md) launches
+multiple isolated MCP clients; live disposable-match validation remains.
 The current gateway creates/logs in a `loadtest-*` account when
-`connect_player` is called; a future runner should provision accounts before
-the timed window and establish how to isolate or retire them afterward.
+`connect_player` is called; a future runner iteration should provision accounts
+before the timed window and establish how to isolate or retire them afterward.
 
 To launch the MCP server from the repository root, explicitly opt in to
 game-state-changing actions:
@@ -179,9 +179,10 @@ Choose a different username for each simultaneous player.
    mover, and builder profiles; the log records the policy inputs, PRNG state,
    decisions, command IDs, and lifecycle results. Formal replay verification
    remains.
-4. Add the multi-player runner, account pool, profiles, concurrency ramp, and
-   metrics export. First compare idle SSE and SSE-plus-polling, then add
-   active intents and builds.
+4. Extend the [scripted bot runner](bot-runner.md) with an account pool,
+   selectable profiles, and metrics export. Its process isolation, launch
+   ramp, and per-bot outcomes are implemented. First compare idle SSE and
+   SSE-plus-polling, then add active intents and builds.
 5. Validate the harness itself: measure MCP/gateway CPU, memory, queue delay,
    and event-buffer overflow. If it saturates before the game server, scale or
    replace the generator and compare with a matched direct-protocol run before
