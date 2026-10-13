@@ -6,8 +6,15 @@ export type BuildState = {
   progress_updated_at_unix_ms?: number;
 };
 export type BuildStateById = Record<string, BuildState>;
+export type BuildProgressStreamBatch = {
+  run_id?: string;
+  server_tick?: number;
+  server_time_ms?: number;
+  build_state_by_entity?: BuildStateById;
+};
 
 const POLL_INTERVAL_MS = 500;
+const STREAM_STALE_MS = 1_250;
 
 async function fetchBuildStates(ids: string[]): Promise<BuildStateById> {
   const sentAtMs = Date.now();
@@ -64,6 +71,11 @@ export class BuildProgressStore {
   private interval: ReturnType<typeof setInterval> | undefined;
   private initialPoll: ReturnType<typeof setTimeout> | undefined;
   private inFlight = false;
+  private streamStates: BuildStateById = {};
+  private streamRunId = "";
+  private streamTick = -1;
+  private lastStreamAt = 0;
+  private watchChangedAt = 0;
 
   constructor(
     private readonly load: (
@@ -73,6 +85,36 @@ export class BuildProgressStore {
 
   getSnapshot = (): BuildStateById => this.snapshot;
   getProgress = (id: string): number | undefined => this.snapshot[id]?.progress;
+  streamConnected(): void {
+    this.lastStreamAt = Date.now();
+  }
+  applyStreamBatch(batch: BuildProgressStreamBatch, bodyBytes: number): void {
+    const tick = Number(batch.server_tick);
+    if (!Number.isSafeInteger(tick) || tick < 0) return;
+    const runId = typeof batch.run_id === "string" ? batch.run_id : "";
+    if (runId && runId !== this.streamRunId) {
+      this.streamRunId = runId;
+      this.streamTick = -1;
+    }
+    if (tick < this.streamTick) return;
+    this.streamTick = tick;
+    this.lastStreamAt = Date.now();
+    this.streamStates = batch.build_state_by_entity ?? {};
+    buildProgressMetrics.recordStreamEvent(bodyBytes);
+    this.publish(Object.fromEntries(Object.entries(this.streamStates).filter(([id]) => this.ids.includes(id))));
+  }
+
+  streamDisconnected(): void {
+    this.lastStreamAt = 0;
+  }
+
+  resetStream(): void {
+    this.streamStates = {};
+    this.streamRunId = "";
+    this.streamTick = -1;
+    this.lastStreamAt = 0;
+    this.publish({});
+  }
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => {
@@ -100,8 +142,9 @@ export class BuildProgressStore {
     this.ids = ids;
     this.idsKey = key;
     this.idsRevision++;
+    this.watchChangedAt = ids.length ? Date.now() : 0;
     const retained = Object.fromEntries(
-      Object.entries(this.snapshot).filter(([id]) => ids.includes(id)),
+      Object.entries(this.lastStreamAt ? this.streamStates : this.snapshot).filter(([id]) => ids.includes(id)),
     );
     this.publish(retained);
     if (ids.length === 0) {
@@ -127,13 +170,16 @@ export class BuildProgressStore {
   }
 
   private async poll(): Promise<void> {
-    if (this.inFlight || this.ids.length === 0) return;
+    if (this.inFlight || this.ids.length === 0 ||
+        Date.now() - Math.max(this.lastStreamAt, this.watchChangedAt) < STREAM_STALE_MS) return;
     const ids = this.ids;
     const revision = this.idsRevision;
+    const streamTick = this.streamTick;
+    const streamAt = this.lastStreamAt;
     this.inFlight = true;
     try {
       const states = await this.load(ids);
-      if (revision === this.idsRevision) {
+      if (revision === this.idsRevision && streamTick === this.streamTick && streamAt === this.lastStreamAt) {
         buildProgressMetrics.recordAppliedResponse(
           !sameStates(this.snapshot, states),
         );

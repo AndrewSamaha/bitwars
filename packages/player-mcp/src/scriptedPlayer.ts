@@ -3,7 +3,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import type { CallToolResult } from "@modelcontextprotocol/client";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CollectorState, CommandStatus, GameEntity, GameplayEvent, GameplayEventBatch, IntentInput, WaitCondition } from "./playerGateway.js";
+import type { CollectorState, CommandStatus, GameEntity, GameplayEvent, GameplayEventBatch, IntentInput, ProgressFallbackDiagnostic, WaitCondition } from "./playerGateway.js";
 import type { PlayerChange } from "./observationJournal.js";
 
 type Observation = {
@@ -15,6 +15,8 @@ type Observation = {
   owned_entities: GameEntity[];
   collector_states: CollectorState[];
   progress: Record<string, unknown>;
+  metrics?: Record<string, number>;
+  progress_fallbacks?: ProgressFallbackDiagnostic[];
 };
 
 type VisibleEntities = { run_id?: string; ready: boolean; entities: GameEntity[] };
@@ -137,6 +139,12 @@ export class ScriptedPlayer {
 
   async disconnect(): Promise<void> {
     await call(this.client, "disconnect_player", { handle: this.handle });
+  }
+
+  async transportMetrics(): Promise<Record<string, number> | undefined> {
+    const observation = await call<Observation>(this.client, "get_observation", { handle: this.handle });
+    for (const fallback of observation.progress_fallbacks ?? []) log("progress_fallback", fallback);
+    return observation.metrics;
   }
 
   async diagnoseFailure(error: unknown, startedAtMs: number): Promise<Failure> {
@@ -344,20 +352,20 @@ export class ScriptedPlayer {
   async finishBuild(job: BuildJob): Promise<GameEntity> {
     try {
       await this.finished(job.commandId, job.builderId);
-      while (true) {
-        const observation = await this.observe();
-        const created = observation.owned_entities.filter(item =>
-          item.entity_type_id === job.blueprintId && !job.priorIds.has(String(item.id)),
-        );
-        if (created.length === 1) {
-          log("built", { builder_id: job.builderId, product: created[0], command_id: job.commandId });
-          return created[0]!;
-        }
-        if (created.length > 1) throw new Error(`ambiguous ${job.blueprintId} products after build ${job.commandId}`);
-        await this.wait({ type: "entity_type_count", entity_type_id: job.blueprintId, at_least: job.priorCount + 1 });
-      }
     } finally {
       await call(this.client, "set_progress_watch", { handle: this.handle, entity_ids: [] }).catch(() => undefined);
+    }
+    while (true) {
+      const observation = await this.observe();
+      const created = observation.owned_entities.filter(item =>
+        item.entity_type_id === job.blueprintId && !job.priorIds.has(String(item.id)),
+      );
+      if (created.length === 1) {
+        log("built", { builder_id: job.builderId, product: created[0], command_id: job.commandId });
+        return created[0]!;
+      }
+      if (created.length > 1) throw new Error(`ambiguous ${job.blueprintId} products after build ${job.commandId}`);
+      await this.wait({ type: "entity_type_count", entity_type_id: job.blueprintId, at_least: job.priorCount + 1 });
     }
   }
 }
@@ -524,6 +532,7 @@ export async function runScriptedPlayer(config: Config): Promise<void> {
   let failure: Failure | undefined;
   let workflowCompleted = false;
   const cleanupErrors: string[] = [];
+  let transportMetrics: Record<string, number> | undefined;
   try {
     await client.connect(transport);
     log("scenario_start", { username: config.username, base_url: config.baseUrl });
@@ -535,6 +544,10 @@ export async function runScriptedPlayer(config: Config): Promise<void> {
     failure = player ? await player.diagnoseFailure(error, startedAt) : { reason: "workflow_error" };
   }
   if (player) {
+    try {
+      transportMetrics = await player.transportMetrics();
+      if (transportMetrics) log("transport_metrics", { metrics: transportMetrics });
+    } catch (error) { log("transport_metrics_error", { error: String(error) }); }
     try { await player.disconnect(); }
     catch (error) { cleanupErrors.push(`disconnect: ${String(error)}`); }
   }
@@ -544,6 +557,7 @@ export async function runScriptedPlayer(config: Config): Promise<void> {
   log("scenario_result", {
     username: config.username, run_id: player?.run_id,
     success, duration_ms: Date.now() - startedAt,
+    ...(transportMetrics ? { transport_metrics: transportMetrics } : {}),
     ...(workflowError === undefined ? {} : { error: String(workflowError) }),
     ...(!success ? { failure: failure ?? { reason: "cleanup_failed" } } : {}),
     ...(cleanupErrors.length ? { cleanup_errors: cleanupErrors } : {}),

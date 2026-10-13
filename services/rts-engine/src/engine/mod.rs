@@ -44,6 +44,12 @@ const COLLECTOR_ACTIVITY_DELIVERING: &str = "delivering";
 const COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING: &str = "proximity_collecting";
 const COLLECTOR_ACTIVITY_WAITING_FOR_TURN: &str = "waiting_for_turn";
 
+fn current_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default().as_millis() as u64
+}
+
 fn retry_delay_ticks(retry_after_ms: u64, tps: u32) -> u64 {
     (retry_after_ms
         .saturating_mul(tps as u64)
@@ -1319,6 +1325,9 @@ pub struct Engine {
     last_intent_id: String,
     player_last_seq: HashMap<String, u64>,
     lifecycle_emitted: HashSet<(Vec<u8>, pb::LifecycleState)>,
+    last_build_progress_publish_at: Instant,
+    build_progress_stamps: HashMap<u64, (String, f32, u64)>,
+    previous_build_progress_owners: HashSet<String>,
     telemetry: Option<Telemetry>,
     /// M6: Players that have already been given a spawn (idempotency).
     joined_players: HashSet<String>,
@@ -1844,6 +1853,9 @@ impl Engine {
                     last_intent_id,
                     player_last_seq,
                     lifecycle_emitted: HashSet::new(),
+                    last_build_progress_publish_at: Instant::now(),
+                    build_progress_stamps: HashMap::new(),
+                    previous_build_progress_owners: HashSet::new(),
                     telemetry,
                     joined_players,
                     transport_node_by_entity: HashMap::new(),
@@ -2058,6 +2070,9 @@ impl Engine {
             last_intent_id: "0-0".to_string(),
             player_last_seq: HashMap::new(),
             lifecycle_emitted: HashSet::new(),
+            last_build_progress_publish_at: Instant::now(),
+            build_progress_stamps: HashMap::new(),
+            previous_build_progress_owners: HashSet::new(),
             telemetry,
             joined_players: HashSet::new(),
             transport_node_by_entity: HashMap::new(),
@@ -2704,6 +2719,8 @@ impl Engine {
                 target_entity_type_id: target_entity_type_id.clone(),
                 progress: new_progress,
             });
+            self.build_progress_stamps.insert(entity_id,
+                (target_entity_type_id.clone(), new_progress, current_unix_ms()));
             if new_progress >= 1.0 {
                 completed.push((entity_id, player_id, target_entity_type_id, is_upgrade));
             }
@@ -2882,6 +2899,8 @@ impl Engine {
                     research.progress = new_progress;
                 }
             }
+            self.build_progress_stamps.insert(entity_id,
+                (technology_id.clone(), new_progress, current_unix_ms()));
             if let Err(error) = self
                 .redis
                 .update_construction_progress(entity_id, "research", &technology_id, new_progress)
@@ -4476,6 +4495,69 @@ impl Engine {
             .collect()
     }
 
+    async fn publish_build_progress_if_due(&mut self) -> Option<Duration> {
+        if self.last_build_progress_publish_at.elapsed() < Duration::from_millis(500) {
+            return None;
+        }
+        let now_ms = current_unix_ms();
+        let mut stamps = self.build_progress_stamps.clone();
+        let mut owners = HashSet::new();
+        let mut active_ids = HashSet::new();
+        let mut states = Vec::new();
+        for (entity_id, active) in self.intents.active_intents() {
+            let construction = match active.action.exec.as_ref() {
+                Some(pb::action_state::Exec::Build(state)) => Some((&state.blueprint_id, state.progress)),
+                Some(pb::action_state::Exec::Upgrade(state)) => Some((&state.target_entity_type_id, state.progress)),
+                Some(pb::action_state::Exec::Research(state)) => Some((&state.technology_id, state.progress)),
+                _ => None,
+            };
+            let Some((blueprint, progress)) = construction else { continue; };
+            active_ids.insert(*entity_id);
+            owners.insert(active.metadata.player_id.clone());
+            let updated_at = match stamps.get(entity_id) {
+                Some((previous_blueprint, previous_progress, previous_time))
+                    if previous_blueprint == blueprint && *previous_progress == progress => *previous_time,
+                _ => now_ms,
+            };
+            stamps.insert(*entity_id, (blueprint.clone(), progress, updated_at));
+            states.push(serde_json::json!({
+                "entity_id": entity_id,
+                "owner_player_id": active.metadata.player_id,
+                "blueprint_id": blueprint,
+                "progress": progress,
+                "progress_updated_at_unix_ms": updated_at,
+            }));
+        }
+        stamps.retain(|id, _| active_ids.contains(id));
+        if owners.is_empty() && self.previous_build_progress_owners.is_empty() {
+            self.last_build_progress_publish_at = Instant::now();
+            return None;
+        }
+        states.sort_by_key(|state| state["entity_id"].as_u64().unwrap_or(0));
+        let mut recipients: Vec<_> = owners.union(&self.previous_build_progress_owners).cloned().collect();
+        recipients.sort();
+        let payload = serde_json::json!({
+            "type": "build-progress",
+            "run_id": self.redis.run_id,
+            "server_tick": self.state.tick,
+            "server_time_ms": now_ms,
+            "recipients": recipients,
+            "states": states,
+        });
+        let redis_started = Instant::now();
+        let result = self.redis.publish_build_progress_batch(&payload).await;
+        let redis_duration = redis_started.elapsed();
+        match result {
+            Ok(_) => {
+                self.last_build_progress_publish_at = Instant::now();
+                self.build_progress_stamps = stamps;
+                self.previous_build_progress_owners = owners;
+            }
+            Err(error) => warn!(?error, "build progress batch publish failed"),
+        }
+        Some(redis_duration)
+    }
+
     fn combat_effect_states_for_stream(&self) -> Vec<pb::CombatEffectState> {
         let mut states: Vec<pb::CombatEffectState> = self
             .combat_effect_ui_state_by_entity
@@ -4607,6 +4689,7 @@ impl Engine {
                 self.last_delta_id = Some(id);
             }
         }
+        let _ = self.publish_build_progress_if_due().await;
         if self.state.tick % snapshot_interval == 0 {
             let boundary = self.last_delta_id.as_deref().unwrap_or("0-0");
             let collector_states = self.collector_states_for_stream();
@@ -4890,6 +4973,10 @@ impl Engine {
                     Ok(id) => self.last_delta_id = Some(id),
                     Err(e) => error!(?e, "delta publish failed"),
                 }
+            }
+            if let Some(duration) = self.publish_build_progress_if_due().await {
+                record_tick_phase_duration(phase_durations.as_mut(), raider_ai_spatial_index_enabled,
+                    "build_progress_redis_publish", duration);
             }
             record_tick_phase(
                 phase_durations.as_mut(),

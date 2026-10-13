@@ -23,6 +23,8 @@ export class BuildProgressMetrics {
   private startedAt = 0;
   private stoppedAt = 0;
   private requests: RequestSample[] = [];
+  private streamEvents = 0;
+  private streamBytes = 0;
   private unchangedResponses = 0;
   private appliedResponses = 0;
   private displayedAgesMs: number[] = [];
@@ -34,6 +36,8 @@ export class BuildProgressMetrics {
 
   start(): void {
     this.requests = [];
+    this.streamEvents = 0;
+    this.streamBytes = 0;
     this.unchangedResponses = 0;
     this.appliedResponses = 0;
     this.displayedAgesMs = [];
@@ -70,6 +74,12 @@ export class BuildProgressMetrics {
     if (typeof serverTimeMs === "number" && Number.isFinite(serverTimeMs)) {
       this.serverClockOffsetMs = serverTimeMs - (sentAtMs + receivedAtMs) / 2;
     }
+  }
+
+  recordStreamEvent(bodyBytes: number): void {
+    if (!this.enabled) return;
+    this.streamEvents++;
+    this.streamBytes += bodyBytes;
   }
 
   recordRenderedFrame(
@@ -117,6 +127,8 @@ export class BuildProgressMetrics {
     return {
       durationSeconds: Math.round(durationMinutes * 600) / 10,
       requestCount,
+      streamEventCount: this.streamEvents,
+      streamBodyKiB: Math.round(this.streamBytes / 102.4) / 10,
       unchangedResponsePercent: this.appliedResponses
         ? Math.round(
             (this.unchangedResponses / this.appliedResponses) * 1_000,

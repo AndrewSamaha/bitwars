@@ -1,6 +1,6 @@
 # Build progress transport decision plan
 
-## Current state
+## Polling baseline before the SSE experiment
 
 The world SSE stream carries entity snapshots, deltas, and intent lifecycle
 events, but no construction progress. The renderer and selected-entity panel
@@ -81,7 +81,7 @@ run. The 0% unchanged figure applies to this capture only; measure an idle
 period separately. Panel age is sampled only on panel paints, whereas arc age
 is sampled on rendered frames, so their p95 values are not directly comparable.
 
-**Recommendation for now:** keep the shared 500 ms poll and do not add SSE
+**Recommendation from this initial capture:** keep the shared 500 ms poll and do not add SSE
 progress events or slow polling based on this capture alone. Repeat an active
 build capture with workload metadata, collect an idle capture, then measure
 several builds and concurrent clients. If repeated rendered-age p95 values
@@ -132,3 +132,111 @@ the authoritative intent changes. Avoid exposing progress for other players.
    threshold so the decision can be revisited as concurrent players grow.
 
 The single-client development log alone cannot identify the crossover point.
+
+The SSE experiment now uses a global progress batch at approximately 500 ms
+intervals while construction is active. The web stream sends only the
+authenticated player's states, including a full initial batch on connect.
+Clients accept only nondecreasing ticks for a run, replace their progress
+state from each full batch, and fall back to the v3 endpoint after a stale or
+disconnected stream. The polling baseline below remains the comparison point.
+The SSE connection summary reports
+wire-frame bytes, while the polling baseline reports JSON response-body bytes;
+use browser network transfer sizes for a like-for-like byte comparison.
+
+## 24-bot diagnostic run: trial-24-020
+
+The diagnostic run used the same 24-bot scenario and completed with all bots
+succeeding:
+
+```bash
+pnpm --filter @bitwars/player-mcp bot-runner -- \
+  --count 24 --run-tag trial-24-020 --ramp-ms 500 \
+  --timeout-seconds 1200 --allow-game-writes
+```
+
+The engine's existing `engine_tick_phase_timing` record now has a nested
+`build_progress_redis_publish` phase. Its `samples` count is the number of
+attempted progress batch writes in that window; `p95_ms` and `max_ms` measure
+only the existing Redis `SET` plus `XADD` call. This phase is inside
+`delta_publish`, after the `economy` phase. A failed publish still contributes
+a duration and emits the existing engine warning.
+
+Each bot's stdout JSONL includes one `progress_fallback` record per fallback
+attempt, emitted at scenario end. The record has the poll start time,
+player ID, watched IDs, watch age, time since the last accepted progress batch, time since
+any SSE frame, last progress tick and source timestamp, count of states in the
+last progress batch, HTTP status and number of states returned when available,
+and any request error.
+The runner summary still reports total fallback requests. Diagnostics are
+bounded to 1,000 records per bot; the run should remain well below that limit.
+
+The web app's `build_progress_sse_connection` Axiom record now includes player
+ID and, for live progress frames, the count, mean, maximum, and count over
+1,000 ms of time from the batch's engine timestamp to completion of the SSE
+write. Initial snapshots and bootstrap catch-up frames are excluded from these
+age fields. A live frame that is at least 1,000 ms old also emits a
+`build_progress_sse_lag` record with player ID and server tick, at most once per
+10 seconds per connection. The engine and web app clocks must be synchronized
+for this age to be meaningful. Query the runner's exact start/end time for engine and HTTP
+metrics, and extend the end by about 10 seconds for connection-close records.
+
+Read the three layers together:
+
+| Observation | Leading explanation to investigate |
+| --- | --- |
+| Fallback returns no state | The watch outlived the active build; check command completion and final clearing batch. |
+| Fallback returns a state and engine Redis publish durations are high | The engine's Redis write may be delaying publication. |
+| Fallback returns a state and web live source age exceeds 1 second | Delay is between engine timestamp and SSE write; inspect stream backlog and web processing. |
+| Fallback returns a state, web age stays low, but all bot SSE frames go quiet | Delay is after the web write or at the client's stream reader. |
+| Fallback returns a state, other SSE frames keep arriving, and web age stays low | Check watch age, owner selection, progress batch cadence, and the fallback threshold. |
+
+These summaries do not correlate a specific Redis write to a specific fallback.
+If the first run points to an ambiguous layer, add short-lived tracing for a
+small sample of server ticks rather than logging every batch on the engine's
+hot path. Compare bot completion, fallback count, SSE bytes, and `economy` and
+`delta_publish` timing with `trial-24-018` and `trial-24-019`.
+
+In `trial-24-020`, 41 fallback requests occurred: 22 followed an empty prior
+batch and returned an active build, 17 came from one bot that kept watching
+after its build command finished, and two followed a nonempty batch by just
+over 1 second. The engine's longest measured batch Redis write was 4.0 ms;
+the web server's longest live batch source age was 880 ms. These results led
+to a 1,250 ms stale threshold, a fresh grace period when watched IDs change,
+and clearing the scripted bot's watch as soon as the command becomes terminal.
+
+For the next comparison, restart the web app and player MCP processes and run
+the same scenario with a new tag, such as `trial-24-021`. Compare the fallback
+diagnostic categories with `trial-24-020`, then check that SSE bytes, bot
+completion, and economy/tick timings remain close to the prior 500 ms runs.
+
+## 24-bot polling baseline: trial-24-017
+
+The runner started 24 bots on 2026-10-12 at 21:14:04 UTC and finished at
+21:21:01 UTC (417.5 seconds); all 24 completed. Axiom measurements below use
+that exact interval. The endpoint records have no run tag, so the counts are
+attributed by time and could include another client using the endpoint during
+the run. The runner summary is at
+`.metrics/player-mcp/runs/trial-24-017/summary.json`.
+
+| Measure | Polling baseline |
+| --- | ---: |
+| Successful `/api/v3/build-state` requests | 8,337 |
+| Mean request rate over the full run | 20.0/s |
+| Peak request rate in a 10-second bucket | 47.9/s |
+| Application response bodies | 1,322,033 bytes (1.26 MiB) |
+| Mean / p95 response body | 158.6 / 165 bytes |
+| Requested IDs / returned states | 8,337 / 8,275 |
+| Route duration p50 / p95 / p99 | 22.2 / 64.6 / 142.8 ms |
+| Redis read duration p50 / p95 / p99 | 5.2 / 37.1 / 74.3 ms |
+| Connected players, maximum / mean across engine timing windows | 24 / 16.6 |
+| World entities, maximum | 861 |
+| Engine tick p95, mean / maximum across 28 timing windows | 38.8 / 163.2 ms |
+| Engine CPU capacity use, mean across timing windows | 8.9% |
+
+Each request asked for one ID, and 99.3% returned a build state. Response-body
+bytes exclude HTTP headers and SSE traffic. The engine figures are summaries
+of published timing windows, not percentiles over all individual ticks. This
+bot run did not measure browser display age, frame time, or web-server CPU. For an SSE comparison,
+use the same bot workflow and count, record owner-filtered SSE event count and
+bytes, and compare server and engine metrics at similar connected-player and
+entity counts. Repeat the browser freshness capture separately.

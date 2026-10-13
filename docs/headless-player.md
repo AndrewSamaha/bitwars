@@ -49,13 +49,13 @@ Expose a small, typed MCP tool surface:
 | `get_changes` | Return durable semantic changes after a run-scoped cursor; report resync gaps. |
 | `get_command` | Return the HTTP receipt and latest lifecycle state for a submitted command. |
 | `wait_for_observation` | Wait up to 60 seconds for a command, entity count, collector activity, or resource condition. |
-| `set_progress_watch` | Set the union of owned entity IDs polled through `/api/v3/build-state`; an empty list stops polling. |
+| `set_progress_watch` | Select owned entity IDs whose SSE build progress appears in observations; stale streams fall back to `/api/v3/build-state` polling. An empty list stops the watch. |
 | `send_intent` | Submit an action for an owned entity with the current `run_id`, next sequence, and unique command ID; return IDs needed to correlate lifecycle events. |
 | `disconnect_player` | Close the player's SSE stream, timers, and buffers and release the handle. |
 
 Progress observations can be included in `observe_events` or
-`get_player_state`; the gateway still performs the real
-`/api/v3/build-state` requests on the prescribed schedule. MCP's own
+`get_player_state`; the gateway consumes owner-filtered build-progress batches
+from the game's SSE stream and polls `/api/v3/build-state` if the stream is stale. MCP's own
 request/response or streaming transport is **not** the game's SSE connection.
 Batching gateway-to-runner observations avoids one MCP call per world event,
 while bounded buffers and explicit overflow prevent silent data loss. Avoid
@@ -93,12 +93,13 @@ the following flow through MCP; the gateway performs the underlying requests.
    `run_id`, player ID, active intents, and last processed `client_seq` before
    sending a new command. Wait for the snapshot and player-owned entities as
    needed; a freshly joined player may not own an entity immediately.
-3. For active build, upgrade, or research jobs, request the relevant owned
-   entity IDs from `GET /api/v3/build-state` at the client's current 500 ms
-   cadence. Mirror the shared client store: one request for the union of IDs,
-   and no polling when there are no IDs to observe. Record response size,
-   latency, unchanged responses, and age of returned progress. The separate
-   browser recorder remains the source for *painted* progress age.
+3. For active build, upgrade, or research jobs, watch the relevant owned
+   entity IDs in the owner-filtered SSE build-progress batches. Poll the union
+   of watched IDs from `GET /api/v3/build-state` every 500 ms only if no batch
+   has arrived for 1,250 ms after the later of the last batch or a newly added
+   watch, or the stream disconnects. Record SSE event and
+   byte counts, fallback request counts, and progress age. The separate browser
+   recorder remains the source for *painted* progress age.
 4. Send realistic `POST /api/v1/intent` commands for owned entities. Use a
    fresh UUIDv7 `client_cmd_id`, monotonically increasing per-player
    `client_seq`, and the current `run_id`. Correlate each submission with its
