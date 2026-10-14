@@ -471,8 +471,8 @@ impl Engine {
             }
             "step" => {
                 let ticks = cmd.ticks.unwrap_or(1);
-                if !(1..=3600).contains(&ticks) || !self.scenario_runtime.paused {
-                    bail!("step requires a paused game and 1..3600 ticks");
+                if !(1..=1200).contains(&ticks) || !self.scenario_runtime.paused {
+                    bail!("step requires a paused game and 1..1200 ticks");
                 }
                 if self.scenario_runtime.steps > 0 {
                     bail!("a step is already in progress");

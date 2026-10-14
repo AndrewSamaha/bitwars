@@ -33,7 +33,7 @@ use prost::Message;
 use state::{initialize_resource_deposits, take_from_deposit, ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
 pub const ENGINE_PROTOCOL_MAJOR: u32 = 13;
-const TICK_TIMING_WINDOW_TICKS: usize = 600;
+const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
 const COLLECTOR_ACTIVITY_IDLE: &str = "idle";
@@ -3309,7 +3309,7 @@ impl Engine {
             if self.scenario_runtime.scenario_id.is_some() { 0 } else { self.spawn_config.max_raiders },
             self.cfg
                 .raider_ai_spatial_index_mode
-                .enabled_at(self.state.tick),
+                .enabled_at(self.state.tick, self.cfg.tps),
         ) {
             Ok(commands) => commands,
             Err(error) => {
@@ -4730,6 +4730,7 @@ impl Engine {
     pub async fn run(&mut self) -> anyhow::Result<()> {
         let dt = 1.0 / self.cfg.tps as f32;
         let tick_budget = Duration::from_secs_f64(1.0 / self.cfg.tps as f64);
+        let tick_timing_window_ticks = self.cfg.tps as usize * TICK_TIMING_WINDOW_SECS;
         let mut ticker = interval(Duration::from_micros(
             (1_000_000.0 / self.cfg.tps as f64) as u64,
         ));
@@ -4754,7 +4755,7 @@ impl Engine {
             let raider_ai_spatial_index_enabled = self
                 .cfg
                 .raider_ai_spatial_index_mode
-                .enabled_at(self.state.tick);
+                .enabled_at(self.state.tick, self.cfg.tps);
             let tick_started = tick_durations.as_ref().map(|_| Instant::now());
             let mut phase_started = tick_started;
 
@@ -5043,13 +5044,13 @@ impl Engine {
                     && self
                         .cfg
                         .raider_ai_spatial_index_mode
-                        .enabled_at(self.state.tick)
+                        .enabled_at(self.state.tick, self.cfg.tps)
                         != raider_ai_spatial_index_enabled;
                 let samples = tick_durations
                     .entry(raider_ai_spatial_index_enabled)
-                    .or_insert_with(|| Vec::with_capacity(TICK_TIMING_WINDOW_TICKS));
+                    .or_insert_with(|| Vec::with_capacity(tick_timing_window_ticks));
                 samples.push(tick_started.elapsed());
-                if samples.len() == TICK_TIMING_WINDOW_TICKS || reaches_experiment_boundary {
+                if samples.len() == tick_timing_window_ticks || reaches_experiment_boundary {
                     let summary = summarize_tick_durations(samples, tick_budget)
                         .expect("tick timing window is non-empty");
                     samples.clear();
@@ -5932,21 +5933,16 @@ impl Engine {
             let client_cmd_id_str = format_uuid(client_cmd_id);
             let state_str = state.as_str_name();
             let reason_str = reason.as_str_name();
-            if let Err(err) = telemetry
-                .publish_lifecycle_event(
-                    &self.cfg.game_id,
-                    player_id,
-                    &intent_id_str,
-                    &client_cmd_id_str,
-                    state_str,
-                    reason_str,
-                    tick,
-                    protocol_version,
-                )
-                .await
-            {
-                warn!(error = ?err, "failed to publish lifecycle telemetry");
-            }
+            telemetry.enqueue_lifecycle_event(
+                &self.cfg.game_id,
+                player_id,
+                &intent_id_str,
+                &client_cmd_id_str,
+                state_str,
+                reason_str,
+                tick,
+                protocol_version,
+            );
         }
 
         Ok(())

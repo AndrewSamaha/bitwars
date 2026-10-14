@@ -1,4 +1,7 @@
-pub const RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS: u64 = 600;
+pub const DEFAULT_TPS: u32 = 20;
+pub const RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_SECS: u64 = 10;
+const DEFAULT_MAX_CMDS_PER_SECOND: u32 = 3_840;
+const DEFAULT_MAX_BATCH_MS_PER_SECOND: u64 = 300;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum RaiderAiSpatialIndexMode {
@@ -9,13 +12,17 @@ pub enum RaiderAiSpatialIndexMode {
 }
 
 impl RaiderAiSpatialIndexMode {
-    pub fn enabled_at(self, tick: u64) -> bool {
+    pub fn enabled_at(self, tick: u64, tps: u32) -> bool {
         match self {
             Self::Enabled => true,
             Self::Disabled => false,
             // Start with the indexed implementation and switch modes only at
             // telemetry-window boundaries so each Axiom summary is pure.
-            Self::Alternating => (tick / RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS) % 2 == 0,
+            Self::Alternating => {
+                let block_ticks = RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_SECS
+                    * u64::from(tps.max(1));
+                (tick / block_ticks) % 2 == 0
+            }
         }
     }
 }
@@ -35,8 +42,10 @@ pub struct GameConfig {
     pub default_stop_radius: f32,
     pub default_entity_speed: f32,
     /// M1: Maximum number of intents ingested per tick (backpressure).
+    /// The default preserves the previous per-second allowance at 20 TPS.
     pub max_cmds_per_tick: u32,
     /// M1: Maximum milliseconds spent processing intents per tick (0 = unlimited).
+    /// The default preserves the previous per-second allowance at 20 TPS.
     pub max_batch_ms: u64,
     /// Chooses the player-target lookup used by raider AI. Alternating mode
     /// changes implementation every telemetry window for controlled A/B runs.
@@ -57,7 +66,7 @@ impl Default for GameConfig {
     fn default() -> Self {
         Self {
             game_id: "demo-001".into(),
-            tps: 60,
+            tps: DEFAULT_TPS,
             force_min: -200.0,
             force_max: 200.0,
             friction: 0.3,
@@ -68,8 +77,8 @@ impl Default for GameConfig {
             redis_url: "redis://127.0.0.1/".into(),
             default_stop_radius: 0.75,
             default_entity_speed: 90.0,
-            max_cmds_per_tick: 64,
-            max_batch_ms: 5,
+            max_cmds_per_tick: 192,
+            max_batch_ms: 15,
             raider_ai_spatial_index_mode: RaiderAiSpatialIndexMode::Enabled,
             restore_gamestate: false,
             content_pack_path: String::new(),
@@ -87,6 +96,15 @@ impl GameConfig {
         if let Ok(v) = std::env::var("GAMESTATE_REDIS_URL") {
             cfg.redis_url = v;
         }
+        if let Ok(v) = std::env::var("GAME_TPS") {
+            if let Ok(n) = v.parse::<u32>() {
+                if n > 0 {
+                    cfg.tps = n;
+                }
+            }
+        }
+        cfg.max_cmds_per_tick = DEFAULT_MAX_CMDS_PER_SECOND.div_ceil(cfg.tps);
+        cfg.max_batch_ms = DEFAULT_MAX_BATCH_MS_PER_SECOND.div_ceil(u64::from(cfg.tps));
         if let Ok(v) = std::env::var("MAX_CMDS_PER_TICK") {
             if let Ok(n) = v.parse::<u32>() {
                 cfg.max_cmds_per_tick = n;
@@ -133,16 +151,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn default_tick_rate_and_ingress_budget_match_twenty_hertz() {
+        let cfg = GameConfig::default();
+        assert_eq!(cfg.tps, 20);
+        assert_eq!(cfg.max_cmds_per_tick * cfg.tps, DEFAULT_MAX_CMDS_PER_SECOND);
+        assert_eq!(cfg.max_batch_ms * u64::from(cfg.tps), DEFAULT_MAX_BATCH_MS_PER_SECOND);
+    }
+
+    #[test]
     fn alternating_spatial_index_mode_changes_only_on_telemetry_boundaries() {
-        assert!(RaiderAiSpatialIndexMode::Alternating.enabled_at(0));
+        let block_ticks = RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_SECS * u64::from(DEFAULT_TPS);
+        assert!(RaiderAiSpatialIndexMode::Alternating.enabled_at(0, DEFAULT_TPS));
         assert!(RaiderAiSpatialIndexMode::Alternating
-            .enabled_at(RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS - 1));
+            .enabled_at(block_ticks - 1, DEFAULT_TPS));
         assert!(!RaiderAiSpatialIndexMode::Alternating
-            .enabled_at(RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS));
+            .enabled_at(block_ticks, DEFAULT_TPS));
         assert!(!RaiderAiSpatialIndexMode::Alternating
-            .enabled_at(RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS * 2 - 1));
+            .enabled_at(block_ticks * 2 - 1, DEFAULT_TPS));
         assert!(RaiderAiSpatialIndexMode::Alternating
-            .enabled_at(RAIDER_AI_SPATIAL_INDEX_EXPERIMENT_BLOCK_TICKS * 2));
+            .enabled_at(block_ticks * 2, DEFAULT_TPS));
     }
 
     #[test]

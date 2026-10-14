@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       }
     }
     if (action === "step") {
-      if (body.ticks !== undefined && (!Number.isInteger(body.ticks) || body.ticks < 1 || body.ticks > 3600)) throw new Error("ticks must be an integer from 1 to 3600");
+      if (body.ticks !== undefined && (!Number.isInteger(body.ticks) || body.ticks < 1 || body.ticks > 1200)) throw new Error("ticks must be an integer from 1 to 1200");
       command.ticks = body.ticks ?? 1;
     }
     if (action === "bookmark") {

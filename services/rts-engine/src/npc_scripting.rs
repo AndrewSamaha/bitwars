@@ -25,9 +25,9 @@ const ORBIT_CLEARANCE: f32 = 100.0;
 const MAX_SCRIPT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SCRIPT_HOOKS: usize = 50;
 const INSTRUCTIONS_PER_HOOK: u32 = 1_000;
-/// Maximum wall-clock time spent making individual raider decisions per tick.
+/// Maximum wall-clock time spent making individual raider decisions per second.
 /// Snapshotting shared inputs and cleanup are deliberately outside this budget.
-const RAIDER_AI_DECISION_BUDGET: Duration = Duration::from_micros(500);
+const RAIDER_AI_DECISION_BUDGET_PER_SECOND_US: u64 = 30_000;
 
 #[derive(Default)]
 pub struct NpcCommands {
@@ -245,10 +245,13 @@ impl RaiderScript {
             .and_then(|last_id| raider_indexes.iter().position(|(id, _)| *id > last_id))
             .unwrap_or(0);
         let decision_started = Instant::now();
+        let decision_budget = Duration::from_micros(
+            RAIDER_AI_DECISION_BUDGET_PER_SECOND_US / u64::from(ticks_per_second.max(1)),
+        );
         for offset in 0..raider_indexes.len() {
             // Always process the first raider so a sub-microsecond clock read
             // cannot indefinitely defer the entire population.
-            if offset > 0 && decision_started.elapsed() >= RAIDER_AI_DECISION_BUDGET {
+            if offset > 0 && decision_started.elapsed() >= decision_budget {
                 break;
             }
             let (entity_id, entity_index) =

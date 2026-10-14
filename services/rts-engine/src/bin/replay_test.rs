@@ -81,8 +81,8 @@ fn scenarios() -> Vec<ReplayScenario> {
         ),
         intents: vec![(0, make_move_envelope(0, 1, 10.0, 5.0))],
         total_ticks: 20,
-        expected_hash: 0x0fa2f2a981aba7b2,
-        expected_json: r#"{"entities":[{"force":{"x":0.0,"y":0.0},"id":1,"pos":{"x":10.0,"y":5.0},"vel":{"x":0.0,"y":0.0}},{"force":{"x":0.0,"y":0.0},"id":2,"pos":{"x":5.0,"y":5.0},"vel":{"x":0.0,"y":0.0}}],"tick":20}"#,
+        expected_hash: 0xde85b5592677bc3c,
+        expected_json: r#"{"entities":[{"force":{"x":0.0,"y":0.0},"health":100.0,"id":1,"pos":{"x":9.329179763793945,"y":4.664589881896973},"vel":{"x":0.0,"y":0.0}},{"force":{"x":0.0,"y":0.0},"health":100.0,"id":2,"pos":{"x":5.0,"y":5.0},"vel":{"x":0.0,"y":0.0}}],"tick":20}"#,
     }]
 }
 

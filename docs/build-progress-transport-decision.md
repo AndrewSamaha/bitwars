@@ -123,7 +123,7 @@ the authoritative intent changes. Avoid exposing progress for other players.
 3. Compare (a) the shared 500 ms poll, (b) a slower poll such as 1 s if it
    meets the freshness budget, and (c) owner-filtered progress events on the
    existing SSE connection, throttled to the needed UI rate. Do not publish at
-   the 60 Hz engine tick rate solely for this display.
+   the engine tick rate solely for this display.
 4. Prefer the simplest variant that meets the freshness budget and correctness
    checks without worsening engine tick latency or browser frames. If SSE saves
    meaningful Redis/HTTP work at expected concurrency, move progress to that

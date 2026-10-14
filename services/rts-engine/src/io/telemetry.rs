@@ -1,12 +1,20 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use reqwest::Client;
 use serde_json::json;
+use tokio::sync::mpsc;
 use tracing::warn;
 
 use crate::io::host_metrics::{hostname, HostMetrics};
+
+const LIFECYCLE_QUEUE_CAPACITY: usize = 1_024;
+const LIFECYCLE_BATCH_SIZE: usize = 64;
+const LIFECYCLE_BATCH_WAIT: Duration = Duration::from_millis(20);
+const LIFECYCLE_RETRY_WAIT: Duration = Duration::from_millis(100);
 
 #[derive(Debug, PartialEq)]
 pub struct TickTimingSummary {
@@ -50,6 +58,8 @@ pub struct Telemetry {
     org_id: Option<String>,
     service_name: String,
     hostname: String,
+    lifecycle_tx: mpsc::Sender<serde_json::Value>,
+    lifecycle_dropped: Arc<AtomicU64>,
 }
 
 impl Telemetry {
@@ -90,6 +100,17 @@ impl Telemetry {
 
         let ingest_url = format!("https://api.axiom.co/v1/datasets/{dataset}/ingest");
 
+        let (lifecycle_tx, lifecycle_rx) = mpsc::channel(LIFECYCLE_QUEUE_CAPACITY);
+        let lifecycle_dropped = Arc::new(AtomicU64::new(0));
+        tokio::spawn(run_lifecycle_worker(
+            lifecycle_rx,
+            client.clone(),
+            ingest_url.clone(),
+            token.clone(),
+            org_id.clone(),
+            lifecycle_dropped.clone(),
+        ));
+
         Ok(Some(Self {
             client,
             ingest_url,
@@ -98,6 +119,8 @@ impl Telemetry {
             org_id,
             service_name,
             hostname: hostname().unwrap_or_else(|| "unknown".to_string()),
+            lifecycle_tx,
+            lifecycle_dropped,
         }))
     }
 
@@ -105,7 +128,8 @@ impl Telemetry {
         &self.dataset
     }
 
-    pub async fn publish_lifecycle_event(
+    /// Queue best-effort Axiom telemetry without waiting for the HTTP request.
+    pub fn enqueue_lifecycle_event(
         &self,
         game_id: &str,
         player_id: &str,
@@ -115,7 +139,7 @@ impl Telemetry {
         reason: &str,
         server_tick: u64,
         protocol_version: u32,
-    ) -> Result<()> {
+    ) {
         let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let record = json!({
             "timestamp": timestamp,
@@ -133,7 +157,16 @@ impl Telemetry {
             "protocol_version": protocol_version,
         });
 
-        self.send(record).await
+        if let Err(error) = self.lifecycle_tx.try_send(record) {
+            let dropped = self.lifecycle_dropped.fetch_add(1, Ordering::Relaxed) + 1;
+            if dropped == 1 || dropped % 100 == 0 {
+                let reason = match error {
+                    mpsc::error::TrySendError::Full(_) => "queue full",
+                    mpsc::error::TrySendError::Closed(_) => "worker closed",
+                };
+                warn!(dropped, reason, "axiom lifecycle telemetry dropped");
+            }
+        }
     }
 
     pub async fn publish_tick_timings(
@@ -177,6 +210,8 @@ impl Telemetry {
             "tick_p95_ms": summary.p95_ms,
             "tick_max_ms": summary.max_ms,
             "over_budget_samples": summary.over_budget_samples,
+            "lifecycle_telemetry_queue_depth": LIFECYCLE_QUEUE_CAPACITY - self.lifecycle_tx.capacity(),
+            "lifecycle_telemetry_dropped": self.lifecycle_dropped.load(Ordering::Relaxed),
         })];
 
         records.extend(phase_summaries.into_iter().map(|(phase, summary)| {
@@ -210,40 +245,89 @@ impl Telemetry {
         self.send_many(records).await
     }
 
-    async fn send(&self, record: serde_json::Value) -> Result<()> {
-        self.send_many(vec![record]).await
-    }
-
     async fn send_many(&self, records: Vec<serde_json::Value>) -> Result<()> {
-        let body = serde_json::to_vec(&records)?;
-
-        let mut request = self
-            .client
-            .post(&self.ingest_url)
-            .bearer_auth(&self.token)
-            .header("Content-Type", "application/json");
-        if let Some(org_id) = &self.org_id {
-            request = request.header("X-AXIOM-ORG-ID", org_id);
-        }
-        let response = request
-            .body(body)
-            .send()
-            .await
-            .context("send telemetry payload")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(anyhow!("axiom ingest failed: {status} {text}"));
-        }
-
-        Ok(())
+        send_many_to_axiom(
+            &self.client,
+            &self.ingest_url,
+            &self.token,
+            self.org_id.as_deref(),
+            &records,
+        )
+        .await
     }
+}
+
+async fn run_lifecycle_worker(
+    mut rx: mpsc::Receiver<serde_json::Value>,
+    client: Client,
+    ingest_url: String,
+    token: String,
+    org_id: Option<String>,
+    dropped: Arc<AtomicU64>,
+) {
+    while let Some(first) = rx.recv().await {
+        let mut batch = Vec::with_capacity(LIFECYCLE_BATCH_SIZE);
+        batch.push(first);
+        let deadline = tokio::time::Instant::now() + LIFECYCLE_BATCH_WAIT;
+        while batch.len() < LIFECYCLE_BATCH_SIZE {
+            match tokio::time::timeout_at(deadline, rx.recv()).await {
+                Ok(Some(record)) => batch.push(record),
+                Ok(None) | Err(_) => break,
+            }
+        }
+
+        let mut result =
+            send_many_to_axiom(&client, &ingest_url, &token, org_id.as_deref(), &batch).await;
+        if result.is_err() {
+            tokio::time::sleep(LIFECYCLE_RETRY_WAIT).await;
+            result =
+                send_many_to_axiom(&client, &ingest_url, &token, org_id.as_deref(), &batch).await;
+        }
+        if let Err(error) = result {
+            let total =
+                dropped.fetch_add(batch.len() as u64, Ordering::Relaxed) + batch.len() as u64;
+            warn!(
+                ?error,
+                events = batch.len(),
+                dropped = total,
+                "axiom lifecycle telemetry batch failed"
+            );
+        }
+    }
+}
+
+async fn send_many_to_axiom(
+    client: &Client,
+    ingest_url: &str,
+    token: &str,
+    org_id: Option<&str>,
+    records: &[serde_json::Value],
+) -> Result<()> {
+    let body = serde_json::to_vec(records)?;
+    let mut request = client
+        .post(ingest_url)
+        .bearer_auth(token)
+        .header("Content-Type", "application/json");
+    if let Some(org_id) = org_id {
+        request = request.header("X-AXIOM-ORG-ID", org_id);
+    }
+    let response = request
+        .body(body)
+        .send()
+        .await
+        .context("send telemetry payload")?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!("axiom ingest failed: {status} {text}"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[test]
     fn summarizes_tick_durations() {
@@ -255,5 +339,95 @@ mod tests {
         assert_eq!(summary.p95_ms, 5.0);
         assert_eq!(summary.max_ms, 5.0);
         assert_eq!(summary.over_budget_samples, 2);
+    }
+
+    #[test]
+    fn lifecycle_queue_drops_immediately_when_full() {
+        let (lifecycle_tx, mut rx) = mpsc::channel(1);
+        let lifecycle_dropped = Arc::new(AtomicU64::new(0));
+        let telemetry = Telemetry {
+            client: Client::new(),
+            ingest_url: String::new(),
+            token: String::new(),
+            dataset: "test".into(),
+            org_id: None,
+            service_name: "rts-engine".into(),
+            hostname: "test".into(),
+            lifecycle_tx,
+            lifecycle_dropped: lifecycle_dropped.clone(),
+        };
+
+        for tick in [1, 2] {
+            telemetry.enqueue_lifecycle_event(
+                "game", "player", "intent", "command", "RECEIVED", "NONE", tick, 13,
+            );
+        }
+
+        assert_eq!(rx.try_recv().unwrap()["server_tick"], 1);
+        assert_eq!(lifecycle_dropped.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn lifecycle_worker_batches_events() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut bytes = Vec::new();
+            let mut buffer = [0u8; 4096];
+            let (body_start, body_len) = loop {
+                let read = socket.read(&mut buffer).await.unwrap();
+                assert!(read > 0, "request ended before its body arrived");
+                bytes.extend_from_slice(&buffer[..read]);
+                if let Some(header_end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+                    let body_start = header_end + 4;
+                    let headers = String::from_utf8_lossy(&bytes[..header_end]);
+                    let body_len = headers
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .and_then(|length| length.trim().parse::<usize>().ok())
+                        })
+                        .unwrap();
+                    if bytes.len() >= body_start + body_len {
+                        break (body_start, body_len);
+                    }
+                }
+            };
+            let records: Vec<serde_json::Value> =
+                serde_json::from_slice(&bytes[body_start..body_start + body_len]).unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await
+                .unwrap();
+            records
+        });
+
+        let (tx, rx) = mpsc::channel(8);
+        let dropped = Arc::new(AtomicU64::new(0));
+        let worker = tokio::spawn(run_lifecycle_worker(
+            rx,
+            Client::new(),
+            format!("http://{address}/ingest"),
+            "token".into(),
+            None,
+            dropped.clone(),
+        ));
+        for tick in 1..=3 {
+            tx.try_send(json!({ "server_tick": tick })).unwrap();
+        }
+        drop(tx);
+
+        let records = tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(records.len(), 3);
+        assert_eq!(dropped.load(Ordering::Relaxed), 0);
     }
 }
