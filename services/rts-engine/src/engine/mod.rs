@@ -1,5 +1,6 @@
 pub mod intent;
 mod convoy;
+mod formation;
 mod navigation;
 pub mod state;
 mod scenario;

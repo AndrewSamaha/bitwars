@@ -1,5 +1,8 @@
 //! Temporary, authoritative formation orders. Members retain ordinary active
 //! action slots for interruption/lifecycle handling; movement belongs to the order.
+#[cfg(test)]
+use super::formation::formation_slots;
+use super::formation::{formation_layout, FormationCommand, FormationMover, FormationProgress};
 use super::{
     intent::{IntentManager, IntentMetadata},
     state::GameState,
@@ -52,86 +55,26 @@ impl IntentManager {
             let (Some(anchor), Some(destination)) = (&mut order.anchor, &order.destination) else {
                 continue;
             };
-            if !order.traveling {
-                let mut ready = true;
-                for slot in &order.slots {
-                    let Some(offset) = &slot.offset else {
-                        continue;
-                    };
-                    let Some(entity) = state
-                        .entities
-                        .iter_mut()
-                        .find(|entity| entity.id == slot.entity_id)
-                    else {
-                        continue;
-                    };
-                    let speed = speed_for(entity);
-                    let pos = entity.pos.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
-                    let target = pb::Vec2 {
-                        x: anchor.x + offset.x,
-                        y: anchor.y + offset.y,
-                    };
-                    let (next, arrived) = approach(pos, &target, speed * dt);
-                    let velocity = if arrived || dt <= 0.0 {
-                        pb::Vec2 { x: 0.0, y: 0.0 }
-                    } else {
-                        pb::Vec2 {
-                            x: (next.x - pos.x) / dt,
-                            y: (next.y - pos.y) / dt,
-                        }
-                    };
-                    *pos = next;
-                    entity.vel = Some(velocity);
-                    ready &= arrived;
-                }
-                // Depart on the following tick, after every member occupies a slot.
-                order.traveling = ready;
-                continue;
-            }
-            let speed = order
-                .slots
-                .iter()
-                .filter_map(|slot| {
-                    state
-                        .entities
-                        .iter()
-                        .find(|entity| entity.id == slot.entity_id)
-                })
-                .map(speed_for)
-                .fold(f32::INFINITY, f32::min);
-            if !speed.is_finite() {
-                continue;
-            }
-            let (next, arrived) = approach(anchor, destination, speed * dt);
-            let velocity = if arrived || dt <= 0.0 {
-                pb::Vec2 { x: 0.0, y: 0.0 }
+            let command = if order.traveling {
+                FormationCommand::TravelTo(*destination)
             } else {
-                pb::Vec2 {
-                    x: (next.x - anchor.x) / dt,
-                    y: (next.y - anchor.y) / dt,
-                }
+                FormationCommand::Assemble
             };
-            *anchor = next;
-            for slot in &order.slots {
-                let Some(offset) = &slot.offset else {
-                    continue;
-                };
-                if let Some(entity) = state
-                    .entities
-                    .iter_mut()
-                    .find(|entity| entity.id == slot.entity_id)
-                {
-                    entity.pos = Some(pb::Vec2 {
-                        x: anchor.x + offset.x,
-                        y: anchor.y + offset.y,
-                    });
-                    entity.vel = Some(velocity);
+            let progress = FormationMover {
+                anchor,
+                slots: &order.slots,
+            }
+            .step(&mut state.entities, command, speed_for, dt);
+            match progress {
+                // Preserve the assembly barrier: depart on the following tick.
+                FormationProgress::Ready => order.traveling = true,
+                FormationProgress::Arrived => {
+                    finished.extend(order.slots.iter().map(|slot| slot.entity_id))
                 }
-                if arrived {
-                    finished.push(slot.entity_id);
-                }
+                _ => {}
             }
         }
+
         let notifications = finished
             .into_iter()
             .filter_map(|id| {
@@ -143,23 +86,6 @@ impl IntentManager {
         self.prune_convoys();
         notifications
     }
-}
-
-fn approach(from: &pb::Vec2, to: &pb::Vec2, step: f32) -> (pb::Vec2, bool) {
-    let dx = to.x - from.x;
-    let dy = to.y - from.y;
-    let distance = dx.hypot(dy);
-    if distance <= step.max(0.0) || distance <= 0.0001 {
-        return (*to, true);
-    }
-    let fraction = step.max(0.0) / distance;
-    (
-        pb::Vec2 {
-            x: from.x + dx * fraction,
-            y: from.y + dy * fraction,
-        },
-        false,
-    )
 }
 
 impl Engine {
@@ -221,34 +147,25 @@ impl Engine {
             bail!("invalid convoy order: {reason:?}");
         }
         let destination = destination.unwrap();
-        let count = ids.len() as f64;
-        let mut center = (0.0_f64, 0.0_f64);
-        let mut radius = 0.0_f32;
-        for id in &ids {
-            let entity = self
-                .state
-                .entities
-                .iter()
-                .find(|entity| entity.id == *id)
-                .unwrap();
-            let pos = entity.pos.unwrap();
-            center.0 += pos.x as f64 / count;
-            center.1 += pos.y as f64 / count;
-            radius = radius.max(
-                self.content
-                    .as_ref()
-                    .unwrap()
-                    .get(&entity.entity_type_id)
-                    .unwrap()
-                    .hull_radius,
-            );
-        }
-        let anchor = pb::Vec2 {
-            x: center.0 as f32,
-            y: center.1 as f32,
+        let Some(layout) = formation_layout(&self.state.entities, &ids, |entity| {
+            self.content
+                .as_ref()
+                .unwrap()
+                .get(&entity.entity_type_id)
+                .unwrap()
+                .hull_radius
+        }) else {
+            self.emit_lifecycle_event(
+                &metadata,
+                pb::LifecycleState::Rejected,
+                pb::LifecycleReason::InvalidTarget,
+                self.state.tick,
+            )
+            .await?;
+            bail!("invalid convoy formation geometry");
         };
-        let spacing = 2.0 * radius + 1.0;
-        let slots = formation_slots(ids, spacing);
+        let anchor = layout.anchor;
+        let slots = layout.slots;
         let mut canceled = Vec::new();
         let mut members = Vec::new();
         for slot in &slots {
@@ -418,28 +335,6 @@ impl Engine {
     }
 }
 
-/// Fixed world-axis grid, centered on its occupied slots. Sort server IDs so
-/// selecting the same ships in another order yields exactly the same formation.
-fn formation_slots(mut ids: Vec<u64>, spacing: f32) -> Vec<pb::ConvoySlot> {
-    ids.sort_unstable();
-    let columns = (ids.len() as f32).sqrt().ceil() as usize;
-    let raw: Vec<_> = (0..ids.len())
-        .map(|i| ((i % columns) as f32, (i / columns) as f32))
-        .collect();
-    let mean_x = raw.iter().map(|point| point.0).sum::<f32>() / ids.len() as f32;
-    let mean_y = raw.iter().map(|point| point.1).sum::<f32>() / ids.len() as f32;
-    ids.into_iter()
-        .zip(raw)
-        .map(|(entity_id, (x, y))| pb::ConvoySlot {
-            entity_id,
-            offset: Some(pb::Vec2 {
-                x: (x - mean_x) * spacing,
-                y: (y - mean_y) * spacing,
-            }),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -596,6 +491,27 @@ mod tests {
         recovered.tick_convoys(&mut recovered_state, 0.5);
         assert_eq!(state.entities, recovered_state.entities);
         assert_eq!(original.convoys, recovered.convoys);
+    }
+
+    #[test]
+    fn convoy_shared_motion_is_not_distorted_by_ordinary_physics_damping() {
+        let (mut manager, mut state) = fixture();
+        manager.tick_convoys(&mut state, 1.0);
+        let cfg = crate::config::GameConfig {
+            friction: 100.0,
+            ..Default::default()
+        };
+        for step in 1..=3 {
+            assert!(manager.follow_targets(&mut state, 1.0, 1.0).is_empty());
+            crate::physics::integrate(&cfg, &mut state, 1.0);
+            assert!(manager.tick_convoys(&mut state, 1.0).is_empty());
+            let anchor_x = step as f32 * 2.0;
+            assert_eq!(manager.convoys[0].anchor.unwrap().x, anchor_x);
+            assert_eq!(state.entities[0].pos.unwrap().x, anchor_x - 1.0);
+            assert_eq!(state.entities[1].pos.unwrap().x, anchor_x + 1.0);
+            assert_eq!(state.entities[0].vel.unwrap().x, 2.0);
+            assert_eq!(state.entities[0].vel, state.entities[1].vel);
+        }
     }
 
     #[test]

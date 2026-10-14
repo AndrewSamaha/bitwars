@@ -1,6 +1,6 @@
 # Server navigation routes and Sentry
 
-Status: Move migration implemented; shared formation movement and Sentry remain next.
+Status: Move migration and shared formation movement implemented; Sentry remains next.
 
 ## Goals and agreed behavior
 
@@ -204,7 +204,7 @@ checkpoint recovery in every phase; no target/destination information leak.
 - [x] Owner-only route summaries in snapshots/game-query.
 - [x] Route-change streaming, including removal notifications.
 - [x] Browser cutover, queue migration and route display.
-- [ ] Shared formation mover.
+- [x] Shared formation mover.
 - [ ] Sentry command, edits and UI.
 - [ ] Combat arbitration, regrouping and Sentry recovery.
 
@@ -235,3 +235,25 @@ notification flow, also recording it in the client message log. Snapshots,
 reconnect summaries and deltas restore the remaining route without replaying it.
 Pending previews use yellow waypoint markers; accepted destinations use normal
 current/future markers. Restart engine and web together for the protocol cutover.
+
+### Shared formation increment
+
+`engine/formation.rs` owns deterministic centroid/grid construction, assembly,
+regrouping and minimum-speed anchor travel. The mover borrows the owning order's
+anchor and stable slots directly, using the existing slot wire type, so checkpoints
+retain a single source of formation state. No protocol or storage migration is
+needed for this extraction.
+
+Callers select `Assemble`, `TravelTo(destination)`, or `Suspended`. The result
+reports readiness, travel or arrival; it never advances a route, removes members,
+or emits lifecycle events. Suspension leaves anchor, positions and velocities
+untouched so combat can own movement. The caller must suppress ordinary movement
+for assembly/travel, hold non-engaged members during combat, and regroup before
+resuming rigid travel. Assembly and regrouping use the same fixed-slot movement.
+
+Convoy now delegates geometry and movement to this component. It retains
+validation, ownership, member detach/death handling, its next-tick assembly barrier,
+Redis tracking, checkpoint recovery and completion events. Tests cover existing
+Convoy behavior, strong physics damping, suspension preserving combat motion,
+regrouping, independent arrival decisions and repeated ping-pong route legs.
+Sentry order state, UI and combat arbitration are the remaining milestone.
