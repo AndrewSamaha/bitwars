@@ -2,7 +2,7 @@ import { getEnv } from "@/lib/utils";
 import { xReadWithBuffers } from "@/lib/db/utils/redis-streams";
 import { createSseChannel } from "@/lib/db/utils/sse-channel";
 import { bootstrapAndCatchUp } from "@/lib/db/utils/bootstrap";
-import { emitEventFromBuffer } from "@/lib/db/utils/delta";
+import { emitBuildProgressBatch, emitEventFromBuffer, type ProgressDelivery } from "@/lib/db/utils/delta";
 import { logger, withAxiom } from "@/lib/axiom/server";
 import { requireAuthOr401 } from "@/features/users/utils/auth";
 import { redis } from "@/lib/db/connection";
@@ -56,6 +56,40 @@ export const GET = withAxiom(async (req: Request) => {
   // Set up connection and streaming logic
   (async () => {
     let stopTracking: (() => Promise<void>) | undefined;
+    const connectedAt = Date.now();
+    let progressEvents = 0;
+    let progressBytes = 0;
+    let liveProgressAgeSamples = 0;
+    let liveProgressAgeSumMs = 0;
+    let liveProgressAgeMaxMs = 0;
+    let liveProgressAgeOver1000 = 0;
+    let liveProgressAgeNegative = 0;
+    let lastProgressLagLogAt = 0;
+    const recordProgress = (bytes: number) => {
+      if (bytes <= 0) return;
+      progressEvents++;
+      progressBytes += bytes;
+    };
+    const recordLiveProgressDelivery = (delivery: ProgressDelivery) => {
+      const ageMs = delivery.sent_at_ms - delivery.source_time_ms;
+      if (ageMs < 0) {
+        liveProgressAgeNegative++;
+        return;
+      }
+      liveProgressAgeSamples++;
+      liveProgressAgeSumMs += ageMs;
+      liveProgressAgeMaxMs = Math.max(liveProgressAgeMaxMs, ageMs);
+      if (ageMs >= 1_000) {
+        liveProgressAgeOver1000++;
+        if (delivery.sent_at_ms - lastProgressLagLogAt >= 10_000) {
+          lastProgressLagLogAt = delivery.sent_at_ms;
+          logger.info("build_progress_sse_lag", {
+            game_id: GAME_ID, player_id: playerId, server_tick: delivery.server_tick,
+            source_age_ms: ageMs,
+          });
+        }
+      }
+    };
     try {
       if (playerId) {
         try { stopTracking = await trackPlayerConnection(GAME_ID, playerId); }
@@ -79,7 +113,7 @@ export const GET = withAxiom(async (req: Request) => {
           const bootLast = await bootstrapAndCatchUp(GAME_ID, channel, () => channel.isClosed(), (msg, e) => {
             logErr(msg, e);
             logger.error("v2/stream:bootstrap:error", { GAME_ID, sid, msg, error: e?.message || String(e) });
-          }, visibility);
+          }, visibility, recordProgress, playerId);
         if (bootLast) {
           lastId = bootLast;
           logger.info("v2/stream:bootstrap:complete", { GAME_ID, sid, lastId });
@@ -90,6 +124,23 @@ export const GET = withAxiom(async (req: Request) => {
       }
 
       if (!lastId || channel.isClosed()) return;
+
+      // A full progress batch gives new connections a current owner-scoped
+      // state. Clients use server_tick to ignore older catch-up events.
+      const latestProgress = await redis.get(`rts:match:${GAME_ID}:build_progress_snapshot`);
+      const currentRuntime = await redis.get(`rts:match:${GAME_ID}:runtime`);
+      const runtimeRunId = currentRuntime ? JSON.parse(currentRuntime).run_id : undefined;
+      let progressBatch: Record<string, unknown> = {
+        type: "build-progress", run_id: runtimeRunId, server_tick: 0,
+        server_time_ms: Date.now(), states: [], recipients: [],
+      };
+      if (latestProgress) {
+        try {
+          const saved = JSON.parse(latestProgress);
+          if (saved?.type === "build-progress" && saved.run_id === runtimeRunId) progressBatch = saved;
+        } catch { /* An invalid batch is replaced by the empty snapshot. */ }
+      }
+      recordProgress(await emitBuildProgressBatch(channel, undefined, progressBatch, playerId, true));
 
       // The snapshot/catch-up cursor is durable. Enqueue the new player's join
       // only after it is established, so the spawn is guaranteed to be a delta
@@ -128,10 +179,11 @@ export const GET = withAxiom(async (req: Request) => {
             const id = ent.id;
             const dataBuf = ent.data;
             if (!dataBuf) continue;
-            await emitEventFromBuffer(channel, id, dataBuf, (msg, e) => {
+            const sentProgressBytes = await emitEventFromBuffer(channel, id, dataBuf, (msg, e) => {
               logErr(`${msg} (live)`, e);
               logger.error("v2/stream:emit:error", { GAME_ID, sid, id, msg, error: e?.message || String(e) });
-            }, visibility);
+            }, visibility, playerId, recordLiveProgressDelivery);
+            recordProgress(sentProgressBytes);
             lastId = id;
           }
         } catch (e: any) {
@@ -152,6 +204,19 @@ export const GET = withAxiom(async (req: Request) => {
         try { await stopTracking(); }
         catch (error) { logger.warn("v2/stream:presence:close:error", { GAME_ID, playerId, error: String(error) }); }
       }
+      logger.info("build_progress_sse_connection", {
+        event_type: "build_progress_sse_connection",
+        game_id: GAME_ID,
+        player_id: playerId,
+        progress_events: progressEvents,
+        progress_bytes: progressBytes,
+        live_progress_age_samples: liveProgressAgeSamples,
+        live_progress_age_mean_ms: liveProgressAgeSamples ? liveProgressAgeSumMs / liveProgressAgeSamples : null,
+        live_progress_age_max_ms: liveProgressAgeSamples ? liveProgressAgeMaxMs : null,
+        live_progress_age_over_1000_count: liveProgressAgeOver1000,
+        live_progress_age_negative_count: liveProgressAgeNegative,
+        connection_duration_ms: Date.now() - connectedAt,
+      });
       logger.info("v2/stream:close", { GAME_ID, sid });
     }
   })();

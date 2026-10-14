@@ -205,6 +205,10 @@ impl RedisClient {
         format!("rts:match:{}:events", self.game_id)
     }
 
+    fn build_progress_snapshot_key(&self) -> String {
+        format!("rts:match:{}:build_progress_snapshot", self.game_id)
+    }
+
     fn snapshots_stream(&self) -> String {
         format!("rts:match:{}:snapshots", self.game_id)
     }
@@ -364,6 +368,17 @@ impl RedisClient {
             .arg(bytes)
             .query_async(&mut self.conn)
             .await?;
+        Ok(id)
+    }
+
+    /// Publish one global progress batch and its reconnect snapshot atomically.
+    pub async fn publish_build_progress_batch(&mut self, payload: &serde_json::Value) -> anyhow::Result<String> {
+        let bytes = serde_json::to_vec(payload)?;
+        let (id,): (String,) = redis::pipe().atomic()
+            .cmd("SET").arg(self.build_progress_snapshot_key()).arg(&bytes).ignore()
+            .cmd("XADD").arg(self.events_stream()).arg("MAXLEN").arg("~").arg(10_000)
+                .arg("*").arg("data").arg(bytes)
+            .query_async(&mut self.conn).await?;
         Ok(id)
     }
 
@@ -560,6 +575,7 @@ impl RedisClient {
     pub async fn reset_scenario_tracking(&mut self) -> anyhow::Result<()> {
         // Keep the events stream: existing SSE readers need the world-reset marker.
         let keys = vec![self.intents_stream(), self.gameplay_events_stream(), self.snapshots_stream(),
+            self.build_progress_snapshot_key(),
             self.player_seq_key(), self.active_intents_key(), self.pending_joins_key(),
             self.pending_raider_spawns_key(), self.join_requested_key(), self.legacy_collector_state_key()];
         let _: () = redis::cmd("DEL").arg(keys).query_async(&mut self.conn).await?;
@@ -655,6 +671,7 @@ impl RedisClient {
         let keys = vec![
             self.intents_stream(),
             self.events_stream(),
+            self.build_progress_snapshot_key(),
             self.gameplay_events_stream(),
             self.snapshots_stream(),
             self.snapshot_key(),

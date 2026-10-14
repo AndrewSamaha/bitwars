@@ -6,6 +6,12 @@ import { fromBinary } from "@bufbuild/protobuf";
 import { stringify as uuidStringify } from "uuid";
 import type { VisibilityFilter } from "@/lib/db/utils/visibility";
 
+export type ProgressDelivery = {
+  source_time_ms: number;
+  sent_at_ms: number;
+  server_tick: number;
+};
+
 function bufferToEventsStreamRecord(buf: Buffer) {
   try {
     return fromBinary(EventsStreamRecordSchema, new Uint8Array(buf));
@@ -26,25 +32,72 @@ function uuidBytesToString(bytes: Uint8Array | undefined): string {
   return uuidStringify(bytes);
 }
 
+export async function emitBuildProgressBatch(
+  channel: SseChannel,
+  id: string | undefined,
+  batch: Record<string, unknown>,
+  playerId?: string,
+  force = false,
+  onDelivery?: (delivery: ProgressDelivery) => void,
+): Promise<number> {
+  if (batch.type !== "build-progress") return 0;
+  if (!playerId) return 0;
+  const recipients = Array.isArray(batch.recipients) ? batch.recipients : [];
+  if (!force && !recipients.includes(playerId)) return 0;
+  const states = Array.isArray(batch.states) ? batch.states : [];
+  const build_state_by_entity: Record<string, unknown> = {};
+  for (const value of states) {
+    if (!value || typeof value !== "object") continue;
+    const state = value as Record<string, unknown>;
+    if (state.owner_player_id !== playerId) continue;
+    const entityId = Number(state.entity_id);
+    if (!Number.isSafeInteger(entityId) || entityId <= 0) continue;
+    build_state_by_entity[String(entityId)] = {
+      blueprint_id: state.blueprint_id,
+      progress: state.progress,
+      progress_updated_at_unix_ms: state.progress_updated_at_unix_ms,
+    };
+  }
+  const frame = sseFormat({ event: "build-progress", id, data: {
+    type: "build-progress",
+    run_id: batch.run_id,
+    server_tick: batch.server_tick,
+    server_time_ms: batch.server_time_ms,
+    build_state_by_entity,
+  } });
+  await channel.write(frame);
+  if (onDelivery) {
+    const sourceTimeMs = Number(batch.server_time_ms);
+    const serverTick = Number(batch.server_tick);
+    if (Number.isFinite(sourceTimeMs) && Number.isSafeInteger(serverTick)) {
+      onDelivery({ source_time_ms: sourceTimeMs, sent_at_ms: Date.now(), server_tick: serverTick });
+    }
+  }
+  return Buffer.byteLength(frame);
+}
+
 export async function emitEventFromBuffer(
   channel: SseChannel,
   id: string,
   dataBuf: Buffer,
   logErr: (...args: any[]) => void,
   visibility?: VisibilityFilter,
-): Promise<void> {
+  progressPlayerId?: string,
+  onProgressDelivery?: (delivery: ProgressDelivery) => void,
+): Promise<number> {
   // Engine control markers share the durable stream with protobuf game events.
   if (dataBuf[0] === 123) {
     try {
       const marker = JSON.parse(dataBuf.toString());
       if (marker.type === "world-reset") await channel.write(sseFormat({ event: "world-reset", id, data: marker }));
+      if (marker.type === "build-progress") return await emitBuildProgressBatch(channel, id, marker, progressPlayerId, false, onProgressDelivery);
     } catch (error) { logErr("control marker decode error", error); }
-    return;
+    return 0;
   }
   const record = bufferToEventsStreamRecord(dataBuf);
   if (!record || !record.record) {
     logErr("events record decode error", { id });
-    return;
+    return 0;
   }
 
   switch (record.record.case) {
@@ -94,4 +147,5 @@ export async function emitEventFromBuffer(
     default:
       logErr(`unsupported events record case ${record.record.case}`);
   }
+  return 0;
 }

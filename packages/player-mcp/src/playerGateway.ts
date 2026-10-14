@@ -49,6 +49,22 @@ export type GameplayEventBatch = { events: GameplayEvent[]; next_cursor: string;
 
 export type CollectorState = Record<string, unknown> & { entity_id: number | string };
 
+export type ProgressFallbackDiagnostic = {
+  time_ms: number;
+  player_id?: string;
+  watched_entity_ids: string[];
+  watch_age_ms: number;
+  silence_ms: number;
+  stream_silence_ms: number;
+  last_stream_tick: number;
+  last_stream_source_time_ms: number;
+  last_stream_state_count: number;
+  response_status?: number;
+  returned_state_count?: number;
+  request_ms?: number;
+  error?: string;
+};
+
 export type WaitCondition =
   | { type: "command_terminal"; client_cmd_id: string }
   | { type: "command_state"; client_cmd_id: string; state: number }
@@ -88,7 +104,16 @@ type Session = {
   historyComplete: boolean;
   activeIntents: unknown[];
   progress: Record<string, unknown>;
+  progressStreamStates: Record<string, unknown>;
+  progressStreamRunId: string;
+  progressStreamTick: number;
+  lastProgressStreamAt: number;
+  lastAnyStreamAt: number;
+  lastProgressSourceTimeMs: number;
+  progressStreamEvents: number;
+  progressStreamBytes: number;
   watchIds: string[];
+  progressWatchChangedAt: number;
   events: PlayerEvent[];
   eventBytes: number;
   nextCursor: number;
@@ -96,6 +121,7 @@ type Session = {
   streamBytes: number;
   progressRequests: number;
   progressBytes: number;
+  progressFallbacks: ProgressFallbackDiagnostic[];
   progressPending: boolean;
   reconnects: number;
   lastError?: string;
@@ -315,9 +341,11 @@ export class PlayerGateway {
       connected: false, snapshotSeen: false, handshakeSeen: false,
       closed: false, sending: false, generation: 0, entities: new Map(),
       collectorStates: new Map(), commands: new Map(), pendingLifecycles: new Map(), resyncRecordedGeneration: 0, historyComplete: true,
-      activeIntents: [], progress: {}, watchIds: [], events: [], eventBytes: 0,
+      activeIntents: [], progress: {}, progressStreamStates: {}, progressStreamRunId: "",
+      progressStreamTick: -1, lastProgressStreamAt: 0, lastAnyStreamAt: 0, lastProgressSourceTimeMs: 0, progressStreamEvents: 0,
+      progressStreamBytes: 0, watchIds: [], progressWatchChangedAt: 0, events: [], eventBytes: 0,
       nextCursor: 1, droppedEvents: 0, streamBytes: 0, progressRequests: 0,
-      progressBytes: 0, progressPending: false, reconnects: 0, wake: new Set(),
+      progressBytes: 0, progressFallbacks: [], progressPending: false, reconnects: 0, wake: new Set(),
     };
     this.sessions.set(handle, session);
     session.progressTimer = setInterval(() => { void this.pollProgress(session); }, this.progressIntervalMs);
@@ -368,6 +396,8 @@ export class PlayerGateway {
         });
         if (!response.ok || !response.body) throw new Error(`SSE failed: HTTP ${response.status}`);
         session.connected = true;
+        session.lastProgressStreamAt = Date.now();
+        session.lastAnyStreamAt = session.lastProgressStreamAt;
         this.wake(session);
         const handshake = this.handshake(session, generation).catch(error => {
           session.lastError = String(error);
@@ -380,6 +410,7 @@ export class PlayerGateway {
       } finally {
         abort.abort();
         session.connected = false;
+        session.lastProgressStreamAt = 0;
         this.wake(session);
       }
       if (!session.closed) {
@@ -415,6 +446,7 @@ export class PlayerGateway {
   }
 
   private acceptEvent(session: Session, event: { event: string; id?: string; data: unknown }, bytes: number): void {
+    session.lastAnyStreamAt = Date.now();
     const data = object(event.data);
     if (event.event === "snapshot" && data) {
       const incomingRunId = typeof data.run_id === "string" ? data.run_id : undefined;
@@ -480,6 +512,24 @@ export class PlayerGateway {
       }
     } else if (event.event === "lifecycle" && data && data.playerId === session.playerId) {
       this.applyLifecycle(session, data);
+    } else if (event.event === "build-progress" && data) {
+      const runId = typeof data.run_id === "string" ? data.run_id : "";
+      const tick = Number(data.server_tick);
+      if (runId && runId !== session.progressStreamRunId) {
+        session.progressStreamRunId = runId;
+        session.progressStreamTick = -1;
+      }
+      if (Number.isSafeInteger(tick) && tick >= session.progressStreamTick &&
+          (!session.runId || !runId || runId === session.runId)) {
+        session.progressStreamTick = tick;
+        session.lastProgressStreamAt = Date.now();
+        session.lastProgressSourceTimeMs = Number(data.server_time_ms) || 0;
+        session.progressStreamStates = object(data.build_state_by_entity) ?? {};
+        session.progress = Object.fromEntries(Object.entries(session.progressStreamStates)
+          .filter(([id]) => session.watchIds.includes(id)));
+        session.progressStreamEvents++;
+        session.progressStreamBytes += bytes;
+      }
     } else if (event.event === "world-reset") {
       this.appendChange(session, "world_reset", { reset: data ?? {} });
       session.snapshotSeen = false;
@@ -490,7 +540,14 @@ export class PlayerGateway {
       session.pendingLifecycles.clear();
       session.journal = undefined;
       session.progress = {};
+      session.progressStreamStates = {};
+      session.progressStreamRunId = "";
+      session.progressStreamTick = -1;
+      session.lastProgressStreamAt = 0;
+      session.lastAnyStreamAt = 0;
+      session.lastProgressSourceTimeMs = 0;
       session.watchIds = [];
+      session.progressWatchChangedAt = 0;
       session.runId = undefined;
       session.clientSeq = 0;
     }
@@ -563,9 +620,12 @@ export class PlayerGateway {
         stream_bytes: session.streamBytes,
         progress_requests: session.progressRequests,
         progress_response_bytes: session.progressBytes,
+        progress_stream_events: session.progressStreamEvents,
+        progress_stream_bytes: session.progressStreamBytes,
         reconnects: session.reconnects,
         dropped_events: session.droppedEvents,
       },
+      progress_fallbacks: session.progressFallbacks,
       last_error: session.lastError,
     };
   }
@@ -662,27 +722,55 @@ export class PlayerGateway {
         throw new Error(`entity ${id} is not known to be owned by this player`);
       }
     }
+    if (unique.join(",") !== session.watchIds.join(",")) {
+      session.progressWatchChangedAt = unique.length ? Date.now() : 0;
+    }
     session.watchIds = unique;
-    session.progress = Object.fromEntries(Object.entries(session.progress).filter(([id]) => unique.includes(id)));
-    if (unique.length) void this.pollProgress(session);
+    const source = session.lastProgressStreamAt ? session.progressStreamStates : session.progress;
+    session.progress = Object.fromEntries(Object.entries(source).filter(([id]) => unique.includes(id)));
     return { watched_entity_ids: unique };
   }
 
   private async pollProgress(session: Session): Promise<void> {
-    if (session.closed || !session.connected || !session.watchIds.length || session.progressPending) return;
+    if (session.closed || !session.connected || !session.watchIds.length || session.progressPending ||
+        Date.now() - Math.max(session.lastProgressStreamAt, session.progressWatchChangedAt) < 1_250) return;
     session.progressPending = true;
     const ids = session.watchIds;
+    const streamTick = session.progressStreamTick;
+    const generation = session.generation;
+    const startedAtMs = Date.now();
+    const silenceMs = startedAtMs - session.lastProgressStreamAt;
+    const streamSilenceMs = startedAtMs - session.lastAnyStreamAt;
+    const lastStreamSourceTimeMs = session.lastProgressSourceTimeMs;
+    const lastStreamStateCount = Object.keys(session.progressStreamStates).length;
+    const diagnostic: ProgressFallbackDiagnostic = {
+      time_ms: startedAtMs,
+      player_id: session.playerId,
+      watched_entity_ids: [...ids],
+      watch_age_ms: startedAtMs - session.progressWatchChangedAt,
+      silence_ms: silenceMs,
+      stream_silence_ms: streamSilenceMs,
+      last_stream_tick: streamTick,
+      last_stream_source_time_ms: lastStreamSourceTimeMs,
+      last_stream_state_count: lastStreamStateCount,
+    };
+    if (session.progressFallbacks.length < 1_000) session.progressFallbacks.push(diagnostic);
     try {
       const response = await this.request(session, `/api/v3/build-state?ids=${encodeURIComponent(ids.join(","))}`);
       session.progressRequests++;
       const body = await response.text();
       session.progressBytes += Buffer.byteLength(body);
+      const data = response.ok ? object(JSON.parse(body)) : undefined;
+      const states = object(data?.build_state_by_entity) ?? {};
+      diagnostic.response_status = response.status;
+      diagnostic.returned_state_count = Object.keys(states).length;
+      diagnostic.request_ms = Date.now() - startedAtMs;
       if (!response.ok) throw new Error(`progress request failed: HTTP ${response.status}`);
-      if (ids === session.watchIds) {
-        const data = object(JSON.parse(body));
-        session.progress = object(data?.build_state_by_entity) ?? {};
+      if (ids === session.watchIds && streamTick === session.progressStreamTick && generation === session.generation) {
+        session.progress = states;
       }
     } catch (error) {
+      diagnostic.error = String(error);
       session.lastError = String(error);
     } finally {
       session.progressPending = false;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { PlayerGateway } from "../src/playerGateway.js";
 
-async function eventually(check: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
+async function eventually(check: () => boolean, maxAttempts = 100): Promise<void> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (check()) return;
     await new Promise(resolve => setTimeout(resolve, 5));
   }
@@ -53,7 +53,7 @@ describe("PlayerGateway", () => {
       await expect(gateway.sendIntent(handle, { type: "Move", entity_id: 711, target: { x: 1, y: 2 } })).rejects.toThrow("not known to be owned");
 
       gateway.setProgressWatch(handle, [710]);
-      await eventually(() => gateway.getPlayerState(handle).metrics.progress_requests > 0);
+      await eventually(() => gateway.getPlayerState(handle).metrics.progress_requests > 0, 400);
       expect(gateway.getPlayerState(handle).progress).toMatchObject({ 710: { progress: 0.4 } });
 
       const sent = await gateway.sendIntent(handle, { type: "Move", entity_id: 710, target: { x: 5, y: 6 } });
@@ -104,6 +104,58 @@ describe("PlayerGateway", () => {
       await eventually(() => controllers.length === 2);
       controllers[1]!.enqueue(new TextEncoder().encode('event: snapshot\ndata: {"run_id":"run-1","tick":2,"entities":[]}\n\n'));
       await eventually(() => gateway.getPlayerState(handle).ready && gateway.getPlayerState(handle).client_seq === 2);
+      expect(gateway.getPlayerState(handle).metrics.reconnects).toBe(1);
+    } finally {
+      gateway.close();
+    }
+  });
+
+  it("replaces watched progress from reconnect batches without polling", async () => {
+    const controllers: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const encoder = new TextEncoder();
+    const fakeFetch = (async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/api/players/login") {
+        return new Response("{}", { headers: { "set-cookie": "player_token=test-token; Path=/" } });
+      }
+      if (path === "/api/v2/gamestate/stream") {
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) { controllers.push(controller); },
+        }));
+      }
+      if (path === "/api/v2/reconnect") {
+        return Response.json({ run_id: "run-1", player_id: "player-1", last_processed_client_seq: 0, active_intents: [] });
+      }
+      throw new Error(`unexpected fallback request ${path}`);
+    }) as typeof fetch;
+    const gateway = new PlayerGateway({ baseUrl: "http://127.0.0.1:3000", fetchImpl: fakeFetch,
+      progressIntervalMs: 20, reconnectDelayMs: 5 });
+    const send = (controller: ReadableStreamDefaultController<Uint8Array>, event: string, data: unknown) => {
+      controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+    };
+    try {
+      const { handle } = await gateway.connectPlayer("loadtest-progress-reconnect");
+      await eventually(() => controllers.length === 1);
+      send(controllers[0]!, "snapshot", { run_id: "run-1", tick: 10,
+        entities: [{ id: 710, owner_player_id: "player-1" }] });
+      await eventually(() => gateway.getPlayerState(handle).ready);
+      gateway.setProgressWatch(handle, [710]);
+      send(controllers[0]!, "build-progress", { type: "build-progress", run_id: "run-1", server_tick: 10,
+        build_state_by_entity: { "710": { blueprint_id: "ship", progress: 0.4 } } });
+      await eventually(() => (gateway.getPlayerState(handle).progress["710"] as { progress?: number })?.progress === 0.4);
+      send(controllers[0]!, "build-progress", { type: "build-progress", run_id: "run-1", server_tick: 9,
+        build_state_by_entity: {} });
+      expect((gateway.getPlayerState(handle).progress["710"] as { progress: number }).progress).toBe(0.4);
+
+      controllers[0]!.close();
+      await eventually(() => controllers.length === 2);
+      send(controllers[1]!, "snapshot", { run_id: "run-1", tick: 11,
+        entities: [{ id: 710, owner_player_id: "player-1" }] });
+      send(controllers[1]!, "build-progress", { type: "build-progress", run_id: "run-1", server_tick: 11,
+        build_state_by_entity: {} });
+      await eventually(() => gateway.getPlayerState(handle).metrics.progress_stream_events === 2);
+      expect(gateway.getPlayerState(handle).progress).toEqual({});
+      expect(gateway.getPlayerState(handle).metrics.progress_requests).toBe(0);
       expect(gateway.getPlayerState(handle).metrics.reconnects).toBe(1);
     } finally {
       gateway.close();

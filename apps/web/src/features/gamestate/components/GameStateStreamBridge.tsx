@@ -9,6 +9,7 @@ import { useHUD } from "@/features/hud/components/HUDContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
 import { dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
+import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -184,6 +185,7 @@ export default function GameStateStreamBridge() {
     const applySnapshot = (payload: SnapshotPayload & { run_id?: string; paused?: boolean }) => {
       const worldChanged = !!payload.run_id && payload.run_id !== game.runId;
       if (worldChanged) {
+        buildProgressStore.resetStream();
         intentQueue.resetForWorld(payload.run_id);
         hud.actions.clearSelection();
         hud.actions.setSelectedAction(null);
@@ -452,6 +454,16 @@ export default function GameStateStreamBridge() {
         console.error("[GameStateStreamBridge] laser-shot parse error", err);
       }
     };
+    const onBuildProgress = (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload?.type === "build-progress" && (!game.runId || payload.run_id === game.runId)) {
+          buildProgressStore.applyStreamBatch(payload, new TextEncoder().encode(e.data).length);
+        }
+      } catch (err) {
+        log.warn("GameStateStreamBridge:build-progress:parse-error", { error: String(err) });
+      }
+    };
 
     // M1: Listen for lifecycle events to drive intent queue draining.
     const onLifecycle = (e: MessageEvent) => {
@@ -557,6 +569,7 @@ export default function GameStateStreamBridge() {
     let hasConnectedBefore = false;
 
     const onOpen = () => {
+      buildProgressStore.streamConnected();
       const msSinceMount = Date.now() - mountedAtRef.current;
       log.info("GameStateStreamBridge:es:open", { streamId: streamIdRef.current, msSinceMount, isReconnect: hasConnectedBefore });
       if (typeof window !== "undefined") {
@@ -621,6 +634,7 @@ export default function GameStateStreamBridge() {
       hasConnectedBefore = true;
     };
     const onError = (evt: Event) => {
+      buildProgressStore.streamDisconnected();
       // EventSource suppresses details; log readyState to detect disconnects.
       // @ts-ignore
       const rs: number | undefined = es?.readyState;
@@ -631,6 +645,7 @@ export default function GameStateStreamBridge() {
       const payload = JSON.parse(event.data);
       if (payload.run_id === game.runId) return;
       es.close();
+      buildProgressStore.resetStream();
       intentQueue.resetForWorld(payload.run_id);
       hud.actions.clearSelection();
       hud.actions.setSelectedAction(null);
@@ -647,6 +662,7 @@ export default function GameStateStreamBridge() {
     es.addEventListener("snapshot", onSnapshot as EventListener);
     es.addEventListener("delta", onDelta as EventListener);
     es.addEventListener("laser-shot", onLaserShot as EventListener);
+    es.addEventListener("build-progress", onBuildProgress as EventListener);
     es.addEventListener("lifecycle", onLifecycle as EventListener);
     es.addEventListener("open", onOpen as EventListener);
     es.addEventListener("error", onError as EventListener);
@@ -656,6 +672,7 @@ export default function GameStateStreamBridge() {
       es.removeEventListener("snapshot", onSnapshot as EventListener);
       es.removeEventListener("delta", onDelta as EventListener);
       es.removeEventListener("laser-shot", onLaserShot as EventListener);
+      es.removeEventListener("build-progress", onBuildProgress as EventListener);
       es.removeEventListener("lifecycle", onLifecycle as EventListener);
       es.removeEventListener("open", onOpen as EventListener);
       es.removeEventListener("error", onError as EventListener);

@@ -112,7 +112,7 @@ function createServer() {
     }),
   }, ({ handle, condition, wait_ms, run_id }) => tool(() => gateway.waitForObservation(handle, condition as WaitCondition, wait_ms, run_id))());
   server.registerTool("set_progress_watch", {
-    description: "Poll the union of these owned entity IDs via the game's v3 build-state endpoint every 500 ms; an empty list stops polling.",
+    description: "Watch progress for these owned entity IDs from the game's SSE stream, with v3 build-state polling if the stream is stale; an empty list stops the watch.",
     inputSchema: handleSchema.extend({ entity_ids: z.array(entityId).max(1000) }),
   }, ({ handle, entity_ids }) => tool(() => gateway.setProgressWatch(handle, entity_ids))());
   server.registerTool("send_intent", {

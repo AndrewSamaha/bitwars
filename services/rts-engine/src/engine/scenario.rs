@@ -259,6 +259,9 @@ impl Engine {
         self.last_intent_id = "0-0".into();
         self.player_last_seq.clear();
         self.lifecycle_emitted.clear();
+        self.build_progress_stamps.clear();
+        self.previous_build_progress_owners.clear();
+        self.last_build_progress_publish_at = tokio::time::Instant::now();
         self.joined_players = bindings.values().cloned().collect();
         self.transport_node_by_entity.clear();
         self.transport_wait_since_tick_by_entity.clear();

@@ -16,6 +16,8 @@ export async function bootstrapAndCatchUp(
   isClosed: () => boolean,
   logErr: (...args: any[]) => void,
   visibility?: VisibilityFilter,
+  onProgressSent?: (bytes: number) => void,
+  progressPlayerId?: string,
 ): Promise<string | undefined> {
   const keySnapshot = `snapshot:${gameId}`;
   const keySnapshotMeta = `snapshot_meta:${gameId}`;
@@ -82,7 +84,8 @@ export async function bootstrapAndCatchUp(
       const id = ent.id;
       const dataBuf = ent.data;
       if (!dataBuf) continue;
-      await emitEventFromBuffer(channel, id, dataBuf, (msg, e) => logErr(`${msg} (gap)`, e), visibility);
+      const progressBytes = await emitEventFromBuffer(channel, id, dataBuf, (msg, e) => logErr(`${msg} (gap)`, e), visibility, progressPlayerId);
+      if (progressBytes > 0) onProgressSent?.(progressBytes);
       if (firstEmitCount < 5) {
         firstEmitCount++;
         logger.debug("v2/bootstrap:emit:first", { GAME_ID: gameId, id, size: dataBuf.length });
