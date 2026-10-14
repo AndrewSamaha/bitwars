@@ -44,7 +44,9 @@ export default function IntentQueuePanel() {
                 <span className="text-green-400 shrink-0">&gt;</span>
                 <div>
                   <span>
-                    {state.active.kind === "convoy"
+                    {state.active.kind === "sentry"
+                      ? `sentry · ${state.active.sentry?.phase ?? "pending"} · ${(state.active.route?.direction ?? 1) > 0 ? "outbound" : "returning"}`
+                      : state.active.kind === "convoy"
                       ? "convoy"
                       : state.active.kind === "collect"
                       ? "collecting"

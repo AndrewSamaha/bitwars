@@ -1,6 +1,6 @@
 # Server navigation routes and Sentry
 
-Status: Move migration and shared formation movement implemented; Sentry remains next.
+Status: Move migration, shared formation movement, and Sentry implemented. Interactive gameplay validation remains outstanding.
 
 ## Goals and agreed behavior
 
@@ -205,8 +205,8 @@ checkpoint recovery in every phase; no target/destination information leak.
 - [x] Route-change streaming, including removal notifications.
 - [x] Browser cutover, queue migration and route display.
 - [x] Shared formation mover.
-- [ ] Sentry command, edits and UI.
-- [ ] Combat arbitration, regrouping and Sentry recovery.
+- [x] Sentry command, edits and UI.
+- [x] Combat arbitration, regrouping and Sentry recovery.
 
 ### First implementation increment
 
@@ -257,3 +257,31 @@ Redis tracking, checkpoint recovery and completion events. Tests cover existing
 Convoy behavior, strong physics damping, suspension preserving combat motion,
 regrouping, independent arrival decisions and repeated ping-pong route legs.
 Sentry order state, UI and combat arbitration are the remaining milestone.
+
+### Sentry increment
+
+Protocol 16 adds maintained Sentry orders, route updates/removals, and checkpoint
+state. Select **Sentry (P)** with one or more mobile ships, then click the first
+destination. Shift-click appends to the same full selected group; Ctrl-click
+retains the origin and active target and replaces the other destinations with a
+new endpoint. A normal click starts a replacement order. The complete route and
+active waypoint are rendered, and Orders & Waypoints shows phase and direction.
+
+The server captures the origin, assembles deterministic slots, and advances one
+shared anchor at the slowest member's speed. Acquiring a combat target suspends
+the whole formation while combat controls individual ships. Acquisition remains
+engagement during pursuit and weapon cooldowns. Once no member has a target,
+survivors regroup at their stable slots around the frozen anchor and continue the
+same leg. Individual replacements detach members; surviving offsets are retained.
+
+Checkpoint recovery preserves assembly, patrol, and regrouping state. Engaged
+orders recover into regrouping and re-evaluate targets on the next tick. Ordinary
+steering clears residual pursuit velocity before combat or formation movement.
+Redis reconnect summaries and owner-filtered snapshots/deltas include membership,
+route, anchor, and phase; game-query snapshots expose the same explicit data.
+Sentry arrivals never finish the root order. Route-edit lifecycle events finish
+only their own edit command.
+
+Engine and web must restart together for protocol 16. Rust compilation and web
+TypeScript checks passed during implementation. Automated gameplay tests and a
+live browser gameplay pass have not been run for this increment.

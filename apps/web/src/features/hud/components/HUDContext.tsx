@@ -36,7 +36,7 @@ export type HUDPanels = {
 export type HUDState = {
   selectedEntities: EntityId[];     // ordered array if you care about last-selected
   selectedSet: Set<EntityId>;       // fast membership checks
-  selectedAction: "Convoy" | "Move" | "Repair" | { kind: "Deliver" | "Transport"; resourceTypeIds: string[]; donorId?: string } | null;
+  selectedAction: "Sentry" | "Convoy" | "Move" | "Repair" | { kind: "Deliver" | "Transport"; resourceTypeIds: string[]; donorId?: string } | null;
   isMeasuring: boolean;
   panels: HUDPanels;
   // Misc ephemeral HUD data

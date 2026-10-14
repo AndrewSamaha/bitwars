@@ -39,4 +39,5 @@ message Snapshot {
   repeated PlayerTechnologyState player_technologies = 7;
   repeated ConvoyOrderState convoys = 8;
   repeated MoveOrderState move_orders = 9;
+  repeated SentryOrderState sentry_orders = 10;
 }

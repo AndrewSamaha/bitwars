@@ -1,6 +1,6 @@
 import { type Delta } from "@bitwars/shared/gen/delta_pb";
 import { type Entity } from "@bitwars/shared/gen/entity_pb";
-import type { MoveOrderState } from "@bitwars/shared/gen/navigation_pb";
+import type { SentryOrderState, MoveOrderState } from "@bitwars/shared/gen/navigation_pb";
 import { type Snapshot } from "@bitwars/shared/gen/snapshot_pb";
 
 // Helpers to convert protobuf-es messages into compact, client-friendly JSON
@@ -25,11 +25,23 @@ export const mapMoveOrderToJson = (order: MoveOrderState) => ({
   } : null,
 });
 
+export const mapSentryOrderToJson = (order: SentryOrderState) => ({
+  intent_id: mapUuid(order.intentId), client_cmd_id: mapUuid(order.clientCmdId),
+  last_client_cmd_id: mapUuid(order.lastClientCmdId), player_id: order.playerId,
+  started_tick: biToNumOrStr(order.startedTick), anchor: order.anchor ? { x: order.anchor.x, y: order.anchor.y } : null,
+  phase: ["unknown", "assembling", "patrolling", "engaged", "regrouping"][order.phase] ?? "unknown",
+  slots: order.slots.map((slot) => ({ entity_id: biToNumOrStr(slot.entityId), offset: slot.offset ? { x: slot.offset.x, y: slot.offset.y } : null })),
+  route: order.route ? { waypoints: order.route.waypoints.map((point) => ({ x: point.x, y: point.y })),
+    next_waypoint_index: order.route.nextWaypointIndex, direction: order.route.direction, traversal: order.route.traversal } : null,
+});
+
 // Entity has entity_type_id (proto field 2); TS codegen may use camelCase
 export const mapDeltaToJson = (d: Delta) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
   removed_entity_ids: (d.removedEntityIds ?? []).map(biToNumOrStr),
+  sentry_order_updates: (d.sentryOrderUpdates ?? []).map(mapSentryOrderToJson),
+  sentry_order_removals: (d.sentryOrderRemovals ?? []).map((order) => ({ player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId) })),
   move_order_updates: (d.moveOrderUpdates ?? []).map(mapMoveOrderToJson),
   move_order_removals: (d.moveOrderRemovals ?? []).map((order) => ({
     entity_id: biToNumOrStr(order.entityId), player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId),
@@ -97,6 +109,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
     tick: biToNumOrStr(s.tick),
     entities: (s.entities ?? []).map(mapEntityToJson),
     player_ledgers,
+    sentry_orders: (s.sentryOrders ?? []).map(mapSentryOrderToJson),
     move_orders: (s.moveOrders ?? []).map(mapMoveOrderToJson),
     convoys: (s.convoys ?? []).map((order) => ({
       intent_id: Array.from(order.intentId, (byte) => byte.toString(16).padStart(2, "0")).join(""),

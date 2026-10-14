@@ -2,6 +2,7 @@ syntax = "proto3";
 package bitwars;
 
 import "delta.proto";
+import "navigation.proto";
 import "vec2.proto";
 
 enum IntentPolicy {
@@ -129,6 +130,7 @@ message IntentEnvelope {
     ResearchIntent       research = 17;
     DeliverIntent        deliver = 18;
     ConvoyIntent         convoy = 19;
+    SentryIntent         sentry = 20;
   }
   reserved 8, 9, 15;
 }
@@ -273,11 +275,6 @@ message ConvoyIntent {
   Vec2 destination = 2;
 }
 
-message ConvoySlot {
-  uint64 entity_id = 1;
-  Vec2 offset = 2;
-}
-
 // Checkpointed with entity positions, never reconstructed from client selection.
 message ConvoyOrderState {
   bytes intent_id = 1;
@@ -288,4 +285,11 @@ message ConvoyOrderState {
   Vec2 destination = 6;
   repeated ConvoySlot slots = 7;
   bool traveling = 8;
+}
+
+message SentryIntent {
+  repeated uint64 entity_ids = 1;
+  Vec2 destination = 2;
+  // Required for append/clear edits; identifies the original group command.
+  bytes order_client_cmd_id = 3;
 }

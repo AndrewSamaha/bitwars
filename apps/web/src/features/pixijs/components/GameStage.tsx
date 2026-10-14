@@ -108,7 +108,11 @@ export default function GameStage() {
     // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
       const payload =
-        params.kind === "Convoy"
+        params.kind === "Sentry"
+          ? { type: "Sentry", entity_ids: params.entityIds, target: params.target,
+              order_client_cmd_id: params.orderClientCmdId, client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Convoy"
           ? { type: "Convoy", entity_ids: params.entityIds, target: params.target,
               client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
           : params.kind === "Move"
@@ -743,6 +747,11 @@ export default function GameStage() {
               setSelectedAction('Move');
               ev.preventDefault();
             }
+          } else if (ev.code === "KeyP" && !isFocusInEditable()) {
+            if (sel.selectionCount >= 1 && sel.selectionCount <= 256 && sel.selectedEntities.every((id) => {
+              const type = findLiveEntityById(id)?.entity_type_id ?? "";
+              return (contentManager.getEntityType(type)?.speed ?? 0) > 0;
+            })) { setSelectedAction("Sentry"); ev.preventDefault(); }
           } else if (ev.code === "KeyV" && !isFocusInEditable()) {
             if (sel.selectionCount >= 2 && sel.selectionCount <= 256 && sel.selectedEntities.every((id) => {
               const type = findLiveEntityById(id)?.entity_type_id ?? "";
@@ -944,7 +953,7 @@ export default function GameStage() {
                 .on("pointerdown", (ev: any) => {
                   const sel = latestSelectorsRef.current;
                   // In Move mode, entity clicks should bubble to stage and issue a move command.
-                  if ((sel.selectedAction === "Move" || sel.selectedAction === "Convoy")) {
+                  if ((sel.selectedAction === "Move" || sel.selectedAction === "Convoy" || sel.selectedAction === "Sentry")) {
                     return;
                   }
                   const originalEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
@@ -1102,17 +1111,26 @@ export default function GameStage() {
           for (const child of waypointContainer.removeChildren()) {
             child.destroy();
           }
+          const renderedSentryRoots = new Set<string>();
           for (const entityId of intentQueue.getActiveEntityIds()) {
+            const active = intentQueue.getEntityState(entityId).active;
+            if (active?.kind === "sentry") {
+              if (renderedSentryRoots.has(active.clientCmdId)) continue;
+              renderedSentryRoots.add(active.clientCmdId);
+            }
             const waypoints = intentQueue.getWaypoints(entityId);
             let prevX: number | undefined;
             let prevY: number | undefined;
 
-            // Try to find entity current position as first line anchor
-            for (const e of game.world.with("pos", "id")) {
-              if (Number((e as any).id) === entityId) {
-                prevX = e.pos.x;
-                prevY = e.pos.y;
-                break;
+            // Sentry renders its complete path, starting at the saved origin.
+            // Only finite movement routes need a line from the ship to the first waypoint.
+            if (active?.kind !== "sentry") {
+              for (const e of game.world.with("pos", "id")) {
+                if (Number((e as any).id) === entityId) {
+                  prevX = e.pos.x;
+                  prevY = e.pos.y;
+                  break;
+                }
               }
             }
 
@@ -1228,6 +1246,10 @@ export default function GameStage() {
           }
           const local = worldContainer.toLocal(global);
           const target = { x: Number(local.x), y: Number(local.y) };
+          if (sel.selectedAction === "Sentry") {
+            intentQueue.handleSentryCommand(sel.selectedEntities.map(Number), target, { shift, ctrl });
+            return;
+          }
           if (sel.selectedAction === "Convoy") {
             intentQueue.handleConvoyCommand(sel.selectedEntities.map(Number), target);
             setSelectedAction(null);
@@ -1334,7 +1356,7 @@ export default function GameStage() {
             if (shift) {
               selectionDrag = {
                 startX: global.x, startY: global.y, shift,
-                moveMode: (sel.selectedAction === 'Move' || sel.selectedAction === 'Convoy'), ctrl,
+                moveMode: (sel.selectedAction === 'Move' || sel.selectedAction === 'Convoy' || sel.selectedAction === 'Sentry'), ctrl,
               };
               return;
             }
@@ -1397,7 +1419,7 @@ export default function GameStage() {
               selectPressedEntity(press);
               return;
             }
-            if ((latestSelectorsRef.current.selectedAction === 'Move' || latestSelectorsRef.current.selectedAction === 'Convoy')) dispatchMove(ev.global, false, false);
+            if ((latestSelectorsRef.current.selectedAction === 'Move' || latestSelectorsRef.current.selectedAction === 'Convoy' || latestSelectorsRef.current.selectedAction === 'Sentry')) dispatchMove(ev.global, false, false);
             else if (latestSelectorsRef.current.selectedAction === "Repair" || (latestSelectorsRef.current.selectedAction && typeof latestSelectorsRef.current.selectedAction === "object")) setSelectedAction(null);
             else setSelection([]);
             return;

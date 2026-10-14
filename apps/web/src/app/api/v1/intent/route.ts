@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
-import { ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
+import { SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
 import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
@@ -122,8 +122,8 @@ export async function POST(req: NextRequest) {
     }
 
     const t = (body?.type ?? "").toString();
-    if (t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport") {
-      return NextResponse.json({ error: "unsupported type; expected Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, or Transport" }, { status: 400 });
+    if (t !== "Sentry" && t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport") {
+      return NextResponse.json({ error: "unsupported type; expected Sentry, Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, or Transport" }, { status: 400 });
     }
 
     const entityIdVal = body?.entity_id;
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
     const clientCmdId = (body?.client_cmd_id ?? "").toString();
     const clientSeqVal = Number(body?.client_seq);
 
-    if (t !== "Convoy" && entityIdVal === undefined) {
+    if (t !== "Sentry" && t !== "Convoy" && entityIdVal === undefined) {
       return NextResponse.json({ error: "missing required field: entity_id" }, { status: 400 });
     }
     if (t === "Move" && (target?.x === undefined || target?.y === undefined)) {
@@ -182,7 +182,14 @@ export async function POST(req: NextRequest) {
       || policy !== IntentPolicy.REPLACE_ACTIVE)) {
       return NextResponse.json({ error: "Convoy requires 2–256 unique entity IDs, a finite target, and REPLACE_ACTIVE" }, { status: 400 });
     }
-    const entityId = t === "Convoy" ? 0n : BigInt(entityIdVal);
+    if (t === "Sentry" && (!Array.isArray(body.entity_ids) || body.entity_ids.length < 1 || body.entity_ids.length > 256
+      || new Set(body.entity_ids).size !== body.entity_ids.length
+      || body.entity_ids.some((id: unknown) => !Number.isSafeInteger(id) || Number(id) <= 0)
+      || !Number.isFinite(target.x) || !Number.isFinite(target.y)
+      || (policy !== IntentPolicy.REPLACE_ACTIVE && (!validateUuid(body.order_client_cmd_id ?? "") || uuidVersion(body.order_client_cmd_id) !== 7)))) {
+      return NextResponse.json({ error: "Sentry requires 1–256 unique member IDs, a finite target, and the root command UUID for edits" }, { status: 400 });
+    }
+    const entityId = t === "Sentry" || t === "Convoy" ? 0n : BigInt(entityIdVal);
 
     const clientCmdArray = Array.from(parseUuid(clientCmdId));
     const clientCmdBytes = Uint8Array.from(clientCmdArray);
@@ -191,7 +198,15 @@ export async function POST(req: NextRequest) {
     }
 
     let bytes: Uint8Array;
-    if (t === "Convoy") {
+    if (t === "Sentry") {
+      bytes = toBinary(IntentEnvelopeSchema, create(IntentEnvelopeSchema, {
+        clientCmdId: clientCmdBytes, playerId, clientSeq: BigInt(clientSeqVal), protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
+        payload: { case: "sentry", value: create(SentryIntentSchema, {
+          entityIds: body.entity_ids.map((id: number) => BigInt(id)), destination: create(Vec2Schema, target),
+          orderClientCmdId: body.order_client_cmd_id ? Uint8Array.from(parseUuid(body.order_client_cmd_id)) : new Uint8Array(),
+        }) },
+      }));
+    } else if (t === "Convoy") {
       bytes = toBinary(IntentEnvelopeSchema, create(IntentEnvelopeSchema, {
         clientCmdId: clientCmdBytes, playerId, clientSeq: BigInt(clientSeqVal),
         protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,

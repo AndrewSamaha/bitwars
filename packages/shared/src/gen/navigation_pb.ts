@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file navigation.proto.
  */
 export const file_navigation: GenFile = /*@__PURE__*/
-  fileDesc("ChBuYXZpZ2F0aW9uLnByb3RvEgdiaXR3YXJzIo8BCg9OYXZpZ2F0aW9uUm91dGUSIAoJd2F5cG9pbnRzGAEgAygLMg0uYml0d2Fycy5WZWMyEhsKE25leHRfd2F5cG9pbnRfaW5kZXgYAiABKA0SEQoJZGlyZWN0aW9uGAMgASgREioKCXRyYXZlcnNhbBgEIAEoDjIXLmJpdHdhcnMuUm91dGVUcmF2ZXJzYWwiuwEKDk1vdmVPcmRlclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIRCglpbnRlbnRfaWQYAiABKAwSFQoNY2xpZW50X2NtZF9pZBgDIAEoDBIRCglwbGF5ZXJfaWQYBCABKAkSFAoMc3RhcnRlZF90aWNrGAUgASgEEicKBXJvdXRlGAYgASgLMhguYml0d2Fycy5OYXZpZ2F0aW9uUm91dGUSGgoSbGFzdF9jbGllbnRfY21kX2lkGAcgASgMIk8KEE1vdmVPcmRlclJlbW92YWwSEQoJZW50aXR5X2lkGAEgASgEEhEKCXBsYXllcl9pZBgCIAEoCRIVCg1jbGllbnRfY21kX2lkGAMgASgMKlMKDlJvdXRlVHJhdmVyc2FsEh8KG1JPVVRFX1RSQVZFUlNBTF9VTlNQRUNJRklFRBAAEhEKDUZJTklTSF9BVF9FTkQQARINCglQSU5HX1BPTkcQAmIGcHJvdG8z", [file_vec2]);
+  fileDesc("ChBuYXZpZ2F0aW9uLnByb3RvEgdiaXR3YXJzIo8BCg9OYXZpZ2F0aW9uUm91dGUSIAoJd2F5cG9pbnRzGAEgAygLMg0uYml0d2Fycy5WZWMyEhsKE25leHRfd2F5cG9pbnRfaW5kZXgYAiABKA0SEQoJZGlyZWN0aW9uGAMgASgREioKCXRyYXZlcnNhbBgEIAEoDjIXLmJpdHdhcnMuUm91dGVUcmF2ZXJzYWwiuwEKDk1vdmVPcmRlclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIRCglpbnRlbnRfaWQYAiABKAwSFQoNY2xpZW50X2NtZF9pZBgDIAEoDBIRCglwbGF5ZXJfaWQYBCABKAkSFAoMc3RhcnRlZF90aWNrGAUgASgEEicKBXJvdXRlGAYgASgLMhguYml0d2Fycy5OYXZpZ2F0aW9uUm91dGUSGgoSbGFzdF9jbGllbnRfY21kX2lkGAcgASgMIk8KEE1vdmVPcmRlclJlbW92YWwSEQoJZW50aXR5X2lkGAEgASgEEhEKCXBsYXllcl9pZBgCIAEoCRIVCg1jbGllbnRfY21kX2lkGAMgASgMIj4KCkNvbnZveVNsb3QSEQoJZW50aXR5X2lkGAEgASgEEh0KBm9mZnNldBgCIAEoCzINLmJpdHdhcnMuVmVjMiKSAgoQU2VudHJ5T3JkZXJTdGF0ZRIRCglpbnRlbnRfaWQYASABKAwSFQoNY2xpZW50X2NtZF9pZBgCIAEoDBIRCglwbGF5ZXJfaWQYAyABKAkSFAoMc3RhcnRlZF90aWNrGAQgASgEEicKBXJvdXRlGAUgASgLMhguYml0d2Fycy5OYXZpZ2F0aW9uUm91dGUSHQoGYW5jaG9yGAYgASgLMg0uYml0d2Fycy5WZWMyEiIKBXNsb3RzGAcgAygLMhMuYml0d2Fycy5Db252b3lTbG90EiMKBXBoYXNlGAggASgOMhQuYml0d2Fycy5TZW50cnlQaGFzZRIaChJsYXN0X2NsaWVudF9jbWRfaWQYCSABKAwiPgoSU2VudHJ5T3JkZXJSZW1vdmFsEhUKDWNsaWVudF9jbWRfaWQYASABKAwSEQoJcGxheWVyX2lkGAIgASgJKlMKDlJvdXRlVHJhdmVyc2FsEh8KG1JPVVRFX1RSQVZFUlNBTF9VTlNQRUNJRklFRBAAEhEKDUZJTklTSF9BVF9FTkQQARINCglQSU5HX1BPTkcQAipoCgtTZW50cnlQaGFzZRIcChhTRU5UUllfUEhBU0VfVU5TUEVDSUZJRUQQABIOCgpBU1NFTUJMSU5HEAESDgoKUEFUUk9MTElORxACEgsKB0VOR0FHRUQQAxIOCgpSRUdST1VQSU5HEARiBnByb3RvMw", [file_vec2]);
 
 /**
  * @generated from message bitwars.NavigationRoute
@@ -129,6 +129,107 @@ export const MoveOrderRemovalSchema: GenMessage<MoveOrderRemoval> = /*@__PURE__*
   messageDesc(file_navigation, 2);
 
 /**
+ * @generated from message bitwars.ConvoySlot
+ */
+export type ConvoySlot = Message<"bitwars.ConvoySlot"> & {
+  /**
+   * @generated from field: uint64 entity_id = 1;
+   */
+  entityId: bigint;
+
+  /**
+   * @generated from field: bitwars.Vec2 offset = 2;
+   */
+  offset?: Vec2;
+};
+
+/**
+ * Describes the message bitwars.ConvoySlot.
+ * Use `create(ConvoySlotSchema)` to create a new message.
+ */
+export const ConvoySlotSchema: GenMessage<ConvoySlot> = /*@__PURE__*/
+  messageDesc(file_navigation, 3);
+
+/**
+ * @generated from message bitwars.SentryOrderState
+ */
+export type SentryOrderState = Message<"bitwars.SentryOrderState"> & {
+  /**
+   * @generated from field: bytes intent_id = 1;
+   */
+  intentId: Uint8Array;
+
+  /**
+   * @generated from field: bytes client_cmd_id = 2;
+   */
+  clientCmdId: Uint8Array;
+
+  /**
+   * @generated from field: string player_id = 3;
+   */
+  playerId: string;
+
+  /**
+   * @generated from field: uint64 started_tick = 4;
+   */
+  startedTick: bigint;
+
+  /**
+   * @generated from field: bitwars.NavigationRoute route = 5;
+   */
+  route?: NavigationRoute;
+
+  /**
+   * @generated from field: bitwars.Vec2 anchor = 6;
+   */
+  anchor?: Vec2;
+
+  /**
+   * @generated from field: repeated bitwars.ConvoySlot slots = 7;
+   */
+  slots: ConvoySlot[];
+
+  /**
+   * @generated from field: bitwars.SentryPhase phase = 8;
+   */
+  phase: SentryPhase;
+
+  /**
+   * @generated from field: bytes last_client_cmd_id = 9;
+   */
+  lastClientCmdId: Uint8Array;
+};
+
+/**
+ * Describes the message bitwars.SentryOrderState.
+ * Use `create(SentryOrderStateSchema)` to create a new message.
+ */
+export const SentryOrderStateSchema: GenMessage<SentryOrderState> = /*@__PURE__*/
+  messageDesc(file_navigation, 4);
+
+/**
+ * @generated from message bitwars.SentryOrderRemoval
+ */
+export type SentryOrderRemoval = Message<"bitwars.SentryOrderRemoval"> & {
+  /**
+   * @generated from field: bytes client_cmd_id = 1;
+   */
+  clientCmdId: Uint8Array;
+
+  /**
+   * @generated from field: string player_id = 2;
+   */
+  playerId: string;
+};
+
+/**
+ * Describes the message bitwars.SentryOrderRemoval.
+ * Use `create(SentryOrderRemovalSchema)` to create a new message.
+ */
+export const SentryOrderRemovalSchema: GenMessage<SentryOrderRemoval> = /*@__PURE__*/
+  messageDesc(file_navigation, 5);
+
+/**
  * Route traversal is independent of movement, formation, and combat ownership.
  *
  * @generated from enum bitwars.RouteTraversal
@@ -155,4 +256,40 @@ export enum RouteTraversal {
  */
 export const RouteTraversalSchema: GenEnum<RouteTraversal> = /*@__PURE__*/
   enumDesc(file_navigation, 0);
+
+/**
+ * @generated from enum bitwars.SentryPhase
+ */
+export enum SentryPhase {
+  /**
+   * @generated from enum value: SENTRY_PHASE_UNSPECIFIED = 0;
+   */
+  SENTRY_PHASE_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ASSEMBLING = 1;
+   */
+  ASSEMBLING = 1,
+
+  /**
+   * @generated from enum value: PATROLLING = 2;
+   */
+  PATROLLING = 2,
+
+  /**
+   * @generated from enum value: ENGAGED = 3;
+   */
+  ENGAGED = 3,
+
+  /**
+   * @generated from enum value: REGROUPING = 4;
+   */
+  REGROUPING = 4,
+}
+
+/**
+ * Describes the enum bitwars.SentryPhase.
+ */
+export const SentryPhaseSchema: GenEnum<SentryPhase> = /*@__PURE__*/
+  enumDesc(file_navigation, 1);
 

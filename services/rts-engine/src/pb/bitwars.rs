@@ -166,6 +166,41 @@ pub struct MoveOrderRemoval {
     #[prost(bytes = "vec", tag = "3")]
     pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ConvoySlot {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(message, optional, tag = "2")]
+    pub offset: ::core::option::Option<Vec2>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SentryOrderState {
+    #[prost(bytes = "vec", tag = "1")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "4")]
+    pub started_tick: u64,
+    #[prost(message, optional, tag = "5")]
+    pub route: ::core::option::Option<NavigationRoute>,
+    #[prost(message, optional, tag = "6")]
+    pub anchor: ::core::option::Option<Vec2>,
+    #[prost(message, repeated, tag = "7")]
+    pub slots: ::prost::alloc::vec::Vec<ConvoySlot>,
+    #[prost(enumeration = "SentryPhase", tag = "8")]
+    pub phase: i32,
+    #[prost(bytes = "vec", tag = "9")]
+    pub last_client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SentryOrderRemoval {
+    #[prost(bytes = "vec", tag = "1")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "2")]
+    pub player_id: ::prost::alloc::string::String,
+}
 /// Route traversal is independent of movement, formation, and combat ownership.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -196,6 +231,41 @@ impl RouteTraversal {
         }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SentryPhase {
+    Unspecified = 0,
+    Assembling = 1,
+    Patrolling = 2,
+    Engaged = 3,
+    Regrouping = 4,
+}
+impl SentryPhase {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SENTRY_PHASE_UNSPECIFIED",
+            Self::Assembling => "ASSEMBLING",
+            Self::Patrolling => "PATROLLING",
+            Self::Engaged => "ENGAGED",
+            Self::Regrouping => "REGROUPING",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SENTRY_PHASE_UNSPECIFIED" => Some(Self::Unspecified),
+            "ASSEMBLING" => Some(Self::Assembling),
+            "PATROLLING" => Some(Self::Patrolling),
+            "ENGAGED" => Some(Self::Engaged),
+            "REGROUPING" => Some(Self::Regrouping),
+            _ => None,
+        }
+    }
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Delta {
     #[prost(uint64, tag = "1")]
@@ -213,6 +283,10 @@ pub struct Delta {
     pub move_order_updates: ::prost::alloc::vec::Vec<MoveOrderState>,
     #[prost(message, repeated, tag = "7")]
     pub move_order_removals: ::prost::alloc::vec::Vec<MoveOrderRemoval>,
+    #[prost(message, repeated, tag = "8")]
+    pub sentry_order_updates: ::prost::alloc::vec::Vec<SentryOrderState>,
+    #[prost(message, repeated, tag = "9")]
+    pub sentry_order_removals: ::prost::alloc::vec::Vec<SentryOrderRemoval>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -368,7 +442,7 @@ pub struct IntentEnvelope {
     pub policy: i32,
     #[prost(
         oneof = "intent_envelope::Payload",
-        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19"
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20"
     )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
@@ -394,6 +468,8 @@ pub mod intent_envelope {
         Deliver(super::DeliverIntent),
         #[prost(message, tag = "19")]
         Convoy(super::ConvoyIntent),
+        #[prost(message, tag = "20")]
+        Sentry(super::SentryIntent),
     }
 }
 /// Extensible Intent envelope.
@@ -617,13 +693,6 @@ pub struct ConvoyIntent {
     #[prost(message, optional, tag = "2")]
     pub destination: ::core::option::Option<Vec2>,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct ConvoySlot {
-    #[prost(uint64, tag = "1")]
-    pub entity_id: u64,
-    #[prost(message, optional, tag = "2")]
-    pub offset: ::core::option::Option<Vec2>,
-}
 /// Checkpointed with entity positions, never reconstructed from client selection.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ConvoyOrderState {
@@ -643,6 +712,16 @@ pub struct ConvoyOrderState {
     pub slots: ::prost::alloc::vec::Vec<ConvoySlot>,
     #[prost(bool, tag = "8")]
     pub traveling: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SentryIntent {
+    #[prost(uint64, repeated, tag = "1")]
+    pub entity_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, optional, tag = "2")]
+    pub destination: ::core::option::Option<Vec2>,
+    /// Required for append/clear edits; identifies the original group command.
+    #[prost(bytes = "vec", tag = "3")]
+    pub order_client_cmd_id: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -823,6 +902,8 @@ pub struct Snapshot {
     pub convoys: ::prost::alloc::vec::Vec<ConvoyOrderState>,
     #[prost(message, repeated, tag = "9")]
     pub move_orders: ::prost::alloc::vec::Vec<MoveOrderState>,
+    #[prost(message, repeated, tag = "10")]
+    pub sentry_orders: ::prost::alloc::vec::Vec<SentryOrderState>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotMeta {

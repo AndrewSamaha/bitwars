@@ -230,6 +230,7 @@ impl Engine {
                 effects,
                 self.intents.convoys.clone(),
                 self.intents.move_orders_for_snapshot(),
+                self.intents.sentries.clone(),
             )
             .await?;
         self.publish_runtime().await

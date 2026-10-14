@@ -36,3 +36,34 @@ message MoveOrderRemoval {
   string player_id = 2;
   bytes client_cmd_id = 3;
 }
+
+message ConvoySlot {
+  uint64 entity_id = 1;
+  Vec2 offset = 2;
+}
+
+
+enum SentryPhase {
+  SENTRY_PHASE_UNSPECIFIED = 0;
+  ASSEMBLING = 1;
+  PATROLLING = 2;
+  ENGAGED = 3;
+  REGROUPING = 4;
+}
+
+message SentryOrderState {
+  bytes intent_id = 1;
+  bytes client_cmd_id = 2;
+  string player_id = 3;
+  uint64 started_tick = 4;
+  NavigationRoute route = 5;
+  Vec2 anchor = 6;
+  repeated ConvoySlot slots = 7;
+  SentryPhase phase = 8;
+  bytes last_client_cmd_id = 9;
+}
+
+message SentryOrderRemoval {
+  bytes client_cmd_id = 1;
+  string player_id = 2;
+}

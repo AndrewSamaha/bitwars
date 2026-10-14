@@ -1,6 +1,7 @@
 pub mod intent;
 mod convoy;
 mod formation;
+mod sentry;
 mod navigation;
 pub mod state;
 mod scenario;
@@ -35,7 +36,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_
 use prost::Message;
 use state::{initialize_resource_deposits, take_from_deposit, ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 15;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 16;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -1552,6 +1553,8 @@ fn should_publish_delta(delta: &pb::Delta) -> bool {
         || !delta.combat_effect_state_updates.is_empty()
         || !delta.move_order_updates.is_empty()
         || !delta.move_order_removals.is_empty()
+        || !delta.sentry_order_updates.is_empty()
+        || !delta.sentry_order_removals.is_empty()
 }
 
 fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<String> {
@@ -1700,7 +1703,7 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves)) =
+            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries)) =
                 redis.read_latest_snapshot().await?
             {
                 info!(
@@ -1820,11 +1823,18 @@ impl Engine {
                 snapshot_moves.retain(|order| tracking.active_intents.iter().any(|entry|
                     entry.entity_id == order.entity_id && entry.intent_kind == "move"
                         && entry.intent_id == format_uuid(&order.intent_id)));
+                for order in &mut snapshot_sentries {
+                    order.slots.retain(|slot| tracking.active_intents.iter().any(|entry|
+                        entry.entity_id == slot.entity_id && entry.intent_kind == "sentry"
+                            && entry.intent_id == format_uuid(&order.intent_id)));
+                }
+                snapshot_sentries.retain(|order| !order.slots.is_empty());
                 let restored_ids: HashSet<_> = restored_collects
                     .iter()
                     .map(|(entry, ..)| entry.entity_id)
                     .chain(restored_builds.iter().map(|(entry, ..)| entry.entity_id))
                     .chain(restored_transfers.iter().map(|(entry, ..)| entry.entity_id))
+                    .chain(snapshot_sentries.iter().flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)))
                     .chain(snapshot_moves.iter().map(|order| order.entity_id))
                     .chain(snapshot_convoys.iter().flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)))
                     .collect();
@@ -2013,6 +2023,7 @@ impl Engine {
                 }
                 engine.restore_move_orders(snapshot_moves).await?;
                 engine.restore_convoys(snapshot_convoys).await?;
+                engine.restore_sentries(snapshot_sentries).await?;
                 engine.hydrate_entity_health_if_missing();
                 // Publish a fresh snapshot so newly connecting clients see current state
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
@@ -2027,6 +2038,7 @@ impl Engine {
                         engine.combat_effect_states_for_stream(),
                         engine.intents.convoys.clone(),
                         engine.intents.move_orders_for_snapshot(),
+                        engine.intents.sentries.clone(),
                     )
                     .await?;
                 let build_progress = engine.construction_progress_for_snapshot();
@@ -2116,7 +2128,7 @@ impl Engine {
         };
         engine
             .redis
-            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new())
+            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
             .await?;
 
         // M4: Publish content hash + definitions to Redis
@@ -3356,10 +3368,12 @@ impl Engine {
                 laser_shots: Vec::new(),
                 dismantling: Vec::new(),
                 destructions: Vec::new(),
+                engagements: HashMap::new(),
             };
         };
-        let commanded_entity_ids: HashSet<u64> =
-            self.intents.active_intents().keys().copied().collect();
+        let sentry_members = self.intents.sentry_member_ids();
+        let commanded_entity_ids: HashSet<u64> = self.intents.active_intents().keys()
+            .filter(|id| !sentry_members.contains(id)).copied().collect();
         let outcome = self.combat.tick_with_scripted_targets(
             &mut self.state.entities,
             content,
@@ -3915,6 +3929,7 @@ impl Engine {
             }
         }
         self.intents.prune_convoys();
+        self.intents.prune_sentries();
     }
 
     fn pick_best_node<'a>(
@@ -4650,6 +4665,7 @@ impl Engine {
         }
 
         self.intents.prune_convoys();
+        self.intents.prune_sentries();
         let finished =
             self.intents
                 .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
@@ -4674,6 +4690,7 @@ impl Engine {
         }
         let npc_commands = self.apply_raider_ai();
         let combat = self.apply_autonomous_combat(dt, &npc_commands);
+        self.intents.prepare_sentries(&combat.engagements, dt);
         self.emit_laser_shots(&combat.laser_shots).await;
         self.emit_combat_destructions(&combat.destructions).await;
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
@@ -4685,6 +4702,7 @@ impl Engine {
         self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
         self.advance_convoys(dt).await?;
+        self.intents.tick_sentries(&mut self.state, dt);
         let radiation_source_by_victim = self.apply_radiation_damage(dt);
         let radiation_damaged_entities: HashSet<u64> = radiation_source_by_victim.keys().copied().collect();
         let radiation_victims: Vec<pb::Entity> = self
@@ -4698,6 +4716,9 @@ impl Engine {
         self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
         self.cancel_destroyed_intents(&radiation_dead_entity_ids)
             .await;
+        if let Err(error) = self.persist_sentry_changes().await {
+            warn!(?error, "failed to persist Sentry state");
+        }
         self.publish_script_debug().await;
         self.state.tick += 1;
 
@@ -4714,10 +4735,12 @@ impl Engine {
             &radiation_damaged_entities,
         );
         self.intents.append_move_order_changes(&mut delta);
+        self.intents.append_sentry_changes(&mut delta);
         if should_publish_delta(&delta) {
             if let Ok(id) = self.redis.publish_delta(&delta).await {
                 self.last_delta_id = Some(id);
                 self.intents.acknowledge_move_order_changes(&delta);
+                self.intents.acknowledge_sentry_changes(&delta);
             }
         }
         let _ = self.publish_build_progress_if_due().await;
@@ -4737,6 +4760,7 @@ impl Engine {
                     combat_effect_states,
                     self.intents.convoys.clone(),
                     self.intents.move_orders_for_snapshot(),
+                    self.intents.sentries.clone(),
                 )
                 .await
                 .is_ok()
@@ -4860,6 +4884,7 @@ impl Engine {
 
             // Advance currently executing actions (e.g., Move) toward targets
             self.intents.prune_convoys();
+            self.intents.prune_sentries();
             let finished =
                 self.intents
                     .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
@@ -4914,6 +4939,7 @@ impl Engine {
                 &mut phase_started,
             );
             let combat = self.apply_autonomous_combat(dt, &npc_commands);
+            self.intents.prepare_sentries(&combat.engagements, dt);
             self.emit_laser_shots(&combat.laser_shots).await;
             self.emit_combat_destructions(&combat.destructions).await;
             self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
@@ -4960,6 +4986,7 @@ impl Engine {
             );
             integrate(&self.cfg, &mut self.state, dt);
             self.advance_convoys(dt).await?;
+            self.intents.tick_sentries(&mut self.state, dt);
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
@@ -4985,7 +5012,10 @@ impl Engine {
                 "radiation",
                 &mut phase_started,
             );
-            self.publish_script_debug().await;
+            if let Err(error) = self.persist_sentry_changes().await {
+                warn!(?error, "failed to persist Sentry state");
+            }
+        self.publish_script_debug().await;
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
@@ -5008,11 +5038,13 @@ impl Engine {
                 &radiation_damaged_entities,
             );
             self.intents.append_move_order_changes(&mut delta);
+            self.intents.append_sentry_changes(&mut delta);
             if should_publish_delta(&delta) {
                 match self.redis.publish_delta(&delta).await {
                     Ok(id) => {
                         self.last_delta_id = Some(id);
                         self.intents.acknowledge_move_order_changes(&delta);
+                        self.intents.acknowledge_sentry_changes(&delta);
                     },
                     Err(e) => error!(?e, "delta publish failed"),
                 }
@@ -5044,6 +5076,7 @@ impl Engine {
                         combat_effect_states,
                         self.intents.convoys.clone(),
                         self.intents.move_orders_for_snapshot(),
+                        self.intents.sentries.clone(),
                     )
                     .await
                 {
@@ -5308,6 +5341,9 @@ impl Engine {
             .await?;
 
         let mut payload_intent = match envelope.payload {
+            Some(intent_envelope::Payload::Sentry(order)) => {
+                return self.activate_sentry(order, metadata).await;
+            }
             Some(intent_envelope::Payload::Convoy(order)) => {
                 return self.activate_convoy(order, metadata).await;
             }
@@ -5825,6 +5861,7 @@ impl Engine {
 
         if let Some((entity_id, _)) = outcome.started {
             self.intents.detach_convoy_member(entity_id);
+            self.intents.detach_sentry_member(entity_id);
             self.collection_retry_tick_by_entity.remove(&entity_id);
             self.transport_wait_since_tick_by_entity.remove(&entity_id);
             if intent_kind == "upgrade" {

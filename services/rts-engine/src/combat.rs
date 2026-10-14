@@ -16,6 +16,8 @@ pub struct CombatSystem {
 }
 
 pub struct CombatTick {
+    /// Acquired targets, including pursuit and weapon cooldown waiting.
+    pub engagements: HashMap<u64, u64>,
     pub dead_entity_ids: Vec<u64>,
     pub laser_shots: Vec<LaserShot>,
     pub dismantling: Vec<Dismantling>,
@@ -104,6 +106,7 @@ impl CombatSystem {
                 laser_shots: Vec::new(),
                 dismantling: Vec::new(),
                 destructions: Vec::new(),
+                engagements: HashMap::new(),
             };
         }
 
@@ -143,6 +146,7 @@ impl CombatSystem {
 
         let mut damage_by_target: HashMap<u64, DamageContribution> = HashMap::new();
         let mut laser_shots = Vec::new();
+        let mut engagements = HashMap::new();
         let mut dismantling = Vec::new();
         for attacker in entities.iter_mut() {
             if attacker.owner_player_id.is_empty()
@@ -203,6 +207,7 @@ impl CombatSystem {
                 continue;
             };
 
+            engagements.insert(attacker.id, target.id);
             let dx = target.x - pos.x;
             let dy = target.y - pos.y;
             let distance_sq = dx * dx + dy * dy;
@@ -338,6 +343,7 @@ impl CombatSystem {
         self.next_attack_tick
             .retain(|(id, _), _| !dead.contains(id));
         CombatTick {
+            engagements,
             dead_entity_ids: dead,
             laser_shots,
             dismantling,

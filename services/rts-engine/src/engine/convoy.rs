@@ -197,6 +197,7 @@ impl Engine {
                 &entity_type,
             );
             self.intents.detach_convoy_member(id);
+            self.intents.detach_sentry_member(id);
             canceled.extend(outcome.canceled);
             self.collection_retry_tick_by_entity.remove(&id);
             self.transport_wait_since_tick_by_entity.remove(&id);
@@ -214,7 +215,7 @@ impl Engine {
         });
         // Commit all in-memory membership before I/O, and expose the new member
         // tracking rows in one Redis transaction for reconnect readers.
-        self.redis.persist_convoy_members(&members).await?;
+        self.redis.persist_formation_members(&members, "convoy", None).await?;
         for (_, old_metadata) in canceled {
             self.emit_lifecycle_event(
                 &old_metadata,

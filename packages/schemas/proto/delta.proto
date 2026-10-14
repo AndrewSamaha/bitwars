@@ -15,4 +15,6 @@ message Delta {
   repeated CombatEffectState combat_effect_state_updates = 5;
   repeated MoveOrderState move_order_updates = 6;
   repeated MoveOrderRemoval move_order_removals = 7;
+  repeated SentryOrderState sentry_order_updates = 8;
+  repeated SentryOrderRemoval sentry_order_removals = 9;
 }

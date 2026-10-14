@@ -34,7 +34,9 @@ curl 'http://localhost:3000/api/v2/game-query/script-debug?owner=raiders'
 ```
 
 Snapshots and entities are JSON-safe API representations: protobuf integer IDs
-and ticks are returned as numbers when safe and strings otherwise.
+and ticks are returned as numbers when safe and strings otherwise. Snapshots
+include `sentry_orders` with route cursor/direction, formation anchor and slots,
+and phase, alongside `move_orders` and `convoys`.
 
 ## Write endpoint
 

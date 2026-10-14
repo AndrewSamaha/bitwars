@@ -112,6 +112,11 @@ export async function GET() {
       }
     }
 
+    const sentryFields: Record<string, string> = await redis.hgetall(`rts:match:${GAME_ID}:sentries`);
+    const sentryOrders = Object.values(sentryFields).flatMap((value) => {
+      try { const order = JSON.parse(value); return order.player_id === playerId ? [order] : []; }
+      catch { return []; }
+    });
     return NextResponse.json({
       run_id: gameRuntime.run_id ?? "",
       server_tick: serverTick,
@@ -120,6 +125,7 @@ export async function GET() {
       player_id: playerId,
       last_processed_client_seq: lastProcessedClientSeq,
       active_intents: activeIntents,
+      sentry_orders: sentryOrders,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });
