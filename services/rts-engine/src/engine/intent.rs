@@ -35,13 +35,14 @@ pub struct ActivationOutcome {
 }
 
 /// One active action per entity, with server-owned routes for ordinary Move.
-/// The legacy browser still submits individual legs until its route cutover.
 ///
 /// Integrate with Engine by calling `try_activate` during intent ingestion,
 /// then `follow_targets` before `integrate()` each tick.
 pub struct IntentManager {
     pub(super) current_action: HashMap<u64, ActiveIntent>,
     pub convoys: Vec<pb::ConvoyOrderState>,
+    pub(super) published_move_orders: HashMap<u64, pb::MoveOrderState>,
+    pub(super) move_route_last_cmd: HashMap<u64, Vec<u8>>,
     pub(super) move_routes: HashMap<u64, pb::NavigationRoute>,
     pub(super) changed_move_routes: std::collections::HashSet<u64>,
     /// M4: per-entity-type definitions for speed/stop_radius lookups.
@@ -60,6 +61,8 @@ impl IntentManager {
             current_action: HashMap::new(),
             convoys: Vec::new(),
             move_routes: HashMap::new(),
+            published_move_orders: HashMap::new(),
+            move_route_last_cmd: HashMap::new(),
             changed_move_routes: std::collections::HashSet::new(),
             entity_types,
             default_stop_radius,
@@ -149,9 +152,11 @@ impl IntentManager {
 
         // Group actions use the shared formation mover, not individual routes.
         self.move_routes.remove(&entity_id);
+        self.move_route_last_cmd.remove(&entity_id);
         if metadata.entity_id == 0 {
             if let Some(pb::intent::Kind::Move(mov)) = intent.kind.as_ref() {
                 if let Some(target) = mov.target {
+                    self.move_route_last_cmd.insert(entity_id, metadata.client_cmd_id.clone());
                     self.move_routes.insert(entity_id, pb::NavigationRoute::move_to(target));
                     self.changed_move_routes.insert(entity_id);
                 }
@@ -275,6 +280,7 @@ impl IntentManager {
                 }
             }
             self.move_routes.remove(&eid);
+            self.move_route_last_cmd.remove(&eid);
             if let Some(active) = self.current_action.remove(&eid) {
                 log_finish(&active.metadata, &active.action, eid);
                 notifications.push((eid, active.metadata));
@@ -310,6 +316,7 @@ impl IntentManager {
     /// Finish a non-movement action after its authoritative system completes it.
     pub fn finish(&mut self, entity_id: u64) -> Option<IntentMetadata> {
         self.move_routes.remove(&entity_id);
+        self.move_route_last_cmd.remove(&entity_id);
         let active = self.current_action.remove(&entity_id)?;
         log_finish(&active.metadata, &active.action, entity_id);
         Some(active.metadata)

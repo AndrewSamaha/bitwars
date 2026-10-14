@@ -159,6 +159,8 @@ message LifecycleEvent {
   MinimumDistanceViolation minimum_distance_violation = 8;
   // Nonzero scopes a group command lifecycle event to one member.
   uint64 entity_id = 9;
+  // This command edited a route; its completion does not finish the root order.
+  bool route_edit = 10;
 }
 
 message MinimumDistanceViolation {

@@ -34,7 +34,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_
 use prost::Message;
 use state::{initialize_resource_deposits, take_from_deposit, ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 14;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 15;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -1549,6 +1549,8 @@ fn should_publish_delta(delta: &pb::Delta) -> bool {
         || !delta.removed_entity_ids.is_empty()
         || !delta.collector_state_updates.is_empty()
         || !delta.combat_effect_state_updates.is_empty()
+        || !delta.move_order_updates.is_empty()
+        || !delta.move_order_removals.is_empty()
 }
 
 fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<String> {
@@ -4698,7 +4700,7 @@ impl Engine {
         self.publish_script_debug().await;
         self.state.tick += 1;
 
-        let delta = compute_delta(
+        let mut delta = compute_delta(
             &self.prev_state,
             &self.state,
             &self.prev_collector_ui_state_by_entity,
@@ -4710,9 +4712,11 @@ impl Engine {
             &starvation_damage,
             &radiation_damaged_entities,
         );
+        self.intents.append_move_order_changes(&mut delta);
         if should_publish_delta(&delta) {
             if let Ok(id) = self.redis.publish_delta(&delta).await {
                 self.last_delta_id = Some(id);
+                self.intents.acknowledge_move_order_changes(&delta);
             }
         }
         let _ = self.publish_build_progress_if_due().await;
@@ -4990,7 +4994,7 @@ impl Engine {
             self.state.tick += 1;
 
             // Delta
-            let delta = compute_delta(
+            let mut delta = compute_delta(
                 &self.prev_state,
                 &self.state,
                 &self.prev_collector_ui_state_by_entity,
@@ -5002,9 +5006,13 @@ impl Engine {
                 &starvation_damage,
                 &radiation_damaged_entities,
             );
+            self.intents.append_move_order_changes(&mut delta);
             if should_publish_delta(&delta) {
                 match self.redis.publish_delta(&delta).await {
-                    Ok(id) => self.last_delta_id = Some(id),
+                    Ok(id) => {
+                        self.last_delta_id = Some(id);
+                        self.intents.acknowledge_move_order_changes(&delta);
+                    },
                     Err(e) => error!(?e, "delta publish failed"),
                 }
             }
@@ -5766,14 +5774,15 @@ impl Engine {
                         let reason = if error == navigation::RouteEditError::Busy {
                             pb::LifecycleReason::EntityBusy
                         } else { pb::LifecycleReason::InvalidTarget };
-                        self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
+                        self.emit_route_edit_event(&metadata, pb::LifecycleState::Rejected, reason).await?;
                         return Err(anyhow!("Move route edit rejected: {error:?}"));
                     }
+                    self.intents.move_route_last_cmd.insert(entity_id, client_cmd_id.clone());
                     self.persist_changed_move_routes().await?;
-                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Accepted,
-                        pb::LifecycleReason::None, accept_tick).await?;
-                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished,
-                        pb::LifecycleReason::None, accept_tick).await?;
+                    self.emit_route_edit_event(&metadata, pb::LifecycleState::Accepted,
+                        pb::LifecycleReason::None).await?;
+                    self.emit_route_edit_event(&metadata, pb::LifecycleState::Finished,
+                        pb::LifecycleReason::None).await?;
                     return Ok(());
                 }
             }
@@ -5930,6 +5939,13 @@ impl Engine {
         self.handle_envelope(envelope).await
     }
 
+    async fn emit_route_edit_event(&mut self, metadata: &IntentMetadata,
+        state: pb::LifecycleState, reason: pb::LifecycleReason) -> Result<()> {
+        self.emit_lifecycle_event_raw(&metadata.intent_id, &metadata.client_cmd_id,
+            &metadata.player_id, state, reason, self.state.tick, metadata.protocol_version,
+            metadata.entity_id, true, None).await
+    }
+
     async fn emit_lifecycle_event(
         &mut self,
         metadata: &IntentMetadata,
@@ -5965,6 +5981,7 @@ impl Engine {
             tick,
             metadata.protocol_version,
             metadata.entity_id,
+            false,
             minimum_distance_violation,
         )
         .await
@@ -5980,10 +5997,12 @@ impl Engine {
         tick: u64,
         protocol_version: u32,
         entity_id: u64,
+        route_edit: bool,
         minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
     ) -> Result<()> {
         let event = pb::LifecycleEvent {
             entity_id,
+            route_edit,
             intent_id: intent_id.to_vec(),
             client_cmd_id: client_cmd_id.to_vec(),
             player_id: player_id.to_string(),

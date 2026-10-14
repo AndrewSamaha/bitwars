@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file navigation.proto.
  */
 export const file_navigation: GenFile = /*@__PURE__*/
-  fileDesc("ChBuYXZpZ2F0aW9uLnByb3RvEgdiaXR3YXJzIo8BCg9OYXZpZ2F0aW9uUm91dGUSIAoJd2F5cG9pbnRzGAEgAygLMg0uYml0d2Fycy5WZWMyEhsKE25leHRfd2F5cG9pbnRfaW5kZXgYAiABKA0SEQoJZGlyZWN0aW9uGAMgASgREioKCXRyYXZlcnNhbBgEIAEoDjIXLmJpdHdhcnMuUm91dGVUcmF2ZXJzYWwinwEKDk1vdmVPcmRlclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIRCglpbnRlbnRfaWQYAiABKAwSFQoNY2xpZW50X2NtZF9pZBgDIAEoDBIRCglwbGF5ZXJfaWQYBCABKAkSFAoMc3RhcnRlZF90aWNrGAUgASgEEicKBXJvdXRlGAYgASgLMhguYml0d2Fycy5OYXZpZ2F0aW9uUm91dGUqUwoOUm91dGVUcmF2ZXJzYWwSHwobUk9VVEVfVFJBVkVSU0FMX1VOU1BFQ0lGSUVEEAASEQoNRklOSVNIX0FUX0VORBABEg0KCVBJTkdfUE9ORxACYgZwcm90bzM", [file_vec2]);
+  fileDesc("ChBuYXZpZ2F0aW9uLnByb3RvEgdiaXR3YXJzIo8BCg9OYXZpZ2F0aW9uUm91dGUSIAoJd2F5cG9pbnRzGAEgAygLMg0uYml0d2Fycy5WZWMyEhsKE25leHRfd2F5cG9pbnRfaW5kZXgYAiABKA0SEQoJZGlyZWN0aW9uGAMgASgREioKCXRyYXZlcnNhbBgEIAEoDjIXLmJpdHdhcnMuUm91dGVUcmF2ZXJzYWwiuwEKDk1vdmVPcmRlclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIRCglpbnRlbnRfaWQYAiABKAwSFQoNY2xpZW50X2NtZF9pZBgDIAEoDBIRCglwbGF5ZXJfaWQYBCABKAkSFAoMc3RhcnRlZF90aWNrGAUgASgEEicKBXJvdXRlGAYgASgLMhguYml0d2Fycy5OYXZpZ2F0aW9uUm91dGUSGgoSbGFzdF9jbGllbnRfY21kX2lkGAcgASgMIk8KEE1vdmVPcmRlclJlbW92YWwSEQoJZW50aXR5X2lkGAEgASgEEhEKCXBsYXllcl9pZBgCIAEoCRIVCg1jbGllbnRfY21kX2lkGAMgASgMKlMKDlJvdXRlVHJhdmVyc2FsEh8KG1JPVVRFX1RSQVZFUlNBTF9VTlNQRUNJRklFRBAAEhEKDUZJTklTSF9BVF9FTkQQARINCglQSU5HX1BPTkcQAmIGcHJvdG8z", [file_vec2]);
 
 /**
  * @generated from message bitwars.NavigationRoute
@@ -83,6 +83,13 @@ export type MoveOrderState = Message<"bitwars.MoveOrderState"> & {
    * @generated from field: bitwars.NavigationRoute route = 6;
    */
   route?: NavigationRoute;
+
+  /**
+   * Last accepted route mutation; lets clients retire pending edit previews.
+   *
+   * @generated from field: bytes last_client_cmd_id = 7;
+   */
+  lastClientCmdId: Uint8Array;
 };
 
 /**
@@ -91,6 +98,35 @@ export type MoveOrderState = Message<"bitwars.MoveOrderState"> & {
  */
 export const MoveOrderStateSchema: GenMessage<MoveOrderState> = /*@__PURE__*/
   messageDesc(file_navigation, 1);
+
+/**
+ * Explicit owner and root identity allow private, stale-safe removal delivery.
+ *
+ * @generated from message bitwars.MoveOrderRemoval
+ */
+export type MoveOrderRemoval = Message<"bitwars.MoveOrderRemoval"> & {
+  /**
+   * @generated from field: uint64 entity_id = 1;
+   */
+  entityId: bigint;
+
+  /**
+   * @generated from field: string player_id = 2;
+   */
+  playerId: string;
+
+  /**
+   * @generated from field: bytes client_cmd_id = 3;
+   */
+  clientCmdId: Uint8Array;
+};
+
+/**
+ * Describes the message bitwars.MoveOrderRemoval.
+ * Use `create(MoveOrderRemovalSchema)` to create a new message.
+ */
+export const MoveOrderRemovalSchema: GenMessage<MoveOrderRemoval> = /*@__PURE__*/
+  messageDesc(file_navigation, 2);
 
 /**
  * Route traversal is independent of movement, formation, and combat ownership.

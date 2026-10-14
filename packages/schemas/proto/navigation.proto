@@ -26,4 +26,13 @@ message MoveOrderState {
   string player_id = 4;
   uint64 started_tick = 5;
   NavigationRoute route = 6;
+  // Last accepted route mutation; lets clients retire pending edit previews.
+  bytes last_client_cmd_id = 7;
+}
+
+// Explicit owner and root identity allow private, stale-safe removal delivery.
+message MoveOrderRemoval {
+  uint64 entity_id = 1;
+  string player_id = 2;
+  bytes client_cmd_id = 3;
 }

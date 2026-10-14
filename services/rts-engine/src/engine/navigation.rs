@@ -128,11 +128,60 @@ impl IntentManager {
                     player_id: active.metadata.player_id.clone(),
                     started_tick: active.metadata.server_tick,
                     route: Some(route.clone()),
+                    last_client_cmd_id: self
+                        .move_route_last_cmd
+                        .get(entity_id)
+                        .cloned()
+                        .unwrap_or_else(|| active.metadata.client_cmd_id.clone()),
                 })
             })
             .collect();
         orders.sort_by_key(|order| order.entity_id);
         orders
+    }
+}
+
+impl IntentManager {
+    pub fn append_move_order_changes(&self, delta: &mut pb::Delta) {
+        let current = self.move_orders_for_snapshot();
+        delta.move_order_updates = current
+            .iter()
+            .filter(|order| self.published_move_orders.get(&order.entity_id) != Some(order))
+            .cloned()
+            .collect();
+        let present: std::collections::HashMap<_, _> = current
+            .iter()
+            .map(|order| (order.entity_id, order))
+            .collect();
+        delta.move_order_removals = self
+            .published_move_orders
+            .values()
+            .filter(|order| {
+                present.get(&order.entity_id).is_none_or(|next| {
+                    next.client_cmd_id != order.client_cmd_id || next.player_id != order.player_id
+                })
+            })
+            .map(|order| pb::MoveOrderRemoval {
+                entity_id: order.entity_id,
+                player_id: order.player_id.clone(),
+                client_cmd_id: order.client_cmd_id.clone(),
+            })
+            .collect();
+        delta
+            .move_order_removals
+            .sort_by_key(|order| order.entity_id);
+    }
+
+    /// Advance publication state only after Redis acknowledges the delta. Failed
+    /// publications retain updates/removals for the next tick's retry.
+    pub fn acknowledge_move_order_changes(&mut self, delta: &pb::Delta) {
+        for removal in &delta.move_order_removals {
+            self.published_move_orders.remove(&removal.entity_id);
+        }
+        for order in &delta.move_order_updates {
+            self.published_move_orders
+                .insert(order.entity_id, order.clone());
+        }
     }
 }
 
@@ -143,7 +192,13 @@ impl Engine {
         changed.sort_unstable();
         for id in changed {
             if let Some(route) = self.intents.move_routes.get(&id) {
-                self.redis.persist_move_route(id, route).await?;
+                self.redis
+                    .persist_move_route(
+                        id,
+                        route,
+                        self.intents.move_route_last_cmd.get(&id).map(Vec::as_slice),
+                    )
+                    .await?;
             }
             self.intents.changed_move_routes.remove(&id);
         }
@@ -195,6 +250,14 @@ impl Engine {
                 },
                 metadata.clone(),
                 &entity.entity_type_id,
+            );
+            self.intents.move_route_last_cmd.insert(
+                order.entity_id,
+                if order.last_client_cmd_id.is_empty() {
+                    metadata.client_cmd_id.clone()
+                } else {
+                    order.last_client_cmd_id
+                },
             );
             self.intents.move_routes.insert(order.entity_id, route);
             self.redis
@@ -260,6 +323,62 @@ mod tests {
                 technologies: HashMap::new(),
             },
         )
+    }
+
+    #[test]
+    fn route_changes_retry_until_publication_is_acknowledged() {
+        let (mut manager, _) = fixture();
+        let mut first = pb::Delta::default();
+        manager.append_move_order_changes(&mut first);
+        assert_eq!(first.move_order_updates.len(), 1);
+        assert!(super::super::should_publish_delta(&first));
+        let mut retry = pb::Delta::default();
+        manager.append_move_order_changes(&mut retry);
+        assert_eq!(retry, first);
+        manager.acknowledge_move_order_changes(&first);
+        let mut unchanged = pb::Delta::default();
+        manager.append_move_order_changes(&mut unchanged);
+        assert!(!super::super::should_publish_delta(&unchanged));
+        manager.finish(1);
+        let mut removed = pb::Delta::default();
+        manager.append_move_order_changes(&mut removed);
+        assert_eq!(removed.move_order_removals.len(), 1);
+        assert_eq!(removed.move_order_removals[0].player_id, "me");
+        assert!(super::super::should_publish_delta(&removed));
+        manager.acknowledge_move_order_changes(&removed);
+        let mut done = pb::Delta::default();
+        manager.append_move_order_changes(&mut done);
+        assert!(!super::super::should_publish_delta(&done));
+    }
+
+    #[test]
+    fn replacement_publishes_old_owner_removal_and_new_root() {
+        let (mut manager, _) = fixture();
+        let mut first = pb::Delta::default();
+        manager.append_move_order_changes(&mut first);
+        manager.acknowledge_move_order_changes(&first);
+        let mut metadata = manager.active_intents()[&1].metadata.clone();
+        metadata.player_id = "new-owner".into();
+        metadata.client_cmd_id = vec![9; 16];
+        manager.try_activate(
+            pb::Intent {
+                kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
+                    entity_id: 1,
+                    target: Some(point(20.0)),
+                    ..Default::default()
+                })),
+            },
+            metadata,
+            "",
+        );
+        let mut replaced = pb::Delta::default();
+        manager.append_move_order_changes(&mut replaced);
+        assert_eq!(replaced.move_order_removals[0].player_id, "me");
+        assert_eq!(replaced.move_order_updates[0].player_id, "new-owner");
+        assert_eq!(
+            replaced.move_order_updates[0].last_client_cmd_id,
+            vec![9; 16]
+        );
     }
 
     #[test]

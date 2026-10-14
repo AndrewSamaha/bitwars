@@ -1,6 +1,6 @@
 # Server navigation routes and Sentry
 
-Status: approved behavior; implementation begins with server Move routes.
+Status: Move migration implemented; shared formation movement and Sentry remain next.
 
 ## Goals and agreed behavior
 
@@ -202,8 +202,8 @@ checkpoint recovery in every phase; no target/destination information leak.
 - [x] Server Move route execution and reusable route traversal.
 - [x] Move route checkpoints, Redis tracking and reconnect summaries.
 - [x] Owner-only route summaries in snapshots/game-query.
-- [ ] Route-change streaming, including removal notifications.
-- [ ] Browser cutover, queue migration and route display.
+- [x] Route-change streaming, including removal notifications.
+- [x] Browser cutover, queue migration and route display.
 - [ ] Shared formation mover.
 - [ ] Sentry command, edits and UI.
 - [ ] Combat arbitration, regrouping and Sentry recovery.
@@ -217,3 +217,21 @@ The browser remains on its existing queue behavior until route-change streaming
 and the client storage migration are implemented together. Sentry is specified
 but not exposed as a command yet. Ping-pong traversal is implemented and tested
 as a reusable primitive; combat and formation integration remain later milestones.
+
+### Browser cutover increment
+
+Protocol 15 streams private `move_order_updates` and `move_order_removals` alongside
+entity deltas. Removals include owner and root command identity. Publication
+acknowledgement preserves retries after failed Redis writes. Root replacement
+publishes both the old root removal and new root update. `last_client_cmd_id`
+correlates pending previews with the latest accepted route mutation.
+
+Route-edit lifecycle events carry `route_edit=true`, so the browser never treats
+an edit's FINISHED as root completion. All command kinds share one HTTP submission
+chain. Browser state stores authoritative routes and temporary previews, with no
+local execution queue. Storage schema 2 discards legacy unsent waypoints, preserves
+the sequence counter, and delivers a one-time migration toast through the existing
+notification flow, also recording it in the client message log. Snapshots,
+reconnect summaries and deltas restore the remaining route without replaying it.
+Pending previews use yellow waypoint markers; accepted destinations use normal
+current/future markers. Restart engine and web together for the protocol cutover.

@@ -105,7 +105,7 @@ export default function GameStage() {
       }
     }, 100);
 
-    // M1/M8: Wire the queue manager's send callback to POST /api/v1/intent
+    // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
       const payload =
         params.kind === "Convoy"
@@ -173,7 +173,7 @@ export default function GameStage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, run_id: game.runId, as_player_id: myPlayerIdRef.current }),
       });
-      if (!response.ok && params.kind === "Convoy") throw new Error(`Convoy request failed: ${response.status}`);
+      if (!response.ok) throw new Error(`Intent request failed: ${response.status}`);
     });
 
     let cancelled = false;
@@ -1095,7 +1095,7 @@ export default function GameStage() {
             nowMs,
           );
 
-          // 4) M1: Render waypoint indicators for entities with queued intents
+          // 4) Render remaining server waypoints and pending command previews
           // removeChildren only detaches Pixi display objects; destroying the
           // removed Graphics releases their associated GPU/JS resources before
           // this frame creates replacement waypoint markers.
@@ -1120,25 +1120,26 @@ export default function GameStage() {
               const wp = waypoints[i]!;
               const g = new Graphics();
 
+              const waypointColor = wp.pending ? 0xf5b942 : wp.active ? 0x44ff44 : 0x888888;
               // Draw connecting line from previous point
               if (prevX !== undefined && prevY !== undefined) {
                 g.moveTo(prevX, prevY);
                 g.lineTo(wp.x, wp.y);
-                g.stroke({ width: 1, color: wp.active ? 0x44ff44 : 0x888888, alpha: 0.5 });
+                g.stroke({ width: 1, color: waypointColor, alpha: 0.5 });
               }
 
-              // Draw waypoint marker (diamond for active, circle for queued)
+              // Draw the current destination as a diamond and later destinations as circles.
               if (wp.active) {
                 g.moveTo(wp.x, wp.y - 8);
                 g.lineTo(wp.x + 8, wp.y);
                 g.lineTo(wp.x, wp.y + 8);
                 g.lineTo(wp.x - 8, wp.y);
                 g.closePath();
-                g.stroke({ width: 2, color: 0x44ff44 });
+                g.stroke({ width: 2, color: waypointColor });
               } else {
                 g.circle(wp.x, wp.y, 6);
-                g.stroke({ width: 1.5, color: 0x888888 });
-                // Queue index label (1-based, skipping active)
+                g.stroke({ width: 1.5, color: waypointColor });
+                // Waypoint index label (1-based, skipping current destination)
                 // Simple numeric indicator not easily done with Graphics alone;
                 // the IntentQueuePanel shows the numbered list instead.
               }

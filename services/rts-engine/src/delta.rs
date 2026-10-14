@@ -157,6 +157,8 @@ pub fn compute_delta(
         .collect();
     combat_effect_state_updates.sort_by_key(|state| state.entity_id);
     Delta {
+        move_order_updates: Vec::new(),
+        move_order_removals: Vec::new(),
         tick: curr.tick,
         updates,
         removed_entity_ids,

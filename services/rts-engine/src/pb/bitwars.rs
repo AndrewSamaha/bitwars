@@ -126,6 +126,77 @@ pub struct CombatEffectState {
     pub updated_tick: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NavigationRoute {
+    #[prost(message, repeated, tag = "1")]
+    pub waypoints: ::prost::alloc::vec::Vec<Vec2>,
+    #[prost(uint32, tag = "2")]
+    pub next_waypoint_index: u32,
+    /// +1 for forward traversal; -1 for backward traversal.
+    #[prost(sint32, tag = "3")]
+    pub direction: i32,
+    #[prost(enumeration = "RouteTraversal", tag = "4")]
+    pub traversal: i32,
+}
+/// Saved with world positions; root identity is preserved by waypoint edits.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MoveOrderState {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "4")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "5")]
+    pub started_tick: u64,
+    #[prost(message, optional, tag = "6")]
+    pub route: ::core::option::Option<NavigationRoute>,
+    /// Last accepted route mutation; lets clients retire pending edit previews.
+    #[prost(bytes = "vec", tag = "7")]
+    pub last_client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+}
+/// Explicit owner and root identity allow private, stale-safe removal delivery.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MoveOrderRemoval {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(string, tag = "2")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "3")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+}
+/// Route traversal is independent of movement, formation, and combat ownership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RouteTraversal {
+    Unspecified = 0,
+    FinishAtEnd = 1,
+    PingPong = 2,
+}
+impl RouteTraversal {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ROUTE_TRAVERSAL_UNSPECIFIED",
+            Self::FinishAtEnd => "FINISH_AT_END",
+            Self::PingPong => "PING_PONG",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ROUTE_TRAVERSAL_UNSPECIFIED" => Some(Self::Unspecified),
+            "FINISH_AT_END" => Some(Self::FinishAtEnd),
+            "PING_PONG" => Some(Self::PingPong),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Delta {
     #[prost(uint64, tag = "1")]
     pub tick: u64,
@@ -138,6 +209,10 @@ pub struct Delta {
     pub collector_state_updates: ::prost::alloc::vec::Vec<CollectorState>,
     #[prost(message, repeated, tag = "5")]
     pub combat_effect_state_updates: ::prost::alloc::vec::Vec<CombatEffectState>,
+    #[prost(message, repeated, tag = "6")]
+    pub move_order_updates: ::prost::alloc::vec::Vec<MoveOrderState>,
+    #[prost(message, repeated, tag = "7")]
+    pub move_order_removals: ::prost::alloc::vec::Vec<MoveOrderRemoval>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -372,6 +447,9 @@ pub struct LifecycleEvent {
     /// Nonzero scopes a group command lifecycle event to one member.
     #[prost(uint64, tag = "9")]
     pub entity_id: u64,
+    /// This command edited a route; its completion does not finish the root order.
+    #[prost(bool, tag = "10")]
+    pub route_edit: bool,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct MinimumDistanceViolation {
@@ -692,64 +770,6 @@ impl LifecycleReason {
             "NOT_OWNED" => Some(Self::NotOwned),
             "MINIMUM_DISTANCE_VIOLATION" => Some(Self::MinimumDistanceViolation),
             "TRANSFER_ENDPOINT_LOST" => Some(Self::TransferEndpointLost),
-            _ => None,
-        }
-    }
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NavigationRoute {
-    #[prost(message, repeated, tag = "1")]
-    pub waypoints: ::prost::alloc::vec::Vec<Vec2>,
-    #[prost(uint32, tag = "2")]
-    pub next_waypoint_index: u32,
-    /// +1 for forward traversal; -1 for backward traversal.
-    #[prost(sint32, tag = "3")]
-    pub direction: i32,
-    #[prost(enumeration = "RouteTraversal", tag = "4")]
-    pub traversal: i32,
-}
-/// Saved with world positions; root identity is preserved by waypoint edits.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MoveOrderState {
-    #[prost(uint64, tag = "1")]
-    pub entity_id: u64,
-    #[prost(bytes = "vec", tag = "2")]
-    pub intent_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "3")]
-    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(string, tag = "4")]
-    pub player_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "5")]
-    pub started_tick: u64,
-    #[prost(message, optional, tag = "6")]
-    pub route: ::core::option::Option<NavigationRoute>,
-}
-/// Route traversal is independent of movement, formation, and combat ownership.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum RouteTraversal {
-    Unspecified = 0,
-    FinishAtEnd = 1,
-    PingPong = 2,
-}
-impl RouteTraversal {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Unspecified => "ROUTE_TRAVERSAL_UNSPECIFIED",
-            Self::FinishAtEnd => "FINISH_AT_END",
-            Self::PingPong => "PING_PONG",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "ROUTE_TRAVERSAL_UNSPECIFIED" => Some(Self::Unspecified),
-            "FINISH_AT_END" => Some(Self::FinishAtEnd),
-            "PING_PONG" => Some(Self::PingPong),
             _ => None,
         }
     }

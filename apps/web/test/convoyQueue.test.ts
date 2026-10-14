@@ -4,11 +4,12 @@ import { IntentQueueManager, type SendIntentParams } from "../src/features/inten
 
 afterEach(() => vi.unstubAllGlobals());
 
-it("sends one convoy command and scopes member lifecycle events", () => {
+it("sends one convoy command and scopes member lifecycle events", async () => {
   const queue = new IntentQueueManager("test:convoy");
   const send = vi.fn(async (_params: SendIntentParams) => {});
   queue.setSendCallback(send);
   queue.handleConvoyCommand([2, 1], { x: 50, y: 60 });
+  await queue.whenSubmitted();
   expect(send).toHaveBeenCalledTimes(1);
   const command = send.mock.calls[0]![0];
   if (command.kind !== "Convoy") throw new Error("Expected Convoy");

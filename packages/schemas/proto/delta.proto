@@ -2,6 +2,7 @@ syntax = "proto3";
 package bitwars;
 
 import "entity_delta.proto";
+import "navigation.proto";
 import "collector_state.proto";
 import "combat_effect_state.proto";
 
@@ -12,4 +13,6 @@ message Delta {
   repeated uint64 removed_entity_ids = 3;
   repeated CollectorState collector_state_updates = 4;
   repeated CombatEffectState combat_effect_state_updates = 5;
+  repeated MoveOrderState move_order_updates = 6;
+  repeated MoveOrderRemoval move_order_removals = 7;
 }

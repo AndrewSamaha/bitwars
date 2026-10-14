@@ -80,6 +80,7 @@ fn main() -> anyhow::Result<()> {
         removed_entity_ids: Vec::new(),
         collector_state_updates: vec![],
         combat_effect_state_updates: vec![],
+        ..Default::default()
     };
 
     let mut delta_buf = Vec::new();

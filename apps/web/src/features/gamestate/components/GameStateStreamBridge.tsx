@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLogger } from "@/lib/axiom/client";
 import { game, RADIATION_DAMAGE_VISUAL_LINGER_MS, type Entity } from "../world";
-import { intentQueue } from "@/features/intent-queue/intentQueueManager";
+import { intentQueue, type MoveOrderPayload, type MoveOrderRemovalPayload } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
@@ -36,6 +36,7 @@ function collectorStateFromStream({ entity_id: _entityId, ...state }: StreamColl
 }
 
 type SnapshotPayload = {
+  move_orders?: MoveOrderPayload[];
   type: "snapshot";
   tick: number | string;
   entities: Array<{
@@ -54,6 +55,8 @@ type SnapshotPayload = {
 };
 
 type DeltaPayload = {
+  move_order_updates?: MoveOrderPayload[];
+  move_order_removals?: MoveOrderRemovalPayload[];
   type: "delta";
   tick: number | string;
   removed_entity_ids?: Array<number | string>;
@@ -173,6 +176,19 @@ export default function GameStateStreamBridge() {
       }
     };
 
+    const syncMoveOverlays = (ids: Array<string | number>) => {
+      for (const id of ids) {
+        const key = String(id);
+        const active = intentQueue.getEntityState(Number(id)).active;
+        if (active?.kind === "move") {
+          activeIntentByEntityRef.current.set(key, { intent_kind: "move", intent_id: active.intentId,
+            started_tick: Number(active.serverTick ?? 0), move_target: active.target });
+        } else if (!active && activeIntentByEntityRef.current.get(key)?.intent_kind === "move") {
+          activeIntentByEntityRef.current.delete(key);
+        }
+      }
+    };
+
     const logEntitiesAndOwnership = (label: string) => {
       const myPlayerId = currentPlayerIdRef.current;
       const entities = Array.from(byId.entries()).map(([id, e]) => ({
@@ -197,6 +213,8 @@ export default function GameStateStreamBridge() {
         hud.actions.setTooltip(null);
       }
       game.paused = !!payload.paused;
+      intentQueue.applyMoveOrders(payload.move_orders ?? [], [], true);
+      syncMoveOverlays([...activeIntentByEntityRef.current.keys(), ...(payload.move_orders ?? []).map((order) => order.entity_id)]);
       // Remove old streamed entities (and destroy any attached sprites)
       for (const [id, ent] of byId) {
         if (ent.remembered && !worldChanged) continue;
@@ -268,6 +286,11 @@ export default function GameStateStreamBridge() {
     };
 
     const applyDelta = (payload: DeltaPayload) => {
+      if (payload.move_order_updates?.length || payload.move_order_removals?.length) {
+        intentQueue.applyMoveOrders(payload.move_order_updates ?? [], payload.move_order_removals ?? []);
+        syncMoveOverlays([...(payload.move_order_updates ?? []).map((order) => order.entity_id),
+          ...(payload.move_order_removals ?? []).map((order) => order.entity_id)]);
+      }
       let existingEntities = 0;
       let newEntities = 0;
       const newlyKnown: Entity[] = [];
@@ -401,12 +424,15 @@ export default function GameStateStreamBridge() {
           }
         }
       }
+      refreshIntentOverlays();
       log.debug("GameStateStreamBridge:delta:applied", { streamId: streamIdRef.current, existingEntities, newEntities });
       if (DEBUG_LOG_GAMESTATE_ENTITIES && payload.updates.length > 0) {
         logEntitiesAndOwnership("after delta");
       }
       if (typeof window !== "undefined") {
         dispatchGameStateUpdated([
+          ...(payload.move_order_updates ?? []).map((order) => normalizeId(order.entity_id)),
+          ...(payload.move_order_removals ?? []).map((order) => normalizeId(order.entity_id)),
           ...(payload.removed_entity_ids ?? []).map(normalizeId),
           ...(payload.hidden_entity_ids ?? []).map(normalizeId),
           ...payload.updates.map((update) => normalizeId(update.id)),
@@ -503,6 +529,7 @@ export default function GameStateStreamBridge() {
 
           intentQueue.onLifecycleEvent({
             entityId: Number(payload.entityId) || undefined,
+            routeEdit: payload.routeEdit === true,
             clientCmdId,
             intentId,
             playerId: payload.playerId ?? "",
@@ -511,6 +538,9 @@ export default function GameStateStreamBridge() {
             reason,
           });
 
+          if (payload.routeEdit === true) return;
+          const localActive = entityIdFromCmd == null ? null : intentQueue.getEntityState(entityIdFromCmd).active;
+          if (localActive && localActive.clientCmdId !== clientCmdId) return;
           const entityKey =
             entityIdFromCmd != null ? String(entityIdFromCmd) : null;
 

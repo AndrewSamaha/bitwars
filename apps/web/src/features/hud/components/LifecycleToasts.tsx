@@ -3,6 +3,7 @@
 import { AlertTriangle, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
+import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import {
   COLLECTION_WAITING_EVENT,
   TRANSFER_ENDPOINT_LOST_EVENT,
@@ -13,7 +14,7 @@ import {
   type MinimumDistanceViolationDetail,
 } from "@/features/gamestate/events";
 
-type Toast = { id: number; title: string; message: string; focusEntityId: string; entering?: boolean; leaving?: boolean; leavingTop?: number };
+type Toast = { id: number; title: string; message: string; focusEntityId?: string; entering?: boolean; leaving?: boolean; leavingTop?: number };
 
 export default function LifecycleToasts() {
   const { actions: { pushMessageLog } } = useHUD();
@@ -55,7 +56,7 @@ export default function LifecycleToasts() {
 
   useEffect(() => {
     const shownStarvationWarnings = new Set<string>();
-    const showToast = (title: string, message: string, focusEntityId: string, focusLabel?: string) => {
+    const showToast = (title: string, message: string, focusEntityId?: string, focusLabel?: string) => {
       pushMessageLog({ title, message, timestamp: Date.now(), focusEntityId, focusLabel });
       const toast = { title, message, focusEntityId, id: nextId.current++, entering: true };
       setToasts((current) => [...current.slice(-2), toast]);
@@ -64,6 +65,15 @@ export default function LifecycleToasts() {
       });
       window.setTimeout(() => dismiss(toast.id), 6_000);
     };
+    const showWaypointMigrationNotice = () => {
+      const message = intentQueue.getMigrationNotice();
+      if (!message) return;
+      showToast("Saved waypoints cleared", message);
+      // Delivery to the toast and message log consumes this one-time notice.
+      intentQueue.dismissMigrationNotice();
+    };
+    const unsubscribeMigrationNotice = intentQueue.subscribe(showWaypointMigrationNotice);
+    const migrationNoticeFrame = window.requestAnimationFrame(showWaypointMigrationNotice);
     const onMinimumDistanceViolation = (event: Event) => {
       const detail = (event as CustomEvent<MinimumDistanceViolationDetail>).detail;
       if (!detail) return;
@@ -98,6 +108,8 @@ export default function LifecycleToasts() {
     window.addEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
     window.addEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
     return () => {
+      unsubscribeMigrationNotice();
+      window.cancelAnimationFrame(migrationNoticeFrame);
       window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
       window.removeEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
       window.removeEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
@@ -123,7 +135,7 @@ export default function LifecycleToasts() {
             <button
               className="min-w-0 flex-1 text-left"
               onClick={() => {
-                dispatchCenterCameraOnEntity(toast.focusEntityId);
+                if (toast.focusEntityId) dispatchCenterCameraOnEntity(toast.focusEntityId);
                 dismiss(toast.id);
               }}
               type="button"

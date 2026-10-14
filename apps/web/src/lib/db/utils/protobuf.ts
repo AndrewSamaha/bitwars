@@ -1,5 +1,6 @@
 import { type Delta } from "@bitwars/shared/gen/delta_pb";
 import { type Entity } from "@bitwars/shared/gen/entity_pb";
+import type { MoveOrderState } from "@bitwars/shared/gen/navigation_pb";
 import { type Snapshot } from "@bitwars/shared/gen/snapshot_pb";
 
 // Helpers to convert protobuf-es messages into compact, client-friendly JSON
@@ -8,11 +9,31 @@ export const biToNumOrStr = (v: bigint): number | string => {
   return Number.isSafeInteger(num) ? num : v.toString();
 };
 
+const mapUuid = (bytes: Uint8Array) => {
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return bytes.length === 16 ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` : hex;
+};
+
+export const mapMoveOrderToJson = (order: MoveOrderState) => ({
+  entity_id: biToNumOrStr(order.entityId), player_id: order.playerId,
+  intent_id: mapUuid(order.intentId), client_cmd_id: mapUuid(order.clientCmdId),
+  last_client_cmd_id: mapUuid(order.lastClientCmdId), started_tick: biToNumOrStr(order.startedTick),
+  route: order.route ? {
+    waypoints: order.route.waypoints.map((point) => ({ x: point.x, y: point.y })),
+    next_waypoint_index: order.route.nextWaypointIndex,
+    direction: order.route.direction, traversal: order.route.traversal,
+  } : null,
+});
+
 // Entity has entity_type_id (proto field 2); TS codegen may use camelCase
 export const mapDeltaToJson = (d: Delta) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
   removed_entity_ids: (d.removedEntityIds ?? []).map(biToNumOrStr),
+  move_order_updates: (d.moveOrderUpdates ?? []).map(mapMoveOrderToJson),
+  move_order_removals: (d.moveOrderRemovals ?? []).map((order) => ({
+    entity_id: biToNumOrStr(order.entityId), player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId),
+  })),
   updates: (d.updates ?? []).map((u) => {
     const uAny = u as { ownerPlayerId?: string; entityTypeId?: string; health?: number };
     return {
@@ -76,19 +97,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
     tick: biToNumOrStr(s.tick),
     entities: (s.entities ?? []).map(mapEntityToJson),
     player_ledgers,
-    move_orders: (s.moveOrders ?? []).map((order) => ({
-      entity_id: biToNumOrStr(order.entityId),
-      player_id: order.playerId,
-      intent_id: Array.from(order.intentId, (byte) => byte.toString(16).padStart(2, "0")).join(""),
-      client_cmd_id: Array.from(order.clientCmdId, (byte) => byte.toString(16).padStart(2, "0")).join(""),
-      started_tick: biToNumOrStr(order.startedTick),
-      route: order.route ? {
-        waypoints: order.route.waypoints.map((point) => ({ x: point.x, y: point.y })),
-        next_waypoint_index: order.route.nextWaypointIndex,
-        direction: order.route.direction,
-        traversal: order.route.traversal,
-      } : null,
-    })),
+    move_orders: (s.moveOrders ?? []).map(mapMoveOrderToJson),
     convoys: (s.convoys ?? []).map((order) => ({
       intent_id: Array.from(order.intentId, (byte) => byte.toString(16).padStart(2, "0")).join(""),
       player_id: order.playerId,

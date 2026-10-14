@@ -19,7 +19,7 @@ it("decodes and projects a Move checkpoint's root identity and route cursor", ()
   const decoded = fromBinary(SnapshotSchema, toBinary(SnapshotSchema, checkpoint));
   const payload = mapSnapshotToJson(decoded);
   expect(payload.move_orders[0]).toMatchObject({ entity_id: 42, player_id: "me", started_tick: 5,
-    intent_id: "01".repeat(16), client_cmd_id: "02".repeat(16),
+    intent_id: "01010101-0101-0101-0101-010101010101", client_cmd_id: "02020202-0202-0202-0202-020202020202",
     route: { waypoints: [{ x: 10, y: 20 }, { x: 30, y: 40 }], next_waypoint_index: 1, direction: 1 } });
 });
 

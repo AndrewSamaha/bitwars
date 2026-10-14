@@ -4,15 +4,7 @@ import React, { useEffect, useState } from "react";
 import { intentQueue, type PerEntityState } from "@/features/intent-queue/intentQueueManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 
-/**
- * M1 Intent Queue Panel
- *
- * Displays per-entity queue state:
- *   - Server active intent (kind, optional target, intentId, serverTick)
- *   - Local queued intents (numbered, with targets)
- *
- * Only shows for selected entities that have active or queued intents.
- */
+/** Authoritative active orders and remaining waypoints, with pending edit previews. */
 export default function IntentQueuePanel() {
   const { selectors } = useHUD();
   const { selectedEntities } = selectors;
@@ -29,7 +21,7 @@ export default function IntentQueuePanel() {
   const entries: Array<{ entityId: string; state: PerEntityState }> = [];
   for (const id of selectedEntities) {
     const state = intentQueue.getEntityState(Number(id));
-    if (state.active || state.queue.length > 0) {
+    if (state.active || state.pendingMoves.length > 0) {
       entries.push({ entityId: id, state });
     }
   }
@@ -39,7 +31,7 @@ export default function IntentQueuePanel() {
   return (
     <div className="fixed right-4 bottom-28 z-50 w-72 max-h-64 overflow-y-auto bg-opacity-95 border border-border rounded-lg shadow-2xl">
       <div className="px-3 py-2 border-b border-border bg-muted/50 rounded-t-lg">
-        <span className="text-xs font-medium">Intent Queue</span>
+        <span className="text-xs font-medium">Orders &amp; waypoints</span>
       </div>
       <div className="p-2 space-y-2 text-xs font-mono">
         {entries.map(({ entityId, state }) => (
@@ -75,23 +67,21 @@ export default function IntentQueuePanel() {
                       @{state.active.serverTick ?? "?"}
                     </span>
                   )}
-                  <span className="text-green-400 ml-1">active</span>
+                  <span className="text-green-400 ml-1">{state.pendingMoves.some((item) => item.clientCmdId === state.active?.clientCmdId) ? "pending" : "active"}</span>
                 </div>
               </div>
             )}
 
-            {/* Local queue */}
-            {state.queue.map((q, idx) => (
-              <div key={q.clientCmdId} className="flex items-start gap-1 ml-2 text-muted-foreground">
+            {/* Server waypoints and pending command previews */}
+            {intentQueue.getWaypoints(Number(entityId)).filter((point) => !point.active || point.pending).map((point, idx) => (
+              <div key={idx} className="flex items-start gap-1 ml-2 text-muted-foreground">
                 <span className="shrink-0">{idx + 1}.</span>
-                <span>
-                  ({q.target.x.toFixed(0)}, {q.target.y.toFixed(0)})
-                </span>
-                <span className="ml-1 text-yellow-500">queued</span>
+                <span>({point.x.toFixed(0)}, {point.y.toFixed(0)})</span>
+                <span className="ml-1 text-yellow-500">{point.pending ? "pending" : "waypoint"}</span>
               </div>
             ))}
 
-            {!state.active && state.queue.length === 0 && (
+            {!state.active && state.pendingMoves.length === 0 && (
               <div className="ml-2 text-muted-foreground">idle</div>
             )}
           </div>

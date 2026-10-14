@@ -81,7 +81,7 @@ export async function GET() {
       intent_kind: string;
       transfer_route?: { donor_id: number; target_id: number; resource_type_ids: string[] };
       move_target?: { x: number; y: number };
-      move_route?: { waypoints: Array<{ x: number; y: number }>; next_waypoint_index: number };
+      move_route?: { waypoints: Array<{ x: number; y: number }>; next_waypoint_index: number; last_client_cmd_id?: string };
       blueprint_id?: string;
       progress?: number;
     }> = [];

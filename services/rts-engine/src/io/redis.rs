@@ -71,6 +71,8 @@ pub struct EntityActiveIntent {
 pub struct MoveRouteSummary {
     pub waypoints: Vec<IntentPoint>,
     pub next_waypoint_index: u32,
+    #[serde(default)]
+    pub last_client_cmd_id: String,
 }
 
 pub struct ConstructionProgressUpdate {
@@ -864,7 +866,7 @@ impl RedisClient {
     }
 
     /// Persist the authoritative route and current destination for reconnect.
-    pub async fn persist_move_route(&mut self, entity_id: u64, route: &pb::NavigationRoute) -> anyhow::Result<()> {
+    pub async fn persist_move_route(&mut self, entity_id: u64, route: &pb::NavigationRoute, last_cmd_id: Option<&[u8]>) -> anyhow::Result<()> {
         let key = self.active_intents_key();
         let field = entity_id.to_string();
         let Some(json) = self.conn.hget::<_, _, Option<String>>(&key, &field).await? else {
@@ -877,6 +879,7 @@ impl RedisClient {
         entry.move_route = Some(MoveRouteSummary {
             waypoints: route.waypoints.iter().map(|point| IntentPoint { x: point.x, y: point.y }).collect(),
             next_waypoint_index: route.next_waypoint_index,
+            last_client_cmd_id: last_cmd_id.map(format_uuid).unwrap_or_default(),
         });
         let _: () = self.conn.hset(key, field, serde_json::to_string(&entry)?).await?;
         Ok(())

@@ -1,33 +1,37 @@
-/**
- * Client-Side Intent Queue Manager (M1 + M2)
- *
- * Maintains per-player, per-entity FIFO queues persisted to localStorage.
- * The server only tracks one active intent per entity; the client decides
- * when to send the next intent (typically on FINISHED / CANCELED).
- *
- * Policies:
- *  - Click          = REPLACE_ACTIVE  (clear local queue, send immediately)
- *  - Shift+Click    = APPEND          (append locally; send only if entity idle)
- *  - Ctrl+Click     = CLEAR_THEN_APPEND (clear queue, append one; send if idle)
- *
- * M2 additions:
- *  - reconcileWithServer(): call on reconnect to sync local queue state with
- *    the server's tracking data (last_processed_client_seq, active intents).
- *    Prevents duplicate or skipped intents after a page refresh or disconnect.
- */
-
+/** Server-owned route display, pending command previews, and ordered submissions. */
 import { v7 as uuidv7 } from "uuid";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type IntentPolicyName = "REPLACE_ACTIVE" | "APPEND" | "CLEAR_THEN_APPEND";
 
-export type QueuedMoveIntent = {
+export type PendingMoveCommand = {
   clientCmdId: string;
   entityId: number;
   target: { x: number; y: number };
   policy: IntentPolicyName;
   createdAt: number;
+  finished?: boolean;
+};
+
+export type MoveRouteSummary = {
+  waypoints: Array<{ x: number; y: number }>;
+  next_waypoint_index: number;
+  last_client_cmd_id?: string;
+};
+export type MoveOrderPayload = {
+  entity_id: number | string;
+  player_id: string;
+  intent_id: string;
+  client_cmd_id: string;
+  last_client_cmd_id?: string;
+  started_tick: number | string;
+  route: MoveRouteSummary | null;
+};
+export type MoveOrderRemovalPayload = {
+  entity_id: number | string;
+  player_id: string;
+  client_cmd_id: string;
 };
 
 export type ActiveIntentKind = "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "unknown";
@@ -38,17 +42,20 @@ export type ActiveIntentInfo = {
   /** Collect intents keep an entity busy but do not have a location to render. */
   kind: ActiveIntentKind;
   target?: { x: number; y: number };
+  route?: MoveRouteSummary;
   transfer?: { donorId: number; targetId: number; resourceTypeIds: string[] };
   intentId?: string;      // server-assigned, set on ACCEPTED
   serverTick?: string;    // set on ACCEPTED
 };
 
 export type PerEntityState = {
-  queue: QueuedMoveIntent[];
+  pendingMoves: PendingMoveCommand[];
   active: ActiveIntentInfo | null;
 };
 
 type PersistedState = {
+  schemaVersion?: number;
+  migrationNotice?: string | null;
   runId?: string;
   clientSeq: number;
   entities: Record<string, PerEntityState>;
@@ -144,6 +151,7 @@ export type ReconnectHandshake = {
     intent_kind?: string;
     transfer_route?: { donor_id: number; target_id: number; resource_type_ids: string[] };
     move_target?: { x: number; y: number };
+    move_route?: MoveRouteSummary;
     blueprint_id?: string;
     progress?: number;
   }>;
@@ -156,12 +164,15 @@ const LIFECYCLE_STATE_FINISHED   = 5;
 const LIFECYCLE_STATE_CANCELED   = 6;
 const LIFECYCLE_STATE_REJECTED   = 7;
 
-const LIFECYCLE_REASON_ENTITY_BUSY = 7;
 
 // ── Manager ────────────────────────────────────────────────────────────────
 
 export class IntentQueueManager {
   private clientSeq = 0;
+  private stateRevision = 0;
+  private submissionTail: Promise<void> = Promise.resolve();
+  private pendingCommands = new Map<string, SendIntentParams>();
+  private migrationNotice: string | null = null;
   private runId = "";
   private worldGeneration = 0;
   private entities = new Map<string, PerEntityState>();
@@ -182,6 +193,7 @@ export class IntentQueueManager {
     this.worldGeneration++;
     this.clientSeq = 0;
     this.entities.clear();
+    this.pendingCommands.clear();
     this.cmdToEntity.clear();
     this.cmdToKind.clear();
     this.persist();
@@ -209,59 +221,33 @@ export class IntentQueueManager {
     this.clientSeq++;
     for (const entityId of entityIds) {
       const state = this.getOrCreate(entityId);
-      state.queue = [];
+      state.pendingMoves = [];
       state.active = { clientCmdId, entityId, kind: "convoy", target };
     }
     this.cmdToKind.set(clientCmdId, "convoy");
     this.persist();
     this.notify();
-    void this.sendCallback?.({ kind: "Convoy", entityIds, target, clientCmdId,
-      clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" }).catch(() => {
-        // The server may have accepted before a connection failed. Reconcile
-        // rather than guessing which orders remain active.
-        void this.reconcileWithServer();
-      });
+    void this.submit({ kind: "Convoy", entityIds, target, clientCmdId,
+      clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
-  /** Apply individual move queue policy and send when appropriate. */
-  handleMoveCommand(
-    entityId: number,
-    target: { x: number; y: number },
-    modifiers: { shift: boolean; ctrl: boolean },
-  ) {
-    const policy: IntentPolicyName = modifiers.ctrl
-      ? "CLEAR_THEN_APPEND"
-      : modifiers.shift
-        ? "APPEND"
-        : "REPLACE_ACTIVE";
-
+  /** Send every waypoint mutation immediately; the server owns execution. */
+  handleMoveCommand(entityId: number, target: { x: number; y: number },
+    modifiers: { shift: boolean; ctrl: boolean }) {
+    const policy: IntentPolicyName = modifiers.ctrl ? "CLEAR_THEN_APPEND"
+      : modifiers.shift ? "APPEND" : "REPLACE_ACTIVE";
     const clientCmdId = uuidv7();
     const state = this.getOrCreate(entityId);
-
     if (policy === "REPLACE_ACTIVE") {
-      // Clear local queue and send immediately (preempt).
-      state.queue = [];
-      this.sendIntentNow(entityId, clientCmdId, target, policy);
-    } else if (policy === "CLEAR_THEN_APPEND") {
-      // Clear local queue, add one item, send only if entity idle.
-      state.queue = [];
-      if (!state.active) {
-        this.sendIntentNow(entityId, clientCmdId, target, policy);
-      } else {
-        state.queue.push({ clientCmdId, entityId, target, policy, createdAt: Date.now() });
-        this.persist();
-        this.notify();
-      }
-    } else {
-      // APPEND: add to local queue, send only if entity idle.
-      if (!state.active) {
-        this.sendIntentNow(entityId, clientCmdId, target, policy);
-      } else {
-        state.queue.push({ clientCmdId, entityId, target, policy, createdAt: Date.now() });
-        this.persist();
-        this.notify();
-      }
+      state.pendingMoves = [];
+      state.active = { clientCmdId, entityId, kind: "move", target };
     }
+    state.pendingMoves.push({ clientCmdId, entityId, target, policy, createdAt: Date.now() });
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.cmdToKind.set(clientCmdId, "move");
+    this.clientSeq++;
+    void this.submit({ kind: "Move", entityId, target, clientCmdId, clientSeq: this.clientSeq, policy });
+    this.persist(); this.notify();
   }
 
   /**
@@ -281,14 +267,14 @@ export class IntentQueueManager {
   handleDeliverCommand(entityId: number, targetId: number, resourceTypeIds: string[], donorId?: number) {
     const clientCmdId = uuidv7();
     const state = this.getOrCreate(entityId);
-    state.queue = [];
+    state.pendingMoves = [];
     state.active = { clientCmdId, entityId, kind: donorId ? "transport" : "deliver", ...(donorId ? { transfer: { donorId, targetId, resourceTypeIds } } : {}) };
     this.clientSeq++;
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, donorId ? "transport" : "deliver");
     this.persist();
     this.notify();
-    void this.sendCallback?.({ kind: donorId ? "Transport" : "Deliver", donorId, entityId, targetId, resourceTypeIds,
+    void this.submit({ kind: donorId ? "Transport" : "Deliver", donorId, entityId, targetId, resourceTypeIds,
       clientCmdId, clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
@@ -296,14 +282,14 @@ export class IntentQueueManager {
   handleRepairCommand(entityId: number, targetId: number) {
     const clientCmdId = uuidv7();
     const state = this.getOrCreate(entityId);
-    state.queue = [];
+    state.pendingMoves = [];
     state.active = { clientCmdId, entityId, kind: "repair" };
     this.clientSeq++;
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "repair");
     this.persist();
     this.notify();
-    void this.sendCallback?.({
+    void this.submit({
       kind: "Repair",
       entityId,
       targetId,
@@ -318,13 +304,13 @@ export class IntentQueueManager {
     const clientCmdId = uuidv7();
     this.clientSeq += 1;
     const state = this.getOrCreate(entityId);
-    state.queue = [];
+    state.pendingMoves = [];
     state.active = { clientCmdId, entityId, kind: "build" };
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "build");
     this.persist();
     this.notify();
-    void this.sendCallback?.({
+    void this.submit({
       kind: "Build",
       entityId,
       blueprintId,
@@ -339,13 +325,13 @@ export class IntentQueueManager {
     const clientCmdId = uuidv7();
     this.clientSeq += 1;
     const state = this.getOrCreate(entityId);
-    state.queue = [];
+    state.pendingMoves = [];
     state.active = { clientCmdId, entityId, kind: "upgrade" };
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "upgrade");
     this.persist();
     this.notify();
-    void this.sendCallback?.({
+    void this.submit({
       kind: "Upgrade",
       entityId,
       targetEntityTypeId,
@@ -360,207 +346,178 @@ export class IntentQueueManager {
     const clientCmdId = uuidv7();
     this.clientSeq += 1;
     const state = this.getOrCreate(entityId);
-    state.queue = [];
+    state.pendingMoves = [];
     state.active = { clientCmdId, entityId, kind: "research" };
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "research");
     this.persist(); this.notify();
-    void this.sendCallback?.({ kind: "Research", entityId, technologyId, clientCmdId, clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
+    void this.submit({ kind: "Research", entityId, technologyId, clientCmdId, clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
-  /**
-   * M2: Reconcile local queue state with the server after a reconnect.
-   *
-   * Fetches the reconnect handshake from the server and:
-   * 1. Advances clientSeq to at least last_processed_client_seq so future
-   *    intents won't be rejected as out-of-order.
-   * 2. For each entity, syncs the local "active" slot with the server's view:
-   *    - If the server has an active intent whose client_cmd_id matches our
-   *      local active, keep it (server is still working on it).
-   *    - If the server has an active intent we don't know about, mark it
-   *      locally so we don't send another until it finishes.
-   *    - If the server has no active intent but we do, our active was lost
-   *      (server restarted, intent finished while we were away, etc.) —
-   *      clear it and drain the queue.
-   * 3. For any entity that is now idle with queued intents, sends the next.
-   *
-   * Returns the handshake payload for callers that need server_tick /
-   * protocol_version, or null if the fetch failed.
-   */
-  async reconcileWithServer(): Promise<ReconnectHandshake | null> {
+  /** Rehydrate authoritative action/route state; never replay local waypoints. */
+  async reconcileWithServer(retryStale = true): Promise<ReconnectHandshake | null> {
     const generation = this.worldGeneration;
+    const revision = this.stateRevision;
     let handshake: ReconnectHandshake;
     try {
-      const resp = await fetch("/api/v2/reconnect");
-      if (!resp.ok) {
-        console.warn("[IntentQueue] reconnect handshake failed:", resp.status);
-        return null;
-      }
-      handshake = await resp.json();
-    } catch (err) {
-      console.warn("[IntentQueue] reconnect handshake error:", err);
-      return null;
-    }
-
-    // The first snapshot may initialize this same world while the handshake is
-    // in flight. In that case its reset is safe to reconcile against; only a
-    // response for a different world is stale.
+      const response = await fetch("/api/v2/reconnect");
+      if (!response.ok) return null;
+      handshake = await response.json();
+    } catch { return null; }
     if (generation !== this.worldGeneration && handshake.run_id !== this.runId) return null;
     if (handshake.run_id && handshake.run_id !== this.runId) this.resetForWorld(handshake.run_id);
-
-    // 1. Advance clientSeq so future sends aren't rejected as out-of-order
-    if (handshake.last_processed_client_seq > this.clientSeq) {
-      console.log(
-        `[IntentQueue] advancing clientSeq ${this.clientSeq} -> ${handshake.last_processed_client_seq}`
-      );
-      this.clientSeq = handshake.last_processed_client_seq;
+    this.clientSeq = Math.max(this.clientSeq, handshake.last_processed_client_seq);
+    if (revision !== this.stateRevision) {
+      return retryStale && this.pendingCommands.size === 0 ? this.reconcileWithServer(false) : null;
     }
-
-    // Build a lookup of server-side active intents by entity_id
-    const serverActiveByEntity = new Map<number, (typeof handshake.active_intents)[0]>();
-    for (const ai of handshake.active_intents) {
-      serverActiveByEntity.set(ai.entity_id, ai);
-    }
-
-    const activeFromServer = (
-      entityId: number,
-      serverActive: (typeof handshake.active_intents)[0],
-    ): ActiveIntentInfo => {
-      const intentKind = serverActive.intent_kind?.toLowerCase() ?? "";
-      const kind: ActiveIntentKind = ["convoy", "move", "collect", "build", "repair", "upgrade", "research", "deliver", "transport"].includes(intentKind)
-        ? intentKind as ActiveIntentKind : "unknown";
-      const moveTarget = serverActive.move_target;
-      const target =
-        (kind === "move" || kind === "convoy") &&
-        moveTarget &&
-        Number.isFinite(moveTarget.x) &&
-        Number.isFinite(moveTarget.y)
-          ? { x: moveTarget.x, y: moveTarget.y }
-          : undefined;
-
-      if (kind !== "convoy") this.cmdToEntity.set(serverActive.client_cmd_id, entityId);
-      if (kind !== "unknown") this.cmdToKind.set(serverActive.client_cmd_id, kind);
-      return {
-        clientCmdId: serverActive.client_cmd_id,
-        entityId,
-        kind,
-        ...(target ? { target } : {}),
-        ...(serverActive.transfer_route ? { transfer: { donorId: serverActive.transfer_route.donor_id, targetId: serverActive.transfer_route.target_id, resourceTypeIds: serverActive.transfer_route.resource_type_ids } } : {}),
-        intentId: serverActive.intent_id,
-        serverTick: String(serverActive.started_tick),
-      };
-    };
-
-    // 2. Reconcile each entity's active slot
-    const entitiesToDrain: number[] = [];
-
-    // Check entities we know about locally
-    for (const [entityIdStr, entityState] of this.entities) {
-      const entityId = Number(entityIdStr);
-      const serverActive = serverActiveByEntity.get(entityId);
-      serverActiveByEntity.delete(entityId); // mark as handled
-
-      if (entityState.active) {
-        if (serverActive && serverActive.client_cmd_id === entityState.active.clientCmdId) {
-          // Rehydrate kind and target even when command IDs match. This migrates
-          // legacy localStorage entries that predate target-less collect intents.
-          entityState.active = activeFromServer(entityId, serverActive);
-        } else if (serverActive) {
-          // Server has a different active intent for this entity (shouldn't happen
-          // normally, but could if another client controls the same entity).
-          // Replace our local active with the server's view.
-          entityState.active = activeFromServer(entityId, serverActive);
-        } else {
-          // Server has no active intent — ours was lost. Clear and drain.
-          entityState.active = null;
-          entitiesToDrain.push(entityId);
-        }
-      } else {
-        // We have no local active
-        if (serverActive) {
-          // Server has one we didn't know about — mark busy so we don't send
-          entityState.active = activeFromServer(entityId, serverActive);
-        } else {
-          // Both agree: idle. Drain queue if anything is queued.
-          if (entityState.queue.length > 0) {
-            entitiesToDrain.push(entityId);
-          }
-        }
+    const serverByEntity = new Map(handshake.active_intents.map((item) => [item.entity_id, item]));
+    for (const id of new Set([...this.entities.keys()].map(Number).concat([...serverByEntity.keys()]))) {
+      const state = this.getOrCreate(id);
+      // An HTTP request may have enqueued a command that the engine has not
+      // ingested yet. Keep its optimistic root until lifecycle/route delivery.
+      if (state.active && this.pendingCommands.has(state.active.clientCmdId)) continue;
+      const item = serverByEntity.get(id);
+      if (!item) {
+        const root = state.active?.clientCmdId;
+        state.active = null;
+        state.pendingMoves = state.pendingMoves.filter((item) => !item.finished && item.clientCmdId !== root);
+        continue;
       }
+      const kindName = item.intent_kind?.toLowerCase() ?? "unknown";
+      const kind = ["convoy", "move", "collect", "build", "repair", "upgrade", "research", "deliver", "transport"].includes(kindName)
+        ? kindName as ActiveIntentKind : "unknown";
+      state.active = { entityId: id, clientCmdId: item.client_cmd_id, intentId: item.intent_id,
+        serverTick: String(item.started_tick), kind,
+        ...((kind === "move" || kind === "convoy") && item.move_target ? { target: item.move_target } : {}),
+        ...(kind === "move" && item.move_route ? { route: item.move_route } : {}),
+        ...(item.transfer_route ? { transfer: { donorId: item.transfer_route.donor_id,
+          targetId: item.transfer_route.target_id, resourceTypeIds: item.transfer_route.resource_type_ids } } : {}),
+      };
+      if (kind !== "convoy") this.cmdToEntity.set(item.client_cmd_id, id);
+      if (kind !== "unknown") this.cmdToKind.set(item.client_cmd_id, kind);
+      this.retirePendingMoves(state, item.move_route?.last_client_cmd_id || item.client_cmd_id);
     }
-
-    // Handle server-active entities we didn't have locally at all
-    for (const [entityId, serverActive] of serverActiveByEntity) {
-      const entityState = this.getOrCreate(entityId);
-      entityState.active = activeFromServer(entityId, serverActive);
-    }
-
-    this.persist();
-    this.notify();
-
-    // 3. Drain queues for entities that are now idle
-    for (const entityId of entitiesToDrain) {
-      await this.sendNextFromQueue(entityId);
-    }
-
+    this.persist(); this.notify();
     return handshake;
   }
 
-  /**
-   * Called when a lifecycle SSE event arrives.
-   * Drives queue draining: on FINISHED / CANCELED for the active intent,
-   * sends the next queued intent.
-   */
-  onLifecycleEvent(event: {
-    entityId?: number;
-    clientCmdId: string;
-    intentId: string;
-    playerId: string;
-    serverTick: string;
-    state: number;
-    reason: number;
-  }) {
-    for (const [entityIdStr, entityState] of this.entities) {
-      if (event.entityId && Number(entityIdStr) !== event.entityId) continue;
-      if (entityState.active?.clientCmdId !== event.clientCmdId) continue;
-
-      if (event.state === LIFECYCLE_STATE_ACCEPTED) {
-        // Reconciliation: record server-assigned intentId + tick
-        entityState.active!.intentId = event.intentId;
-        entityState.active!.serverTick = event.serverTick;
-        this.persist();
-        this.notify();
-        continue;
-      }
-
-      if (event.state === LIFECYCLE_STATE_FINISHED || event.state === LIFECYCLE_STATE_CANCELED) {
-        // Intent completed — clear active, send next from queue.
-        entityState.active = null;
-        this.persist();
-        this.notify();
-        this.sendNextFromQueue(Number(entityIdStr));
-        continue;
-      }
-
-      if (event.state === LIFECYCLE_STATE_REJECTED) {
-        // Rejected — clear active.
-        entityState.active = null;
-        // For ENTITY_BUSY keep queue intact (retry when idle).
-        // For other rejections, clear queue as the server disagrees.
-        if (event.reason !== LIFECYCLE_REASON_ENTITY_BUSY) {
-          entityState.queue = [];
+  /** Apply owner-filtered snapshot/delta routes, preserving newer local commands. */
+  applyMoveOrders(orders: MoveOrderPayload[], removals: MoveOrderRemovalPayload[] = [], replace = false) {
+    this.stateRevision++;
+    if (replace) {
+      const present = new Set(orders.map((order) => Number(order.entity_id)));
+      for (const [id, state] of this.entities) {
+        if (!present.has(Number(id)) && state.active?.kind === "move"
+          && !this.pendingCommands.has(state.active.clientCmdId)) {
+          const root = state.active.clientCmdId;
+          state.active = null;
+          state.pendingMoves = state.pendingMoves.filter((item) => !item.finished && item.clientCmdId !== root);
         }
-        this.persist();
-        this.notify();
-        continue;
       }
+    }
+    for (const removal of removals) {
+      const state = this.entities.get(String(removal.entity_id));
+      if (state?.active?.clientCmdId === removal.client_cmd_id) {
+        state.active = null;
+        this.pendingCommands.delete(removal.client_cmd_id);
+        state.pendingMoves = state.pendingMoves.filter((item) => !item.finished && item.clientCmdId !== removal.client_cmd_id);
+      }
+    }
+    for (const order of orders) {
+      if (!order.route) continue;
+      const state = this.getOrCreate(Number(order.entity_id));
+      if (state.active && state.active.clientCmdId !== order.client_cmd_id
+        && (this.pendingCommands.has(state.active.clientCmdId)
+          || state.pendingMoves.some((item) => item.clientCmdId === state.active?.clientCmdId))) continue;
+      state.active = { entityId: Number(order.entity_id), kind: "move",
+        clientCmdId: order.client_cmd_id, intentId: order.intent_id, serverTick: String(order.started_tick),
+        route: order.route, target: order.route.waypoints[order.route.next_waypoint_index] };
+      this.cmdToEntity.set(order.client_cmd_id, Number(order.entity_id));
+      this.cmdToKind.set(order.client_cmd_id, "move");
+      this.retirePendingMoves(state, order.last_client_cmd_id || order.client_cmd_id);
+    }
+    this.persist(); this.notify();
+  }
 
-      // Other states (RECEIVED, IN_PROGRESS, BLOCKED) — informational, no action.
+  onLifecycleEvent(event: { entityId?: number; routeEdit?: boolean; clientCmdId: string;
+    intentId: string; playerId: string; serverTick: string; state: number; reason: number }) {
+    this.stateRevision++;
+    const command = this.pendingCommands.get(event.clientCmdId);
+    const pendingEntity = this.cmdToEntity.get(event.clientCmdId);
+    const pendingState = pendingEntity == null ? undefined : this.entities.get(String(pendingEntity));
+    if (event.routeEdit) {
+      if (event.state === LIFECYCLE_STATE_FINISHED) {
+        const preview = pendingState?.pendingMoves.find((item) => item.clientCmdId === event.clientCmdId);
+        if (preview) preview.finished = true;
+      } else if (event.state === LIFECYCLE_STATE_REJECTED && pendingState) {
+        pendingState.pendingMoves = pendingState.pendingMoves.filter((item) => item.clientCmdId !== event.clientCmdId);
+      }
+    } else {
+      if (event.state === LIFECYCLE_STATE_ACCEPTED && command?.kind === "Move" && pendingState) {
+        const newer = pendingState.active && this.pendingCommands.get(pendingState.active.clientCmdId);
+        if (!newer || newer.clientSeq <= command.clientSeq) {
+          pendingState.active = { entityId: command.entityId, kind: "move", clientCmdId: event.clientCmdId,
+            intentId: event.intentId, serverTick: event.serverTick, target: command.target };
+        }
+      }
+      for (const [id, state] of this.entities) {
+        if (event.entityId && Number(id) !== event.entityId) continue;
+        if (state.active?.clientCmdId !== event.clientCmdId) continue;
+        if (event.state === LIFECYCLE_STATE_ACCEPTED) {
+          state.active.intentId = event.intentId; state.active.serverTick = event.serverTick;
+        } else if ([LIFECYCLE_STATE_FINISHED, LIFECYCLE_STATE_CANCELED, LIFECYCLE_STATE_REJECTED].includes(event.state)) {
+          state.active = null;
+          state.pendingMoves = state.pendingMoves.filter((item) => !item.finished && item.clientCmdId !== event.clientCmdId);
+        }
+      }
+      if (event.state === LIFECYCLE_STATE_REJECTED && pendingState) {
+        pendingState.pendingMoves = pendingState.pendingMoves.filter((item) => item.clientCmdId !== event.clientCmdId);
+      }
     }
-    if (event.state === LIFECYCLE_STATE_REJECTED && this.cmdToKind.get(event.clientCmdId) === "convoy") {
-      // Validation is atomic: the old server actions may still be running.
-      void this.reconcileWithServer();
+    if ([LIFECYCLE_STATE_ACCEPTED, LIFECYCLE_STATE_FINISHED, LIFECYCLE_STATE_CANCELED, LIFECYCLE_STATE_REJECTED].includes(event.state)) {
+      this.pendingCommands.delete(event.clientCmdId);
     }
+    this.persist(); this.notify();
+    if (event.state === LIFECYCLE_STATE_REJECTED && !event.routeEdit) void this.reconcileWithServer();
+  }
+
+  private retirePendingMoves(state: PerEntityState, clientCmdId: string) {
+    const index = state.pendingMoves.findIndex((item) => item.clientCmdId === clientCmdId);
+    if (index >= 0) {
+      for (const item of state.pendingMoves.splice(0, index + 1)) this.pendingCommands.delete(item.clientCmdId);
+    }
+  }
+
+  getMigrationNotice() { return this.migrationNotice; }
+  dismissMigrationNotice() { this.migrationNotice = null; this.persist(); this.notify(); }
+  whenSubmitted() { return this.submissionTail; }
+
+  /** All command kinds share the same sequence-ordered HTTP submission chain. */
+  private submit(params: SendIntentParams): Promise<void> {
+    const generation = this.worldGeneration;
+    const callback = this.sendCallback;
+    this.pendingCommands.set(params.clientCmdId, params);
+    this.stateRevision++;
+    const send = async () => {
+      if (generation !== this.worldGeneration) return;
+      try {
+        if (!callback) throw new Error("Intent transport is unavailable");
+        await callback(params);
+      } catch {
+        if (generation !== this.worldGeneration) return;
+        this.pendingCommands.delete(params.clientCmdId);
+        const ids = params.kind === "Convoy" ? params.entityIds : [params.entityId];
+        for (const id of ids) {
+          const state = this.getOrCreate(id);
+          state.pendingMoves = state.pendingMoves.filter((item) => item.clientCmdId !== params.clientCmdId);
+        }
+        this.persist(); this.notify();
+        // Acceptance may have happened before the HTTP connection failed.
+        void this.reconcileWithServer();
+      }
+    };
+    this.submissionTail = this.submissionTail.then(send, send);
+    return this.submissionTail;
   }
 
   // ── Accessors ──────────────────────────────────────────────────────────
@@ -586,27 +543,32 @@ export class IntentQueueManager {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 
-  /** Returns all entity IDs that have active or queued intents. */
+  /** Entity IDs with an active order or pending waypoint preview. */
   getActiveEntityIds(): number[] {
     const ids: number[] = [];
     for (const [key, state] of this.entities) {
-      if (state.active || state.queue.length > 0) {
+      if (state.active || state.pendingMoves.length > 0) {
         ids.push(Number(key));
       }
     }
     return ids;
   }
 
-  /** Get all waypoint targets for an entity (active + queued), in order. */
-  getWaypoints(entityId: number): Array<{ x: number; y: number; active: boolean }> {
+  /** Remaining authoritative destinations plus unsatisfied edit previews. */
+  getWaypoints(entityId: number): Array<{ x: number; y: number; active: boolean; pending: boolean }> {
     const state = this.entities.get(String(entityId));
     if (!state) return [];
-    const out: Array<{ x: number; y: number; active: boolean }> = [];
-    if ((state.active?.kind === "move" || state.active?.kind === "convoy") && state.active.target) {
-      out.push({ ...state.active.target, active: true });
+    let out: Array<{ x: number; y: number; active: boolean; pending: boolean }> = [];
+    if (state.active?.kind === "move" && state.active.route) {
+      out = state.active.route.waypoints.slice(state.active.route.next_waypoint_index)
+        .map((point, index) => ({ ...point, active: index === 0, pending: false }));
+    } else if ((state.active?.kind === "move" || state.active?.kind === "convoy") && state.active.target) {
+      out = [{ ...state.active.target, active: true, pending: false }];
     }
-    for (const q of state.queue) {
-      out.push({ ...q.target, active: false });
+    for (const command of state.pendingMoves) {
+      if (command.policy === "REPLACE_ACTIVE") out = [];
+      else if (command.policy === "CLEAR_THEN_APPEND") out = out.slice(0, 1);
+      out.push({ ...command.target, active: out.length === 0, pending: true });
     }
     return out;
   }
@@ -617,40 +579,10 @@ export class IntentQueueManager {
     const key = String(entityId);
     let state = this.entities.get(key);
     if (!state) {
-      state = { queue: [], active: null };
+      state = { pendingMoves: [], active: null };
       this.entities.set(key, state);
     }
     return state;
-  }
-
-  private async sendIntentNow(
-    entityId: number,
-    clientCmdId: string,
-    target: { x: number; y: number },
-    policy: IntentPolicyName,
-  ) {
-    const state = this.getOrCreate(entityId);
-    this.clientSeq++;
-    this.cmdToEntity.set(clientCmdId, entityId);
-    this.cmdToKind.set(clientCmdId, "move");
-    state.active = { clientCmdId, entityId, kind: "move", target };
-    this.persist();
-    this.notify();
-
-    if (this.sendCallback) {
-      try {
-        await this.sendCallback({
-          kind: "Move",
-          entityId,
-          target,
-          clientCmdId,
-          clientSeq: this.clientSeq,
-          policy,
-        });
-      } catch (err) {
-        console.error("[IntentQueue] send failed", err);
-      }
-    }
   }
 
   private async sendCollectNow(
@@ -660,10 +592,10 @@ export class IntentQueueManager {
     policy: IntentPolicyName,
   ) {
     const state = this.getOrCreate(entityId);
-    // Collection replaces the entity's move plan. It remains active locally so
-    // append commands wait for the server to finish or replace collection.
+    // Collection replaces the move plan; subsequent Move edits are validated
+    // by the server against this maintained order.
     if (policy === "REPLACE_ACTIVE" || policy === "CLEAR_THEN_APPEND") {
-      state.queue = [];
+      state.pendingMoves = [];
     }
     this.clientSeq++;
     this.cmdToEntity.set(clientCmdId, entityId);
@@ -673,7 +605,7 @@ export class IntentQueueManager {
     this.notify();
     if (!this.sendCallback) return;
     try {
-      await this.sendCallback({
+      await this.submit({
         kind: "Collect",
         entityId,
         resourceTypeId: assignment.resourceTypeId,
@@ -687,15 +619,6 @@ export class IntentQueueManager {
     }
   }
 
-  private async sendNextFromQueue(entityId: number) {
-    const state = this.getOrCreate(entityId);
-    if (state.queue.length === 0) return;
-
-    const next = state.queue.shift()!;
-    // Queued items use APPEND when sent (entity should now be idle).
-    await this.sendIntentNow(entityId, next.clientCmdId, next.target, "APPEND");
-  }
-
   private notify() {
     for (const listener of this.listeners) {
       try { listener(); } catch { /* ignore */ }
@@ -704,11 +627,10 @@ export class IntentQueueManager {
 
   private persist() {
     try {
-      const data: PersistedState = {
-        clientSeq: this.clientSeq,
-        runId: this.runId,
-        entities: Object.fromEntries(this.entities),
-      };
+      const data: PersistedState = { schemaVersion: 2, migrationNotice: this.migrationNotice,
+        clientSeq: this.clientSeq, runId: this.runId,
+        entities: Object.fromEntries([...this.entities].map(([id, state]) =>
+          [id, { active: state.active, pendingMoves: [] }])) };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
     } catch { /* SSR guard / quota exceeded */ }
   }
@@ -721,19 +643,17 @@ export class IntentQueueManager {
       const data = JSON.parse(raw) as PersistedState;
       this.clientSeq = data.clientSeq || 0;
       this.runId = data.runId || "";
-      this.entities = new Map(
-        Object.entries(data.entities || {}).map(([entityId, state]) => {
-          const active = state.active;
-          // Old persisted active intents did not record their kind. Leave them
-          // target-less until reconnect reconciliation classifies them.
-          if (active && !["convoy", "move", "collect", "build", "upgrade", "repair", "research", "deliver", "transport"].includes(active.kind)) {
-            return [entityId, { ...state, active: { ...active, kind: "unknown", target: undefined } }];
-          }
-          return [entityId, state];
-        }),
-      );
-    } catch { /* ignore corrupted data */ }
+      this.migrationNotice = data.migrationNotice ?? null;
+      if (data.schemaVersion !== 2 && Object.values(data.entities || {}).some((state) =>
+        ((state as unknown as { queue?: unknown[] }).queue?.length ?? 0) > 0)) {
+        this.migrationNotice = "Saved waypoints were cleared during this update. Reissue any remaining destinations.";
+      }
+      this.entities = new Map(Object.entries(data.entities || {}).map(([id, state]) =>
+        [id, { active: state.active ?? null, pendingMoves: [] }]));
+      this.persist();
+    } catch { /* Ignore corrupt browser storage; reconnect restores server state. */ }
   }
+
 }
 
 // ── Module singleton (like `game` in world.ts) ────────────────────────────
