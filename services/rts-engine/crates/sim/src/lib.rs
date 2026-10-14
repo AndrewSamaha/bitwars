@@ -9,8 +9,8 @@ use crate::state::WorldState;
 
 /// Default movement speed (world units per second), matching rts-engine config.
 pub const DEFAULT_SPEED: f32 = 90.0;
-/// Default tick duration at 60 TPS.
-pub const DEFAULT_DT: f32 = 1.0 / 60.0;
+/// Default tick duration at 20 TPS.
+pub const DEFAULT_DT: f32 = 1.0 / 20.0;
 /// Default stop radius (world units), matching rts-engine config.
 pub const DEFAULT_STOP_RADIUS: f32 = 0.75;
 

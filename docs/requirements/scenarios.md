@@ -19,7 +19,7 @@ scenario list
 scenario validate wireless-energy
 scenario load wireless-energy
 scenario step
-scenario step 60
+scenario step 20
 scenario resume
 scenario pause
 scenario reload
@@ -30,7 +30,8 @@ scenario bookmark habitat-and-worker energy --entities=3,4
 
 Load and reload always start paused at tick zero. Reload reads the saved YAML
 again, or uses the last loaded document if it has not been saved. `step` schedules exactly the
-requested number of ticks (1–3600), then stays paused. Other players' clients
+requested number of ticks (1–1200), then stays paused. At the default 20 Hz,
+20 ticks represent one second of simulated time. Other players' clients
 refresh automatically. Controls and captures are processed between ticks,
 including while paused. Pending requests expire from the result store after
 five minutes; a queued operation can still execute if the engine resumes later.

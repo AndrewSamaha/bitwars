@@ -77,8 +77,8 @@ fn run_ticks(engine: &mut Engine, n: u64) -> Vec<Vec<u64>> {
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 /// Entity moves from (0,0) toward (10,0).
-/// speed=90, dt=1/60 → step=1.5 units/tick.
-/// distance=10, effective=10−0.75=9.25 → arrives in ceil(9.25/1.5)=7 ticks.
+/// speed=90, dt=1/20 → step=4.5 units/tick.
+/// distance=10, effective=10−0.75=9.25 → arrives in ceil(9.25/4.5)=3 ticks.
 /// After arrival: velocity is zero, position is at the stop boundary,
 /// and no further movement occurs for subsequent ticks.
 #[test]
@@ -99,7 +99,7 @@ fn arrival_within_stop_radius() {
     }
 
     let tick = arrival_tick.expect("entity should arrive");
-    assert!(tick <= 7, "should arrive within 7 ticks, arrived at tick {}", tick);
+    assert!(tick <= 2, "should arrive within 3 ticks, arrived at tick {}", tick);
 
     let entity = engine.state.find_entity(1).unwrap();
     let pos = entity.pos.as_ref().unwrap();
@@ -140,7 +140,7 @@ fn no_oscillation_near_boundary() {
     // Entity at (9.5, 0), target (10, 0). distance=0.5, effective=0.5−0.75<0 → already in radius.
     // Actually distance=0.5 < stop_radius=0.75, so it should arrive tick 0.
     // Use a case where effective > 0 but < step:
-    // Entity at (8.0, 0), target (10, 0). distance=2.0, effective=1.25. step=1.5 ≥ 1.25 → snap.
+    // Entity at (8.0, 0), target (10, 0). distance=2.0, effective=1.25. step=4.5 ≥ 1.25 → snap.
     let world = WorldState::new(0, vec![make_entity(1, 8.0, 0.0)]);
     let mut engine = Engine::from_snapshot(world);
 
@@ -394,9 +394,9 @@ fn per_entity_type_speed() {
 // To regenerate: set the constant to 0 and run — the assertion message
 // will show the actual hash.
 
-const GOLDEN_ARRIVAL: u64 = 5924118258432714776;
+const GOLDEN_ARRIVAL: u64 = 4310547811349001603;
 const GOLDEN_NO_OSCILLATION: u64 = 17867524296427840472;
-const GOLDEN_REPLACE_MID_MOVE: u64 = 2898199360403064009;
+const GOLDEN_REPLACE_MID_MOVE: u64 = 3772997337537082347;
 const GOLDEN_STATIONARY: u64 = 16753721005208475270;
-const GOLDEN_TWO_SAME_TARGET: u64 = 1139734944603382756;
-const GOLDEN_PER_TYPE_SPEED: u64 = 2714516160544601627;
+const GOLDEN_TWO_SAME_TARGET: u64 = 13886791008777459522;
+const GOLDEN_PER_TYPE_SPEED: u64 = 5205346758590730264;

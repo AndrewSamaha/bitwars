@@ -195,7 +195,7 @@ entity_types:
         - id: dismantle
           type: dismantle
           damage: 4
-          cooldown_ticks: 60
+          cooldown_ticks: 20
           priority: 100
           contact_tolerance: 2
     build_cost:
@@ -307,7 +307,7 @@ entity_types:
           type: laser
           range: 500
           damage: 4
-          cooldown_ticks: 100
+          cooldown_ticks: 33
           priority: 0
     maintenance_cost_per_minute:
       food: 60
@@ -449,7 +449,7 @@ entity_types:
           type: laser
           range: 120
           damage: 2
-          cooldown_ticks: 75
+          cooldown_ticks: 25
           priority: 0
     sensor:
       range: 5000
@@ -477,7 +477,7 @@ entity_types:
           type: laser
           range: 180
           damage: 8
-          cooldown_ticks: 100
+          cooldown_ticks: 33
           priority: 0
     sensor:
       range: 1200
@@ -505,7 +505,7 @@ entity_types:
           type: laser
           range: 500
           damage: 3
-          cooldown_ticks: 67
+          cooldown_ticks: 22
           priority: 0
     sensor:
       range: 500
@@ -537,7 +537,7 @@ entity_types:
           type: laser
           range: 500
           damage: 2
-          cooldown_ticks: 51
+          cooldown_ticks: 17
           priority: 0
     sensor:
       range: 500
@@ -612,7 +612,7 @@ entity_types:
           type: laser
           range: 400
           damage: 10
-          cooldown_ticks: 120
+          cooldown_ticks: 40
           priority: 0
     sensor:
       range: 700
@@ -639,7 +639,7 @@ entity_types:
           type: laser
           range: 300
           damage: 4
-          cooldown_ticks: 75
+          cooldown_ticks: 25
           priority: 0
     sensor:
       range: 2000
@@ -669,7 +669,7 @@ entity_types:
           type: laser
           range: 600
           damage: 10
-          cooldown_ticks: 120
+          cooldown_ticks: 40
           priority: 0
     sensor:
       range: 2000
@@ -699,7 +699,7 @@ entity_types:
           type: laser
           range: 2500
           damage: 25
-          cooldown_ticks: 100
+          cooldown_ticks: 33
           priority: 0
     sensor:
       range: 5000
@@ -732,7 +732,7 @@ entity_types:
           type: laser
           range: 500
           damage: 4
-          cooldown_ticks: 100
+          cooldown_ticks: 33
           priority: 0
     sensor:
       range: 5000
@@ -764,7 +764,7 @@ entity_types:
           type: laser
           range: 120
           damage: 2
-          cooldown_ticks: 75
+          cooldown_ticks: 25
           priority: 0
     visual:
       scale: 0.2
@@ -897,7 +897,7 @@ entity_types:
         - id: dismantle
           type: dismantle
           damage: 8
-          cooldown_ticks: 60
+          cooldown_ticks: 20
           priority: 100
           contact_tolerance: 2
     build_cost:

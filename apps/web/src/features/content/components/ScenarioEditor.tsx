@@ -101,7 +101,7 @@ export default function ScenarioEditor() {
             <button className={button} disabled={!runtime?.scenario_id} onClick={() => void act("reload")}>Reload</button>
             <button className={button} onClick={() => void act(runtime?.paused ? "resume" : "pause")}>{runtime?.paused ? "Resume" : "Pause"}</button>
           </div>
-          <label className="block text-sm">Ticks<input className={input} type="number" min={1} max={3600} value={ticks} onChange={event => setTicks(Number(event.target.value))} /></label>
+          <label className="block text-sm">Ticks<input className={input} type="number" min={1} max={1200} value={ticks} onChange={event => setTicks(Number(event.target.value))} /></label>
           <button className={button} disabled={!runtime?.paused} onClick={() => void act("step")}>Step</button>
         </fieldset>
         <fieldset disabled={busy || !runtime} className="space-y-2">
