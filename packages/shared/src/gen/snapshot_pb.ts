@@ -8,6 +8,8 @@ import type { Entity } from "./entity_pb.js";
 import { file_entity } from "./entity_pb.js";
 import type { ConvoyOrderState } from "./intent_pb.js";
 import { file_intent } from "./intent_pb.js";
+import type { MoveOrderState } from "./navigation_pb.js";
+import { file_navigation } from "./navigation_pb.js";
 import type { CollectorState } from "./collector_state_pb.js";
 import { file_collector_state } from "./collector_state_pb.js";
 import type { CombatEffectState } from "./combat_effect_state_pb.js";
@@ -18,7 +20,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file snapshot.proto.
  */
 export const file_snapshot: GenFile = /*@__PURE__*/
-  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyJfCg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDEhMKC3NwZW5kX3RvdGFsGAMgASgBEhIKCmdhaW5fdG90YWwYBCABKAEiVAoUUGxheWVyUmVzb3VyY2VMZWRnZXISEQoJcGxheWVyX2lkGAEgASgJEikKCXJlc291cmNlcxgCIAMoCzIWLmJpdHdhcnMuUmVzb3VyY2VFbnRyeSJCChVQbGF5ZXJUZWNobm9sb2d5U3RhdGUSEQoJcGxheWVyX2lkGAEgASgJEhYKDnRlY2hub2xvZ3lfaWRzGAIgAygJIsgCCghTbmFwc2hvdBIMCgR0aWNrGAIgASgDEiEKCGVudGl0aWVzGAMgAygLMg8uYml0d2Fycy5FbnRpdHkSNQoOcGxheWVyX2xlZGdlcnMYBCADKAsyHS5iaXR3YXJzLlBsYXllclJlc291cmNlTGVkZ2VyEjEKEGNvbGxlY3Rvcl9zdGF0ZXMYBSADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEjgKFGNvbWJhdF9lZmZlY3Rfc3RhdGVzGAYgAygLMhouYml0d2Fycy5Db21iYXRFZmZlY3RTdGF0ZRI7ChNwbGF5ZXJfdGVjaG5vbG9naWVzGAcgAygLMh4uYml0d2Fycy5QbGF5ZXJUZWNobm9sb2d5U3RhdGUSKgoHY29udm95cxgIIAMoCzIZLmJpdHdhcnMuQ29udm95T3JkZXJTdGF0ZWIGcHJvdG8z", [file_entity, file_intent, file_collector_state, file_combat_effect_state]);
+  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyJfCg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDEhMKC3NwZW5kX3RvdGFsGAMgASgBEhIKCmdhaW5fdG90YWwYBCABKAEiVAoUUGxheWVyUmVzb3VyY2VMZWRnZXISEQoJcGxheWVyX2lkGAEgASgJEikKCXJlc291cmNlcxgCIAMoCzIWLmJpdHdhcnMuUmVzb3VyY2VFbnRyeSJCChVQbGF5ZXJUZWNobm9sb2d5U3RhdGUSEQoJcGxheWVyX2lkGAEgASgJEhYKDnRlY2hub2xvZ3lfaWRzGAIgAygJIvYCCghTbmFwc2hvdBIMCgR0aWNrGAIgASgDEiEKCGVudGl0aWVzGAMgAygLMg8uYml0d2Fycy5FbnRpdHkSNQoOcGxheWVyX2xlZGdlcnMYBCADKAsyHS5iaXR3YXJzLlBsYXllclJlc291cmNlTGVkZ2VyEjEKEGNvbGxlY3Rvcl9zdGF0ZXMYBSADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEjgKFGNvbWJhdF9lZmZlY3Rfc3RhdGVzGAYgAygLMhouYml0d2Fycy5Db21iYXRFZmZlY3RTdGF0ZRI7ChNwbGF5ZXJfdGVjaG5vbG9naWVzGAcgAygLMh4uYml0d2Fycy5QbGF5ZXJUZWNobm9sb2d5U3RhdGUSKgoHY29udm95cxgIIAMoCzIZLmJpdHdhcnMuQ29udm95T3JkZXJTdGF0ZRIsCgttb3ZlX29yZGVycxgJIAMoCzIXLmJpdHdhcnMuTW92ZU9yZGVyU3RhdGViBnByb3RvMw", [file_entity, file_intent, file_navigation, file_collector_state, file_combat_effect_state]);
 
 /**
  * M7: Per-player resource totals. Resource types are data-driven (string IDs).
@@ -144,6 +146,11 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
    * @generated from field: repeated bitwars.ConvoyOrderState convoys = 8;
    */
   convoys: ConvoyOrderState[];
+
+  /**
+   * @generated from field: repeated bitwars.MoveOrderState move_orders = 9;
+   */
+  moveOrders: MoveOrderState[];
 };
 
 /**

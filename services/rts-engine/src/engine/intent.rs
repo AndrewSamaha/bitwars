@@ -23,7 +23,7 @@ pub struct ActiveIntent {
     pub metadata: IntentMetadata,
 }
 
-/// Result of trying to activate an intent (M1: no server-side queue).
+/// Result of claiming an active action slot. Move route edits use a separate path.
 pub struct ActivationOutcome {
     /// Intents that were canceled by this activation (REPLACE_ACTIVE preemption).
     pub canceled: Vec<(u64, IntentMetadata)>,
@@ -34,16 +34,16 @@ pub struct ActivationOutcome {
     pub rejected_busy: bool,
 }
 
-/// M1 intent manager: active-only, no server-side queue.
-///
-/// The client maintains per-entity FIFO queues; the server only tracks
-/// one active intent per entity at a time.
+/// One active action per entity, with server-owned routes for ordinary Move.
+/// The legacy browser still submits individual legs until its route cutover.
 ///
 /// Integrate with Engine by calling `try_activate` during intent ingestion,
 /// then `follow_targets` before `integrate()` each tick.
 pub struct IntentManager {
     pub(super) current_action: HashMap<u64, ActiveIntent>,
     pub convoys: Vec<pb::ConvoyOrderState>,
+    pub(super) move_routes: HashMap<u64, pb::NavigationRoute>,
+    pub(super) changed_move_routes: std::collections::HashSet<u64>,
     /// M4: per-entity-type definitions for speed/stop_radius lookups.
     pub(super) entity_types: HashMap<String, EntityTypeDef>,
     default_stop_radius: f32,
@@ -59,6 +59,8 @@ impl IntentManager {
         Self {
             current_action: HashMap::new(),
             convoys: Vec::new(),
+            move_routes: HashMap::new(),
+            changed_move_routes: std::collections::HashSet::new(),
             entity_types,
             default_stop_radius,
             default_speed,
@@ -102,7 +104,7 @@ impl IntentManager {
 
     /// Try to activate an intent for the target entity.
     ///
-    /// M1 rules:
+    /// Activation rules (edits of an active Move route are handled separately):
     /// - `REPLACE_ACTIVE` (or unspecified): cancel current intent (if any), start new.
     /// - `APPEND` / `CLEAR_THEN_APPEND`: reject with `ENTITY_BUSY` if entity already
     ///   has an active intent. Client should not send these while entity is busy.
@@ -145,6 +147,16 @@ impl IntentManager {
             }
         }
 
+        // Group actions use the shared formation mover, not individual routes.
+        self.move_routes.remove(&entity_id);
+        if metadata.entity_id == 0 {
+            if let Some(pb::intent::Kind::Move(mov)) = intent.kind.as_ref() {
+                if let Some(target) = mov.target {
+                    self.move_routes.insert(entity_id, pb::NavigationRoute::move_to(target));
+                    self.changed_move_routes.insert(entity_id);
+                }
+            }
+        }
         // Start the intent (M4: per-entity-type stop_radius)
         let stop_radius = self.resolve_stop_radius(entity_type_id);
         let action = make_action_state_from_intent(intent, stop_radius);
@@ -251,6 +263,18 @@ impl IntentManager {
 
         let mut notifications = Vec::with_capacity(finished.len());
         for eid in finished {
+            if let Some(route) = self.move_routes.get_mut(&eid) {
+                if state.entities.iter().any(|entity| entity.id == eid) && route.advance() {
+                    if let Some(active) = self.current_action.get_mut(&eid) {
+                        if let Some(pb::action_state::Exec::Move(mov)) = active.action.exec.as_mut() {
+                            if let Some(target) = mov.target.as_mut() { target.target = route.destination(); }
+                        }
+                    }
+                    self.changed_move_routes.insert(eid);
+                    continue;
+                }
+            }
+            self.move_routes.remove(&eid);
             if let Some(active) = self.current_action.remove(&eid) {
                 log_finish(&active.metadata, &active.action, eid);
                 notifications.push((eid, active.metadata));
@@ -285,6 +309,7 @@ impl IntentManager {
 
     /// Finish a non-movement action after its authoritative system completes it.
     pub fn finish(&mut self, entity_id: u64) -> Option<IntentMetadata> {
+        self.move_routes.remove(&entity_id);
         let active = self.current_action.remove(&entity_id)?;
         log_finish(&active.metadata, &active.action, entity_id);
         Some(active.metadata)

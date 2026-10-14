@@ -229,6 +229,7 @@ impl Engine {
                 collectors,
                 effects,
                 self.intents.convoys.clone(),
+                self.intents.move_orders_for_snapshot(),
             )
             .await?;
         self.publish_runtime().await

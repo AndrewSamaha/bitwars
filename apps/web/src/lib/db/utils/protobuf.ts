@@ -76,6 +76,19 @@ export const mapSnapshotToJson = (s: Snapshot) => {
     tick: biToNumOrStr(s.tick),
     entities: (s.entities ?? []).map(mapEntityToJson),
     player_ledgers,
+    move_orders: (s.moveOrders ?? []).map((order) => ({
+      entity_id: biToNumOrStr(order.entityId),
+      player_id: order.playerId,
+      intent_id: Array.from(order.intentId, (byte) => byte.toString(16).padStart(2, "0")).join(""),
+      client_cmd_id: Array.from(order.clientCmdId, (byte) => byte.toString(16).padStart(2, "0")).join(""),
+      started_tick: biToNumOrStr(order.startedTick),
+      route: order.route ? {
+        waypoints: order.route.waypoints.map((point) => ({ x: point.x, y: point.y })),
+        next_waypoint_index: order.route.nextWaypointIndex,
+        direction: order.route.direction,
+        traversal: order.route.traversal,
+      } : null,
+    })),
     convoys: (s.convoys ?? []).map((order) => ({
       intent_id: Array.from(order.intentId, (byte) => byte.toString(16).padStart(2, "0")).join(""),
       player_id: order.playerId,

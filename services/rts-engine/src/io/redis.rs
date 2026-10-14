@@ -42,6 +42,8 @@ pub struct EntityActiveIntent {
     /// Optional move target summary for reconnect/UI.
     #[serde(default)]
     pub move_target: Option<IntentPoint>,
+    #[serde(default)]
+    pub move_route: Option<MoveRouteSummary>,
     /// Construction target for build/upgrade UI, updated authoritatively.
     #[serde(default)]
     pub blueprint_id: Option<String>,
@@ -63,6 +65,12 @@ pub struct EntityActiveIntent {
     pub build_location: Option<IntentPoint>,
     #[serde(default)]
     pub transfer_route: Option<TransferRoute>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveRouteSummary {
+    pub waypoints: Vec<IntentPoint>,
+    pub next_waypoint_index: u32,
 }
 
 pub struct ConstructionProgressUpdate {
@@ -391,6 +399,7 @@ impl RedisClient {
         collector_states: Vec<CollectorState>,
         combat_effect_states: Vec<CombatEffectState>,
         convoys: Vec<pb::ConvoyOrderState>,
+        move_orders: Vec<pb::MoveOrderState>,
     ) -> anyhow::Result<()> {
         let mut inventory_totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
         for entity in &state.entities {
@@ -442,6 +451,7 @@ impl RedisClient {
 
         let snap = Snapshot {
             convoys,
+            move_orders,
             tick: state.tick as i64,
             entities: state.entities.clone(),
             player_ledgers,
@@ -719,7 +729,7 @@ impl RedisClient {
     /// Returns state, boundary stream ID, and collector state or None if absent.
     pub async fn read_latest_snapshot(
         &mut self,
-    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>)>> {
+    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>)>> {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
@@ -744,6 +754,7 @@ impl RedisClient {
             .unwrap_or_else(|_| "0-0".to_string());
 
         let convoys = snapshot.convoys.clone();
+        let move_orders = snapshot.move_orders.clone();
         let (state, collector_states) = restore_snapshot(snapshot)?;
 
         info!(
@@ -754,7 +765,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary, collector_states, convoys)))
+        Ok(Some((state, boundary, collector_states, convoys, move_orders)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -852,6 +863,25 @@ impl RedisClient {
         Ok(())
     }
 
+    /// Persist the authoritative route and current destination for reconnect.
+    pub async fn persist_move_route(&mut self, entity_id: u64, route: &pb::NavigationRoute) -> anyhow::Result<()> {
+        let key = self.active_intents_key();
+        let field = entity_id.to_string();
+        let Some(json) = self.conn.hget::<_, _, Option<String>>(&key, &field).await? else {
+            anyhow::bail!("missing active tracking for Move route {entity_id}");
+        };
+        let mut entry: EntityActiveIntent = serde_json::from_str(&json)?;
+        anyhow::ensure!(entry.intent_kind == "move", "route tracking is not a Move order");
+        entry.move_target = route.waypoints.get(route.next_waypoint_index as usize)
+            .map(|point| IntentPoint { x: point.x, y: point.y });
+        entry.move_route = Some(MoveRouteSummary {
+            waypoints: route.waypoints.iter().map(|point| IntentPoint { x: point.x, y: point.y }).collect(),
+            next_waypoint_index: route.next_waypoint_index,
+        });
+        let _: () = self.conn.hset(key, field, serde_json::to_string(&entry)?).await?;
+        Ok(())
+    }
+
     /// A convoy claims all member action slots as one reconnect-visible update.
     pub async fn persist_convoy_members(&mut self, members: &[(u64, IntentMetadata, pb::Vec2)]) -> anyhow::Result<()> {
         let key = self.active_intents_key();
@@ -890,6 +920,7 @@ impl RedisClient {
             started_tick: metadata.server_tick,
             intent_kind: intent_kind.to_string(),
             move_target,
+            move_route: None,
             blueprint_id: construction.as_ref().map(|(target, _, _)| target.clone()),
             progress: construction.as_ref().map(|(_, _, progress)| *progress),
             progress_updated_at_unix_ms: construction.as_ref().map(|_| current_unix_ms()),

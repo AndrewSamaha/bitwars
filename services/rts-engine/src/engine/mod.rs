@@ -1,5 +1,6 @@
 pub mod intent;
 mod convoy;
+mod navigation;
 pub mod state;
 mod scenario;
 
@@ -1696,7 +1697,7 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys)) =
+            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves)) =
                 redis.read_latest_snapshot().await?
             {
                 info!(
@@ -1813,11 +1814,15 @@ impl Engine {
                             && entry.intent_id == format_uuid(&order.intent_id)));
                 }
                 snapshot_convoys.retain(|order| !order.slots.is_empty());
+                snapshot_moves.retain(|order| tracking.active_intents.iter().any(|entry|
+                    entry.entity_id == order.entity_id && entry.intent_kind == "move"
+                        && entry.intent_id == format_uuid(&order.intent_id)));
                 let restored_ids: HashSet<_> = restored_collects
                     .iter()
                     .map(|(entry, ..)| entry.entity_id)
                     .chain(restored_builds.iter().map(|(entry, ..)| entry.entity_id))
                     .chain(restored_transfers.iter().map(|(entry, ..)| entry.entity_id))
+                    .chain(snapshot_moves.iter().map(|order| order.entity_id))
                     .chain(snapshot_convoys.iter().flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)))
                     .collect();
                 for entry in &tracking.active_intents {
@@ -2003,6 +2008,7 @@ impl Engine {
                         )
                         .await?;
                 }
+                engine.restore_move_orders(snapshot_moves).await?;
                 engine.restore_convoys(snapshot_convoys).await?;
                 engine.hydrate_entity_health_if_missing();
                 // Publish a fresh snapshot so newly connecting clients see current state
@@ -2017,6 +2023,7 @@ impl Engine {
                         engine.collector_states_for_stream(),
                         engine.combat_effect_states_for_stream(),
                         engine.intents.convoys.clone(),
+                        engine.intents.move_orders_for_snapshot(),
                     )
                     .await?;
                 let build_progress = engine.construction_progress_for_snapshot();
@@ -2106,7 +2113,7 @@ impl Engine {
         };
         engine
             .redis
-            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new())
+            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new())
             .await?;
 
         // M4: Publish content hash + definitions to Redis
@@ -4643,6 +4650,9 @@ impl Engine {
         let finished =
             self.intents
                 .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
+        if let Err(error) = self.persist_changed_move_routes().await {
+            warn!(?error, "failed to persist Move route progress");
+        }
         for (entity_id, metadata) in finished {
             if let Err(err) = self.redis.clear_active_intent(entity_id).await {
                 warn!(error = ?err, entity_id, "failed to clear active intent tracking");
@@ -4721,6 +4731,7 @@ impl Engine {
                     collector_states,
                     combat_effect_states,
                     self.intents.convoys.clone(),
+                    self.intents.move_orders_for_snapshot(),
                 )
                 .await
                 .is_ok()
@@ -4847,6 +4858,9 @@ impl Engine {
             let finished =
                 self.intents
                     .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
+            if let Err(error) = self.persist_changed_move_routes().await {
+                warn!(?error, "failed to persist Move route progress");
+            }
             for (entity_id, metadata) in finished {
                 // M2: clear tracking before emitting lifecycle event
                 if let Err(err) = self.redis.clear_active_intent(entity_id).await {
@@ -5020,6 +5034,7 @@ impl Engine {
                         collector_states,
                         combat_effect_states,
                         self.intents.convoys.clone(),
+                        self.intents.move_orders_for_snapshot(),
                     )
                     .await
                 {
@@ -5738,6 +5753,31 @@ impl Engine {
             Some(pb::intent::Kind::Deliver(delivery)) if delivery.donor_id != 0 => Some(delivery.clone()),
             _ => None,
         };
+        if let Some(pb::intent::Kind::Move(mov)) = payload_intent.kind.as_ref() {
+            let valid_target = mov.target.is_some_and(|point| point.x.is_finite() && point.y.is_finite());
+            if !valid_target {
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::InvalidTarget, accept_tick).await?;
+                return Err(anyhow!("invalid Move destination"));
+            }
+            if matches!(policy, pb::IntentPolicy::Append | pb::IntentPolicy::ClearThenAppend) {
+                if let Some(result) = self.intents.edit_move_route(entity_id, mov.target.unwrap(), policy) {
+                    if let Err(error) = result {
+                        let reason = if error == navigation::RouteEditError::Busy {
+                            pb::LifecycleReason::EntityBusy
+                        } else { pb::LifecycleReason::InvalidTarget };
+                        self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
+                        return Err(anyhow!("Move route edit rejected: {error:?}"));
+                    }
+                    self.persist_changed_move_routes().await?;
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Accepted,
+                        pb::LifecycleReason::None, accept_tick).await?;
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished,
+                        pb::LifecycleReason::None, accept_tick).await?;
+                    return Ok(());
+                }
+            }
+        }
         // M1: Try to activate immediately (no server-side queue).
         let outcome = self
             .intents
@@ -5800,6 +5840,7 @@ impl Engine {
                 )
                 .await?;
 
+            self.persist_changed_move_routes().await?;
             if let Some(transfer) = &transfer { self.redis.persist_transfer_route(entity_id, transfer).await?; }
             // Emit ACCEPTED then immediately IN_PROGRESS (M1: no intermediate queue)
             self.emit_lifecycle_event(
