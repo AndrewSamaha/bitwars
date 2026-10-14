@@ -29,7 +29,7 @@ fn current_unix_ms() -> u64 {
 
 /// Snapshot of a single entity's active intent, persisted to Redis so the
 /// reconnect handshake can report what the server is currently executing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EntityActiveIntent {
     pub entity_id: u64,
     pub intent_id: String,
@@ -390,6 +390,7 @@ impl RedisClient {
         boundary_stream_id: &str,
         collector_states: Vec<CollectorState>,
         combat_effect_states: Vec<CombatEffectState>,
+        convoys: Vec<pb::ConvoyOrderState>,
     ) -> anyhow::Result<()> {
         let mut inventory_totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
         for entity in &state.entities {
@@ -440,6 +441,7 @@ impl RedisClient {
         player_technologies.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
         let snap = Snapshot {
+            convoys,
             tick: state.tick as i64,
             entities: state.entities.clone(),
             player_ledgers,
@@ -717,7 +719,7 @@ impl RedisClient {
     /// Returns state, boundary stream ID, and collector state or None if absent.
     pub async fn read_latest_snapshot(
         &mut self,
-    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>)>> {
+    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>)>> {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
@@ -741,6 +743,7 @@ impl RedisClient {
             .await
             .unwrap_or_else(|_| "0-0".to_string());
 
+        let convoys = snapshot.convoys.clone();
         let (state, collector_states) = restore_snapshot(snapshot)?;
 
         info!(
@@ -751,7 +754,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary, collector_states)))
+        Ok(Some((state, boundary, collector_states, convoys)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -846,6 +849,25 @@ impl RedisClient {
             .arg(seq)
             .query_async(&mut self.conn)
             .await?;
+        Ok(())
+    }
+
+    /// A convoy claims all member action slots as one reconnect-visible update.
+    pub async fn persist_convoy_members(&mut self, members: &[(u64, IntentMetadata, pb::Vec2)]) -> anyhow::Result<()> {
+        let key = self.active_intents_key();
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+        for (id, metadata, target) in members {
+            let entry = EntityActiveIntent {
+                entity_id: *id, intent_id: format_uuid(&metadata.intent_id),
+                client_cmd_id: format_uuid(&metadata.client_cmd_id), player_id: metadata.player_id.clone(),
+                started_tick: metadata.server_tick, intent_kind: "convoy".into(),
+                move_target: Some(IntentPoint { x: target.x, y: target.y }), ..Default::default()
+            };
+            pipe.cmd("HSET").arg(&key).arg(id).arg(serde_json::to_string(&entry)?).ignore();
+        }
+        pipe.cmd("PERSIST").arg(&key).ignore();
+        let _: () = pipe.query_async(&mut self.conn).await?;
         Ok(())
     }
 

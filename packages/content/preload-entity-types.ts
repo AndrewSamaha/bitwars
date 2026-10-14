@@ -14,7 +14,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 2
     },
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -10\nsuppress_hover: true\nstop_radius: 0.75\nmass: 500\nhealth: 100\nvisibility_range: 4000\nvisual:\n  scale: 2\nradiation_sources:\n  - radiation_type: theta\n    min_effective_distance_fill_color: \"#882cd6\"\n    full_damage_distance_fill_color: \"#a753ef\"\n    max_effective_distance_fill_color: \"#c384f8\"\n    min_effective_distance: 0\n    full_damage_distance: 700\n    max_effective_distance: 1200\n    damage_per_second: 20\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 350\n  max_effective_distance: 1600"
+    "definition": "hull_radius: 50\nmax_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -10\nsuppress_hover: true\nstop_radius: 0.75\nmass: 500\nhealth: 100\nvisibility_range: 4000\nvisual:\n  scale: 2\nradiation_sources:\n  - radiation_type: theta\n    min_effective_distance_fill_color: \"#882cd6\"\n    full_damage_distance_fill_color: \"#a753ef\"\n    max_effective_distance_fill_color: \"#c384f8\"\n    min_effective_distance: 0\n    full_damage_distance: 700\n    max_effective_distance: 1200\n    damage_per_second: 20\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 350\n  max_effective_distance: 1600"
   },
   {
     "id": "planet_blue",
@@ -23,7 +23,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 4
     },
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -2\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 4\nresource_node:\n  resource_type: food\n  amount: 2000\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50\nbuilds:\n  - entity_type_id: dead_planet_blue"
+    "definition": "hull_radius: 50\nmax_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -2\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 4\nresource_node:\n  resource_type: food\n  amount: 2000\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50\nbuilds:\n  - entity_type_id: dead_planet_blue"
   },
   {
     "id": "star_yellow",
@@ -32,7 +32,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 15
     },
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nvisibility_range: 40000\nz_index: -10\nsuppress_hover: true\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 15\nradiation_sources:\n  - radiation_type: stellar_heat\n    min_effective_distance_fill_color: \"#ef4444\"\n    full_damage_distance_fill_color: \"#f97316\"\n    max_effective_distance_fill_color: \"#facc15\"\n    min_effective_distance: 0\n    full_damage_distance: 900\n    max_effective_distance: 1200\n    damage_per_second: 10\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 10\n  max_effective_distance: 1500"
+    "definition": "hull_radius: 50\nmax_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nvisibility_range: 40000\nz_index: -10\nsuppress_hover: true\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 15\nradiation_sources:\n  - radiation_type: stellar_heat\n    min_effective_distance_fill_color: \"#ef4444\"\n    full_damage_distance_fill_color: \"#f97316\"\n    max_effective_distance_fill_color: \"#facc15\"\n    min_effective_distance: 0\n    full_damage_distance: 900\n    max_effective_distance: 1200\n    damage_per_second: 10\nresource_node:\n  resource_type: energy\n  collection_mode: proximity\n  min_effective_distance: 10\n  max_effective_distance: 1500"
   },
   {
     "id": "minerals",
@@ -41,7 +41,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 3
     },
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nvisual:\n  scale: 3\nresource_node:\n  resource_type: minerals\n  amount: 10000\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50\nbuilds:\n  - entity_type_id: asteroid"
+    "definition": "hull_radius: 50\nmax_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nvisual:\n  scale: 3\nresource_node:\n  resource_type: minerals\n  amount: 10000\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50\nbuilds:\n  - entity_type_id: asteroid"
   },
   {
     "id": "collector_solar",
@@ -50,7 +50,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1.4
     },
-    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\nvisual:\n  scale: 1.4\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 800\n    retry_after_ms: 1000\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\n  proximity_rate_per_second: 3\n  transport_rate_per_second: 0\nupgrades:\n  - entity_type_id: collector_solar_v2"
+    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 50\nvisual:\n  scale: 1.4\ncombat_targetable: true\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 800\n    retry_after_ms: 1000\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\n  proximity_rate_per_second: 3\n  transport_rate_per_second: 0\nupgrades:\n  - entity_type_id: collector_solar_v2"
   },
   {
     "id": "worker",
@@ -87,7 +87,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1.5
     },
-    "definition": "max_capacity:\n  energy: 500\n  food: 500\n  minerals: 10000\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 16\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 100\n  energy: 100\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat_targetable: true\nmaintenance_cost_per_minute:\n  energy: 5\n  food: 5\nrefinery:\n  accepts:\n    - minerals"
+    "definition": "max_capacity:\n  energy: 500\n  food: 500\n  minerals: 10000\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 50\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 100\n  energy: 100\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat_targetable: true\nmaintenance_cost_per_minute:\n  energy: 5\n  food: 5\nrefinery:\n  accepts:\n    - minerals"
   },
   {
     "id": "factory",
@@ -103,14 +103,14 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1.6
     },
-    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 16\ncombat_targetable: true\nvisual:\n  scale: 1.6\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nmax_capacity:\n  energy: 3000\n  food: 500\n  minerals: 3000\nrefinery:\n  accepts:\n    - food\n    - minerals\nresource_sharing:\n  range: 1000\n  wireless_receives:\n    - energy\n  resources:\n    energy:\n      priority: 0\n      refill_below: 3000\n      fill_to: 3000\n      reserve: 50\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: processor\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: science_vessel\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: resource_transport\n    spend_rates:\n      minerals: 2\n      energy: 2"
+    "definition": "fog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 50\ncombat_targetable: true\nvisual:\n  scale: 1.6\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nmax_capacity:\n  energy: 3000\n  food: 500\n  minerals: 3000\nrefinery:\n  accepts:\n    - food\n    - minerals\nresource_sharing:\n  range: 1000\n  wireless_receives:\n    - energy\n  resources:\n    energy:\n      priority: 0\n      refill_below: 3000\n      fill_to: 3000\n      reserve: 50\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: processor\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: habitat\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: science_vessel\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: worker\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: resource_transport\n    spend_rates:\n      minerals: 2\n      energy: 2"
   },
   {
     "id": "scout",
     "builds": [],
     "upgrades": [],
     "visual": {},
-    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 450\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 120\n      damage: 2\n      cooldown_ticks: 25\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nbuilds:\n  - entity_type_id: scout_long_range"
+    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 50\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 450\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 120\n      damage: 2\n      cooldown_ticks: 25\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nbuilds:\n  - entity_type_id: scout_long_range"
   },
   {
     "id": "raider",
@@ -129,7 +129,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 0.8
     },
-    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 100\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 200\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 15\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 3\n      cooldown_ticks: 22\n      priority: 0\nsensor:\n  range: 500\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 0.8\nupgrades:\n  - entity_type_id: defense_pylon_v3"
+    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 100\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 200\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 50\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 3\n      cooldown_ticks: 22\n      priority: 0\nsensor:\n  range: 500\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 0.8\nupgrades:\n  - entity_type_id: defense_pylon_v3"
   },
   {
     "id": "defense_pylon",
@@ -149,7 +149,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1.25
     },
-    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 12\ncombat_targetable: true\nvisual:\n  scale: 1.25\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\nrequires_technologies:\n  all:\n    - solar_efficiency_1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 800\n    retry_after_ms: 1000\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\n  proximity_rate_per_second: 15\n  transport_rate_per_second: 0"
+    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nspeed: 20\nstop_radius: 1\nmass: 500\nhealth: 100\nhull_radius: 50\ncombat_targetable: true\nvisual:\n  scale: 1.25\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nbuild_cost:\n  minerals: 100\n  energy: 50\nradiation_shielding:\n  stellar_heat:\n    distance_offset: 90\n    damage_multiplier: 0.1\nrequires_technologies:\n  all:\n    - solar_efficiency_1\ncollector:\n  vfx: solar_proximity\n  collects:\n    - energy\n  minimum_distance:\n    value: 800\n    retry_after_ms: 1000\n    entity_types:\n      - collector_solar\n      - collector_solar_v2\n      - habitat\n  proximity_rate_per_second: 15\n  transport_rate_per_second: 0"
   },
   {
     "id": "defense_pylon_v3",
@@ -158,7 +158,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 0.8
     },
-    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 100\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 200\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 15\nvisual:\n  scale: 0.8\ncombat:\n  acquisition_range: 700\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 400\n      damage: 10\n      cooldown_ticks: 40\n      priority: 0\nsensor:\n  range: 700\n  cost_per_minute:\n    energy: 2.5"
+    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 100\n  energy: 50\nmaintenance_cost_per_minute:\n  energy: 200\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 50\nvisual:\n  scale: 0.8\ncombat:\n  acquisition_range: 700\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 400\n      damage: 10\n      cooldown_ticks: 40\n      priority: 0\nsensor:\n  range: 700\n  cost_per_minute:\n    energy: 2.5"
   },
   {
     "id": "fighter_v1",
@@ -176,7 +176,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1
     },
-    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 100\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 600\n      damage: 10\n      cooldown_ticks: 40\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
+    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 100\nhull_radius: 50\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 600\n      damage: 10\n      cooldown_ticks: 40\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
   },
   {
     "id": "battleship",
@@ -185,7 +185,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 2.3
     },
-    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 2000\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 2005\n  energy: 2000\ncombat:\n  acquisition_range: 5000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 2500\n      damage: 25\n      cooldown_ticks: 33\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\nrequires_technologies:\n  all:\n    - space_age\n    - neutrino_sensors"
+    "definition": "max_capacity:\n  energy: 500\nfog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 2000\nhull_radius: 50\ncombat_targetable: true\nbuild_cost:\n  minerals: 2005\n  energy: 2000\ncombat:\n  acquisition_range: 5000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 2500\n      damage: 25\n      cooldown_ticks: 33\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\nrequires_technologies:\n  all:\n    - space_age\n    - neutrino_sensors"
   },
   {
     "id": "science_vessel",
@@ -194,7 +194,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 2.3
     },
-    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 400\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 33\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\nresearches:\n  - neutrino_sensors\n  - solar_efficiency_1"
+    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 400\nhull_radius: 50\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 500\n  on_near_enemy_strategy: stay\n  attacks:\n    - id: laser\n      type: laser\n      range: 500\n      damage: 4\n      cooldown_ticks: 33\n      priority: 0\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 2.3\nresearches:\n  - neutrino_sensors\n  - solar_efficiency_1"
   },
   {
     "id": "scout_long_range",
@@ -203,7 +203,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 0.2
     },
-    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 10\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 450\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 120\n      damage: 2\n      cooldown_ticks: 25\n      priority: 0\nvisual:\n  scale: 0.2\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5"
+    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 500\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 50\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 450\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 120\n      damage: 2\n      cooldown_ticks: 25\n      priority: 0\nvisual:\n  scale: 0.2\nsensor:\n  range: 5000\n  cost_per_minute:\n    energy: 2.5"
   },
   {
     "id": "resource_transport",
@@ -228,7 +228,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 2
     },
-    "definition": "max_capacity:\n  energy: 4000\n  food: 500\n  minerals: 2500\nrefinery:\n  accepts:\n    - food\n    - minerals\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 16\ncombat_targetable: true\nvisual:\n  scale: 2\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nresource_sharing:\n  range: 1000\n  wireless_receives:\n    - energy\n  resources:\n    energy:\n      priority: 0\n      refill_below: 3000\n      fill_to: 3000\n      reserve: 50\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: fighter_v1\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: heavy_fighter\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: battleship\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: marine_worker\n    spend_rates:\n      minerals: 2\n      energy: 2"
+    "definition": "max_capacity:\n  energy: 4000\n  food: 500\n  minerals: 2500\nrefinery:\n  accepts:\n    - food\n    - minerals\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 150\nhull_radius: 50\ncombat_targetable: true\nvisual:\n  scale: 2\nbuild_cost:\n  minerals: 200\n  energy: 200\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\nresource_sharing:\n  range: 1000\n  wireless_receives:\n    - energy\n  resources:\n    energy:\n      priority: 0\n      refill_below: 3000\n      fill_to: 3000\n      reserve: 50\nbuilds:\n  - entity_type_id: scout\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: fighter_v1\n    spend_rates:\n      minerals: 2.2\n      energy: 2.2\n  - entity_type_id: heavy_fighter\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: battleship\n    spend_rates:\n      minerals: 1\n      energy: 1\n  - entity_type_id: defense_pylon\n    spend_rates:\n      minerals: 2\n      energy: 2\n  - entity_type_id: marine_worker\n    spend_rates:\n      minerals: 2\n      energy: 2"
   },
   {
     "id": "marine_worker",
@@ -258,7 +258,7 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {},
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nvisual:\n  scale: 2.5"
+    "definition": "hull_radius: 50\nmax_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -1\nstop_radius: 1\nmass: 500\nhealth: 100\nvisibility_range: 1000\nvisual:\n  scale: 2.5"
   },
   {
     "id": "food_storage_container",
@@ -267,7 +267,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1.5
     },
-    "definition": "max_capacity:\n  food: 1000\n  minerals: 100\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 50\nhull_radius: 16\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 100\n  energy: 100\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat_targetable: true\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nrefinery:\n  accepts:\n    - minerals\n    - food"
+    "definition": "max_capacity:\n  food: 1000\n  minerals: 100\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 50\nhull_radius: 50\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 100\n  energy: 100\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat_targetable: true\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nrefinery:\n  accepts:\n    - minerals\n    - food"
   },
   {
     "id": "dead_planet_blue",
@@ -276,7 +276,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 4
     },
-    "definition": "max_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -2\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 4\nresource_node:\n  resource_type: minerals\n  amount: 1000\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50"
+    "definition": "hull_radius: 50\nmax_capacity: {}\nfog_memory: retain_last_known\nspeed: 0\nz_index: -2\nstop_radius: 1\nmass: 500\nhealth: 100\nvisual:\n  scale: 4\nresource_node:\n  resource_type: minerals\n  amount: 1000\n  collection_mode: transport\n  max_simultaneous_collectors: 1\n  min_effective_distance: 20\n  max_effective_distance: 50"
   },
   {
     "id": "mineral_storage_container",
@@ -285,6 +285,6 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1.5
     },
-    "definition": "max_capacity:\n  food: 100\n  minerals: 1000\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 50\nhull_radius: 16\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 100\n  energy: 100\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat_targetable: true\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nrefinery:\n  accepts:\n    - minerals\n    - food"
+    "definition": "max_capacity:\n  food: 100\n  minerals: 1000\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 60\nstop_radius: 0.5\nmass: 7\nhealth: 50\nhull_radius: 50\nvisual:\n  scale: 1.5\nbuild_cost:\n  minerals: 100\n  energy: 100\nsensor:\n  range: 400\n  cost_per_minute:\n    energy: 0.1\ncombat_targetable: true\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nrefinery:\n  accepts:\n    - minerals\n    - food"
   }
 ] as const;

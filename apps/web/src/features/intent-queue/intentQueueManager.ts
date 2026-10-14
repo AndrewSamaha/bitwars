@@ -30,7 +30,7 @@ export type QueuedMoveIntent = {
   createdAt: number;
 };
 
-export type ActiveIntentKind = "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "unknown";
+export type ActiveIntentKind = "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "unknown";
 
 export type ActiveIntentInfo = {
   clientCmdId: string;
@@ -55,6 +55,14 @@ type PersistedState = {
 };
 
 export type SendIntentParams =
+  | {
+      kind: "Convoy";
+      entityIds: number[];
+      target: { x: number; y: number };
+      clientCmdId: string;
+      clientSeq: number;
+      policy: IntentPolicyName;
+    }
   | {
       kind: "Deliver" | "Transport";
       donorId?: number;
@@ -161,7 +169,7 @@ export class IntentQueueManager {
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
-  private cmdToKind = new Map<string, "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport">();
+  private cmdToKind = new Map<string, "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
@@ -195,10 +203,27 @@ export class IntentQueueManager {
 
   // ── Public API ─────────────────────────────────────────────────────────
 
-  /**
-   * Handle a move command issued by user input.
-   * Applies the policy, updates the local queue, and sends if appropriate.
-   */
+  /** Replace all member plans with one authoritative group order. */
+  handleConvoyCommand(entityIds: number[], target: { x: number; y: number }) {
+    const clientCmdId = uuidv7();
+    this.clientSeq++;
+    for (const entityId of entityIds) {
+      const state = this.getOrCreate(entityId);
+      state.queue = [];
+      state.active = { clientCmdId, entityId, kind: "convoy", target };
+    }
+    this.cmdToKind.set(clientCmdId, "convoy");
+    this.persist();
+    this.notify();
+    void this.sendCallback?.({ kind: "Convoy", entityIds, target, clientCmdId,
+      clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" }).catch(() => {
+        // The server may have accepted before a connection failed. Reconcile
+        // rather than guessing which orders remain active.
+        void this.reconcileWithServer();
+      });
+  }
+
+  /** Apply individual move queue policy and send when appropriate. */
   handleMoveCommand(
     entityId: number,
     target: { x: number; y: number },
@@ -402,18 +427,18 @@ export class IntentQueueManager {
       serverActive: (typeof handshake.active_intents)[0],
     ): ActiveIntentInfo => {
       const intentKind = serverActive.intent_kind?.toLowerCase() ?? "";
-      const kind: ActiveIntentKind = ["move", "collect", "build", "repair", "upgrade", "research", "deliver", "transport"].includes(intentKind)
+      const kind: ActiveIntentKind = ["convoy", "move", "collect", "build", "repair", "upgrade", "research", "deliver", "transport"].includes(intentKind)
         ? intentKind as ActiveIntentKind : "unknown";
       const moveTarget = serverActive.move_target;
       const target =
-        kind === "move" &&
+        (kind === "move" || kind === "convoy") &&
         moveTarget &&
         Number.isFinite(moveTarget.x) &&
         Number.isFinite(moveTarget.y)
           ? { x: moveTarget.x, y: moveTarget.y }
           : undefined;
 
-      this.cmdToEntity.set(serverActive.client_cmd_id, entityId);
+      if (kind !== "convoy") this.cmdToEntity.set(serverActive.client_cmd_id, entityId);
       if (kind !== "unknown") this.cmdToKind.set(serverActive.client_cmd_id, kind);
       return {
         clientCmdId: serverActive.client_cmd_id,
@@ -487,6 +512,7 @@ export class IntentQueueManager {
    * sends the next queued intent.
    */
   onLifecycleEvent(event: {
+    entityId?: number;
     clientCmdId: string;
     intentId: string;
     playerId: string;
@@ -495,6 +521,7 @@ export class IntentQueueManager {
     reason: number;
   }) {
     for (const [entityIdStr, entityState] of this.entities) {
+      if (event.entityId && Number(entityIdStr) !== event.entityId) continue;
       if (entityState.active?.clientCmdId !== event.clientCmdId) continue;
 
       if (event.state === LIFECYCLE_STATE_ACCEPTED) {
@@ -503,7 +530,7 @@ export class IntentQueueManager {
         entityState.active!.serverTick = event.serverTick;
         this.persist();
         this.notify();
-        return;
+        continue;
       }
 
       if (event.state === LIFECYCLE_STATE_FINISHED || event.state === LIFECYCLE_STATE_CANCELED) {
@@ -512,7 +539,7 @@ export class IntentQueueManager {
         this.persist();
         this.notify();
         this.sendNextFromQueue(Number(entityIdStr));
-        return;
+        continue;
       }
 
       if (event.state === LIFECYCLE_STATE_REJECTED) {
@@ -525,11 +552,14 @@ export class IntentQueueManager {
         }
         this.persist();
         this.notify();
-        return;
+        continue;
       }
 
       // Other states (RECEIVED, IN_PROGRESS, BLOCKED) — informational, no action.
-      return;
+    }
+    if (event.state === LIFECYCLE_STATE_REJECTED && this.cmdToKind.get(event.clientCmdId) === "convoy") {
+      // Validation is atomic: the old server actions may still be running.
+      void this.reconcileWithServer();
     }
   }
 
@@ -552,7 +582,7 @@ export class IntentQueueManager {
     return typeof v === "number" ? v : null;
   }
 
-  getKindForClientCmd(clientCmdId: string): "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | null {
+  getKindForClientCmd(clientCmdId: string): "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | null {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 
@@ -572,7 +602,7 @@ export class IntentQueueManager {
     const state = this.entities.get(String(entityId));
     if (!state) return [];
     const out: Array<{ x: number; y: number; active: boolean }> = [];
-    if (state.active?.kind === "move" && state.active.target) {
+    if ((state.active?.kind === "move" || state.active?.kind === "convoy") && state.active.target) {
       out.push({ ...state.active.target, active: true });
     }
     for (const q of state.queue) {
@@ -696,7 +726,7 @@ export class IntentQueueManager {
           const active = state.active;
           // Old persisted active intents did not record their kind. Leave them
           // target-less until reconnect reconciliation classifies them.
-          if (active && !["move", "collect", "build", "upgrade", "repair", "research", "deliver", "transport"].includes(active.kind)) {
+          if (active && !["convoy", "move", "collect", "build", "upgrade", "repair", "research", "deliver", "transport"].includes(active.kind)) {
             return [entityId, { ...state, active: { ...active, kind: "unknown", target: undefined } }];
           }
           return [entityId, state];

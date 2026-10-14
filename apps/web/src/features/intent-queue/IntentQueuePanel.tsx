@@ -52,7 +52,9 @@ export default function IntentQueuePanel() {
                 <span className="text-green-400 shrink-0">&gt;</span>
                 <div>
                   <span>
-                    {state.active.kind === "collect"
+                    {state.active.kind === "convoy"
+                      ? "convoy"
+                      : state.active.kind === "collect"
                       ? "collecting"
                       : state.active.kind === "deliver"
                         ? "delivering"

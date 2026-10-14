@@ -478,7 +478,7 @@ export default function GameStateStreamBridge() {
               ? payload.serverTick
               : Number(payload.serverTick ?? 0);
           const intentId = payload.intentId ?? "";
-          const entityIdFromCmd = intentQueue.getEntityIdForClientCmd(clientCmdId);
+          const entityIdFromCmd = Number(payload.entityId) || intentQueue.getEntityIdForClientCmd(clientCmdId);
           const reason = typeof payload.reason === "number" ? payload.reason : Number(payload.reason);
           if (entityIdFromCmd != null && state === LIFECYCLE_STATE_CANCELED && reason === 10) {
             dispatchTransferEndpointLost(String(entityIdFromCmd));
@@ -502,6 +502,7 @@ export default function GameStateStreamBridge() {
             ["build", "upgrade"].includes(intentQueue.getKindForClientCmd(clientCmdId) ?? "");
 
           intentQueue.onLifecycleEvent({
+            entityId: Number(payload.entityId) || undefined,
             clientCmdId,
             intentId,
             playerId: payload.playerId ?? "",
@@ -527,7 +528,7 @@ export default function GameStateStreamBridge() {
               const kindFromCmd = intentQueue.getKindForClientCmd(clientCmdId);
               const kind = kindFromCmd ?? existing?.intent_kind ?? "move";
               const moveTarget =
-                kind === "move"
+                (kind === "move" || kind === "convoy")
                   ? (() => {
                       if (entityIdFromCmd != null) {
                         const st = intentQueue.getEntityState(entityIdFromCmd);

@@ -228,6 +228,7 @@ impl Engine {
                 self.last_delta_id.as_deref().unwrap_or("0-0"),
                 collectors,
                 effects,
+                self.intents.convoys.clone(),
             )
             .await?;
         self.publish_runtime().await

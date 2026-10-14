@@ -1,4 +1,5 @@
 pub mod intent;
+mod convoy;
 pub mod state;
 mod scenario;
 
@@ -32,7 +33,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_
 use prost::Message;
 use state::{initialize_resource_deposits, take_from_deposit, ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 13;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 14;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -1695,7 +1696,7 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((mut state, boundary, snapshot_collector_states)) =
+            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys)) =
                 redis.read_latest_snapshot().await?
             {
                 info!(
@@ -1805,11 +1806,19 @@ impl Engine {
                     let actor = state.entities.iter().find(|entity| entity.id == entry.entity_id && entity.owner_player_id == entry.player_id)?;
                     Some((entry.clone(), route.clone(), actor.entity_type_id.clone()))
                 }).collect();
+                // Latest tracking may contain detachments after this checkpoint.
+                for order in &mut snapshot_convoys {
+                    order.slots.retain(|slot| tracking.active_intents.iter().any(|entry|
+                        entry.entity_id == slot.entity_id && entry.intent_kind == "convoy"
+                            && entry.intent_id == format_uuid(&order.intent_id)));
+                }
+                snapshot_convoys.retain(|order| !order.slots.is_empty());
                 let restored_ids: HashSet<_> = restored_collects
                     .iter()
                     .map(|(entry, ..)| entry.entity_id)
                     .chain(restored_builds.iter().map(|(entry, ..)| entry.entity_id))
                     .chain(restored_transfers.iter().map(|(entry, ..)| entry.entity_id))
+                    .chain(snapshot_convoys.iter().flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)))
                     .collect();
                 for entry in &tracking.active_intents {
                     if !restored_ids.contains(&entry.entity_id) {
@@ -1893,7 +1902,7 @@ impl Engine {
                         donor_id: route.donor_id, resource_type_ids: route.resource_type_ids };
                     let loaded = engine.state.entities.iter().find(|entity| entity.id == entry.entity_id).is_some_and(|entity|
                         delivery.resource_type_ids.iter().any(|resource| engine.content.as_ref().and_then(|pack| pack.get(&entity.entity_type_id)).is_some_and(|def| transferable_resource(entity, def, resource) > 0.0)));
-                    let metadata = IntentMetadata { intent_id: intent_id.into_bytes().to_vec(), client_cmd_id: client_cmd_id.into_bytes().to_vec(),
+                    let metadata = IntentMetadata { entity_id: 0, intent_id: intent_id.into_bytes().to_vec(), client_cmd_id: client_cmd_id.into_bytes().to_vec(),
                         player_id: entry.player_id, protocol_version: ENGINE_PROTOCOL_MAJOR, server_tick: entry.started_tick, policy: pb::IntentPolicy::ReplaceActive };
                     engine.intents.try_activate(pb::Intent { kind: Some(pb::intent::Kind::Deliver(delivery.clone())) }, metadata.clone(), &entity_type_id);
                     if loaded {
@@ -1922,6 +1931,7 @@ impl Engine {
                         })),
                     };
                     let metadata = IntentMetadata {
+                        entity_id: 0,
                         intent_id: intent_id.into_bytes().to_vec(),
                         client_cmd_id: client_cmd_id.into_bytes().to_vec(),
                         player_id: entry.player_id,
@@ -1965,6 +1975,7 @@ impl Engine {
                         })),
                     };
                     let metadata = IntentMetadata {
+                        entity_id: 0,
                         intent_id: intent_id.into_bytes().to_vec(),
                         client_cmd_id: client_cmd_id.into_bytes().to_vec(),
                         player_id: entry.player_id,
@@ -1992,6 +2003,7 @@ impl Engine {
                         )
                         .await?;
                 }
+                engine.restore_convoys(snapshot_convoys).await?;
                 engine.hydrate_entity_health_if_missing();
                 // Publish a fresh snapshot so newly connecting clients see current state
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
@@ -2004,6 +2016,7 @@ impl Engine {
                         snap_boundary,
                         engine.collector_states_for_stream(),
                         engine.combat_effect_states_for_stream(),
+                        engine.intents.convoys.clone(),
                     )
                     .await?;
                 let build_progress = engine.construction_progress_for_snapshot();
@@ -2093,7 +2106,7 @@ impl Engine {
         };
         engine
             .redis
-            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new())
+            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new())
             .await?;
 
         // M4: Publish content hash + definitions to Redis
@@ -3891,6 +3904,7 @@ impl Engine {
                 );
             }
         }
+        self.intents.prune_convoys();
     }
 
     fn pick_best_node<'a>(
@@ -4625,6 +4639,7 @@ impl Engine {
             }
         }
 
+        self.intents.prune_convoys();
         let finished =
             self.intents
                 .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
@@ -4656,6 +4671,7 @@ impl Engine {
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
+        self.advance_convoys(dt).await?;
         let radiation_source_by_victim = self.apply_radiation_damage(dt);
         let radiation_damaged_entities: HashSet<u64> = radiation_source_by_victim.keys().copied().collect();
         let radiation_victims: Vec<pb::Entity> = self
@@ -4704,6 +4720,7 @@ impl Engine {
                     boundary,
                     collector_states,
                     combat_effect_states,
+                    self.intents.convoys.clone(),
                 )
                 .await
                 .is_ok()
@@ -4826,6 +4843,7 @@ impl Engine {
             // inside handle_envelope via IntentManager::try_activate.
 
             // Advance currently executing actions (e.g., Move) toward targets
+            self.intents.prune_convoys();
             let finished =
                 self.intents
                     .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
@@ -4922,6 +4940,7 @@ impl Engine {
                 &mut phase_started,
             );
             integrate(&self.cfg, &mut self.state, dt);
+            self.advance_convoys(dt).await?;
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
@@ -5000,6 +5019,7 @@ impl Engine {
                         boundary,
                         collector_states,
                         combat_effect_states,
+                        self.intents.convoys.clone(),
                     )
                     .await
                 {
@@ -5155,6 +5175,7 @@ impl Engine {
             pb::IntentPolicy::try_from(envelope.policy).unwrap_or(pb::IntentPolicy::ReplaceActive);
 
         let metadata = IntentMetadata {
+            entity_id: 0,
             intent_id: intent_id.clone(),
             client_cmd_id: client_cmd_id.clone(),
             player_id: player_id.clone(),
@@ -5263,6 +5284,9 @@ impl Engine {
             .await?;
 
         let mut payload_intent = match envelope.payload {
+            Some(intent_envelope::Payload::Convoy(order)) => {
+                return self.activate_convoy(order, metadata).await;
+            }
             Some(intent_envelope::Payload::Move(m)) => {
                 info!(entity_id = m.entity_id, intent_id = %format_uuid(&intent_id), player = %player_id, "accept intent=Move");
                 pb::Intent {
@@ -5750,6 +5774,7 @@ impl Engine {
         }
 
         if let Some((entity_id, _)) = outcome.started {
+            self.intents.detach_convoy_member(entity_id);
             self.collection_retry_tick_by_entity.remove(&entity_id);
             self.transport_wait_since_tick_by_entity.remove(&entity_id);
             if intent_kind == "upgrade" {
@@ -5883,9 +5908,10 @@ impl Engine {
         tick: u64,
         minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
     ) -> Result<()> {
+        let event_key = [metadata.intent_id.as_slice(), &metadata.entity_id.to_le_bytes()].concat();
         if !self
             .lifecycle_emitted
-            .insert((metadata.intent_id.clone(), state))
+            .insert((event_key, state))
         {
             return Ok(());
         }
@@ -5897,6 +5923,7 @@ impl Engine {
             reason,
             tick,
             metadata.protocol_version,
+            metadata.entity_id,
             minimum_distance_violation,
         )
         .await
@@ -5911,9 +5938,11 @@ impl Engine {
         reason: pb::LifecycleReason,
         tick: u64,
         protocol_version: u32,
+        entity_id: u64,
         minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
     ) -> Result<()> {
         let event = pb::LifecycleEvent {
+            entity_id,
             intent_id: intent_id.to_vec(),
             client_cmd_id: client_cmd_id.to_vec(),
             player_id: player_id.to_string(),

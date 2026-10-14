@@ -125,63 +125,6 @@ pub struct CombatEffectState {
     #[prost(uint64, tag = "5")]
     pub updated_tick: u64,
 }
-/// M7: Per-player resource totals. Resource types are data-driven (string IDs).
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ResourceEntry {
-    #[prost(string, tag = "1")]
-    pub resource_type: ::prost::alloc::string::String,
-    #[prost(int64, tag = "2")]
-    pub amount: i64,
-    /// Cumulative authoritative spending for this resource. This includes upkeep
-    /// demand even when the ledger is clamped at zero.
-    #[prost(double, tag = "3")]
-    pub spend_total: f64,
-    /// Cumulative collection/resource income, including fractional accrual.
-    #[prost(double, tag = "4")]
-    pub gain_total: f64,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PlayerResourceLedger {
-    #[prost(string, tag = "1")]
-    pub player_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub resources: ::prost::alloc::vec::Vec<ResourceEntry>,
-}
-/// Technologies completed by a player. Technology definitions are supplied by
-/// the versioned content pack; this is only mutable match state.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PlayerTechnologyState {
-    #[prost(string, tag = "1")]
-    pub player_id: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag = "2")]
-    pub technology_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Snapshot {
-    #[prost(int64, tag = "2")]
-    pub tick: i64,
-    #[prost(message, repeated, tag = "3")]
-    pub entities: ::prost::alloc::vec::Vec<Entity>,
-    #[prost(message, repeated, tag = "4")]
-    pub player_ledgers: ::prost::alloc::vec::Vec<PlayerResourceLedger>,
-    #[prost(message, repeated, tag = "5")]
-    pub collector_states: ::prost::alloc::vec::Vec<CollectorState>,
-    #[prost(message, repeated, tag = "6")]
-    pub combat_effect_states: ::prost::alloc::vec::Vec<CombatEffectState>,
-    #[prost(message, repeated, tag = "7")]
-    pub player_technologies: ::prost::alloc::vec::Vec<PlayerTechnologyState>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SnapshotMeta {
-    /// tick included in the snapshot
-    #[prost(uint64, tag = "1")]
-    pub tick: u64,
-    /// last Redis stream ID included
-    #[prost(string, tag = "2")]
-    pub boundary_stream_id: ::prost::alloc::string::String,
-    #[prost(int64, tag = "3")]
-    pub updated_at_ms: i64,
-}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Delta {
     #[prost(uint64, tag = "1")]
@@ -348,7 +291,10 @@ pub struct IntentEnvelope {
     /// defaults to REPLACE_ACTIVE when omitted
     #[prost(enumeration = "IntentPolicy", tag = "7")]
     pub policy: i32,
-    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14, 16, 17, 18")]
+    #[prost(
+        oneof = "intent_envelope::Payload",
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19"
+    )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
 /// Nested message and enum types in `IntentEnvelope`.
@@ -371,6 +317,8 @@ pub mod intent_envelope {
         Research(super::ResearchIntent),
         #[prost(message, tag = "18")]
         Deliver(super::DeliverIntent),
+        #[prost(message, tag = "19")]
+        Convoy(super::ConvoyIntent),
     }
 }
 /// Extensible Intent envelope.
@@ -421,6 +369,9 @@ pub struct LifecycleEvent {
     pub protocol_version: u32,
     #[prost(message, optional, tag = "8")]
     pub minimum_distance_violation: ::core::option::Option<MinimumDistanceViolation>,
+    /// Nonzero scopes a group command lifecycle event to one member.
+    #[prost(uint64, tag = "9")]
+    pub entity_id: u64,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct MinimumDistanceViolation {
@@ -580,6 +531,41 @@ pub mod action_state {
         Deliver(super::DeliverState),
     }
 }
+/// One temporary group order. Formation is computed by the authoritative engine.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConvoyIntent {
+    #[prost(uint64, repeated, tag = "1")]
+    pub entity_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, optional, tag = "2")]
+    pub destination: ::core::option::Option<Vec2>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ConvoySlot {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(message, optional, tag = "2")]
+    pub offset: ::core::option::Option<Vec2>,
+}
+/// Checkpointed with entity positions, never reconstructed from client selection.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConvoyOrderState {
+    #[prost(bytes = "vec", tag = "1")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "4")]
+    pub started_tick: u64,
+    #[prost(message, optional, tag = "5")]
+    pub anchor: ::core::option::Option<Vec2>,
+    #[prost(message, optional, tag = "6")]
+    pub destination: ::core::option::Option<Vec2>,
+    #[prost(message, repeated, tag = "7")]
+    pub slots: ::prost::alloc::vec::Vec<ConvoySlot>,
+    #[prost(bool, tag = "8")]
+    pub traveling: bool,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IntentPolicy {
@@ -709,4 +695,63 @@ impl LifecycleReason {
             _ => None,
         }
     }
+}
+/// M7: Per-player resource totals. Resource types are data-driven (string IDs).
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResourceEntry {
+    #[prost(string, tag = "1")]
+    pub resource_type: ::prost::alloc::string::String,
+    #[prost(int64, tag = "2")]
+    pub amount: i64,
+    /// Cumulative authoritative spending for this resource. This includes upkeep
+    /// demand even when the ledger is clamped at zero.
+    #[prost(double, tag = "3")]
+    pub spend_total: f64,
+    /// Cumulative collection/resource income, including fractional accrual.
+    #[prost(double, tag = "4")]
+    pub gain_total: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerResourceLedger {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub resources: ::prost::alloc::vec::Vec<ResourceEntry>,
+}
+/// Technologies completed by a player. Technology definitions are supplied by
+/// the versioned content pack; this is only mutable match state.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerTechnologyState {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub technology_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Snapshot {
+    #[prost(int64, tag = "2")]
+    pub tick: i64,
+    #[prost(message, repeated, tag = "3")]
+    pub entities: ::prost::alloc::vec::Vec<Entity>,
+    #[prost(message, repeated, tag = "4")]
+    pub player_ledgers: ::prost::alloc::vec::Vec<PlayerResourceLedger>,
+    #[prost(message, repeated, tag = "5")]
+    pub collector_states: ::prost::alloc::vec::Vec<CollectorState>,
+    #[prost(message, repeated, tag = "6")]
+    pub combat_effect_states: ::prost::alloc::vec::Vec<CombatEffectState>,
+    #[prost(message, repeated, tag = "7")]
+    pub player_technologies: ::prost::alloc::vec::Vec<PlayerTechnologyState>,
+    #[prost(message, repeated, tag = "8")]
+    pub convoys: ::prost::alloc::vec::Vec<ConvoyOrderState>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnapshotMeta {
+    /// tick included in the snapshot
+    #[prost(uint64, tag = "1")]
+    pub tick: u64,
+    /// last Redis stream ID included
+    #[prost(string, tag = "2")]
+    pub boundary_stream_id: ::prost::alloc::string::String,
+    #[prost(int64, tag = "3")]
+    pub updated_at_ms: i64,
 }

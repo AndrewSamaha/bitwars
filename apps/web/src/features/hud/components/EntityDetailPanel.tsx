@@ -193,6 +193,8 @@ export default function EntityDetailPanel() {
     );
     return [
       { key: "m", name: "move", enabled: true, value: "Move" },
+      ...(selectedEntities.length >= 2 ? [{ key: "v", name: "convoy", enabled: selectedEntities.length <= 256 && selectedEntities.every((id) =>
+        (contentManager.getEntityType(idToType.get(id) ?? "")?.speed ?? 0) > 0), value: "Convoy" as const }] : []),
       { key: "d", name: "distance", enabled: selectedEntities.length === 1, value: "Measure" },
       { key: "c", name: "collect", enabled: canCollect, value: "Collect" },
       ...(canDeliver ? [{ key: "l", name: "deliver", value: "Deliver" as const }] : []),
@@ -262,6 +264,9 @@ export default function EntityDetailPanel() {
     }
     actions.setMeasuring(false);
     if (val !== "Deliver" && val !== "Transport" && deliverySelection) actions.setSelectedAction(null);
+    if (val === "Build" || val === "Upgrade" || val === "Research") {
+      actions.setSelectedAction(null);
+    }
     if (val === "Build") {
       setBuildMenuOpen((open) => !open);
       setUpgradeMenuOpen(false);
@@ -295,7 +300,8 @@ export default function EntityDetailPanel() {
       return;
     }
     // Toggle Move mode selection
-    actions.setSelectedAction(selectedAction === "Move" ? null : "Move");
+    const action = val === "Convoy" ? "Convoy" : "Move";
+    actions.setSelectedAction(selectedAction === action ? null : action);
   };
 
   const selectedType = idToType.get(firstId) ?? "";
@@ -320,6 +326,7 @@ export default function EntityDetailPanel() {
     return [...supported[0]].filter((type) => supported.every((types) => types.has(type))).sort();
   }, [selectedEntities, selectedIdsKey, idToType]);
   const startCollection = (assignment: { resourceTypeId?: string; nearestCompatible: boolean }) => {
+    actions.setSelectedAction(null);
     for (const id of selectedEntities) {
       const entityIdNum = Number(id);
       if (Number.isFinite(entityIdNum)) {
@@ -352,6 +359,7 @@ export default function EntityDetailPanel() {
   };
   const startBuild = (entityTypeId: string) => {
     if (!buildOptions.some((option) => option.entity_type_id === entityTypeId) || !canAfford(entityTypeId)) return;
+    actions.setSelectedAction(null);
     for (const id of selectedEntities) {
       const entityId = Number(id);
       if (Number.isSafeInteger(entityId)) intentQueue.handleBuildCommand(entityId, entityTypeId);
@@ -360,6 +368,7 @@ export default function EntityDetailPanel() {
   };
   const startUpgrade = (entityTypeId: string) => {
     if (!canAfford(entityTypeId, [firstId])) return;
+    actions.setSelectedAction(null);
     const entityId = Number(firstId);
     if (Number.isFinite(entityId)) intentQueue.handleUpgradeCommand(entityId, entityTypeId);
     setUpgradeMenuOpen(false);
@@ -367,6 +376,7 @@ export default function EntityDetailPanel() {
   const startResearch = (technologyId: string) => {
     const costs = contentManager.getContent()?.technologies?.[technologyId]?.research_cost ?? {};
     if (!canAffordCosts(firstId, costs)) return;
+    actions.setSelectedAction(null);
     const entityId = Number(firstId);
     if (Number.isFinite(entityId)) intentQueue.handleResearchCommand(entityId, technologyId);
     setResearchMenuOpen(false);
@@ -398,11 +408,15 @@ export default function EntityDetailPanel() {
       }
       if (!buildMenuOpen && (event.key === "b" || event.key === "B") && buildOptions.length > 0) {
         event.preventDefault();
+        actions.setSelectedAction(null);
+        actions.setMeasuring(false);
         setBuildMenuOpen(true);
         return;
       }
       if (!upgradeMenuOpen && (event.key === "u" || event.key === "U") && upgradeOptions.length > 0) {
         event.preventDefault();
+        actions.setSelectedAction(null);
+        actions.setMeasuring(false);
         setUpgradeMenuOpen(true);
         return;
       }
@@ -523,7 +537,7 @@ export default function EntityDetailPanel() {
                     <span className="font-mono text-muted-foreground">
                       tick: {startedTick}
                     </span>
-                    {activeIntent?.kind === "move" && (
+                    {(activeIntent?.kind === "move" || activeIntent?.kind === "convoy") && (
                       <span className="font-mono text-muted-foreground">
                         target: {moveTarget}
                       </span>
@@ -573,8 +587,8 @@ export default function EntityDetailPanel() {
                       ? isMeasuring
                       : a.value === "Deliver" || a.value === "Transport"
                       ? deliverySelection?.kind === a.value
-                      : a.value === "Move"
-                      ? selectedAction === "Move"
+                      : a.value === "Move" || a.value === "Convoy"
+                      ? selectedAction === a.value
                       : a.value === "Collect"
                         ? collectMenuOpen || isCollectActiveForSelection
                         : a.value === "Repair"

@@ -41,6 +41,7 @@ technologies:
       energy: 1
 entity_types:
   theta:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -67,6 +68,7 @@ entity_types:
       min_effective_distance: 350
       max_effective_distance: 1600
   planet_blue:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -86,6 +88,7 @@ entity_types:
     builds:
       - entity_type_id: dead_planet_blue
   star_yellow:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -112,6 +115,7 @@ entity_types:
       min_effective_distance: 10
       max_effective_distance: 1500
   minerals:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -139,7 +143,7 @@ entity_types:
     stop_radius: 1
     mass: 500
     health: 100
-    hull_radius: 12
+    hull_radius: 50
     visual:
       scale: 1.4
     combat_targetable: true
@@ -351,7 +355,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 150
-    hull_radius: 16
+    hull_radius: 50
     visual:
       scale: 1.5
     build_cost:
@@ -374,7 +378,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 150
-    hull_radius: 16
+    hull_radius: 50
     combat_targetable: true
     visual:
       scale: 1.6
@@ -436,7 +440,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 60
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 75
@@ -496,7 +500,7 @@ entity_types:
     stop_radius: 0.5
     mass: 1
     health: 500
-    hull_radius: 15
+    hull_radius: 50
     combat:
       acquisition_range: 500
       on_near_enemy_strategy: stay
@@ -557,7 +561,7 @@ entity_types:
     stop_radius: 1
     mass: 500
     health: 100
-    hull_radius: 12
+    hull_radius: 50
     combat_targetable: true
     visual:
       scale: 1.25
@@ -601,7 +605,7 @@ entity_types:
     stop_radius: 0.5
     mass: 1
     health: 500
-    hull_radius: 15
+    hull_radius: 50
     visual:
       scale: 0.8
     combat:
@@ -656,7 +660,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 100
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 75
@@ -686,7 +690,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 2000
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 2005
@@ -719,7 +723,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 400
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 75
@@ -751,7 +755,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 60
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 75
@@ -825,7 +829,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 150
-    hull_radius: 16
+    hull_radius: 50
     combat_targetable: true
     visual:
       scale: 2
@@ -970,6 +974,7 @@ entity_types:
       scale: 0.8
     visibility_range: 10000
   asteroid:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -990,7 +995,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 50
-    hull_radius: 16
+    hull_radius: 50
     visual:
       scale: 1.5
     build_cost:
@@ -1009,6 +1014,7 @@ entity_types:
         - minerals
         - food
   dead_planet_blue:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -1035,7 +1041,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 50
-    hull_radius: 16
+    hull_radius: 50
     visual:
       scale: 1.5
     build_cost:

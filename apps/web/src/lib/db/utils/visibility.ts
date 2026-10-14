@@ -26,6 +26,7 @@ type SnapshotPayload = {
   player_ledgers?: Array<{ player_id: string; resources: unknown[] }>;
   collector_states?: Array<{ entity_id: number | string }>;
   combat_effect_states?: Array<{ entity_id: number | string }>;
+  convoys?: Array<{ player_id: string }>;
   player_technologies?: Array<{ player_id: string; technology_ids: string[] }>;
 };
 
@@ -69,6 +70,7 @@ export class VisibilityFilter {
     return {
       ...snapshot,
       entities: snapshot.entities.filter((entity) => this.visible.has(idOf(entity.id))).map((entity) => forClient(entity, this.playerId, this.withinSensors.has(idOf(entity.id)))),
+      convoys: snapshot.convoys?.filter((order) => order.player_id === this.playerId),
       player_ledgers: snapshot.player_ledgers?.filter((ledger) => ledger.player_id === this.playerId),
       collector_states: snapshot.collector_states?.filter((state) => this.visible.has(idOf(state.entity_id))),
       combat_effect_states: snapshot.combat_effect_states?.filter((state) => this.visible.has(idOf(state.entity_id))),

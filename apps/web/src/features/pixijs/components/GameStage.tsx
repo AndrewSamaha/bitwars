@@ -108,7 +108,10 @@ export default function GameStage() {
     // M1/M8: Wire the queue manager's send callback to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
       const payload =
-        params.kind === "Move"
+        params.kind === "Convoy"
+          ? { type: "Convoy", entity_ids: params.entityIds, target: params.target,
+              client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Move"
           ? {
               type: "Move",
               entity_id: params.entityId,
@@ -165,11 +168,12 @@ export default function GameStage() {
               policy: params.policy,
             };
 
-      await fetch('/api/v1/intent', {
+      const response = await fetch('/api/v1/intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, run_id: game.runId, as_player_id: myPlayerIdRef.current }),
       });
+      if (!response.ok && params.kind === "Convoy") throw new Error(`Convoy request failed: ${response.status}`);
     });
 
     let cancelled = false;
@@ -739,6 +743,14 @@ export default function GameStage() {
               setSelectedAction('Move');
               ev.preventDefault();
             }
+          } else if (ev.code === "KeyV" && !isFocusInEditable()) {
+            if (sel.selectionCount >= 2 && sel.selectionCount <= 256 && sel.selectedEntities.every((id) => {
+              const type = findLiveEntityById(id)?.entity_type_id ?? "";
+              return (contentManager.getEntityType(type)?.speed ?? 0) > 0;
+            })) {
+              setSelectedAction("Convoy");
+              ev.preventDefault();
+            }
           } else if (ev.key === 'c' || ev.key === 'C') {
             if (sel.hasSelection) {
               window.dispatchEvent(new Event("bitwars:open-collect-picker"));
@@ -932,7 +944,7 @@ export default function GameStage() {
                 .on("pointerdown", (ev: any) => {
                   const sel = latestSelectorsRef.current;
                   // In Move mode, entity clicks should bubble to stage and issue a move command.
-                  if (sel.selectedAction === "Move") {
+                  if ((sel.selectedAction === "Move" || sel.selectedAction === "Convoy")) {
                     return;
                   }
                   const originalEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
@@ -1215,6 +1227,11 @@ export default function GameStage() {
           }
           const local = worldContainer.toLocal(global);
           const target = { x: Number(local.x), y: Number(local.y) };
+          if (sel.selectedAction === "Convoy") {
+            intentQueue.handleConvoyCommand(sel.selectedEntities.map(Number), target);
+            setSelectedAction(null);
+            return;
+          }
           const targets = spreadMoveTargets(target, sel.selectedEntities.map((id) => {
             const entityTypeId = findLiveEntityById(id)?.entity_type_id ?? "";
             return contentManager.getEntityType(entityTypeId)?.hull_radius ?? 0;
@@ -1316,7 +1333,7 @@ export default function GameStage() {
             if (shift) {
               selectionDrag = {
                 startX: global.x, startY: global.y, shift,
-                moveMode: sel.selectedAction === 'Move', ctrl,
+                moveMode: (sel.selectedAction === 'Move' || sel.selectedAction === 'Convoy'), ctrl,
               };
               return;
             }
@@ -1379,7 +1396,7 @@ export default function GameStage() {
               selectPressedEntity(press);
               return;
             }
-            if (latestSelectorsRef.current.selectedAction === 'Move') dispatchMove(ev.global, false, false);
+            if ((latestSelectorsRef.current.selectedAction === 'Move' || latestSelectorsRef.current.selectedAction === 'Convoy')) dispatchMove(ev.global, false, false);
             else if (latestSelectorsRef.current.selectedAction === "Repair" || (latestSelectorsRef.current.selectedAction && typeof latestSelectorsRef.current.selectedAction === "object")) setSelectedAction(null);
             else setSelection([]);
             return;

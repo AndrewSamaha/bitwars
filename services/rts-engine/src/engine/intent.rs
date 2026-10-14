@@ -8,6 +8,8 @@ use crate::pb;
 
 #[derive(Clone)]
 pub struct IntentMetadata {
+    /// Nonzero for member-scoped lifecycle events of a shared command.
+    pub entity_id: u64,
     pub intent_id: Vec<u8>,
     pub client_cmd_id: Vec<u8>,
     pub player_id: String,
@@ -40,11 +42,12 @@ pub struct ActivationOutcome {
 /// Integrate with Engine by calling `try_activate` during intent ingestion,
 /// then `follow_targets` before `integrate()` each tick.
 pub struct IntentManager {
-    current_action: HashMap<u64, ActiveIntent>,
+    pub(super) current_action: HashMap<u64, ActiveIntent>,
+    pub convoys: Vec<pb::ConvoyOrderState>,
     /// M4: per-entity-type definitions for speed/stop_radius lookups.
-    entity_types: HashMap<String, EntityTypeDef>,
+    pub(super) entity_types: HashMap<String, EntityTypeDef>,
     default_stop_radius: f32,
-    default_speed: f32,
+    pub(super) default_speed: f32,
 }
 
 impl IntentManager {
@@ -55,6 +58,7 @@ impl IntentManager {
     ) -> Self {
         Self {
             current_action: HashMap::new(),
+            convoys: Vec::new(),
             entity_types,
             default_stop_radius,
             default_speed,
@@ -172,7 +176,16 @@ impl IntentManager {
     ) -> Vec<(u64, IntentMetadata)> {
         let mut finished: Vec<u64> = Vec::new();
 
+        let members: std::collections::HashSet<u64> = self.convoys.iter()
+            .flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)).collect();
         for (eid, active) in self.current_action.iter_mut() {
+            if members.contains(eid) {
+                // Convoy positions are advanced as a group after ordinary physics.
+                if let Some(entity) = find_entity_mut(state, *eid) {
+                    entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+                }
+                continue;
+            }
             match active.action.exec.as_mut() {
                 Some(pb::action_state::Exec::Move(mov)) => {
                     let Some(mt) = mov.target.as_ref() else {
@@ -454,6 +467,7 @@ mod tests {
 
     fn make_metadata(intent_id_byte: u8, policy: pb::IntentPolicy) -> IntentMetadata {
         IntentMetadata {
+            entity_id: 0,
             intent_id: vec![intent_id_byte; 16],
             client_cmd_id: vec![intent_id_byte + 1; 16],
             player_id: "tester".into(),
