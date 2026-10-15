@@ -251,7 +251,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 0.8
     },
-    "definition": "max_capacity: {}\nfog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 20\n  energy: 25\nmaintenance_cost_per_minute:\n  energy: 10\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 150\nsensor:\n  range: 1\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 0.8\nvisibility_range: 10000"
+    "definition": "max_capacity: {}\nfog_memory: forget_when_hidden\nbuild_cost:\n  minerals: 20\n  energy: 25\nmaintenance_cost_per_minute:\n  energy: 0\nspeed: 5\nstop_radius: 0.5\nmass: 1\nhealth: 500\nhull_radius: 150\nsensor:\n  range: 1\nvisual:\n  scale: 0.8\nvisibility_range: 10000"
   },
   {
     "id": "asteroid",
