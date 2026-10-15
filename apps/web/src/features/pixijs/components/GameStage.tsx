@@ -812,7 +812,7 @@ export default function GameStage() {
           }
         };
         const onKeyUp = (ev: KeyboardEvent) => {
-          if (ev.key === "Shift" && latestSelectorsRef.current.selectedAction === "Move") {
+          if (ev.key === "Shift" && (latestSelectorsRef.current.selectedAction === "Move" || latestSelectorsRef.current.selectedAction === "Sentry")) {
             setSelectedAction(null);
           }
           if (PAN_KEYS.has(ev.code)) {
@@ -1248,6 +1248,7 @@ export default function GameStage() {
           const target = { x: Number(local.x), y: Number(local.y) };
           if (sel.selectedAction === "Sentry") {
             intentQueue.handleSentryCommand(sel.selectedEntities.map(Number), target, { shift, ctrl });
+            if (!shift && !ctrl) setSelectedAction(null);
             return;
           }
           if (sel.selectedAction === "Convoy") {
