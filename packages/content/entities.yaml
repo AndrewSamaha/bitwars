@@ -829,7 +829,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 150
-    hull_radius: 50
+    hull_radius: 150
     combat_targetable: true
     visual:
       scale: 2
