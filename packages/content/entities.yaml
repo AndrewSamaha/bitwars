@@ -391,7 +391,7 @@ entity_types:
         energy: 0.1
     max_capacity:
       energy: 3000
-      food: 500
+      food: 1000
       minerals: 3000
     refinery:
       accepts:
@@ -406,6 +406,16 @@ entity_types:
           priority: 0
           refill_below: 3000
           fill_to: 3000
+          reserve: 50
+        food:
+          priority: 0
+          refill_below: 200
+          fill_to: 900
+          reserve: 50
+        minerals:
+          priority: 0
+          refill_below: 2000
+          fill_to: 2800
           reserve: 50
     builds:
       - entity_type_id: scout
@@ -818,7 +828,7 @@ entity_types:
   military_factory:
     max_capacity:
       energy: 4000
-      food: 500
+      food: 1000
       minerals: 2500
     refinery:
       accepts:
@@ -848,7 +858,17 @@ entity_types:
         energy:
           priority: 0
           refill_below: 3000
-          fill_to: 3000
+          fill_to: 3800
+          reserve: 50
+        food:
+          priority: 0
+          refill_below: 200
+          fill_to: 900
+          reserve: 50
+        minerals:
+          priority: 0
+          refill_below: 2000
+          fill_to: 2200
           reserve: 50
     builds:
       - entity_type_id: scout
