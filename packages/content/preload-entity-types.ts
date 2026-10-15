@@ -118,9 +118,9 @@ export const ENTITY_CONTENT = [
     "upgrades": [],
     "visual": {
       "scale": 0.75,
-      "rotate_deg": 90
+      "rotate_deg": 0
     },
-    "definition": "max_capacity: {}\nfog_memory: forget_when_hidden\nspeed: 110\nstop_radius: 0.5\nmass: 0.8\nhealth: 40\nhull_radius: 50\ncombat_targetable: true\nvisual:\n  scale: 0.75\n  rotate_deg: 90\ncombat:\n  acquisition_range: 1200\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 180\n      damage: 8\n      cooldown_ticks: 33\n      priority: 0\nsensor:\n  range: 1200\n  cost_per_minute:\n    energy: 0"
+    "definition": "max_capacity: {}\nfog_memory: forget_when_hidden\nspeed: 110\nstop_radius: 0.5\nmass: 0.8\nhealth: 40\nhull_radius: 50\ncombat_targetable: true\nvisual:\n  scale: 0.75\n  rotate_deg: 0\ncombat:\n  acquisition_range: 1200\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 180\n      damage: 8\n      cooldown_ticks: 33\n      priority: 0\nsensor:\n  range: 1200\n  cost_per_minute:\n    energy: 0"
   },
   {
     "id": "defense_pylon_v2",
@@ -167,7 +167,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1
     },
-    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 100\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 300\n      damage: 4\n      cooldown_ticks: 25\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
+    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 60\nhull_radius: 100\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 300\n      damage: 4\n      cooldown_ticks: 25\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 0"
   },
   {
     "id": "heavy_fighter",
@@ -176,7 +176,7 @@ export const ENTITY_CONTENT = [
     "visual": {
       "scale": 1
     },
-    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 100\nhull_radius: 50\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 600\n      damage: 10\n      cooldown_ticks: 40\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 90"
+    "definition": "max_capacity:\n  energy: 100\nfog_memory: forget_when_hidden\nspeed: 400\nstop_radius: 0.5\nmass: 0.6\nhealth: 100\nhull_radius: 50\ncombat_targetable: true\nbuild_cost:\n  minerals: 75\n  energy: 50\ncombat:\n  acquisition_range: 2000\n  on_near_enemy_strategy: approach\n  attacks:\n    - id: laser\n      type: laser\n      range: 600\n      damage: 10\n      cooldown_ticks: 40\n      priority: 0\nsensor:\n  range: 2000\n  cost_per_minute:\n    energy: 2.5\nvisual:\n  scale: 1\n  rotate_deg: 0"
   },
   {
     "id": "battleship",

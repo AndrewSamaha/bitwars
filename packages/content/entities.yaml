@@ -472,7 +472,7 @@ entity_types:
     combat_targetable: true
     visual:
       scale: 0.75
-      rotate_deg: 90
+      rotate_deg: 0
     combat:
       acquisition_range: 1200
       on_near_enemy_strategy: approach
@@ -651,7 +651,7 @@ entity_types:
         energy: 2.5
     visual:
       scale: 1
-      rotate_deg: 90
+      rotate_deg: 0
   heavy_fighter:
     max_capacity:
       energy: 100
@@ -681,7 +681,7 @@ entity_types:
         energy: 2.5
     visual:
       scale: 1
-      rotate_deg: 90
+      rotate_deg: 0
   battleship:
     max_capacity:
       energy: 500
