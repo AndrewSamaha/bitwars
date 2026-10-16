@@ -23,3 +23,16 @@ enabled_tools = [
 [mcp_servers.bitwars_player.env]
 BITWARS_PLAYER_MCP_BASE_URL = "http://127.0.0.1:3000"
 BITWARS_PLAYER_MCP_ALLOW_WRITES = "1"
+
+[mcp_servers.bitwars_game_query]
+command = "node"
+args = ["--import", "tsx", "src/gameQueryServer.ts"]
+cwd = "/Users/andrew/Development/bitwars/packages/player-mcp"
+startup_timeout_sec = 30
+tool_timeout_sec = 30
+default_tools_approval_mode = "approve"
+enabled = true
+enabled_tools = ["get_snapshot", "get_owners", "get_entity", "get_scenarios", "get_script_debug"]
+
+[mcp_servers.bitwars_game_query.env]
+BITWARS_GAME_QUERY_BASE_URL = "http://127.0.0.1:3000"
