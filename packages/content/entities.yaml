@@ -41,6 +41,7 @@ technologies:
       energy: 1
 entity_types:
   theta:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -67,6 +68,7 @@ entity_types:
       min_effective_distance: 350
       max_effective_distance: 1600
   planet_blue:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -86,6 +88,7 @@ entity_types:
     builds:
       - entity_type_id: dead_planet_blue
   star_yellow:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -112,6 +115,7 @@ entity_types:
       min_effective_distance: 10
       max_effective_distance: 1500
   minerals:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -139,7 +143,7 @@ entity_types:
     stop_radius: 1
     mass: 500
     health: 100
-    hull_radius: 12
+    hull_radius: 50
     visual:
       scale: 1.4
     combat_targetable: true
@@ -170,9 +174,19 @@ entity_types:
     upgrades:
       - entity_type_id: collector_solar_v2
   worker:
-    resource_reserves:
-      food: 5
-      energy: 5
+    resource_sharing:
+      range: 1000
+      resources:
+        food:
+          priority: 0
+          refill_below: 45
+          fill_to: 50
+          reserve: 5
+        energy:
+          priority: 0
+          refill_below: 45
+          fill_to: 50
+          reserve: 5
     max_capacity:
       energy: 50
       food: 50
@@ -351,7 +365,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 150
-    hull_radius: 16
+    hull_radius: 50
     visual:
       scale: 1.5
     build_cost:
@@ -374,7 +388,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 150
-    hull_radius: 16
+    hull_radius: 50
     combat_targetable: true
     visual:
       scale: 1.6
@@ -387,7 +401,7 @@ entity_types:
         energy: 0.1
     max_capacity:
       energy: 3000
-      food: 500
+      food: 1000
       minerals: 3000
     refinery:
       accepts:
@@ -402,6 +416,16 @@ entity_types:
           priority: 0
           refill_below: 3000
           fill_to: 3000
+          reserve: 50
+        food:
+          priority: 0
+          refill_below: 200
+          fill_to: 900
+          reserve: 50
+        minerals:
+          priority: 0
+          refill_below: 2000
+          fill_to: 2800
           reserve: 50
     builds:
       - entity_type_id: scout
@@ -436,7 +460,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 60
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 75
@@ -468,7 +492,7 @@ entity_types:
     combat_targetable: true
     visual:
       scale: 0.75
-      rotate_deg: 90
+      rotate_deg: 0
     combat:
       acquisition_range: 1200
       on_near_enemy_strategy: approach
@@ -496,7 +520,7 @@ entity_types:
     stop_radius: 0.5
     mass: 1
     health: 500
-    hull_radius: 15
+    hull_radius: 50
     combat:
       acquisition_range: 500
       on_near_enemy_strategy: stay
@@ -557,7 +581,7 @@ entity_types:
     stop_radius: 1
     mass: 500
     health: 100
-    hull_radius: 12
+    hull_radius: 50
     combat_targetable: true
     visual:
       scale: 1.25
@@ -601,7 +625,7 @@ entity_types:
     stop_radius: 0.5
     mass: 1
     health: 500
-    hull_radius: 15
+    hull_radius: 50
     visual:
       scale: 0.8
     combat:
@@ -647,7 +671,7 @@ entity_types:
         energy: 2.5
     visual:
       scale: 1
-      rotate_deg: 90
+      rotate_deg: 0
   heavy_fighter:
     max_capacity:
       energy: 100
@@ -656,7 +680,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 100
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 75
@@ -677,7 +701,7 @@ entity_types:
         energy: 2.5
     visual:
       scale: 1
-      rotate_deg: 90
+      rotate_deg: 0
   battleship:
     max_capacity:
       energy: 500
@@ -686,7 +710,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 2000
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 2005
@@ -719,7 +743,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 400
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 75
@@ -751,7 +775,7 @@ entity_types:
     stop_radius: 0.5
     mass: 0.6
     health: 60
-    hull_radius: 10
+    hull_radius: 50
     combat_targetable: true
     build_cost:
       minerals: 75
@@ -773,13 +797,10 @@ entity_types:
       cost_per_minute:
         energy: 2.5
   resource_transport:
-    resource_reserves:
-      food: 5
-      energy: 5
     max_capacity:
       energy: 90
-      food: 90
-      minerals: 90
+      food: 500
+      minerals: 500
     fog_memory: forget_when_hidden
     speed: 80
     stop_radius: 2
@@ -787,6 +808,28 @@ entity_types:
     health: 300
     hull_radius: 75
     combat_targetable: true
+    resource_sharing:
+      range: 1000
+      wireless_receives:
+        - energy
+        - food
+        - minerals
+      resources:
+        energy:
+          priority: 0
+          refill_below: 85
+          fill_to: 90
+          reserve: 10
+        food:
+          priority: 0
+          refill_below: 85
+          fill_to: 90
+          reserve: 10
+        minerals:
+          priority: 0
+          refill_below: 85
+          fill_to: 90
+          reserve: 10
     visual:
       scale: 1.2
     sensor:
@@ -814,7 +857,7 @@ entity_types:
   military_factory:
     max_capacity:
       energy: 4000
-      food: 500
+      food: 1000
       minerals: 2500
     refinery:
       accepts:
@@ -825,7 +868,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 150
-    hull_radius: 16
+    hull_radius: 150
     combat_targetable: true
     visual:
       scale: 2
@@ -844,7 +887,17 @@ entity_types:
         energy:
           priority: 0
           refill_below: 3000
-          fill_to: 3000
+          fill_to: 3800
+          reserve: 50
+        food:
+          priority: 0
+          refill_below: 200
+          fill_to: 900
+          reserve: 50
+        minerals:
+          priority: 0
+          refill_below: 2000
+          fill_to: 2200
           reserve: 50
     builds:
       - entity_type_id: scout
@@ -872,9 +925,19 @@ entity_types:
           minerals: 2
           energy: 2
   marine_worker:
-    resource_reserves:
-      food: 5
-      energy: 5
+    resource_sharing:
+      range: 1000
+      resources:
+        food:
+          priority: 0
+          refill_below: 35
+          fill_to: 40
+          reserve: 5
+        energy:
+          priority: 0
+          refill_below: 35
+          fill_to: 40
+          reserve: 5
     max_capacity:
       energy: 40
       food: 40
@@ -956,7 +1019,7 @@ entity_types:
       minerals: 20
       energy: 25
     maintenance_cost_per_minute:
-      energy: 10
+      energy: 0
     speed: 5
     stop_radius: 0.5
     mass: 1
@@ -964,12 +1027,11 @@ entity_types:
     hull_radius: 150
     sensor:
       range: 1
-      cost_per_minute:
-        energy: 2.5
     visual:
       scale: 0.8
     visibility_range: 10000
   asteroid:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -990,7 +1052,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 50
-    hull_radius: 16
+    hull_radius: 50
     visual:
       scale: 1.5
     build_cost:
@@ -1009,6 +1071,7 @@ entity_types:
         - minerals
         - food
   dead_planet_blue:
+    hull_radius: 50
     max_capacity: {}
     fog_memory: retain_last_known
     speed: 0
@@ -1035,7 +1098,7 @@ entity_types:
     stop_radius: 0.5
     mass: 7
     health: 50
-    hull_radius: 16
+    hull_radius: 50
     visual:
       scale: 1.5
     build_cost:

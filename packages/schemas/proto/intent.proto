@@ -2,6 +2,7 @@ syntax = "proto3";
 package bitwars;
 
 import "delta.proto";
+import "navigation.proto";
 import "vec2.proto";
 
 enum IntentPolicy {
@@ -34,6 +35,7 @@ enum LifecycleReason {
   NOT_OWNED = 8;  // M6: entity not owned by issuing player
   MINIMUM_DISTANCE_VIOLATION = 9;
   TRANSFER_ENDPOINT_LOST = 10;
+  ESCORT_TARGET_LOST = 11;
 }
 
 // Represents an in-flight destination for an entity (server-side).
@@ -128,6 +130,9 @@ message IntentEnvelope {
     UpgradeIntent        upgrade = 16;
     ResearchIntent       research = 17;
     DeliverIntent        deliver = 18;
+    ConvoyIntent         convoy = 19;
+    SentryIntent         sentry = 20;
+    EscortIntent         escort = 21;
   }
   reserved 8, 9, 15;
 }
@@ -156,6 +161,10 @@ message LifecycleEvent {
   LifecycleReason reason  = 6;
   uint32 protocol_version = 7;
   MinimumDistanceViolation minimum_distance_violation = 8;
+  // Nonzero scopes a group command lifecycle event to one member.
+  uint64 entity_id = 9;
+  // This command edited a route; its completion does not finish the root order.
+  bool route_edit = 10;
 }
 
 message MinimumDistanceViolation {
@@ -260,4 +269,34 @@ message ActionState {
     ResearchState research = 8;
     DeliverState deliver = 9;
   }
+}
+
+// One temporary group order. Formation is computed by the authoritative engine.
+message ConvoyIntent {
+  repeated uint64 entity_ids = 1;
+  Vec2 destination = 2;
+}
+
+// Checkpointed with entity positions, never reconstructed from client selection.
+message ConvoyOrderState {
+  bytes intent_id = 1;
+  bytes client_cmd_id = 2;
+  string player_id = 3;
+  uint64 started_tick = 4;
+  Vec2 anchor = 5;
+  Vec2 destination = 6;
+  repeated ConvoySlot slots = 7;
+  bool traveling = 8;
+}
+
+message SentryIntent {
+  repeated uint64 entity_ids = 1;
+  Vec2 destination = 2;
+  // Required for append/clear edits; identifies the original group command.
+  bytes order_client_cmd_id = 3;
+}
+
+message EscortIntent {
+  repeated uint64 entity_ids = 1;
+  uint64 target_entity_id = 2;
 }

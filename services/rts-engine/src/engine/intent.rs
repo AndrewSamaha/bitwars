@@ -8,6 +8,8 @@ use crate::pb;
 
 #[derive(Clone)]
 pub struct IntentMetadata {
+    /// Nonzero for member-scoped lifecycle events of a shared command.
+    pub entity_id: u64,
     pub intent_id: Vec<u8>,
     pub client_cmd_id: Vec<u8>,
     pub player_id: String,
@@ -21,7 +23,7 @@ pub struct ActiveIntent {
     pub metadata: IntentMetadata,
 }
 
-/// Result of trying to activate an intent (M1: no server-side queue).
+/// Result of claiming an active action slot. Move route edits use a separate path.
 pub struct ActivationOutcome {
     /// Intents that were canceled by this activation (REPLACE_ACTIVE preemption).
     pub canceled: Vec<(u64, IntentMetadata)>,
@@ -32,19 +34,27 @@ pub struct ActivationOutcome {
     pub rejected_busy: bool,
 }
 
-/// M1 intent manager: active-only, no server-side queue.
-///
-/// The client maintains per-entity FIFO queues; the server only tracks
-/// one active intent per entity at a time.
+/// One active action per entity, with server-owned routes for ordinary Move.
 ///
 /// Integrate with Engine by calling `try_activate` during intent ingestion,
 /// then `follow_targets` before `integrate()` each tick.
 pub struct IntentManager {
-    current_action: HashMap<u64, ActiveIntent>,
+    pub(super) current_action: HashMap<u64, ActiveIntent>,
+    pub convoys: Vec<pb::ConvoyOrderState>,
+    pub(super) escorts: Vec<pb::EscortOrderState>,
+    pub(super) published_escorts: HashMap<Vec<u8>, pb::EscortOrderState>,
+    pub(super) persisted_escorts: HashMap<Vec<u8>, pb::EscortOrderState>,
+    pub(super) sentries: Vec<pb::SentryOrderState>,
+    pub(super) published_sentries: HashMap<Vec<u8>, pb::SentryOrderState>,
+    pub(super) persisted_sentries: HashMap<Vec<u8>, pb::SentryOrderState>,
+    pub(super) published_move_orders: HashMap<u64, pb::MoveOrderState>,
+    pub(super) move_route_last_cmd: HashMap<u64, Vec<u8>>,
+    pub(super) move_routes: HashMap<u64, pb::NavigationRoute>,
+    pub(super) changed_move_routes: std::collections::HashSet<u64>,
     /// M4: per-entity-type definitions for speed/stop_radius lookups.
-    entity_types: HashMap<String, EntityTypeDef>,
+    pub(super) entity_types: HashMap<String, EntityTypeDef>,
     default_stop_radius: f32,
-    default_speed: f32,
+    pub(super) default_speed: f32,
 }
 
 impl IntentManager {
@@ -55,6 +65,17 @@ impl IntentManager {
     ) -> Self {
         Self {
             current_action: HashMap::new(),
+            convoys: Vec::new(),
+            escorts: Vec::new(),
+            published_escorts: HashMap::new(),
+            persisted_escorts: HashMap::new(),
+            sentries: Vec::new(),
+            published_sentries: HashMap::new(),
+            persisted_sentries: HashMap::new(),
+            move_routes: HashMap::new(),
+            published_move_orders: HashMap::new(),
+            move_route_last_cmd: HashMap::new(),
+            changed_move_routes: std::collections::HashSet::new(),
             entity_types,
             default_stop_radius,
             default_speed,
@@ -98,7 +119,7 @@ impl IntentManager {
 
     /// Try to activate an intent for the target entity.
     ///
-    /// M1 rules:
+    /// Activation rules (edits of an active Move route are handled separately):
     /// - `REPLACE_ACTIVE` (or unspecified): cancel current intent (if any), start new.
     /// - `APPEND` / `CLEAR_THEN_APPEND`: reject with `ENTITY_BUSY` if entity already
     ///   has an active intent. Client should not send these while entity is busy.
@@ -141,6 +162,18 @@ impl IntentManager {
             }
         }
 
+        // Group actions use the shared formation mover, not individual routes.
+        self.move_routes.remove(&entity_id);
+        self.move_route_last_cmd.remove(&entity_id);
+        if metadata.entity_id == 0 {
+            if let Some(pb::intent::Kind::Move(mov)) = intent.kind.as_ref() {
+                if let Some(target) = mov.target {
+                    self.move_route_last_cmd.insert(entity_id, metadata.client_cmd_id.clone());
+                    self.move_routes.insert(entity_id, pb::NavigationRoute::move_to(target));
+                    self.changed_move_routes.insert(entity_id);
+                }
+            }
+        }
         // Start the intent (M4: per-entity-type stop_radius)
         let stop_radius = self.resolve_stop_radius(entity_type_id);
         let action = make_action_state_from_intent(intent, stop_radius);
@@ -172,7 +205,18 @@ impl IntentManager {
     ) -> Vec<(u64, IntentMetadata)> {
         let mut finished: Vec<u64> = Vec::new();
 
+        let mut members: std::collections::HashSet<u64> = self.convoys.iter()
+            .flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)).collect();
+        members.extend(self.sentry_member_ids());
+        members.extend(self.escort_member_ids());
         for (eid, active) in self.current_action.iter_mut() {
+            if members.contains(eid) {
+                // Convoy positions are advanced as a group after ordinary physics.
+                if let Some(entity) = find_entity_mut(state, *eid) {
+                    entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+                }
+                continue;
+            }
             match active.action.exec.as_mut() {
                 Some(pb::action_state::Exec::Move(mov)) => {
                     let Some(mt) = mov.target.as_ref() else {
@@ -238,6 +282,19 @@ impl IntentManager {
 
         let mut notifications = Vec::with_capacity(finished.len());
         for eid in finished {
+            if let Some(route) = self.move_routes.get_mut(&eid) {
+                if state.entities.iter().any(|entity| entity.id == eid) && route.advance() {
+                    if let Some(active) = self.current_action.get_mut(&eid) {
+                        if let Some(pb::action_state::Exec::Move(mov)) = active.action.exec.as_mut() {
+                            if let Some(target) = mov.target.as_mut() { target.target = route.destination(); }
+                        }
+                    }
+                    self.changed_move_routes.insert(eid);
+                    continue;
+                }
+            }
+            self.move_routes.remove(&eid);
+            self.move_route_last_cmd.remove(&eid);
             if let Some(active) = self.current_action.remove(&eid) {
                 log_finish(&active.metadata, &active.action, eid);
                 notifications.push((eid, active.metadata));
@@ -272,6 +329,8 @@ impl IntentManager {
 
     /// Finish a non-movement action after its authoritative system completes it.
     pub fn finish(&mut self, entity_id: u64) -> Option<IntentMetadata> {
+        self.move_routes.remove(&entity_id);
+        self.move_route_last_cmd.remove(&entity_id);
         let active = self.current_action.remove(&entity_id)?;
         log_finish(&active.metadata, &active.action, entity_id);
         Some(active.metadata)
@@ -454,6 +513,7 @@ mod tests {
 
     fn make_metadata(intent_id_byte: u8, policy: pb::IntentPolicy) -> IntentMetadata {
         IntentMetadata {
+            entity_id: 0,
             intent_id: vec![intent_id_byte; 16],
             client_cmd_id: vec![intent_id_byte + 1; 16],
             player_id: "tester".into(),

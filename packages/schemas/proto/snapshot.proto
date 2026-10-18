@@ -2,6 +2,8 @@ syntax = "proto3";
 package bitwars;
 
 import "entity.proto";
+import "intent.proto";
+import "navigation.proto";
 import "collector_state.proto";
 import "combat_effect_state.proto";
 
@@ -35,4 +37,8 @@ message Snapshot {
   repeated CollectorState collector_states = 5;
   repeated CombatEffectState combat_effect_states = 6;
   repeated PlayerTechnologyState player_technologies = 7;
+  repeated ConvoyOrderState convoys = 8;
+  repeated MoveOrderState move_orders = 9;
+  repeated SentryOrderState sentry_orders = 10;
+  repeated EscortOrderState escort_orders = 11;
 }

@@ -6,6 +6,8 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { EntityDelta } from "./entity_delta_pb.js";
 import { file_entity_delta } from "./entity_delta_pb.js";
+import type { EscortOrderRemoval, EscortOrderState, MoveOrderRemoval, MoveOrderState, SentryOrderRemoval, SentryOrderState } from "./navigation_pb.js";
+import { file_navigation } from "./navigation_pb.js";
 import type { CollectorState } from "./collector_state_pb.js";
 import { file_collector_state } from "./collector_state_pb.js";
 import type { CombatEffectState } from "./combat_effect_state_pb.js";
@@ -16,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delta.proto.
  */
 export const file_delta: GenFile = /*@__PURE__*/
-  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyLTAQoFRGVsdGESDAoEdGljaxgBIAEoBBIlCgd1cGRhdGVzGAIgAygLMhQuYml0d2Fycy5FbnRpdHlEZWx0YRIaChJyZW1vdmVkX2VudGl0eV9pZHMYAyADKAQSOAoXY29sbGVjdG9yX3N0YXRlX3VwZGF0ZXMYBCADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEj8KG2NvbWJhdF9lZmZlY3Rfc3RhdGVfdXBkYXRlcxgFIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGViBnByb3RvMw", [file_entity_delta, file_collector_state, file_combat_effect_state]);
+  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyKqBAoFRGVsdGESDAoEdGljaxgBIAEoBBIlCgd1cGRhdGVzGAIgAygLMhQuYml0d2Fycy5FbnRpdHlEZWx0YRIaChJyZW1vdmVkX2VudGl0eV9pZHMYAyADKAQSOAoXY29sbGVjdG9yX3N0YXRlX3VwZGF0ZXMYBCADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEj8KG2NvbWJhdF9lZmZlY3Rfc3RhdGVfdXBkYXRlcxgFIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGUSMwoSbW92ZV9vcmRlcl91cGRhdGVzGAYgAygLMhcuYml0d2Fycy5Nb3ZlT3JkZXJTdGF0ZRI2ChNtb3ZlX29yZGVyX3JlbW92YWxzGAcgAygLMhkuYml0d2Fycy5Nb3ZlT3JkZXJSZW1vdmFsEjcKFHNlbnRyeV9vcmRlcl91cGRhdGVzGAggAygLMhkuYml0d2Fycy5TZW50cnlPcmRlclN0YXRlEjoKFXNlbnRyeV9vcmRlcl9yZW1vdmFscxgJIAMoCzIbLmJpdHdhcnMuU2VudHJ5T3JkZXJSZW1vdmFsEjcKFGVzY29ydF9vcmRlcl91cGRhdGVzGAogAygLMhkuYml0d2Fycy5Fc2NvcnRPcmRlclN0YXRlEjoKFWVzY29ydF9vcmRlcl9yZW1vdmFscxgLIAMoCzIbLmJpdHdhcnMuRXNjb3J0T3JkZXJSZW1vdmFsYgZwcm90bzM", [file_entity_delta, file_navigation, file_collector_state, file_combat_effect_state]);
 
 /**
  * @generated from message bitwars.Delta
@@ -48,6 +50,36 @@ export type Delta = Message<"bitwars.Delta"> & {
    * @generated from field: repeated bitwars.CombatEffectState combat_effect_state_updates = 5;
    */
   combatEffectStateUpdates: CombatEffectState[];
+
+  /**
+   * @generated from field: repeated bitwars.MoveOrderState move_order_updates = 6;
+   */
+  moveOrderUpdates: MoveOrderState[];
+
+  /**
+   * @generated from field: repeated bitwars.MoveOrderRemoval move_order_removals = 7;
+   */
+  moveOrderRemovals: MoveOrderRemoval[];
+
+  /**
+   * @generated from field: repeated bitwars.SentryOrderState sentry_order_updates = 8;
+   */
+  sentryOrderUpdates: SentryOrderState[];
+
+  /**
+   * @generated from field: repeated bitwars.SentryOrderRemoval sentry_order_removals = 9;
+   */
+  sentryOrderRemovals: SentryOrderRemoval[];
+
+  /**
+   * @generated from field: repeated bitwars.EscortOrderState escort_order_updates = 10;
+   */
+  escortOrderUpdates: EscortOrderState[];
+
+  /**
+   * @generated from field: repeated bitwars.EscortOrderRemoval escort_order_removals = 11;
+   */
+  escortOrderRemovals: EscortOrderRemoval[];
 };
 
 /**

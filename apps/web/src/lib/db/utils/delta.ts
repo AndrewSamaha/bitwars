@@ -105,6 +105,8 @@ export async function emitEventFromBuffer(
       if (visibility && record.record.value.playerId !== visibility.playerId) break;
       const payload = {
         type: "lifecycle",
+        entityId: record.record.value.entityId.toString(),
+        routeEdit: record.record.value.routeEdit,
         intentId: uuidBytesToString(record.record.value.intentId),
         clientCmdId: uuidBytesToString(record.record.value.clientCmdId),
         playerId: record.record.value.playerId,

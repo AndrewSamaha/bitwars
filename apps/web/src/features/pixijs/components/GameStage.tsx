@@ -105,10 +105,20 @@ export default function GameStage() {
       }
     }, 100);
 
-    // M1/M8: Wire the queue manager's send callback to POST /api/v1/intent
+    // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
       const payload =
-        params.kind === "Move"
+        params.kind === "Escort"
+          ? { type: "Escort", entity_ids: params.entityIds, target_entity_id: params.targetEntityId,
+              client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Sentry"
+          ? { type: "Sentry", entity_ids: params.entityIds, target: params.target,
+              order_client_cmd_id: params.orderClientCmdId, client_cmd_id: params.clientCmdId,
+              client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Convoy"
+          ? { type: "Convoy", entity_ids: params.entityIds, target: params.target,
+              client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Move"
           ? {
               type: "Move",
               entity_id: params.entityId,
@@ -165,11 +175,12 @@ export default function GameStage() {
               policy: params.policy,
             };
 
-      await fetch('/api/v1/intent', {
+      const response = await fetch('/api/v1/intent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, run_id: game.runId, as_player_id: myPlayerIdRef.current }),
       });
+      if (!response.ok) throw new Error(`Intent request failed: ${response.status}`);
     });
 
     let cancelled = false;
@@ -739,6 +750,24 @@ export default function GameStage() {
               setSelectedAction('Move');
               ev.preventDefault();
             }
+          } else if (ev.code === "KeyE" && !isFocusInEditable()) {
+            if (sel.selectionCount >= 1 && sel.selectionCount <= 256 && sel.selectedEntities.every((id) => {
+              const type = findLiveEntityById(id)?.entity_type_id ?? "";
+              return (contentManager.getEntityType(type)?.speed ?? 0) > 0;
+            })) { setSelectedAction("Escort"); ev.preventDefault(); }
+          } else if (ev.code === "KeyP" && !isFocusInEditable()) {
+            if (sel.selectionCount >= 1 && sel.selectionCount <= 256 && sel.selectedEntities.every((id) => {
+              const type = findLiveEntityById(id)?.entity_type_id ?? "";
+              return (contentManager.getEntityType(type)?.speed ?? 0) > 0;
+            })) { setSelectedAction("Sentry"); ev.preventDefault(); }
+          } else if (ev.code === "KeyV" && !isFocusInEditable()) {
+            if (sel.selectionCount >= 2 && sel.selectionCount <= 256 && sel.selectedEntities.every((id) => {
+              const type = findLiveEntityById(id)?.entity_type_id ?? "";
+              return (contentManager.getEntityType(type)?.speed ?? 0) > 0;
+            })) {
+              setSelectedAction("Convoy");
+              ev.preventDefault();
+            }
           } else if (ev.key === 'c' || ev.key === 'C') {
             if (sel.hasSelection) {
               window.dispatchEvent(new Event("bitwars:open-collect-picker"));
@@ -791,7 +820,7 @@ export default function GameStage() {
           }
         };
         const onKeyUp = (ev: KeyboardEvent) => {
-          if (ev.key === "Shift" && latestSelectorsRef.current.selectedAction === "Move") {
+          if (ev.key === "Shift" && (latestSelectorsRef.current.selectedAction === "Move" || latestSelectorsRef.current.selectedAction === "Sentry")) {
             setSelectedAction(null);
           }
           if (PAN_KEYS.has(ev.code)) {
@@ -932,7 +961,7 @@ export default function GameStage() {
                 .on("pointerdown", (ev: any) => {
                   const sel = latestSelectorsRef.current;
                   // In Move mode, entity clicks should bubble to stage and issue a move command.
-                  if (sel.selectedAction === "Move") {
+                  if ((sel.selectedAction === "Move" || sel.selectedAction === "Convoy" || sel.selectedAction === "Sentry")) {
                     return;
                   }
                   const originalEvent = ev.nativeEvent ?? ev.originalEvent ?? ev;
@@ -1083,24 +1112,49 @@ export default function GameStage() {
             nowMs,
           );
 
-          // 4) M1: Render waypoint indicators for entities with queued intents
+          // 4) Render remaining server waypoints and pending command previews
           // removeChildren only detaches Pixi display objects; destroying the
           // removed Graphics releases their associated GPU/JS resources before
           // this frame creates replacement waypoint markers.
           for (const child of waypointContainer.removeChildren()) {
             child.destroy();
           }
+          const renderedSentryRoots = new Set<string>();
           for (const entityId of intentQueue.getActiveEntityIds()) {
+            const active = intentQueue.getEntityState(entityId).active;
+            if (active?.kind === "escort") {
+              if (!latestSelectorsRef.current.isSelected(String(entityId))) continue;
+              const leader = liveById.get(String(active.escortTargetId));
+              const guard = liveById.get(String(entityId));
+              const slot = active.escort?.slots.find((slot) => Number(slot.entity_id) === entityId);
+              if (leader?.pos && guard?.pos) {
+                const x = leader.pos.x + (slot?.offset?.x ?? 0), y = leader.pos.y + (slot?.offset?.y ?? 0);
+                const g = new Graphics();
+                g.moveTo(guard.pos.x, guard.pos.y).lineTo(x, y).stroke({ width: 1, color: 0x66ccff, alpha: 0.6 });
+                g.circle(x,y,4).stroke({ width: 1, color: 0x66ccff });
+                g.circle(leader.pos.x, leader.pos.y, (contentManager.getEntityType(leader.entity_type_id ?? "")?.hull_radius ?? 10) + 5)
+                  .stroke({ width: 1, color: 0x66ccff });
+                waypointContainer.addChild(g);
+              }
+              continue;
+            }
+            if (active?.kind === "sentry") {
+              if (renderedSentryRoots.has(active.clientCmdId)) continue;
+              renderedSentryRoots.add(active.clientCmdId);
+            }
             const waypoints = intentQueue.getWaypoints(entityId);
             let prevX: number | undefined;
             let prevY: number | undefined;
 
-            // Try to find entity current position as first line anchor
-            for (const e of game.world.with("pos", "id")) {
-              if (Number((e as any).id) === entityId) {
-                prevX = e.pos.x;
-                prevY = e.pos.y;
-                break;
+            // Sentry renders its complete path, starting at the saved origin.
+            // Only finite movement routes need a line from the ship to the first waypoint.
+            if (active?.kind !== "sentry") {
+              for (const e of game.world.with("pos", "id")) {
+                if (Number((e as any).id) === entityId) {
+                  prevX = e.pos.x;
+                  prevY = e.pos.y;
+                  break;
+                }
               }
             }
 
@@ -1108,25 +1162,26 @@ export default function GameStage() {
               const wp = waypoints[i]!;
               const g = new Graphics();
 
+              const waypointColor = wp.pending ? 0xf5b942 : wp.active ? 0x44ff44 : 0x888888;
               // Draw connecting line from previous point
               if (prevX !== undefined && prevY !== undefined) {
                 g.moveTo(prevX, prevY);
                 g.lineTo(wp.x, wp.y);
-                g.stroke({ width: 1, color: wp.active ? 0x44ff44 : 0x888888, alpha: 0.5 });
+                g.stroke({ width: 1, color: waypointColor, alpha: 0.5 });
               }
 
-              // Draw waypoint marker (diamond for active, circle for queued)
+              // Draw the current destination as a diamond and later destinations as circles.
               if (wp.active) {
                 g.moveTo(wp.x, wp.y - 8);
                 g.lineTo(wp.x + 8, wp.y);
                 g.lineTo(wp.x, wp.y + 8);
                 g.lineTo(wp.x - 8, wp.y);
                 g.closePath();
-                g.stroke({ width: 2, color: 0x44ff44 });
+                g.stroke({ width: 2, color: waypointColor });
               } else {
                 g.circle(wp.x, wp.y, 6);
-                g.stroke({ width: 1.5, color: 0x888888 });
-                // Queue index label (1-based, skipping active)
+                g.stroke({ width: 1.5, color: waypointColor });
+                // Waypoint index label (1-based, skipping current destination)
                 // Simple numeric indicator not easily done with Graphics alone;
                 // the IntentQueuePanel shows the numbered list instead.
               }
@@ -1215,6 +1270,16 @@ export default function GameStage() {
           }
           const local = worldContainer.toLocal(global);
           const target = { x: Number(local.x), y: Number(local.y) };
+          if (sel.selectedAction === "Sentry") {
+            intentQueue.handleSentryCommand(sel.selectedEntities.map(Number), target, { shift, ctrl });
+            if (!shift && !ctrl) setSelectedAction(null);
+            return;
+          }
+          if (sel.selectedAction === "Convoy") {
+            intentQueue.handleConvoyCommand(sel.selectedEntities.map(Number), target);
+            setSelectedAction(null);
+            return;
+          }
           const targets = spreadMoveTargets(target, sel.selectedEntities.map((id) => {
             const entityTypeId = findLiveEntityById(id)?.entity_type_id ?? "";
             return contentManager.getEntityType(entityTypeId)?.hull_radius ?? 0;
@@ -1258,6 +1323,19 @@ export default function GameStage() {
           if (Number.isSafeInteger(entityId) && Number.isSafeInteger(Number(targetId))) {
             intentQueue.handleDeliverCommand(entityId, Number(targetId), delivery.resourceTypeIds, delivery.kind === "Transport" ? Number(delivery.donorId) : undefined);
           }
+          setSelectedAction(null);
+        };
+
+        const dispatchEscort = (targetId: string) => {
+          const sel = latestSelectorsRef.current;
+          const leader = findLiveEntityById(targetId);
+          if (!leader || leader.remembered || leader.health <= 0 || leader.owner_player_id !== myPlayerIdRef.current
+            || (contentManager.getEntityType(leader.entity_type_id ?? "")?.speed ?? 0) <= 0
+            || sel.selectedEntities.includes(targetId)) {
+            window.dispatchEvent(new CustomEvent("bitwars:command-feedback", { detail: "Choose another owned mobile ship to escort." }));
+            return;
+          }
+          intentQueue.handleEscortCommand(sel.selectedEntities.map(Number), Number(targetId));
           setSelectedAction(null);
         };
 
@@ -1316,7 +1394,7 @@ export default function GameStage() {
             if (shift) {
               selectionDrag = {
                 startX: global.x, startY: global.y, shift,
-                moveMode: sel.selectedAction === 'Move', ctrl,
+                moveMode: (sel.selectedAction === 'Move' || sel.selectedAction === 'Convoy' || sel.selectedAction === 'Sentry'), ctrl,
               };
               return;
             }
@@ -1368,6 +1446,7 @@ export default function GameStage() {
             const press = entityPress;
             entityPress = null;
             if (press) {
+              if (latestSelectorsRef.current.selectedAction === "Escort") { dispatchEscort(press.id); return; }
               if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
                 dispatchDeliver(press.id);
                 return;
@@ -1379,9 +1458,9 @@ export default function GameStage() {
               selectPressedEntity(press);
               return;
             }
-            if (latestSelectorsRef.current.selectedAction === 'Move') dispatchMove(ev.global, false, false);
+            if ((latestSelectorsRef.current.selectedAction === 'Move' || latestSelectorsRef.current.selectedAction === 'Convoy' || latestSelectorsRef.current.selectedAction === 'Sentry')) dispatchMove(ev.global, false, false);
             else if (latestSelectorsRef.current.selectedAction === "Repair" || (latestSelectorsRef.current.selectedAction && typeof latestSelectorsRef.current.selectedAction === "object")) setSelectedAction(null);
-            else setSelection([]);
+            else if (latestSelectorsRef.current.selectedAction !== "Escort") setSelection([]);
             return;
           }
           const drag = selectionDrag;
@@ -1397,6 +1476,7 @@ export default function GameStage() {
           const height = Math.abs(endY - drag.startY);
           if (width < SELECTION_DRAG_THRESHOLD_PX && height < SELECTION_DRAG_THRESHOLD_PX) {
             if (press) {
+              if (latestSelectorsRef.current.selectedAction === "Escort") { dispatchEscort(press.id); return; }
               if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
                 dispatchDeliver(press.id);
                 return;
@@ -1412,6 +1492,7 @@ export default function GameStage() {
               setSelectedAction(null);
               return;
             }
+            if (latestSelectorsRef.current.selectedAction === "Escort") return;
             if (drag.moveMode) dispatchMove(ev.global, drag.shift, drag.ctrl);
             if (!drag.shift) setSelection([]);
             return;

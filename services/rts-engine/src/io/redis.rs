@@ -14,6 +14,19 @@ use crate::pb::{
     LifecycleEvent, PlayerResourceLedger, PlayerTechnologyState, ResourceEntry, Snapshot,
 };
 
+fn sentry_summary(order: &pb::SentryOrderState) -> serde_json::Value {
+    let point = |point: &pb::Vec2| serde_json::json!({"x": point.x, "y": point.y});
+    serde_json::json!({
+        "intent_id": format_uuid(&order.intent_id), "client_cmd_id": format_uuid(&order.client_cmd_id),
+        "last_client_cmd_id": format_uuid(&order.last_client_cmd_id), "player_id": order.player_id,
+        "started_tick": order.started_tick, "anchor": order.anchor.as_ref().map(point),
+        "phase": pb::SentryPhase::try_from(order.phase).map(|phase| phase.as_str_name().to_lowercase()).unwrap_or_default(),
+        "slots": order.slots.iter().map(|slot| serde_json::json!({"entity_id": slot.entity_id, "offset": slot.offset.as_ref().map(point)})).collect::<Vec<_>>(),
+        "route": order.route.as_ref().map(|route| serde_json::json!({"waypoints": route.waypoints.iter().map(point).collect::<Vec<_>>(),
+            "next_waypoint_index": route.next_waypoint_index, "direction": route.direction, "traversal": route.traversal})),
+    })
+}
+
 fn current_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -29,7 +42,7 @@ fn current_unix_ms() -> u64 {
 
 /// Snapshot of a single entity's active intent, persisted to Redis so the
 /// reconnect handshake can report what the server is currently executing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EntityActiveIntent {
     pub entity_id: u64,
     pub intent_id: String,
@@ -42,6 +55,8 @@ pub struct EntityActiveIntent {
     /// Optional move target summary for reconnect/UI.
     #[serde(default)]
     pub move_target: Option<IntentPoint>,
+    #[serde(default)]
+    pub move_route: Option<MoveRouteSummary>,
     /// Construction target for build/upgrade UI, updated authoritatively.
     #[serde(default)]
     pub blueprint_id: Option<String>,
@@ -63,6 +78,14 @@ pub struct EntityActiveIntent {
     pub build_location: Option<IntentPoint>,
     #[serde(default)]
     pub transfer_route: Option<TransferRoute>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveRouteSummary {
+    pub waypoints: Vec<IntentPoint>,
+    pub next_waypoint_index: u32,
+    #[serde(default)]
+    pub last_client_cmd_id: String,
 }
 
 pub struct ConstructionProgressUpdate {
@@ -390,6 +413,10 @@ impl RedisClient {
         boundary_stream_id: &str,
         collector_states: Vec<CollectorState>,
         combat_effect_states: Vec<CombatEffectState>,
+        convoys: Vec<pb::ConvoyOrderState>,
+        move_orders: Vec<pb::MoveOrderState>,
+        sentry_orders: Vec<pb::SentryOrderState>,
+        escort_orders: Vec<pb::EscortOrderState>,
     ) -> anyhow::Result<()> {
         let mut inventory_totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
         for entity in &state.entities {
@@ -440,6 +467,10 @@ impl RedisClient {
         player_technologies.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
         let snap = Snapshot {
+            convoys,
+            move_orders,
+            sentry_orders,
+            escort_orders,
             tick: state.tick as i64,
             entities: state.entities.clone(),
             player_ledgers,
@@ -576,7 +607,7 @@ impl RedisClient {
         // Keep the events stream: existing SSE readers need the world-reset marker.
         let keys = vec![self.intents_stream(), self.gameplay_events_stream(), self.snapshots_stream(),
             self.build_progress_snapshot_key(),
-            self.player_seq_key(), self.active_intents_key(), self.pending_joins_key(),
+            self.player_seq_key(), self.sentry_orders_key(), self.escort_orders_key(), self.active_intents_key(), self.pending_joins_key(),
             self.pending_raider_spawns_key(), self.join_requested_key(), self.legacy_collector_state_key()];
         let _: () = redis::cmd("DEL").arg(keys).query_async(&mut self.conn).await?;
         let dedupe: Vec<String> = redis::cmd("KEYS").arg(format!("rts:match:{}:dedupe:*", self.game_id)).query_async(&mut self.conn).await?;
@@ -678,6 +709,7 @@ impl RedisClient {
             self.snapshot_meta_key(),
             self.player_seq_key(),
             self.active_intents_key(),
+            self.sentry_orders_key(), self.escort_orders_key(),
             self.pending_joins_key(),
             self.pending_raider_spawns_key(),
             self.join_requested_key(),
@@ -717,7 +749,7 @@ impl RedisClient {
     /// Returns state, boundary stream ID, and collector state or None if absent.
     pub async fn read_latest_snapshot(
         &mut self,
-    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>)>> {
+    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>, Vec<pb::SentryOrderState>, Vec<pb::EscortOrderState>)>> {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
@@ -741,6 +773,10 @@ impl RedisClient {
             .await
             .unwrap_or_else(|_| "0-0".to_string());
 
+        let convoys = snapshot.convoys.clone();
+        let move_orders = snapshot.move_orders.clone();
+        let sentry_orders = snapshot.sentry_orders.clone();
+        let escort_orders = snapshot.escort_orders.clone();
         let (state, collector_states) = restore_snapshot(snapshot)?;
 
         info!(
@@ -751,7 +787,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary, collector_states)))
+        Ok(Some((state, boundary, collector_states, convoys, move_orders, sentry_orders, escort_orders)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -849,6 +885,111 @@ impl RedisClient {
         Ok(())
     }
 
+    /// Persist the authoritative route and current destination for reconnect.
+    pub async fn persist_move_route(&mut self, entity_id: u64, route: &pb::NavigationRoute, last_cmd_id: Option<&[u8]>) -> anyhow::Result<()> {
+        let key = self.active_intents_key();
+        let field = entity_id.to_string();
+        let Some(json) = self.conn.hget::<_, _, Option<String>>(&key, &field).await? else {
+            anyhow::bail!("missing active tracking for Move route {entity_id}");
+        };
+        let mut entry: EntityActiveIntent = serde_json::from_str(&json)?;
+        anyhow::ensure!(entry.intent_kind == "move", "route tracking is not a Move order");
+        entry.move_target = route.waypoints.get(route.next_waypoint_index as usize)
+            .map(|point| IntentPoint { x: point.x, y: point.y });
+        entry.move_route = Some(MoveRouteSummary {
+            waypoints: route.waypoints.iter().map(|point| IntentPoint { x: point.x, y: point.y }).collect(),
+            next_waypoint_index: route.next_waypoint_index,
+            last_client_cmd_id: last_cmd_id.map(format_uuid).unwrap_or_default(),
+        });
+        let _: () = self.conn.hset(key, field, serde_json::to_string(&entry)?).await?;
+        Ok(())
+    }
+
+    fn escort_orders_key(&self) -> String { format!("rts:match:{}:escorts", self.game_id) }
+
+    pub async fn clear_escort_orders(&mut self) -> anyhow::Result<()> {
+        let _: () = self.conn.del(self.escort_orders_key()).await?;
+        Ok(())
+    }
+
+    pub async fn persist_escort_changes(&mut self, updates: &[pb::EscortOrderState], removed: &[Vec<u8>]) -> anyhow::Result<()> {
+        let root_key = self.escort_orders_key();
+        let active_key = self.active_intents_key();
+        let mut pipe = redis::pipe(); pipe.atomic();
+        for id in removed { pipe.cmd("HDEL").arg(&root_key).arg(format_uuid(id)).ignore(); }
+        for order in updates {
+            let summary = serde_json::json!({
+                "intent_id": format_uuid(&order.intent_id), "client_cmd_id": format_uuid(&order.client_cmd_id),
+                "player_id": order.player_id, "started_tick": order.started_tick, "target_entity_id": order.target_entity_id,
+                "slots": order.slots.iter().map(|slot| serde_json::json!({
+                    "entity_id": slot.entity_id, "slot_index": slot.slot_index, "status": slot.status,
+                    "offset": slot.offset.map(|p| serde_json::json!({"x": p.x, "y": p.y}))
+                })).collect::<Vec<_>>()
+            });
+            pipe.cmd("HSET").arg(&root_key).arg(format_uuid(&order.client_cmd_id)).arg(summary.to_string()).ignore();
+            for slot in &order.slots {
+                let entry = EntityActiveIntent { entity_id: slot.entity_id, intent_id: format_uuid(&order.intent_id),
+                    client_cmd_id: format_uuid(&order.client_cmd_id), player_id: order.player_id.clone(), started_tick: order.started_tick,
+                    intent_kind: "escort".into(), ..Default::default() };
+                pipe.cmd("HSET").arg(&active_key).arg(slot.entity_id).arg(serde_json::to_string(&entry)?).ignore();
+            }
+        }
+        pipe.cmd("PERSIST").arg(&active_key).ignore();
+        let _: () = pipe.query_async(&mut self.conn).await?;
+        Ok(())
+    }
+
+    fn sentry_orders_key(&self) -> String { format!("rts:match:{}:sentries", self.game_id) }
+
+    pub async fn clear_sentry_orders(&mut self) -> anyhow::Result<()> {
+        let _: () = self.conn.del(self.sentry_orders_key()).await?;
+        Ok(())
+    }
+
+    pub async fn persist_sentry_changes(&mut self, updates: &[pb::SentryOrderState], removed: &[Vec<u8>]) -> anyhow::Result<()> {
+        let root_key = self.sentry_orders_key();
+        let active_key = self.active_intents_key();
+        let mut pipe = redis::pipe(); pipe.atomic();
+        for id in removed { pipe.cmd("HDEL").arg(&root_key).arg(format_uuid(id)).ignore(); }
+        for order in updates {
+            pipe.cmd("HSET").arg(&root_key).arg(format_uuid(&order.client_cmd_id)).arg(sentry_summary(order).to_string()).ignore();
+            if let Some(target) = order.route.as_ref().and_then(|route| route.destination()) {
+                for slot in &order.slots {
+                    let offset = slot.offset.unwrap_or_default();
+                    let entry = EntityActiveIntent { entity_id: slot.entity_id, intent_id: format_uuid(&order.intent_id),
+                        client_cmd_id: format_uuid(&order.client_cmd_id), player_id: order.player_id.clone(), started_tick: order.started_tick,
+                        intent_kind: "sentry".into(), move_target: Some(IntentPoint { x: target.x + offset.x, y: target.y + offset.y }), ..Default::default() };
+                    pipe.cmd("HSET").arg(&active_key).arg(slot.entity_id).arg(serde_json::to_string(&entry)?).ignore();
+                }
+            }
+        }
+        pipe.cmd("PERSIST").arg(&active_key).ignore();
+        let _: () = pipe.query_async(&mut self.conn).await?;
+        Ok(())
+    }
+
+    /// A convoy claims all member action slots as one reconnect-visible update.
+    pub async fn persist_formation_members(&mut self, members: &[(u64, IntentMetadata, pb::Vec2)], kind: &str, sentry: Option<&pb::SentryOrderState>) -> anyhow::Result<()> {
+        let key = self.active_intents_key();
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+        for (id, metadata, target) in members {
+            let entry = EntityActiveIntent {
+                entity_id: *id, intent_id: format_uuid(&metadata.intent_id),
+                client_cmd_id: format_uuid(&metadata.client_cmd_id), player_id: metadata.player_id.clone(),
+                started_tick: metadata.server_tick, intent_kind: kind.into(),
+                move_target: Some(IntentPoint { x: target.x, y: target.y }), ..Default::default()
+            };
+            pipe.cmd("HSET").arg(&key).arg(id).arg(serde_json::to_string(&entry)?).ignore();
+        }
+        if let Some(order) = sentry {
+            pipe.cmd("HSET").arg(self.sentry_orders_key()).arg(format_uuid(&order.client_cmd_id)).arg(sentry_summary(order).to_string()).ignore();
+        }
+        pipe.cmd("PERSIST").arg(&key).ignore();
+        let _: () = pipe.query_async(&mut self.conn).await?;
+        Ok(())
+    }
+
     /// Record the active intent for an entity.  Written on intent activation;
     /// cleared by `clear_active_intent` on finish / cancel.
     pub async fn persist_active_intent(
@@ -868,6 +1009,7 @@ impl RedisClient {
             started_tick: metadata.server_tick,
             intent_kind: intent_kind.to_string(),
             move_target,
+            move_route: None,
             blueprint_id: construction.as_ref().map(|(target, _, _)| target.clone()),
             progress: construction.as_ref().map(|(_, _, progress)| *progress),
             progress_updated_at_unix_ms: construction.as_ref().map(|_| current_unix_ms()),

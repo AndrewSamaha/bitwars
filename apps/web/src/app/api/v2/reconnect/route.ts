@@ -81,6 +81,7 @@ export async function GET() {
       intent_kind: string;
       transfer_route?: { donor_id: number; target_id: number; resource_type_ids: string[] };
       move_target?: { x: number; y: number };
+      move_route?: { waypoints: Array<{ x: number; y: number }>; next_waypoint_index: number; last_client_cmd_id?: string };
       blueprint_id?: string;
       progress?: number;
     }> = [];
@@ -97,6 +98,7 @@ export async function GET() {
             player_id: String(entry.player_id ?? ""),
             started_tick: Number(entry.started_tick ?? 0),
             intent_kind: String(entry.intent_kind ?? ""),
+            ...(entry.move_route ? { move_route: entry.move_route } : {}),
             ...(entry.transfer_route ? { transfer_route: entry.transfer_route } : {}),
             ...(typeof entry.blueprint_id === "string" ? { blueprint_id: entry.blueprint_id } : {}),
             ...(Number.isFinite(Number(entry.progress)) ? { progress: Number(entry.progress) } : {}),
@@ -110,6 +112,16 @@ export async function GET() {
       }
     }
 
+    const escortFields: Record<string, string> = await redis.hgetall(`rts:match:${GAME_ID}:escorts`);
+    const escortOrders = Object.values(escortFields).flatMap((value) => {
+      try { const order = JSON.parse(value); return order.player_id === playerId ? [order] : []; }
+      catch { return []; }
+    });
+    const sentryFields: Record<string, string> = await redis.hgetall(`rts:match:${GAME_ID}:sentries`);
+    const sentryOrders = Object.values(sentryFields).flatMap((value) => {
+      try { const order = JSON.parse(value); return order.player_id === playerId ? [order] : []; }
+      catch { return []; }
+    });
     return NextResponse.json({
       run_id: gameRuntime.run_id ?? "",
       server_tick: serverTick,
@@ -118,6 +130,8 @@ export async function GET() {
       player_id: playerId,
       last_processed_client_seq: lastProcessedClientSeq,
       active_intents: activeIntents,
+      escort_orders: escortOrders,
+      sentry_orders: sentryOrders,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });

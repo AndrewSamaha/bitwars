@@ -33,6 +33,7 @@ it("applies the first reconnect response after the matching snapshot initializes
   const send = vi.fn();
   queue.setSendCallback(send);
   queue.handleMoveCommand(710, { x: 1, y: 2 }, { shift: false, ctrl: false });
+  await queue.whenSubmitted();
   expect(send).toHaveBeenCalledWith(
     expect.objectContaining({ clientSeq: 212 }),
   );

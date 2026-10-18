@@ -1,5 +1,6 @@
 import { type Delta } from "@bitwars/shared/gen/delta_pb";
 import { type Entity } from "@bitwars/shared/gen/entity_pb";
+import type { EscortOrderState, SentryOrderState, MoveOrderState } from "@bitwars/shared/gen/navigation_pb";
 import { type Snapshot } from "@bitwars/shared/gen/snapshot_pb";
 
 // Helpers to convert protobuf-es messages into compact, client-friendly JSON
@@ -8,11 +9,52 @@ export const biToNumOrStr = (v: bigint): number | string => {
   return Number.isSafeInteger(num) ? num : v.toString();
 };
 
+const mapUuid = (bytes: Uint8Array) => {
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return bytes.length === 16 ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` : hex;
+};
+
+export const mapMoveOrderToJson = (order: MoveOrderState) => ({
+  entity_id: biToNumOrStr(order.entityId), player_id: order.playerId,
+  intent_id: mapUuid(order.intentId), client_cmd_id: mapUuid(order.clientCmdId),
+  last_client_cmd_id: mapUuid(order.lastClientCmdId), started_tick: biToNumOrStr(order.startedTick),
+  route: order.route ? {
+    waypoints: order.route.waypoints.map((point) => ({ x: point.x, y: point.y })),
+    next_waypoint_index: order.route.nextWaypointIndex,
+    direction: order.route.direction, traversal: order.route.traversal,
+  } : null,
+});
+
+export const mapEscortOrderToJson = (order: EscortOrderState) => ({
+  intent_id: mapUuid(order.intentId), client_cmd_id: mapUuid(order.clientCmdId),
+  player_id: order.playerId, started_tick: Number(order.startedTick), target_entity_id: Number(order.targetEntityId),
+  slots: order.slots.map((slot) => ({ entity_id: Number(slot.entityId), offset: slot.offset ? { x: slot.offset.x, y: slot.offset.y } : null,
+    slot_index: slot.slotIndex, status: slot.status })),
+});
+
+export const mapSentryOrderToJson = (order: SentryOrderState) => ({
+  intent_id: mapUuid(order.intentId), client_cmd_id: mapUuid(order.clientCmdId),
+  last_client_cmd_id: mapUuid(order.lastClientCmdId), player_id: order.playerId,
+  started_tick: biToNumOrStr(order.startedTick), anchor: order.anchor ? { x: order.anchor.x, y: order.anchor.y } : null,
+  phase: ["unknown", "assembling", "patrolling", "engaged", "regrouping"][order.phase] ?? "unknown",
+  slots: order.slots.map((slot) => ({ entity_id: biToNumOrStr(slot.entityId), offset: slot.offset ? { x: slot.offset.x, y: slot.offset.y } : null })),
+  route: order.route ? { waypoints: order.route.waypoints.map((point) => ({ x: point.x, y: point.y })),
+    next_waypoint_index: order.route.nextWaypointIndex, direction: order.route.direction, traversal: order.route.traversal } : null,
+});
+
 // Entity has entity_type_id (proto field 2); TS codegen may use camelCase
 export const mapDeltaToJson = (d: Delta) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
   removed_entity_ids: (d.removedEntityIds ?? []).map(biToNumOrStr),
+  escort_order_updates: (d.escortOrderUpdates ?? []).map(mapEscortOrderToJson),
+  escort_order_removals: (d.escortOrderRemovals ?? []).map((order) => ({ player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId) })),
+  sentry_order_updates: (d.sentryOrderUpdates ?? []).map(mapSentryOrderToJson),
+  sentry_order_removals: (d.sentryOrderRemovals ?? []).map((order) => ({ player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId) })),
+  move_order_updates: (d.moveOrderUpdates ?? []).map(mapMoveOrderToJson),
+  move_order_removals: (d.moveOrderRemovals ?? []).map((order) => ({
+    entity_id: biToNumOrStr(order.entityId), player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId),
+  })),
   updates: (d.updates ?? []).map((u) => {
     const uAny = u as { ownerPlayerId?: string; entityTypeId?: string; health?: number };
     return {
@@ -76,6 +118,18 @@ export const mapSnapshotToJson = (s: Snapshot) => {
     tick: biToNumOrStr(s.tick),
     entities: (s.entities ?? []).map(mapEntityToJson),
     player_ledgers,
+    escort_orders: (s.escortOrders ?? []).map(mapEscortOrderToJson),
+    sentry_orders: (s.sentryOrders ?? []).map(mapSentryOrderToJson),
+    move_orders: (s.moveOrders ?? []).map(mapMoveOrderToJson),
+    convoys: (s.convoys ?? []).map((order) => ({
+      intent_id: Array.from(order.intentId, (byte) => byte.toString(16).padStart(2, "0")).join(""),
+      player_id: order.playerId,
+      phase: order.traveling ? "traveling" : "assembling",
+      anchor: order.anchor ? { x: order.anchor.x, y: order.anchor.y } : null,
+      destination: order.destination ? { x: order.destination.x, y: order.destination.y } : null,
+      slots: order.slots.map((slot) => ({ entity_id: biToNumOrStr(slot.entityId),
+        offset: slot.offset ? { x: slot.offset.x, y: slot.offset.y } : null })),
+    })),
     collector_states: (s.collectorStates ?? []).map((state) => ({
       entity_id: biToNumOrStr(state.entityId),
       activity: state.activity,

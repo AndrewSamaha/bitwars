@@ -125,62 +125,181 @@ pub struct CombatEffectState {
     #[prost(uint64, tag = "5")]
     pub updated_tick: u64,
 }
-/// M7: Per-player resource totals. Resource types are data-driven (string IDs).
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ResourceEntry {
-    #[prost(string, tag = "1")]
-    pub resource_type: ::prost::alloc::string::String,
-    #[prost(int64, tag = "2")]
-    pub amount: i64,
-    /// Cumulative authoritative spending for this resource. This includes upkeep
-    /// demand even when the ledger is clamped at zero.
-    #[prost(double, tag = "3")]
-    pub spend_total: f64,
-    /// Cumulative collection/resource income, including fractional accrual.
-    #[prost(double, tag = "4")]
-    pub gain_total: f64,
+pub struct NavigationRoute {
+    #[prost(message, repeated, tag = "1")]
+    pub waypoints: ::prost::alloc::vec::Vec<Vec2>,
+    #[prost(uint32, tag = "2")]
+    pub next_waypoint_index: u32,
+    /// +1 for forward traversal; -1 for backward traversal.
+    #[prost(sint32, tag = "3")]
+    pub direction: i32,
+    #[prost(enumeration = "RouteTraversal", tag = "4")]
+    pub traversal: i32,
 }
+/// Saved with world positions; root identity is preserved by waypoint edits.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PlayerResourceLedger {
-    #[prost(string, tag = "1")]
-    pub player_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub resources: ::prost::alloc::vec::Vec<ResourceEntry>,
-}
-/// Technologies completed by a player. Technology definitions are supplied by
-/// the versioned content pack; this is only mutable match state.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct PlayerTechnologyState {
-    #[prost(string, tag = "1")]
-    pub player_id: ::prost::alloc::string::String,
-    #[prost(string, repeated, tag = "2")]
-    pub technology_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Snapshot {
-    #[prost(int64, tag = "2")]
-    pub tick: i64,
-    #[prost(message, repeated, tag = "3")]
-    pub entities: ::prost::alloc::vec::Vec<Entity>,
-    #[prost(message, repeated, tag = "4")]
-    pub player_ledgers: ::prost::alloc::vec::Vec<PlayerResourceLedger>,
-    #[prost(message, repeated, tag = "5")]
-    pub collector_states: ::prost::alloc::vec::Vec<CollectorState>,
-    #[prost(message, repeated, tag = "6")]
-    pub combat_effect_states: ::prost::alloc::vec::Vec<CombatEffectState>,
-    #[prost(message, repeated, tag = "7")]
-    pub player_technologies: ::prost::alloc::vec::Vec<PlayerTechnologyState>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SnapshotMeta {
-    /// tick included in the snapshot
+pub struct MoveOrderState {
     #[prost(uint64, tag = "1")]
-    pub tick: u64,
-    /// last Redis stream ID included
+    pub entity_id: u64,
+    #[prost(bytes = "vec", tag = "2")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "4")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "5")]
+    pub started_tick: u64,
+    #[prost(message, optional, tag = "6")]
+    pub route: ::core::option::Option<NavigationRoute>,
+    /// Last accepted route mutation; lets clients retire pending edit previews.
+    #[prost(bytes = "vec", tag = "7")]
+    pub last_client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+}
+/// Explicit owner and root identity allow private, stale-safe removal delivery.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MoveOrderRemoval {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
     #[prost(string, tag = "2")]
-    pub boundary_stream_id: ::prost::alloc::string::String,
-    #[prost(int64, tag = "3")]
-    pub updated_at_ms: i64,
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "3")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ConvoySlot {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(message, optional, tag = "2")]
+    pub offset: ::core::option::Option<Vec2>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SentryOrderState {
+    #[prost(bytes = "vec", tag = "1")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "4")]
+    pub started_tick: u64,
+    #[prost(message, optional, tag = "5")]
+    pub route: ::core::option::Option<NavigationRoute>,
+    #[prost(message, optional, tag = "6")]
+    pub anchor: ::core::option::Option<Vec2>,
+    #[prost(message, repeated, tag = "7")]
+    pub slots: ::prost::alloc::vec::Vec<ConvoySlot>,
+    #[prost(enumeration = "SentryPhase", tag = "8")]
+    pub phase: i32,
+    #[prost(bytes = "vec", tag = "9")]
+    pub last_client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SentryOrderRemoval {
+    #[prost(bytes = "vec", tag = "1")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "2")]
+    pub player_id: ::prost::alloc::string::String,
+}
+/// A reserved leader-relative slot survives temporary combat interruptions.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EscortSlot {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(message, optional, tag = "2")]
+    pub offset: ::core::option::Option<Vec2>,
+    #[prost(uint32, tag = "3")]
+    pub slot_index: u32,
+    /// forming | in_formation | catching_up | engaging | returning
+    #[prost(string, tag = "4")]
+    pub status: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EscortOrderState {
+    #[prost(bytes = "vec", tag = "1")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "4")]
+    pub started_tick: u64,
+    #[prost(uint64, tag = "5")]
+    pub target_entity_id: u64,
+    #[prost(message, repeated, tag = "6")]
+    pub slots: ::prost::alloc::vec::Vec<EscortSlot>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EscortOrderRemoval {
+    #[prost(bytes = "vec", tag = "1")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "2")]
+    pub player_id: ::prost::alloc::string::String,
+}
+/// Route traversal is independent of movement, formation, and combat ownership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RouteTraversal {
+    Unspecified = 0,
+    FinishAtEnd = 1,
+    PingPong = 2,
+}
+impl RouteTraversal {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ROUTE_TRAVERSAL_UNSPECIFIED",
+            Self::FinishAtEnd => "FINISH_AT_END",
+            Self::PingPong => "PING_PONG",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ROUTE_TRAVERSAL_UNSPECIFIED" => Some(Self::Unspecified),
+            "FINISH_AT_END" => Some(Self::FinishAtEnd),
+            "PING_PONG" => Some(Self::PingPong),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SentryPhase {
+    Unspecified = 0,
+    Assembling = 1,
+    Patrolling = 2,
+    Engaged = 3,
+    Regrouping = 4,
+}
+impl SentryPhase {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "SENTRY_PHASE_UNSPECIFIED",
+            Self::Assembling => "ASSEMBLING",
+            Self::Patrolling => "PATROLLING",
+            Self::Engaged => "ENGAGED",
+            Self::Regrouping => "REGROUPING",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SENTRY_PHASE_UNSPECIFIED" => Some(Self::Unspecified),
+            "ASSEMBLING" => Some(Self::Assembling),
+            "PATROLLING" => Some(Self::Patrolling),
+            "ENGAGED" => Some(Self::Engaged),
+            "REGROUPING" => Some(Self::Regrouping),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Delta {
@@ -195,6 +314,18 @@ pub struct Delta {
     pub collector_state_updates: ::prost::alloc::vec::Vec<CollectorState>,
     #[prost(message, repeated, tag = "5")]
     pub combat_effect_state_updates: ::prost::alloc::vec::Vec<CombatEffectState>,
+    #[prost(message, repeated, tag = "6")]
+    pub move_order_updates: ::prost::alloc::vec::Vec<MoveOrderState>,
+    #[prost(message, repeated, tag = "7")]
+    pub move_order_removals: ::prost::alloc::vec::Vec<MoveOrderRemoval>,
+    #[prost(message, repeated, tag = "8")]
+    pub sentry_order_updates: ::prost::alloc::vec::Vec<SentryOrderState>,
+    #[prost(message, repeated, tag = "9")]
+    pub sentry_order_removals: ::prost::alloc::vec::Vec<SentryOrderRemoval>,
+    #[prost(message, repeated, tag = "10")]
+    pub escort_order_updates: ::prost::alloc::vec::Vec<EscortOrderState>,
+    #[prost(message, repeated, tag = "11")]
+    pub escort_order_removals: ::prost::alloc::vec::Vec<EscortOrderRemoval>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -348,7 +479,10 @@ pub struct IntentEnvelope {
     /// defaults to REPLACE_ACTIVE when omitted
     #[prost(enumeration = "IntentPolicy", tag = "7")]
     pub policy: i32,
-    #[prost(oneof = "intent_envelope::Payload", tags = "10, 11, 12, 13, 14, 16, 17, 18")]
+    #[prost(
+        oneof = "intent_envelope::Payload",
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21"
+    )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
 /// Nested message and enum types in `IntentEnvelope`.
@@ -371,6 +505,12 @@ pub mod intent_envelope {
         Research(super::ResearchIntent),
         #[prost(message, tag = "18")]
         Deliver(super::DeliverIntent),
+        #[prost(message, tag = "19")]
+        Convoy(super::ConvoyIntent),
+        #[prost(message, tag = "20")]
+        Sentry(super::SentryIntent),
+        #[prost(message, tag = "21")]
+        Escort(super::EscortIntent),
     }
 }
 /// Extensible Intent envelope.
@@ -421,6 +561,12 @@ pub struct LifecycleEvent {
     pub protocol_version: u32,
     #[prost(message, optional, tag = "8")]
     pub minimum_distance_violation: ::core::option::Option<MinimumDistanceViolation>,
+    /// Nonzero scopes a group command lifecycle event to one member.
+    #[prost(uint64, tag = "9")]
+    pub entity_id: u64,
+    /// This command edited a route; its completion does not finish the root order.
+    #[prost(bool, tag = "10")]
+    pub route_edit: bool,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct MinimumDistanceViolation {
@@ -580,6 +726,51 @@ pub mod action_state {
         Deliver(super::DeliverState),
     }
 }
+/// One temporary group order. Formation is computed by the authoritative engine.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConvoyIntent {
+    #[prost(uint64, repeated, tag = "1")]
+    pub entity_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, optional, tag = "2")]
+    pub destination: ::core::option::Option<Vec2>,
+}
+/// Checkpointed with entity positions, never reconstructed from client selection.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ConvoyOrderState {
+    #[prost(bytes = "vec", tag = "1")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "4")]
+    pub started_tick: u64,
+    #[prost(message, optional, tag = "5")]
+    pub anchor: ::core::option::Option<Vec2>,
+    #[prost(message, optional, tag = "6")]
+    pub destination: ::core::option::Option<Vec2>,
+    #[prost(message, repeated, tag = "7")]
+    pub slots: ::prost::alloc::vec::Vec<ConvoySlot>,
+    #[prost(bool, tag = "8")]
+    pub traveling: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SentryIntent {
+    #[prost(uint64, repeated, tag = "1")]
+    pub entity_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, optional, tag = "2")]
+    pub destination: ::core::option::Option<Vec2>,
+    /// Required for append/clear edits; identifies the original group command.
+    #[prost(bytes = "vec", tag = "3")]
+    pub order_client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EscortIntent {
+    #[prost(uint64, repeated, tag = "1")]
+    pub entity_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, tag = "2")]
+    pub target_entity_id: u64,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IntentPolicy {
@@ -671,6 +862,7 @@ pub enum LifecycleReason {
     NotOwned = 8,
     MinimumDistanceViolation = 9,
     TransferEndpointLost = 10,
+    EscortTargetLost = 11,
 }
 impl LifecycleReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -690,6 +882,7 @@ impl LifecycleReason {
             Self::NotOwned => "NOT_OWNED",
             Self::MinimumDistanceViolation => "MINIMUM_DISTANCE_VIOLATION",
             Self::TransferEndpointLost => "TRANSFER_ENDPOINT_LOST",
+            Self::EscortTargetLost => "ESCORT_TARGET_LOST",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -706,7 +899,73 @@ impl LifecycleReason {
             "NOT_OWNED" => Some(Self::NotOwned),
             "MINIMUM_DISTANCE_VIOLATION" => Some(Self::MinimumDistanceViolation),
             "TRANSFER_ENDPOINT_LOST" => Some(Self::TransferEndpointLost),
+            "ESCORT_TARGET_LOST" => Some(Self::EscortTargetLost),
             _ => None,
         }
     }
+}
+/// M7: Per-player resource totals. Resource types are data-driven (string IDs).
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResourceEntry {
+    #[prost(string, tag = "1")]
+    pub resource_type: ::prost::alloc::string::String,
+    #[prost(int64, tag = "2")]
+    pub amount: i64,
+    /// Cumulative authoritative spending for this resource. This includes upkeep
+    /// demand even when the ledger is clamped at zero.
+    #[prost(double, tag = "3")]
+    pub spend_total: f64,
+    /// Cumulative collection/resource income, including fractional accrual.
+    #[prost(double, tag = "4")]
+    pub gain_total: f64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerResourceLedger {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub resources: ::prost::alloc::vec::Vec<ResourceEntry>,
+}
+/// Technologies completed by a player. Technology definitions are supplied by
+/// the versioned content pack; this is only mutable match state.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerTechnologyState {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub technology_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Snapshot {
+    #[prost(int64, tag = "2")]
+    pub tick: i64,
+    #[prost(message, repeated, tag = "3")]
+    pub entities: ::prost::alloc::vec::Vec<Entity>,
+    #[prost(message, repeated, tag = "4")]
+    pub player_ledgers: ::prost::alloc::vec::Vec<PlayerResourceLedger>,
+    #[prost(message, repeated, tag = "5")]
+    pub collector_states: ::prost::alloc::vec::Vec<CollectorState>,
+    #[prost(message, repeated, tag = "6")]
+    pub combat_effect_states: ::prost::alloc::vec::Vec<CombatEffectState>,
+    #[prost(message, repeated, tag = "7")]
+    pub player_technologies: ::prost::alloc::vec::Vec<PlayerTechnologyState>,
+    #[prost(message, repeated, tag = "8")]
+    pub convoys: ::prost::alloc::vec::Vec<ConvoyOrderState>,
+    #[prost(message, repeated, tag = "9")]
+    pub move_orders: ::prost::alloc::vec::Vec<MoveOrderState>,
+    #[prost(message, repeated, tag = "10")]
+    pub sentry_orders: ::prost::alloc::vec::Vec<SentryOrderState>,
+    #[prost(message, repeated, tag = "11")]
+    pub escort_orders: ::prost::alloc::vec::Vec<EscortOrderState>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnapshotMeta {
+    /// tick included in the snapshot
+    #[prost(uint64, tag = "1")]
+    pub tick: u64,
+    /// last Redis stream ID included
+    #[prost(string, tag = "2")]
+    pub boundary_stream_id: ::prost::alloc::string::String,
+    #[prost(int64, tag = "3")]
+    pub updated_at_ms: i64,
 }

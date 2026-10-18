@@ -1,4 +1,9 @@
 pub mod intent;
+mod convoy;
+mod escort;
+mod formation;
+mod sentry;
+mod navigation;
 pub mod state;
 mod scenario;
 
@@ -32,7 +37,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_
 use prost::Message;
 use state::{initialize_resource_deposits, take_from_deposit, ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 13;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 17;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -73,6 +78,13 @@ fn accrued_upkeep(fractional: &HashMap<(String, String), f32>, entity_id: u64, r
 /// Inventory above the operating buffer can be shipped; upkeep still uses the whole inventory.
 fn transferable_resource(entity: &pb::Entity, def: &EntityTypeDef, resource: &str) -> f64 {
     (resource_amount(entity, resource) - def.resource_reserves.get(resource).copied().unwrap_or(0.0)).max(0.0)
+}
+
+/// Automatic collection must not ship the upkeep supplied by automatic sharing.
+/// Explicit delivery/transport still uses its configured delivery reserve above.
+fn collection_transferable_resource(entity: &pb::Entity, def: &EntityTypeDef, resource: &str) -> f64 {
+    transferable_resource(entity, def, resource)
+        .min((resource_amount(entity, resource) - operating_target(def, resource)).max(0.0))
 }
 
 fn sharing_request_room(entity: &pb::Entity, def: &EntityTypeDef, resource: &str, refilling: &mut HashSet<(u64, String)>) -> f64 {
@@ -226,7 +238,7 @@ fn sharing_receiver_order(a: (i32, f32, u64), b: (i32, f32, u64)) -> std::cmp::O
 fn deposit_collection_inventory(actor: &mut pb::Entity, actor_def: &EntityTypeDef,
     recipient: &mut pb::Entity, recipient_def: &EntityTypeDef, resource: &str,
     refilling: &mut HashSet<(u64, String)>) {
-    let amount = transferable_resource(actor, actor_def, resource)
+    let amount = collection_transferable_resource(actor, actor_def, resource)
         .min(sharing_request_room(recipient, recipient_def, resource, refilling));
     if amount <= 0.0 { return; }
     set_resource_amount(actor, resource, resource_amount(actor, resource) - amount);
@@ -240,7 +252,7 @@ fn collection_load(entity: &pb::Entity, def: &EntityTypeDef, preferred: &[&str])
     preferred.iter().copied().chain(collector.collects.iter().map(String::as_str))
         .filter(|resource| collector.collects.iter().any(|kind| kind == resource))
         .find_map(|resource| {
-            let amount = transferable_resource(entity, def, resource);
+            let amount = collection_transferable_resource(entity, def, resource);
             (amount > f64::EPSILON).then(|| CollectionLoad { resource_type: resource.into(), amount })
         })
 }
@@ -1547,6 +1559,12 @@ fn should_publish_delta(delta: &pb::Delta) -> bool {
         || !delta.removed_entity_ids.is_empty()
         || !delta.collector_state_updates.is_empty()
         || !delta.combat_effect_state_updates.is_empty()
+        || !delta.move_order_updates.is_empty()
+        || !delta.move_order_removals.is_empty()
+        || !delta.sentry_order_updates.is_empty()
+        || !delta.sentry_order_removals.is_empty()
+        || !delta.escort_order_updates.is_empty()
+        || !delta.escort_order_removals.is_empty()
 }
 
 fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<String> {
@@ -1695,7 +1713,7 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((mut state, boundary, snapshot_collector_states)) =
+            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries, mut snapshot_escorts)) =
                 redis.read_latest_snapshot().await?
             {
                 info!(
@@ -1805,11 +1823,37 @@ impl Engine {
                     let actor = state.entities.iter().find(|entity| entity.id == entry.entity_id && entity.owner_player_id == entry.player_id)?;
                     Some((entry.clone(), route.clone(), actor.entity_type_id.clone()))
                 }).collect();
+                // Latest tracking may contain detachments after this checkpoint.
+                for order in &mut snapshot_convoys {
+                    order.slots.retain(|slot| tracking.active_intents.iter().any(|entry|
+                        entry.entity_id == slot.entity_id && entry.intent_kind == "convoy"
+                            && entry.intent_id == format_uuid(&order.intent_id)));
+                }
+                snapshot_convoys.retain(|order| !order.slots.is_empty());
+                snapshot_moves.retain(|order| tracking.active_intents.iter().any(|entry|
+                    entry.entity_id == order.entity_id && entry.intent_kind == "move"
+                        && entry.intent_id == format_uuid(&order.intent_id)));
+                for order in &mut snapshot_sentries {
+                    order.slots.retain(|slot| tracking.active_intents.iter().any(|entry|
+                        entry.entity_id == slot.entity_id && entry.intent_kind == "sentry"
+                            && entry.intent_id == format_uuid(&order.intent_id)));
+                }
+                snapshot_sentries.retain(|order| !order.slots.is_empty());
+                for order in &mut snapshot_escorts {
+                    order.slots.retain(|slot| tracking.active_intents.iter().any(|entry|
+                        entry.entity_id == slot.entity_id && entry.intent_kind == "escort"
+                            && entry.intent_id == format_uuid(&order.intent_id)));
+                }
+                snapshot_escorts.retain(|order| !order.slots.is_empty());
                 let restored_ids: HashSet<_> = restored_collects
                     .iter()
                     .map(|(entry, ..)| entry.entity_id)
                     .chain(restored_builds.iter().map(|(entry, ..)| entry.entity_id))
                     .chain(restored_transfers.iter().map(|(entry, ..)| entry.entity_id))
+                    .chain(snapshot_escorts.iter().flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)))
+                    .chain(snapshot_sentries.iter().flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)))
+                    .chain(snapshot_moves.iter().map(|order| order.entity_id))
+                    .chain(snapshot_convoys.iter().flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)))
                     .collect();
                 for entry in &tracking.active_intents {
                     if !restored_ids.contains(&entry.entity_id) {
@@ -1893,7 +1937,7 @@ impl Engine {
                         donor_id: route.donor_id, resource_type_ids: route.resource_type_ids };
                     let loaded = engine.state.entities.iter().find(|entity| entity.id == entry.entity_id).is_some_and(|entity|
                         delivery.resource_type_ids.iter().any(|resource| engine.content.as_ref().and_then(|pack| pack.get(&entity.entity_type_id)).is_some_and(|def| transferable_resource(entity, def, resource) > 0.0)));
-                    let metadata = IntentMetadata { intent_id: intent_id.into_bytes().to_vec(), client_cmd_id: client_cmd_id.into_bytes().to_vec(),
+                    let metadata = IntentMetadata { entity_id: 0, intent_id: intent_id.into_bytes().to_vec(), client_cmd_id: client_cmd_id.into_bytes().to_vec(),
                         player_id: entry.player_id, protocol_version: ENGINE_PROTOCOL_MAJOR, server_tick: entry.started_tick, policy: pb::IntentPolicy::ReplaceActive };
                     engine.intents.try_activate(pb::Intent { kind: Some(pb::intent::Kind::Deliver(delivery.clone())) }, metadata.clone(), &entity_type_id);
                     if loaded {
@@ -1922,6 +1966,7 @@ impl Engine {
                         })),
                     };
                     let metadata = IntentMetadata {
+                        entity_id: 0,
                         intent_id: intent_id.into_bytes().to_vec(),
                         client_cmd_id: client_cmd_id.into_bytes().to_vec(),
                         player_id: entry.player_id,
@@ -1965,6 +2010,7 @@ impl Engine {
                         })),
                     };
                     let metadata = IntentMetadata {
+                        entity_id: 0,
                         intent_id: intent_id.into_bytes().to_vec(),
                         client_cmd_id: client_cmd_id.into_bytes().to_vec(),
                         player_id: entry.player_id,
@@ -1992,6 +2038,10 @@ impl Engine {
                         )
                         .await?;
                 }
+                engine.restore_move_orders(snapshot_moves).await?;
+                engine.restore_convoys(snapshot_convoys).await?;
+                engine.restore_sentries(snapshot_sentries).await?;
+                engine.restore_escorts(snapshot_escorts).await?;
                 engine.hydrate_entity_health_if_missing();
                 // Publish a fresh snapshot so newly connecting clients see current state
                 let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
@@ -2004,6 +2054,10 @@ impl Engine {
                         snap_boundary,
                         engine.collector_states_for_stream(),
                         engine.combat_effect_states_for_stream(),
+                        engine.intents.convoys.clone(),
+                        engine.intents.move_orders_for_snapshot(),
+                        engine.intents.sentries.clone(),
+                        engine.intents.escorts.clone(),
                     )
                     .await?;
                 let build_progress = engine.construction_progress_for_snapshot();
@@ -2093,7 +2147,7 @@ impl Engine {
         };
         engine
             .redis
-            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new())
+            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
             .await?;
 
         // M4: Publish content hash + definitions to Redis
@@ -3333,11 +3387,15 @@ impl Engine {
                 laser_shots: Vec::new(),
                 dismantling: Vec::new(),
                 destructions: Vec::new(),
+                engagements: HashMap::new(),
             };
         };
-        let commanded_entity_ids: HashSet<u64> =
-            self.intents.active_intents().keys().copied().collect();
-        let outcome = self.combat.tick_with_scripted_targets(
+        let mut sentry_members = self.intents.sentry_member_ids();
+        sentry_members.extend(self.intents.escort_member_ids());
+        let escort_leashes = self.intents.escort_combat_leashes(&self.state);
+        let commanded_entity_ids: HashSet<u64> = self.intents.active_intents().keys()
+            .filter(|id| !sentry_members.contains(id)).copied().collect();
+        let outcome = self.combat.tick_with_escort_leashes(
             &mut self.state.entities,
             content,
             self.state.tick,
@@ -3345,6 +3403,7 @@ impl Engine {
             &commanded_entity_ids,
             &commands.target_by_entity,
             &commands.scripted_entity_ids,
+            &escort_leashes,
         );
         self.update_combat_effect_states(&outcome.dismantling);
         if outcome.dead_entity_ids.is_empty() {
@@ -3891,6 +3950,9 @@ impl Engine {
                 );
             }
         }
+        self.intents.prune_convoys();
+        self.intents.prune_sentries();
+        self.intents.prune_escorts();
     }
 
     fn pick_best_node<'a>(
@@ -4625,9 +4687,16 @@ impl Engine {
             }
         }
 
+        self.intents.prune_convoys();
+        self.intents.prune_sentries();
+        self.intents.prune_escorts();
+        self.cancel_invalid_escorts().await?;
         let finished =
             self.intents
                 .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
+        if let Err(error) = self.persist_changed_move_routes().await {
+            warn!(?error, "failed to persist Move route progress");
+        }
         for (entity_id, metadata) in finished {
             if let Err(err) = self.redis.clear_active_intent(entity_id).await {
                 warn!(error = ?err, entity_id, "failed to clear active intent tracking");
@@ -4646,6 +4715,8 @@ impl Engine {
         }
         let npc_commands = self.apply_raider_ai();
         let combat = self.apply_autonomous_combat(dt, &npc_commands);
+        self.intents.prepare_sentries(&combat.engagements, dt);
+        self.intents.prepare_escorts(&combat.engagements);
         self.emit_laser_shots(&combat.laser_shots).await;
         self.emit_combat_destructions(&combat.destructions).await;
         self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
@@ -4656,6 +4727,10 @@ impl Engine {
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
         integrate(&self.cfg, &mut self.state, dt);
+        self.advance_convoys(dt).await?;
+        self.intents.tick_sentries(&mut self.state, dt);
+        self.cancel_invalid_escorts().await?;
+        self.intents.tick_escorts(&mut self.state, dt);
         let radiation_source_by_victim = self.apply_radiation_damage(dt);
         let radiation_damaged_entities: HashSet<u64> = radiation_source_by_victim.keys().copied().collect();
         let radiation_victims: Vec<pb::Entity> = self
@@ -4669,10 +4744,15 @@ impl Engine {
         self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
         self.cancel_destroyed_intents(&radiation_dead_entity_ids)
             .await;
+        self.cancel_invalid_escorts().await?;
+        self.persist_escort_changes().await?;
+        if let Err(error) = self.persist_sentry_changes().await {
+            warn!(?error, "failed to persist Sentry state");
+        }
         self.publish_script_debug().await;
         self.state.tick += 1;
 
-        let delta = compute_delta(
+        let mut delta = compute_delta(
             &self.prev_state,
             &self.state,
             &self.prev_collector_ui_state_by_entity,
@@ -4684,9 +4764,15 @@ impl Engine {
             &starvation_damage,
             &radiation_damaged_entities,
         );
+        self.intents.append_move_order_changes(&mut delta);
+        self.intents.append_sentry_changes(&mut delta);
+        self.intents.append_escort_changes(&mut delta);
         if should_publish_delta(&delta) {
             if let Ok(id) = self.redis.publish_delta(&delta).await {
                 self.last_delta_id = Some(id);
+                self.intents.acknowledge_move_order_changes(&delta);
+                self.intents.acknowledge_sentry_changes(&delta);
+                self.intents.acknowledge_escort_changes(&delta);
             }
         }
         let _ = self.publish_build_progress_if_due().await;
@@ -4704,6 +4790,10 @@ impl Engine {
                     boundary,
                     collector_states,
                     combat_effect_states,
+                    self.intents.convoys.clone(),
+                    self.intents.move_orders_for_snapshot(),
+                    self.intents.sentries.clone(),
+                    self.intents.escorts.clone(),
                 )
                 .await
                 .is_ok()
@@ -4826,9 +4916,16 @@ impl Engine {
             // inside handle_envelope via IntentManager::try_activate.
 
             // Advance currently executing actions (e.g., Move) toward targets
+            self.intents.prune_convoys();
+            self.intents.prune_sentries();
+            self.intents.prune_escorts();
+            self.cancel_invalid_escorts().await?;
             let finished =
                 self.intents
                     .follow_targets(&mut self.state, self.cfg.default_entity_speed, dt);
+            if let Err(error) = self.persist_changed_move_routes().await {
+                warn!(?error, "failed to persist Move route progress");
+            }
             for (entity_id, metadata) in finished {
                 // M2: clear tracking before emitting lifecycle event
                 if let Err(err) = self.redis.clear_active_intent(entity_id).await {
@@ -4877,6 +4974,8 @@ impl Engine {
                 &mut phase_started,
             );
             let combat = self.apply_autonomous_combat(dt, &npc_commands);
+            self.intents.prepare_sentries(&combat.engagements, dt);
+            self.intents.prepare_escorts(&combat.engagements);
             self.emit_laser_shots(&combat.laser_shots).await;
             self.emit_combat_destructions(&combat.destructions).await;
             self.cancel_destroyed_intents(&combat.dead_entity_ids).await;
@@ -4922,6 +5021,10 @@ impl Engine {
                 &mut phase_started,
             );
             integrate(&self.cfg, &mut self.state, dt);
+            self.advance_convoys(dt).await?;
+            self.intents.tick_sentries(&mut self.state, dt);
+            self.cancel_invalid_escorts().await?;
+            self.intents.tick_escorts(&mut self.state, dt);
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
@@ -4947,7 +5050,12 @@ impl Engine {
                 "radiation",
                 &mut phase_started,
             );
-            self.publish_script_debug().await;
+            self.cancel_invalid_escorts().await?;
+            self.persist_escort_changes().await?;
+            if let Err(error) = self.persist_sentry_changes().await {
+                warn!(?error, "failed to persist Sentry state");
+            }
+        self.publish_script_debug().await;
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
@@ -4957,7 +5065,7 @@ impl Engine {
             self.state.tick += 1;
 
             // Delta
-            let delta = compute_delta(
+            let mut delta = compute_delta(
                 &self.prev_state,
                 &self.state,
                 &self.prev_collector_ui_state_by_entity,
@@ -4969,9 +5077,17 @@ impl Engine {
                 &starvation_damage,
                 &radiation_damaged_entities,
             );
+            self.intents.append_move_order_changes(&mut delta);
+            self.intents.append_sentry_changes(&mut delta);
+            self.intents.append_escort_changes(&mut delta);
             if should_publish_delta(&delta) {
                 match self.redis.publish_delta(&delta).await {
-                    Ok(id) => self.last_delta_id = Some(id),
+                    Ok(id) => {
+                        self.last_delta_id = Some(id);
+                        self.intents.acknowledge_move_order_changes(&delta);
+                        self.intents.acknowledge_sentry_changes(&delta);
+                        self.intents.acknowledge_escort_changes(&delta);
+                    },
                     Err(e) => error!(?e, "delta publish failed"),
                 }
             }
@@ -5000,6 +5116,10 @@ impl Engine {
                         boundary,
                         collector_states,
                         combat_effect_states,
+                        self.intents.convoys.clone(),
+                        self.intents.move_orders_for_snapshot(),
+                        self.intents.sentries.clone(),
+                        self.intents.escorts.clone(),
                     )
                     .await
                 {
@@ -5155,6 +5275,7 @@ impl Engine {
             pb::IntentPolicy::try_from(envelope.policy).unwrap_or(pb::IntentPolicy::ReplaceActive);
 
         let metadata = IntentMetadata {
+            entity_id: 0,
             intent_id: intent_id.clone(),
             client_cmd_id: client_cmd_id.clone(),
             player_id: player_id.clone(),
@@ -5263,6 +5384,15 @@ impl Engine {
             .await?;
 
         let mut payload_intent = match envelope.payload {
+            Some(intent_envelope::Payload::Escort(order)) => {
+                return self.activate_escort(order, metadata).await;
+            }
+            Some(intent_envelope::Payload::Sentry(order)) => {
+                return self.activate_sentry(order, metadata).await;
+            }
+            Some(intent_envelope::Payload::Convoy(order)) => {
+                return self.activate_convoy(order, metadata).await;
+            }
             Some(intent_envelope::Payload::Move(m)) => {
                 info!(entity_id = m.entity_id, intent_id = %format_uuid(&intent_id), player = %player_id, "accept intent=Move");
                 pb::Intent {
@@ -5714,6 +5844,32 @@ impl Engine {
             Some(pb::intent::Kind::Deliver(delivery)) if delivery.donor_id != 0 => Some(delivery.clone()),
             _ => None,
         };
+        if let Some(pb::intent::Kind::Move(mov)) = payload_intent.kind.as_ref() {
+            let valid_target = mov.target.is_some_and(|point| point.x.is_finite() && point.y.is_finite());
+            if !valid_target {
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::InvalidTarget, accept_tick).await?;
+                return Err(anyhow!("invalid Move destination"));
+            }
+            if matches!(policy, pb::IntentPolicy::Append | pb::IntentPolicy::ClearThenAppend) {
+                if let Some(result) = self.intents.edit_move_route(entity_id, mov.target.unwrap(), policy) {
+                    if let Err(error) = result {
+                        let reason = if error == navigation::RouteEditError::Busy {
+                            pb::LifecycleReason::EntityBusy
+                        } else { pb::LifecycleReason::InvalidTarget };
+                        self.emit_route_edit_event(&metadata, pb::LifecycleState::Rejected, reason).await?;
+                        return Err(anyhow!("Move route edit rejected: {error:?}"));
+                    }
+                    self.intents.move_route_last_cmd.insert(entity_id, client_cmd_id.clone());
+                    self.persist_changed_move_routes().await?;
+                    self.emit_route_edit_event(&metadata, pb::LifecycleState::Accepted,
+                        pb::LifecycleReason::None).await?;
+                    self.emit_route_edit_event(&metadata, pb::LifecycleState::Finished,
+                        pb::LifecycleReason::None).await?;
+                    return Ok(());
+                }
+            }
+        }
         // M1: Try to activate immediately (no server-side queue).
         let outcome = self
             .intents
@@ -5750,6 +5906,9 @@ impl Engine {
         }
 
         if let Some((entity_id, _)) = outcome.started {
+            self.intents.detach_convoy_member(entity_id);
+            self.intents.detach_sentry_member(entity_id);
+            self.intents.detach_escort_member(entity_id);
             self.collection_retry_tick_by_entity.remove(&entity_id);
             self.transport_wait_since_tick_by_entity.remove(&entity_id);
             if intent_kind == "upgrade" {
@@ -5775,6 +5934,7 @@ impl Engine {
                 )
                 .await?;
 
+            self.persist_changed_move_routes().await?;
             if let Some(transfer) = &transfer { self.redis.persist_transfer_route(entity_id, transfer).await?; }
             // Emit ACCEPTED then immediately IN_PROGRESS (M1: no intermediate queue)
             self.emit_lifecycle_event(
@@ -5864,6 +6024,13 @@ impl Engine {
         self.handle_envelope(envelope).await
     }
 
+    async fn emit_route_edit_event(&mut self, metadata: &IntentMetadata,
+        state: pb::LifecycleState, reason: pb::LifecycleReason) -> Result<()> {
+        self.emit_lifecycle_event_raw(&metadata.intent_id, &metadata.client_cmd_id,
+            &metadata.player_id, state, reason, self.state.tick, metadata.protocol_version,
+            metadata.entity_id, true, None).await
+    }
+
     async fn emit_lifecycle_event(
         &mut self,
         metadata: &IntentMetadata,
@@ -5883,9 +6050,10 @@ impl Engine {
         tick: u64,
         minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
     ) -> Result<()> {
+        let event_key = [metadata.intent_id.as_slice(), &metadata.entity_id.to_le_bytes()].concat();
         if !self
             .lifecycle_emitted
-            .insert((metadata.intent_id.clone(), state))
+            .insert((event_key, state))
         {
             return Ok(());
         }
@@ -5897,6 +6065,8 @@ impl Engine {
             reason,
             tick,
             metadata.protocol_version,
+            metadata.entity_id,
+            false,
             minimum_distance_violation,
         )
         .await
@@ -5911,9 +6081,13 @@ impl Engine {
         reason: pb::LifecycleReason,
         tick: u64,
         protocol_version: u32,
+        entity_id: u64,
+        route_edit: bool,
         minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
     ) -> Result<()> {
         let event = pb::LifecycleEvent {
+            entity_id,
+            route_edit,
             intent_id: intent_id.to_vec(),
             client_cmd_id: client_cmd_id.to_vec(),
             player_id: player_id.to_string(),
@@ -6176,11 +6350,110 @@ mod sharing_upkeep_tests {
 mod collection_inventory_tests {
     use super::*;
 
+    /// Match the upkeep-first setup with no explicit delivery reserve: sharing
+    /// automatically supplies two food, and an old delivering-food UI state may
+    /// remain after changing the assignment to minerals.
+    fn collection_fixture() -> ContentPack {
+        let worker: EntityTypeDef = serde_json::from_value(serde_json::json!({
+            "fog_memory":"forget_when_hidden", "speed":90, "stop_radius":0.75,
+            "mass":1, "health":200, "max_capacity":{"food":50,"minerals":50,"energy":50},
+            "maintenance_cost_per_minute":{"food":2,"energy":1},
+            "sensor":{"range":400,"cost_per_minute":{"energy":0.1}},
+            "resource_sharing":{"range":1000,"resources":{
+                "food":{"priority":0,"refill_below":45,"fill_to":50,"reserve":5}
+            }},
+            "collector":{"collects":["food","minerals"],"transport_rate_per_second":8}
+        })).unwrap();
+        let habitat: EntityTypeDef = serde_json::from_value(serde_json::json!({
+            "fog_memory":"forget_when_hidden", "speed":60,"stop_radius":0.5,
+            "mass":4,"health":400,"max_capacity":{"food":3000,"minerals":1000,"energy":1000},
+            "resource_sharing":{"range":4000,"resources":{
+                "food":{"priority":10,"refill_below":2500,"fill_to":2900,"reserve":200}
+            }}
+        })).unwrap();
+        ContentPack { entity_types:HashMap::from([("worker".into(),worker),("habitat".into(),habitat)]),
+            resource_types:HashMap::new(),technologies:HashMap::new(),content_hash:"test".into() }
+    }
+
+    #[test]
+    fn upkeep_only_food_does_not_redirect_food_or_mineral_collectors_to_dropoff() {
+        let content=collection_fixture();
+        let worker_def=content.get("worker").unwrap();
+        assert!(worker_def.resource_reserves.is_empty());
+        let owner=Uuid::nil().to_string();
+        let mut entities=vec![
+            pb::Entity {id:1,entity_type_id:"worker".into(),owner_player_id:owner.clone(),health:200.0,
+                pos:Some(pb::Vec2 {x:0.0,y:0.0}),..Default::default()},
+            pb::Entity {id:2,entity_type_id:"habitat".into(),owner_player_id:owner,health:400.0,
+                pos:Some(pb::Vec2 {x:0.0,y:0.0}),..Default::default()}
+        ];
+        set_resource_amount(&mut entities[1],"food",400.0);
+        let mut refilling=HashSet::new();
+        // A whole series of automatic top-ups must never manufacture a new
+        // delivery trip. This includes an old delivering-food assignment hint.
+        for _ in 0..240 {
+            share_local_resources(&mut entities,&content,&HashSet::new(),&HashSet::new(),
+                &HashMap::new(),&HashMap::new(),&mut refilling,true);
+            assert_eq!(resource_amount(&entities[0],"food"),2.0);
+            for assignment in ["food","minerals"] {
+                assert!(collection_load(&entities[0],worker_def,&["food",assignment]).is_none());
+                let collector=CollectorSnapshot {id:1,entity_type_id:"worker".into(),owner_player_id:entities[0].owner_player_id.clone(),x:0.0,y:0.0};
+                let nodes=vec![ResourceNodeSnapshot {id:10,x:1000.0,y:0.0,resource_type:assignment.into(),
+                    mode:CollectionMode::Transport,max_simultaneous_collectors:None,min_effective_distance:0.0,max_effective_distance:100.0}];
+                let by_id=HashMap::from([(10,0)]);
+                assert_eq!(Engine::pick_transport_node(&collector,&nodes,None,&by_id,None,assignment,false,&worker_def.collector.as_ref().unwrap().collects).unwrap().id,10);
+            }
+        }
+    }
+
+    #[test]
+    fn collection_deposit_preserves_implicit_upkeep_buffer_and_unloads_actual_surplus() {
+        let content=collection_fixture();
+        let def=content.get("worker").unwrap();
+        let mut worker=pb::Entity::default(); let mut habitat=pb::Entity::default();
+        set_resource_amount(&mut worker,"food",50.0);
+        set_resource_amount(&mut worker,"minerals",50.0);
+        set_resource_amount(&mut habitat,"food",400.0);
+        let mut refilling=HashSet::new();
+        assert_eq!(collection_load(&worker,def,&["food"]).unwrap().amount,48.0);
+        deposit_collection_inventory(&mut worker,def,&mut habitat,content.get("habitat").unwrap(),"food",&mut refilling);
+        assert_eq!(resource_amount(&worker,"food"),2.0);
+        assert_eq!(resource_amount(&habitat,"food"),448.0);
+        // Once food is unloaded, a new mineral assignment sees mineral cargo,
+        // not the two food retained to operate the worker.
+        assert_eq!(collection_load(&worker,def,&["food","minerals"]).unwrap().resource_type,"minerals");
+        deposit_collection_inventory(&mut worker,def,&mut habitat,content.get("habitat").unwrap(),"minerals",&mut refilling);
+        assert!(collection_load(&worker,def,&["food","minerals"]).is_none());
+        assert_eq!(resource_amount(&worker,"minerals"),0.0);
+        assert_eq!(resource_amount(&habitat,"minerals"),50.0);
+    }
+
+    #[test]
+    fn collection_buffers_honor_explicit_reserves_and_zero_without_changing_directed_delivery() {
+        let content=collection_fixture();
+        let mut def=content.get("worker").unwrap().clone();
+        let mut worker=pb::Entity::default();set_resource_amount(&mut worker,"food",8.0);
+        assert_eq!(collection_transferable_resource(&worker,&def,"food"),6.0);
+        // The automatic-sharing-only reserve of five is not a shipment floor.
+        // Directed delivery keeps its existing omitted-reserve semantics.
+        assert_eq!(transferable_resource(&worker,&def,"food"),8.0);
+        def.resource_reserves.insert("food".into(),5.0);
+        assert_eq!(collection_transferable_resource(&worker,&def,"food"),3.0);
+        def.resource_reserves.insert("food".into(),0.0);
+        assert_eq!(collection_transferable_resource(&worker,&def,"food"),8.0);
+        def.resource_reserves.clear();def.maintenance_cost_per_minute.clear();
+        assert_eq!(collection_transferable_resource(&worker,&def,"food"),8.0);
+    }
+
     #[test]
     fn collection_upkeep_and_partial_delivery_use_one_inventory_and_preserve_stock() {
         let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();
-        let def = content.get("worker").unwrap();
+        // This scenario exercises an explicit five-food delivery buffer;
+        // keep it independent of the editable worker content's reserve tuning.
+        let mut worker_def = content.get("worker").unwrap().clone();
+        worker_def.resource_reserves.insert("food".into(), 5.0);
+        let def = &worker_def;
         let mut entities = vec![pb::Entity { id: 1, ..Default::default() }, pb::Entity {
             id: 2, resource_deposit: Some(pb::ResourceDeposit { amount: 100.0, remaining: 100.0 }), ..Default::default()
         }];
