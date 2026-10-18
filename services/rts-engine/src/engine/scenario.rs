@@ -231,6 +231,7 @@ impl Engine {
                 self.intents.convoys.clone(),
                 self.intents.move_orders_for_snapshot(),
                 self.intents.sentries.clone(),
+                self.intents.escorts.clone(),
             )
             .await?;
         self.publish_runtime().await

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file navigation.proto.
  */
 export const file_navigation: GenFile = /*@__PURE__*/
-  fileDesc("ChBuYXZpZ2F0aW9uLnByb3RvEgdiaXR3YXJzIo8BCg9OYXZpZ2F0aW9uUm91dGUSIAoJd2F5cG9pbnRzGAEgAygLMg0uYml0d2Fycy5WZWMyEhsKE25leHRfd2F5cG9pbnRfaW5kZXgYAiABKA0SEQoJZGlyZWN0aW9uGAMgASgREioKCXRyYXZlcnNhbBgEIAEoDjIXLmJpdHdhcnMuUm91dGVUcmF2ZXJzYWwiuwEKDk1vdmVPcmRlclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIRCglpbnRlbnRfaWQYAiABKAwSFQoNY2xpZW50X2NtZF9pZBgDIAEoDBIRCglwbGF5ZXJfaWQYBCABKAkSFAoMc3RhcnRlZF90aWNrGAUgASgEEicKBXJvdXRlGAYgASgLMhguYml0d2Fycy5OYXZpZ2F0aW9uUm91dGUSGgoSbGFzdF9jbGllbnRfY21kX2lkGAcgASgMIk8KEE1vdmVPcmRlclJlbW92YWwSEQoJZW50aXR5X2lkGAEgASgEEhEKCXBsYXllcl9pZBgCIAEoCRIVCg1jbGllbnRfY21kX2lkGAMgASgMIj4KCkNvbnZveVNsb3QSEQoJZW50aXR5X2lkGAEgASgEEh0KBm9mZnNldBgCIAEoCzINLmJpdHdhcnMuVmVjMiKSAgoQU2VudHJ5T3JkZXJTdGF0ZRIRCglpbnRlbnRfaWQYASABKAwSFQoNY2xpZW50X2NtZF9pZBgCIAEoDBIRCglwbGF5ZXJfaWQYAyABKAkSFAoMc3RhcnRlZF90aWNrGAQgASgEEicKBXJvdXRlGAUgASgLMhguYml0d2Fycy5OYXZpZ2F0aW9uUm91dGUSHQoGYW5jaG9yGAYgASgLMg0uYml0d2Fycy5WZWMyEiIKBXNsb3RzGAcgAygLMhMuYml0d2Fycy5Db252b3lTbG90EiMKBXBoYXNlGAggASgOMhQuYml0d2Fycy5TZW50cnlQaGFzZRIaChJsYXN0X2NsaWVudF9jbWRfaWQYCSABKAwiPgoSU2VudHJ5T3JkZXJSZW1vdmFsEhUKDWNsaWVudF9jbWRfaWQYASABKAwSEQoJcGxheWVyX2lkGAIgASgJKlMKDlJvdXRlVHJhdmVyc2FsEh8KG1JPVVRFX1RSQVZFUlNBTF9VTlNQRUNJRklFRBAAEhEKDUZJTklTSF9BVF9FTkQQARINCglQSU5HX1BPTkcQAipoCgtTZW50cnlQaGFzZRIcChhTRU5UUllfUEhBU0VfVU5TUEVDSUZJRUQQABIOCgpBU1NFTUJMSU5HEAESDgoKUEFUUk9MTElORxACEgsKB0VOR0FHRUQQAxIOCgpSRUdST1VQSU5HEARiBnByb3RvMw", [file_vec2]);
+  fileDesc("ChBuYXZpZ2F0aW9uLnByb3RvEgdiaXR3YXJzIo8BCg9OYXZpZ2F0aW9uUm91dGUSIAoJd2F5cG9pbnRzGAEgAygLMg0uYml0d2Fycy5WZWMyEhsKE25leHRfd2F5cG9pbnRfaW5kZXgYAiABKA0SEQoJZGlyZWN0aW9uGAMgASgREioKCXRyYXZlcnNhbBgEIAEoDjIXLmJpdHdhcnMuUm91dGVUcmF2ZXJzYWwiuwEKDk1vdmVPcmRlclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIRCglpbnRlbnRfaWQYAiABKAwSFQoNY2xpZW50X2NtZF9pZBgDIAEoDBIRCglwbGF5ZXJfaWQYBCABKAkSFAoMc3RhcnRlZF90aWNrGAUgASgEEicKBXJvdXRlGAYgASgLMhguYml0d2Fycy5OYXZpZ2F0aW9uUm91dGUSGgoSbGFzdF9jbGllbnRfY21kX2lkGAcgASgMIk8KEE1vdmVPcmRlclJlbW92YWwSEQoJZW50aXR5X2lkGAEgASgEEhEKCXBsYXllcl9pZBgCIAEoCRIVCg1jbGllbnRfY21kX2lkGAMgASgMIj4KCkNvbnZveVNsb3QSEQoJZW50aXR5X2lkGAEgASgEEh0KBm9mZnNldBgCIAEoCzINLmJpdHdhcnMuVmVjMiKSAgoQU2VudHJ5T3JkZXJTdGF0ZRIRCglpbnRlbnRfaWQYASABKAwSFQoNY2xpZW50X2NtZF9pZBgCIAEoDBIRCglwbGF5ZXJfaWQYAyABKAkSFAoMc3RhcnRlZF90aWNrGAQgASgEEicKBXJvdXRlGAUgASgLMhguYml0d2Fycy5OYXZpZ2F0aW9uUm91dGUSHQoGYW5jaG9yGAYgASgLMg0uYml0d2Fycy5WZWMyEiIKBXNsb3RzGAcgAygLMhMuYml0d2Fycy5Db252b3lTbG90EiMKBXBoYXNlGAggASgOMhQuYml0d2Fycy5TZW50cnlQaGFzZRIaChJsYXN0X2NsaWVudF9jbWRfaWQYCSABKAwiPgoSU2VudHJ5T3JkZXJSZW1vdmFsEhUKDWNsaWVudF9jbWRfaWQYASABKAwSEQoJcGxheWVyX2lkGAIgASgJImIKCkVzY29ydFNsb3QSEQoJZW50aXR5X2lkGAEgASgEEh0KBm9mZnNldBgCIAEoCzINLmJpdHdhcnMuVmVjMhISCgpzbG90X2luZGV4GAMgASgNEg4KBnN0YXR1cxgEIAEoCSKjAQoQRXNjb3J0T3JkZXJTdGF0ZRIRCglpbnRlbnRfaWQYASABKAwSFQoNY2xpZW50X2NtZF9pZBgCIAEoDBIRCglwbGF5ZXJfaWQYAyABKAkSFAoMc3RhcnRlZF90aWNrGAQgASgEEhgKEHRhcmdldF9lbnRpdHlfaWQYBSABKAQSIgoFc2xvdHMYBiADKAsyEy5iaXR3YXJzLkVzY29ydFNsb3QiPgoSRXNjb3J0T3JkZXJSZW1vdmFsEhUKDWNsaWVudF9jbWRfaWQYASABKAwSEQoJcGxheWVyX2lkGAIgASgJKlMKDlJvdXRlVHJhdmVyc2FsEh8KG1JPVVRFX1RSQVZFUlNBTF9VTlNQRUNJRklFRBAAEhEKDUZJTklTSF9BVF9FTkQQARINCglQSU5HX1BPTkcQAipoCgtTZW50cnlQaGFzZRIcChhTRU5UUllfUEhBU0VfVU5TUEVDSUZJRUQQABIOCgpBU1NFTUJMSU5HEAESDgoKUEFUUk9MTElORxACEgsKB0VOR0FHRUQQAxIOCgpSRUdST1VQSU5HEARiBnByb3RvMw", [file_vec2]);
 
 /**
  * @generated from message bitwars.NavigationRoute
@@ -228,6 +228,106 @@ export type SentryOrderRemoval = Message<"bitwars.SentryOrderRemoval"> & {
  */
 export const SentryOrderRemovalSchema: GenMessage<SentryOrderRemoval> = /*@__PURE__*/
   messageDesc(file_navigation, 5);
+
+/**
+ * A reserved leader-relative slot survives temporary combat interruptions.
+ *
+ * @generated from message bitwars.EscortSlot
+ */
+export type EscortSlot = Message<"bitwars.EscortSlot"> & {
+  /**
+   * @generated from field: uint64 entity_id = 1;
+   */
+  entityId: bigint;
+
+  /**
+   * @generated from field: bitwars.Vec2 offset = 2;
+   */
+  offset?: Vec2;
+
+  /**
+   * @generated from field: uint32 slot_index = 3;
+   */
+  slotIndex: number;
+
+  /**
+   * forming | in_formation | catching_up | engaging | returning
+   *
+   * @generated from field: string status = 4;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message bitwars.EscortSlot.
+ * Use `create(EscortSlotSchema)` to create a new message.
+ */
+export const EscortSlotSchema: GenMessage<EscortSlot> = /*@__PURE__*/
+  messageDesc(file_navigation, 6);
+
+/**
+ * @generated from message bitwars.EscortOrderState
+ */
+export type EscortOrderState = Message<"bitwars.EscortOrderState"> & {
+  /**
+   * @generated from field: bytes intent_id = 1;
+   */
+  intentId: Uint8Array;
+
+  /**
+   * @generated from field: bytes client_cmd_id = 2;
+   */
+  clientCmdId: Uint8Array;
+
+  /**
+   * @generated from field: string player_id = 3;
+   */
+  playerId: string;
+
+  /**
+   * @generated from field: uint64 started_tick = 4;
+   */
+  startedTick: bigint;
+
+  /**
+   * @generated from field: uint64 target_entity_id = 5;
+   */
+  targetEntityId: bigint;
+
+  /**
+   * @generated from field: repeated bitwars.EscortSlot slots = 6;
+   */
+  slots: EscortSlot[];
+};
+
+/**
+ * Describes the message bitwars.EscortOrderState.
+ * Use `create(EscortOrderStateSchema)` to create a new message.
+ */
+export const EscortOrderStateSchema: GenMessage<EscortOrderState> = /*@__PURE__*/
+  messageDesc(file_navigation, 7);
+
+/**
+ * @generated from message bitwars.EscortOrderRemoval
+ */
+export type EscortOrderRemoval = Message<"bitwars.EscortOrderRemoval"> & {
+  /**
+   * @generated from field: bytes client_cmd_id = 1;
+   */
+  clientCmdId: Uint8Array;
+
+  /**
+   * @generated from field: string player_id = 2;
+   */
+  playerId: string;
+};
+
+/**
+ * Describes the message bitwars.EscortOrderRemoval.
+ * Use `create(EscortOrderRemovalSchema)` to create a new message.
+ */
+export const EscortOrderRemovalSchema: GenMessage<EscortOrderRemoval> = /*@__PURE__*/
+  messageDesc(file_navigation, 8);
 
 /**
  * Route traversal is independent of movement, formation, and combat ownership.

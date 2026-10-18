@@ -472,6 +472,7 @@ impl Engine {
             );
             canceled.extend(outcome.canceled);
             self.intents.detach_convoy_member(slot.entity_id);
+            self.intents.detach_escort_member(slot.entity_id);
             self.intents.detach_sentry_member(slot.entity_id);
             self.collection_retry_tick_by_entity.remove(&slot.entity_id);
             self.transport_wait_since_tick_by_entity

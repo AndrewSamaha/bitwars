@@ -112,6 +112,11 @@ export async function GET() {
       }
     }
 
+    const escortFields: Record<string, string> = await redis.hgetall(`rts:match:${GAME_ID}:escorts`);
+    const escortOrders = Object.values(escortFields).flatMap((value) => {
+      try { const order = JSON.parse(value); return order.player_id === playerId ? [order] : []; }
+      catch { return []; }
+    });
     const sentryFields: Record<string, string> = await redis.hgetall(`rts:match:${GAME_ID}:sentries`);
     const sentryOrders = Object.values(sentryFields).flatMap((value) => {
       try { const order = JSON.parse(value); return order.player_id === playerId ? [order] : []; }
@@ -125,6 +130,7 @@ export async function GET() {
       player_id: playerId,
       last_processed_client_seq: lastProcessedClientSeq,
       active_intents: activeIntents,
+      escort_orders: escortOrders,
       sentry_orders: sentryOrders,
     });
   } catch (e: any) {

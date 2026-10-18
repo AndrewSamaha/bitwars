@@ -17,4 +17,6 @@ message Delta {
   repeated MoveOrderRemoval move_order_removals = 7;
   repeated SentryOrderState sentry_order_updates = 8;
   repeated SentryOrderRemoval sentry_order_removals = 9;
+  repeated EscortOrderState escort_order_updates = 10;
+  repeated EscortOrderRemoval escort_order_removals = 11;
 }

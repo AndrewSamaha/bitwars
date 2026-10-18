@@ -1,6 +1,6 @@
 import { type Delta } from "@bitwars/shared/gen/delta_pb";
 import { type Entity } from "@bitwars/shared/gen/entity_pb";
-import type { SentryOrderState, MoveOrderState } from "@bitwars/shared/gen/navigation_pb";
+import type { EscortOrderState, SentryOrderState, MoveOrderState } from "@bitwars/shared/gen/navigation_pb";
 import { type Snapshot } from "@bitwars/shared/gen/snapshot_pb";
 
 // Helpers to convert protobuf-es messages into compact, client-friendly JSON
@@ -25,6 +25,13 @@ export const mapMoveOrderToJson = (order: MoveOrderState) => ({
   } : null,
 });
 
+export const mapEscortOrderToJson = (order: EscortOrderState) => ({
+  intent_id: mapUuid(order.intentId), client_cmd_id: mapUuid(order.clientCmdId),
+  player_id: order.playerId, started_tick: Number(order.startedTick), target_entity_id: Number(order.targetEntityId),
+  slots: order.slots.map((slot) => ({ entity_id: Number(slot.entityId), offset: slot.offset ? { x: slot.offset.x, y: slot.offset.y } : null,
+    slot_index: slot.slotIndex, status: slot.status })),
+});
+
 export const mapSentryOrderToJson = (order: SentryOrderState) => ({
   intent_id: mapUuid(order.intentId), client_cmd_id: mapUuid(order.clientCmdId),
   last_client_cmd_id: mapUuid(order.lastClientCmdId), player_id: order.playerId,
@@ -40,6 +47,8 @@ export const mapDeltaToJson = (d: Delta) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
   removed_entity_ids: (d.removedEntityIds ?? []).map(biToNumOrStr),
+  escort_order_updates: (d.escortOrderUpdates ?? []).map(mapEscortOrderToJson),
+  escort_order_removals: (d.escortOrderRemovals ?? []).map((order) => ({ player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId) })),
   sentry_order_updates: (d.sentryOrderUpdates ?? []).map(mapSentryOrderToJson),
   sentry_order_removals: (d.sentryOrderRemovals ?? []).map((order) => ({ player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId) })),
   move_order_updates: (d.moveOrderUpdates ?? []).map(mapMoveOrderToJson),
@@ -109,6 +118,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
     tick: biToNumOrStr(s.tick),
     entities: (s.entities ?? []).map(mapEntityToJson),
     player_ledgers,
+    escort_orders: (s.escortOrders ?? []).map(mapEscortOrderToJson),
     sentry_orders: (s.sentryOrders ?? []).map(mapSentryOrderToJson),
     move_orders: (s.moveOrders ?? []).map(mapMoveOrderToJson),
     convoys: (s.convoys ?? []).map((order) => ({

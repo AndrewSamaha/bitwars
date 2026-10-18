@@ -84,3 +84,9 @@ Returns the active run ID, scenario ID, pause state, tick and remaining step
 count, plus saved scenario metadata. This is read-only. Authenticated scenario
 controls and YAML management are documented in
 [scenarios.md](requirements/scenarios.md).
+
+Escort orders (protocol 17) appear in snapshot `escort_orders`, with root IDs,
+owner, `target_entity_id`, and member slots containing offsets, stable slot
+indices, and status (`forming`, `in_formation`, `catching_up`, `engaging`, or
+`returning`). Escort follows entity positions rather than a fixed route. Player
+streams filter orders to their owner; this administrative snapshot exposes all.

@@ -103,6 +103,11 @@ export default function LifecycleToasts() {
         `${entity.entity_type_id ?? "Entity"} ${entityId}`,
       );
     };
+    const onCommandFeedback = (event: Event) => {
+      const message = (event as CustomEvent<string>).detail;
+      if (message) showToast("Escort", message);
+    };
+    window.addEventListener("bitwars:command-feedback", onCommandFeedback);
     window.addEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
     window.addEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
     window.addEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
@@ -110,6 +115,7 @@ export default function LifecycleToasts() {
     return () => {
       unsubscribeMigrationNotice();
       window.cancelAnimationFrame(migrationNoticeFrame);
+      window.removeEventListener("bitwars:command-feedback", onCommandFeedback);
       window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
       window.removeEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
       window.removeEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);

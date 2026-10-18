@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
-import { SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
+import { EscortIntentSchema, SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
 import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
@@ -122,8 +122,8 @@ export async function POST(req: NextRequest) {
     }
 
     const t = (body?.type ?? "").toString();
-    if (t !== "Sentry" && t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport") {
-      return NextResponse.json({ error: "unsupported type; expected Sentry, Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, or Transport" }, { status: 400 });
+    if (t !== "Escort" && t !== "Sentry" && t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport") {
+      return NextResponse.json({ error: "unsupported type; expected Escort, Sentry, Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, or Transport" }, { status: 400 });
     }
 
     const entityIdVal = body?.entity_id;
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
     const clientCmdId = (body?.client_cmd_id ?? "").toString();
     const clientSeqVal = Number(body?.client_seq);
 
-    if (t !== "Sentry" && t !== "Convoy" && entityIdVal === undefined) {
+    if (t !== "Escort" && t !== "Sentry" && t !== "Convoy" && entityIdVal === undefined) {
       return NextResponse.json({ error: "missing required field: entity_id" }, { status: 400 });
     }
     if (t === "Move" && (target?.x === undefined || target?.y === undefined)) {
@@ -189,7 +189,14 @@ export async function POST(req: NextRequest) {
       || (policy !== IntentPolicy.REPLACE_ACTIVE && (!validateUuid(body.order_client_cmd_id ?? "") || uuidVersion(body.order_client_cmd_id) !== 7)))) {
       return NextResponse.json({ error: "Sentry requires 1–256 unique member IDs, a finite target, and the root command UUID for edits" }, { status: 400 });
     }
-    const entityId = t === "Sentry" || t === "Convoy" ? 0n : BigInt(entityIdVal);
+    if (t === "Escort" && (!Array.isArray(body.entity_ids) || body.entity_ids.length < 1 || body.entity_ids.length > 256
+      || new Set(body.entity_ids).size !== body.entity_ids.length
+      || body.entity_ids.some((id: unknown) => !Number.isSafeInteger(id) || Number(id) <= 0)
+      || !Number.isSafeInteger(body.target_entity_id) || body.target_entity_id <= 0
+      || body.entity_ids.includes(body.target_entity_id) || policyStr !== "REPLACE_ACTIVE")) {
+      return NextResponse.json({ error: "Escort requires 1–256 unique member IDs, a separate target entity ID, and REPLACE_ACTIVE" }, { status: 400 });
+    }
+    const entityId = t === "Escort" || t === "Sentry" || t === "Convoy" ? 0n : BigInt(entityIdVal);
 
     const clientCmdArray = Array.from(parseUuid(clientCmdId));
     const clientCmdBytes = Uint8Array.from(clientCmdArray);
@@ -198,7 +205,14 @@ export async function POST(req: NextRequest) {
     }
 
     let bytes: Uint8Array;
-    if (t === "Sentry") {
+    if (t === "Escort") {
+      bytes = toBinary(IntentEnvelopeSchema, create(IntentEnvelopeSchema, {
+        clientCmdId: clientCmdBytes, playerId, clientSeq: BigInt(clientSeqVal), protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
+        payload: { case: "escort", value: create(EscortIntentSchema, {
+          entityIds: body.entity_ids.map((id: number) => BigInt(id)), targetEntityId: BigInt(body.target_entity_id),
+        }) },
+      }));
+    } else if (t === "Sentry") {
       bytes = toBinary(IntentEnvelopeSchema, create(IntentEnvelopeSchema, {
         clientCmdId: clientCmdBytes, playerId, clientSeq: BigInt(clientSeqVal), protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
         payload: { case: "sentry", value: create(SentryIntentSchema, {

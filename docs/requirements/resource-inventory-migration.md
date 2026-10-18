@@ -59,3 +59,19 @@ The `two_entities_move` golden replay also fails on unchanged HEAD with the iden
 - Regression tests cover the habitat/factory/pylon arrangement, repeated stable bulk allocation, a minute of pylon upkeep, scarce supply, differing upkeep rates, multiple donors, explicit targets, capacity limits, priority transitions and eligibility guards.
 
 No new schema fields, inventory balances or reset are needed. Restart the engine to apply the behavior. Live/browser testing and the actual restart were not performed.
+
+## Collection and implicit operating buffers
+
+Automatic resource-node collection treats only inventory above `operating_target`
+as shipment cargo, including the default maintenance/sensor buffer when no
+`resource_reserves` entry is configured. Both cargo detection and deposits use
+this floor. Otherwise a habitat can replenish upkeep food every tick while the
+worker immediately deposits it again, leaving food and mineral collectors stuck
+at drop-off. Explicit `resource_reserves: { food: 0 }` still opts out; directed
+Deliver/Transport retain their existing explicit-reserve rules. Automatic-sharing
+`reserve` remains separate from the shipment floor.
+
+Regression coverage reproduces upkeep-only workers near a habitat across 240
+supply ticks, both food and mineral assignments, previous-food hints, partial
+shipment detection, full surplus unloading, and explicit/zero reserve overrides.
+An engine restart applies the fix without resetting or clearing worker orders.

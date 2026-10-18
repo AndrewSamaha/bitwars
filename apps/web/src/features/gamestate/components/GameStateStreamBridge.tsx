@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLogger } from "@/lib/axiom/client";
 import { game, RADIATION_DAMAGE_VISUAL_LINGER_MS, type Entity } from "../world";
-import { intentQueue, type MoveOrderPayload, type MoveOrderRemovalPayload, type SentryOrderPayload, type SentryOrderRemovalPayload } from "@/features/intent-queue/intentQueueManager";
+import { intentQueue, type EscortOrderPayload, type EscortOrderRemovalPayload, type MoveOrderPayload, type MoveOrderRemovalPayload, type SentryOrderPayload, type SentryOrderRemovalPayload } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
@@ -36,6 +36,7 @@ function collectorStateFromStream({ entity_id: _entityId, ...state }: StreamColl
 }
 
 type SnapshotPayload = {
+  escort_orders?: EscortOrderPayload[];
   sentry_orders?: SentryOrderPayload[];
   move_orders?: MoveOrderPayload[];
   type: "snapshot";
@@ -56,6 +57,8 @@ type SnapshotPayload = {
 };
 
 type DeltaPayload = {
+  escort_order_updates?: EscortOrderPayload[];
+  escort_order_removals?: EscortOrderRemovalPayload[];
   sentry_order_updates?: SentryOrderPayload[];
   sentry_order_removals?: SentryOrderRemovalPayload[];
   move_order_updates?: MoveOrderPayload[];
@@ -183,10 +186,10 @@ export default function GameStateStreamBridge() {
       for (const id of ids) {
         const key = String(id);
         const active = intentQueue.getEntityState(Number(id)).active;
-        if (active?.kind === "move" || active?.kind === "sentry") {
+        if (active?.kind === "escort" || active?.kind === "move" || active?.kind === "sentry") {
           activeIntentByEntityRef.current.set(key, { intent_kind: active.kind, intent_id: active.intentId,
             started_tick: Number(active.serverTick ?? 0), move_target: active.target });
-        } else if (!active && ["move", "sentry"].includes(activeIntentByEntityRef.current.get(key)?.intent_kind ?? "")) {
+        } else if (!active && ["escort", "move", "sentry"].includes(activeIntentByEntityRef.current.get(key)?.intent_kind ?? "")) {
           activeIntentByEntityRef.current.delete(key);
         }
       }
@@ -218,7 +221,8 @@ export default function GameStateStreamBridge() {
       game.paused = !!payload.paused;
       intentQueue.applyMoveOrders(payload.move_orders ?? [], [], true);
       intentQueue.applySentryOrders(payload.sentry_orders ?? [], [], true);
-      syncMoveOverlays([...(payload.sentry_orders ?? []).flatMap((order) => order.slots.map((slot) => slot.entity_id)), ...activeIntentByEntityRef.current.keys(), ...(payload.move_orders ?? []).map((order) => order.entity_id)]);
+      intentQueue.applyEscortOrders(payload.escort_orders ?? [], [], true);
+      syncMoveOverlays([...(payload.escort_orders ?? []).flatMap((order) => order.slots.map((slot) => slot.entity_id)), ...(payload.sentry_orders ?? []).flatMap((order) => order.slots.map((slot) => slot.entity_id)), ...activeIntentByEntityRef.current.keys(), ...(payload.move_orders ?? []).map((order) => order.entity_id)]);
       // Remove old streamed entities (and destroy any attached sprites)
       for (const [id, ent] of byId) {
         if (ent.remembered && !worldChanged) continue;
@@ -290,6 +294,12 @@ export default function GameStateStreamBridge() {
     };
 
     const applyDelta = (payload: DeltaPayload) => {
+      if (payload.escort_order_updates?.length || payload.escort_order_removals?.length) {
+        intentQueue.applyEscortOrders(payload.escort_order_updates ?? [], payload.escort_order_removals ?? []);
+        syncMoveOverlays([...activeIntentByEntityRef.current.keys(),
+          ...(payload.escort_order_updates ?? []).flatMap((order) => order.slots.map((slot) => slot.entity_id))]);
+        dispatchGameStateUpdated();
+      }
       if (payload.sentry_order_updates?.length || payload.sentry_order_removals?.length) {
         intentQueue.applySentryOrders(payload.sentry_order_updates ?? [], payload.sentry_order_removals ?? []);
         syncMoveOverlays([...activeIntentByEntityRef.current.keys(),

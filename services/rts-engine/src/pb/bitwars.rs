@@ -201,6 +201,41 @@ pub struct SentryOrderRemoval {
     #[prost(string, tag = "2")]
     pub player_id: ::prost::alloc::string::String,
 }
+/// A reserved leader-relative slot survives temporary combat interruptions.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EscortSlot {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(message, optional, tag = "2")]
+    pub offset: ::core::option::Option<Vec2>,
+    #[prost(uint32, tag = "3")]
+    pub slot_index: u32,
+    /// forming | in_formation | catching_up | engaging | returning
+    #[prost(string, tag = "4")]
+    pub status: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EscortOrderState {
+    #[prost(bytes = "vec", tag = "1")]
+    pub intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "4")]
+    pub started_tick: u64,
+    #[prost(uint64, tag = "5")]
+    pub target_entity_id: u64,
+    #[prost(message, repeated, tag = "6")]
+    pub slots: ::prost::alloc::vec::Vec<EscortSlot>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EscortOrderRemoval {
+    #[prost(bytes = "vec", tag = "1")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "2")]
+    pub player_id: ::prost::alloc::string::String,
+}
 /// Route traversal is independent of movement, formation, and combat ownership.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -287,6 +322,10 @@ pub struct Delta {
     pub sentry_order_updates: ::prost::alloc::vec::Vec<SentryOrderState>,
     #[prost(message, repeated, tag = "9")]
     pub sentry_order_removals: ::prost::alloc::vec::Vec<SentryOrderRemoval>,
+    #[prost(message, repeated, tag = "10")]
+    pub escort_order_updates: ::prost::alloc::vec::Vec<EscortOrderState>,
+    #[prost(message, repeated, tag = "11")]
+    pub escort_order_removals: ::prost::alloc::vec::Vec<EscortOrderRemoval>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -442,7 +481,7 @@ pub struct IntentEnvelope {
     pub policy: i32,
     #[prost(
         oneof = "intent_envelope::Payload",
-        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20"
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21"
     )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
@@ -470,6 +509,8 @@ pub mod intent_envelope {
         Convoy(super::ConvoyIntent),
         #[prost(message, tag = "20")]
         Sentry(super::SentryIntent),
+        #[prost(message, tag = "21")]
+        Escort(super::EscortIntent),
     }
 }
 /// Extensible Intent envelope.
@@ -723,6 +764,13 @@ pub struct SentryIntent {
     #[prost(bytes = "vec", tag = "3")]
     pub order_client_cmd_id: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EscortIntent {
+    #[prost(uint64, repeated, tag = "1")]
+    pub entity_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(uint64, tag = "2")]
+    pub target_entity_id: u64,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IntentPolicy {
@@ -814,6 +862,7 @@ pub enum LifecycleReason {
     NotOwned = 8,
     MinimumDistanceViolation = 9,
     TransferEndpointLost = 10,
+    EscortTargetLost = 11,
 }
 impl LifecycleReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -833,6 +882,7 @@ impl LifecycleReason {
             Self::NotOwned => "NOT_OWNED",
             Self::MinimumDistanceViolation => "MINIMUM_DISTANCE_VIOLATION",
             Self::TransferEndpointLost => "TRANSFER_ENDPOINT_LOST",
+            Self::EscortTargetLost => "ESCORT_TARGET_LOST",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -849,6 +899,7 @@ impl LifecycleReason {
             "NOT_OWNED" => Some(Self::NotOwned),
             "MINIMUM_DISTANCE_VIOLATION" => Some(Self::MinimumDistanceViolation),
             "TRANSFER_ENDPOINT_LOST" => Some(Self::TransferEndpointLost),
+            "ESCORT_TARGET_LOST" => Some(Self::EscortTargetLost),
             _ => None,
         }
     }
@@ -904,6 +955,8 @@ pub struct Snapshot {
     pub move_orders: ::prost::alloc::vec::Vec<MoveOrderState>,
     #[prost(message, repeated, tag = "10")]
     pub sentry_orders: ::prost::alloc::vec::Vec<SentryOrderState>,
+    #[prost(message, repeated, tag = "11")]
+    pub escort_orders: ::prost::alloc::vec::Vec<EscortOrderState>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotMeta {

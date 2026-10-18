@@ -213,7 +213,7 @@ fn velocity(from: pb::Vec2, to: pb::Vec2, arrived: bool, dt: f32) -> pb::Vec2 {
         }
     }
 }
-fn approach(from: pb::Vec2, to: pb::Vec2, step: f32) -> (pb::Vec2, bool) {
+pub(super) fn approach(from: pb::Vec2, to: pb::Vec2, step: f32) -> (pb::Vec2, bool) {
     let dx = to.x - from.x;
     let dy = to.y - from.y;
     let distance = dx.hypot(dy);

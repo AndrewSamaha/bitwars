@@ -44,7 +44,9 @@ export default function IntentQueuePanel() {
                 <span className="text-green-400 shrink-0">&gt;</span>
                 <div>
                   <span>
-                    {state.active.kind === "sentry"
+                    {state.active.kind === "escort"
+                      ? `escort #${state.active.escortTargetId ?? "?"} · ${state.active.escort?.slots.find((slot) => String(slot.entity_id) === entityId)?.status.replaceAll("_", " ") ?? "pending"}`
+                      : state.active.kind === "sentry"
                       ? `sentry · ${state.active.sentry?.phase ?? "pending"} · ${(state.active.route?.direction ?? 1) > 0 ? "outbound" : "returning"}`
                       : state.active.kind === "convoy"
                       ? "convoy"

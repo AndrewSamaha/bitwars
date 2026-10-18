@@ -100,6 +100,16 @@ impl CombatSystem {
         scripted_targets: &HashMap<u64, u64>,
         scripted_entity_ids: &HashSet<u64>,
     ) -> CombatTick {
+        self.tick_with_escort_leashes(entities, content, tick, dt, commanded_entity_ids,
+            scripted_targets, scripted_entity_ids, &HashMap::new())
+    }
+
+    /// Escort combat stays within a content-defined radius of a moving leader.
+    pub fn tick_with_escort_leashes(
+        &mut self, entities: &mut [Entity], content: &ContentPack, tick: u64, dt: f32,
+        commanded_entity_ids: &HashSet<u64>, scripted_targets: &HashMap<u64, u64>,
+        scripted_entity_ids: &HashSet<u64>, leashes: &HashMap<u64, (Vec2, f32)>,
+    ) -> CombatTick {
         if dt <= 0.0 {
             return CombatTick {
                 dead_entity_ids: Vec::new(),
@@ -184,6 +194,12 @@ impl CombatSystem {
                             || candidate.owner_player_id == attacker.owner_player_id
                         {
                             return None;
+                        }
+                        if let Some((anchor, range)) = leashes.get(&attacker.id) {
+                            if squared_distance(anchor.x, anchor.y, pos.x, pos.y) > range.powi(2)
+                                || squared_distance(anchor.x, anchor.y, candidate.x, candidate.y) > range.powi(2) {
+                                return None;
+                            }
                         }
                         let distance_sq = squared_distance(pos.x, pos.y, candidate.x, candidate.y);
                         (distance_sq <= acquisition_sq).then_some((distance_sq, candidate))
@@ -519,6 +535,32 @@ mod tests {
             vec![2]
         );
         assert_eq!(entities[1].health, 0.0);
+    }
+
+    #[test]
+    fn escort_leash_follows_leader_filters_targets_and_preserves_cooldown() {
+        let pack = content();
+        let mut entities = vec![entity(1, "raider", "me", 0.0, 20.0),
+            entity(2, "worker", "enemy", 5.0, 100.0)];
+        let mut combat = CombatSystem::default();
+        let run = |combat: &mut CombatSystem, entities: &mut [Entity], tick, anchor_x| {
+            combat.tick_with_escort_leashes(entities, &pack, tick, 1.0,
+                &HashSet::new(), &HashMap::new(), &HashSet::new(),
+                &HashMap::from([(1, (Vec2 { x:anchor_x, y:0.0 },20.0))]))
+        };
+        assert_eq!(run(&mut combat,&mut entities,0,0.0).laser_shots.len(),1);
+        // A moving leader can pull the guard out of its combat boundary even
+        // though the enemy remains next to it. Returning is then owned by Escort.
+        assert!(run(&mut combat,&mut entities,1,100.0).engagements.is_empty());
+        // Re-entry within the cooldown does not grant another shot.
+        let reentered=run(&mut combat,&mut entities,1,0.0);
+        assert_eq!(reentered.engagements.get(&1),Some(&2));
+        assert!(reentered.laser_shots.is_empty());
+        assert_eq!(run(&mut combat,&mut entities,2,0.0).laser_shots.len(),1);
+        // Enemy is still inside the guard's own acquisition range, but outside
+        // the leader-centered leash, so it cannot lure the guard away.
+        entities[1].pos.as_mut().unwrap().x=25.0;
+        assert!(run(&mut combat,&mut entities,3,0.0).engagements.is_empty());
     }
 
     #[test]

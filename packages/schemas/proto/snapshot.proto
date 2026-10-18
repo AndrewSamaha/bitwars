@@ -40,4 +40,5 @@ message Snapshot {
   repeated ConvoyOrderState convoys = 8;
   repeated MoveOrderState move_orders = 9;
   repeated SentryOrderState sentry_orders = 10;
+  repeated EscortOrderState escort_orders = 11;
 }

@@ -108,7 +108,10 @@ export default function GameStage() {
     // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
       const payload =
-        params.kind === "Sentry"
+        params.kind === "Escort"
+          ? { type: "Escort", entity_ids: params.entityIds, target_entity_id: params.targetEntityId,
+              client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Sentry"
           ? { type: "Sentry", entity_ids: params.entityIds, target: params.target,
               order_client_cmd_id: params.orderClientCmdId, client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq, policy: params.policy }
@@ -747,6 +750,11 @@ export default function GameStage() {
               setSelectedAction('Move');
               ev.preventDefault();
             }
+          } else if (ev.code === "KeyE" && !isFocusInEditable()) {
+            if (sel.selectionCount >= 1 && sel.selectionCount <= 256 && sel.selectedEntities.every((id) => {
+              const type = findLiveEntityById(id)?.entity_type_id ?? "";
+              return (contentManager.getEntityType(type)?.speed ?? 0) > 0;
+            })) { setSelectedAction("Escort"); ev.preventDefault(); }
           } else if (ev.code === "KeyP" && !isFocusInEditable()) {
             if (sel.selectionCount >= 1 && sel.selectionCount <= 256 && sel.selectedEntities.every((id) => {
               const type = findLiveEntityById(id)?.entity_type_id ?? "";
@@ -1114,6 +1122,22 @@ export default function GameStage() {
           const renderedSentryRoots = new Set<string>();
           for (const entityId of intentQueue.getActiveEntityIds()) {
             const active = intentQueue.getEntityState(entityId).active;
+            if (active?.kind === "escort") {
+              if (!latestSelectorsRef.current.isSelected(String(entityId))) continue;
+              const leader = liveById.get(String(active.escortTargetId));
+              const guard = liveById.get(String(entityId));
+              const slot = active.escort?.slots.find((slot) => Number(slot.entity_id) === entityId);
+              if (leader?.pos && guard?.pos) {
+                const x = leader.pos.x + (slot?.offset?.x ?? 0), y = leader.pos.y + (slot?.offset?.y ?? 0);
+                const g = new Graphics();
+                g.moveTo(guard.pos.x, guard.pos.y).lineTo(x, y).stroke({ width: 1, color: 0x66ccff, alpha: 0.6 });
+                g.circle(x,y,4).stroke({ width: 1, color: 0x66ccff });
+                g.circle(leader.pos.x, leader.pos.y, (contentManager.getEntityType(leader.entity_type_id ?? "")?.hull_radius ?? 10) + 5)
+                  .stroke({ width: 1, color: 0x66ccff });
+                waypointContainer.addChild(g);
+              }
+              continue;
+            }
             if (active?.kind === "sentry") {
               if (renderedSentryRoots.has(active.clientCmdId)) continue;
               renderedSentryRoots.add(active.clientCmdId);
@@ -1302,6 +1326,19 @@ export default function GameStage() {
           setSelectedAction(null);
         };
 
+        const dispatchEscort = (targetId: string) => {
+          const sel = latestSelectorsRef.current;
+          const leader = findLiveEntityById(targetId);
+          if (!leader || leader.remembered || leader.health <= 0 || leader.owner_player_id !== myPlayerIdRef.current
+            || (contentManager.getEntityType(leader.entity_type_id ?? "")?.speed ?? 0) <= 0
+            || sel.selectedEntities.includes(targetId)) {
+            window.dispatchEvent(new CustomEvent("bitwars:command-feedback", { detail: "Choose another owned mobile ship to escort." }));
+            return;
+          }
+          intentQueue.handleEscortCommand(sel.selectedEntities.map(Number), Number(targetId));
+          setSelectedAction(null);
+        };
+
         const dispatchRepair = (targetId: string) => {
           const sel = latestSelectorsRef.current;
           const target = findLiveEntityById(targetId);
@@ -1409,6 +1446,7 @@ export default function GameStage() {
             const press = entityPress;
             entityPress = null;
             if (press) {
+              if (latestSelectorsRef.current.selectedAction === "Escort") { dispatchEscort(press.id); return; }
               if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
                 dispatchDeliver(press.id);
                 return;
@@ -1422,7 +1460,7 @@ export default function GameStage() {
             }
             if ((latestSelectorsRef.current.selectedAction === 'Move' || latestSelectorsRef.current.selectedAction === 'Convoy' || latestSelectorsRef.current.selectedAction === 'Sentry')) dispatchMove(ev.global, false, false);
             else if (latestSelectorsRef.current.selectedAction === "Repair" || (latestSelectorsRef.current.selectedAction && typeof latestSelectorsRef.current.selectedAction === "object")) setSelectedAction(null);
-            else setSelection([]);
+            else if (latestSelectorsRef.current.selectedAction !== "Escort") setSelection([]);
             return;
           }
           const drag = selectionDrag;
@@ -1438,6 +1476,7 @@ export default function GameStage() {
           const height = Math.abs(endY - drag.startY);
           if (width < SELECTION_DRAG_THRESHOLD_PX && height < SELECTION_DRAG_THRESHOLD_PX) {
             if (press) {
+              if (latestSelectorsRef.current.selectedAction === "Escort") { dispatchEscort(press.id); return; }
               if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
                 dispatchDeliver(press.id);
                 return;
@@ -1453,6 +1492,7 @@ export default function GameStage() {
               setSelectedAction(null);
               return;
             }
+            if (latestSelectorsRef.current.selectedAction === "Escort") return;
             if (drag.moveMode) dispatchMove(ev.global, drag.shift, drag.ctrl);
             if (!drag.shift) setSelection([]);
             return;

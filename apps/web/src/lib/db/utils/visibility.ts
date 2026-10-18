@@ -27,12 +27,15 @@ type SnapshotPayload = {
   collector_states?: Array<{ entity_id: number | string }>;
   combat_effect_states?: Array<{ entity_id: number | string }>;
   convoys?: Array<{ player_id: string }>;
+  escort_orders?: Array<{ player_id: string }>;
   sentry_orders?: Array<{ player_id: string }>;
   move_orders?: Array<{ player_id: string }>;
   player_technologies?: Array<{ player_id: string; technology_ids: string[] }>;
 };
 
 type DeltaPayload = {
+  escort_order_updates?: Array<{ player_id: string }>;
+  escort_order_removals?: Array<{ player_id: string }>;
   sentry_order_updates?: Array<{ player_id: string }>;
   sentry_order_removals?: Array<{ player_id: string }>;
   move_order_updates?: Array<{ player_id: string }>;
@@ -77,6 +80,7 @@ export class VisibilityFilter {
       ...snapshot,
       entities: snapshot.entities.filter((entity) => this.visible.has(idOf(entity.id))).map((entity) => forClient(entity, this.playerId, this.withinSensors.has(idOf(entity.id)))),
       convoys: snapshot.convoys?.filter((order) => order.player_id === this.playerId),
+      escort_orders: snapshot.escort_orders?.filter((order) => order.player_id === this.playerId),
       sentry_orders: snapshot.sentry_orders?.filter((order) => order.player_id === this.playerId),
       move_orders: snapshot.move_orders?.filter((order) => order.player_id === this.playerId),
       player_ledgers: snapshot.player_ledgers?.filter((ledger) => ledger.player_id === this.playerId),
@@ -127,11 +131,13 @@ export class VisibilityFilter {
 
     const collector_state_updates = delta.collector_state_updates?.filter((state) => nowVisible.has(idOf(state.entity_id)));
     const combat_effect_state_updates = delta.combat_effect_state_updates?.filter((state) => nowVisible.has(idOf(state.entity_id)));
+    const escort_order_updates = delta.escort_order_updates?.filter((order) => order.player_id === this.playerId);
+    const escort_order_removals = delta.escort_order_removals?.filter((order) => order.player_id === this.playerId);
     const sentry_order_updates = delta.sentry_order_updates?.filter((order) => order.player_id === this.playerId);
     const sentry_order_removals = delta.sentry_order_removals?.filter((order) => order.player_id === this.playerId);
     const move_order_updates = delta.move_order_updates?.filter((order) => order.player_id === this.playerId);
     const move_order_removals = delta.move_order_removals?.filter((order) => order.player_id === this.playerId);
-    if (updates.length === 0 && removed.length === 0 && hidden.length === 0 && !collector_state_updates?.length && !combat_effect_state_updates?.length && !move_order_updates?.length && !move_order_removals?.length && !sentry_order_updates?.length && !sentry_order_removals?.length) return undefined;
+    if (updates.length === 0 && removed.length === 0 && hidden.length === 0 && !collector_state_updates?.length && !combat_effect_state_updates?.length && !move_order_updates?.length && !move_order_removals?.length && !sentry_order_updates?.length && !sentry_order_removals?.length && !escort_order_updates?.length && !escort_order_removals?.length) return undefined;
     return {
       ...delta,
       removed_entity_ids: removed,
@@ -139,6 +145,8 @@ export class VisibilityFilter {
       updates,
       collector_state_updates,
       combat_effect_state_updates,
+      escort_order_updates,
+      escort_order_removals,
       sentry_order_updates,
       sentry_order_removals,
       move_order_updates,

@@ -416,6 +416,7 @@ impl RedisClient {
         convoys: Vec<pb::ConvoyOrderState>,
         move_orders: Vec<pb::MoveOrderState>,
         sentry_orders: Vec<pb::SentryOrderState>,
+        escort_orders: Vec<pb::EscortOrderState>,
     ) -> anyhow::Result<()> {
         let mut inventory_totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
         for entity in &state.entities {
@@ -469,6 +470,7 @@ impl RedisClient {
             convoys,
             move_orders,
             sentry_orders,
+            escort_orders,
             tick: state.tick as i64,
             entities: state.entities.clone(),
             player_ledgers,
@@ -605,7 +607,7 @@ impl RedisClient {
         // Keep the events stream: existing SSE readers need the world-reset marker.
         let keys = vec![self.intents_stream(), self.gameplay_events_stream(), self.snapshots_stream(),
             self.build_progress_snapshot_key(),
-            self.player_seq_key(), self.sentry_orders_key(), self.active_intents_key(), self.pending_joins_key(),
+            self.player_seq_key(), self.sentry_orders_key(), self.escort_orders_key(), self.active_intents_key(), self.pending_joins_key(),
             self.pending_raider_spawns_key(), self.join_requested_key(), self.legacy_collector_state_key()];
         let _: () = redis::cmd("DEL").arg(keys).query_async(&mut self.conn).await?;
         let dedupe: Vec<String> = redis::cmd("KEYS").arg(format!("rts:match:{}:dedupe:*", self.game_id)).query_async(&mut self.conn).await?;
@@ -707,7 +709,7 @@ impl RedisClient {
             self.snapshot_meta_key(),
             self.player_seq_key(),
             self.active_intents_key(),
-            self.sentry_orders_key(),
+            self.sentry_orders_key(), self.escort_orders_key(),
             self.pending_joins_key(),
             self.pending_raider_spawns_key(),
             self.join_requested_key(),
@@ -747,7 +749,7 @@ impl RedisClient {
     /// Returns state, boundary stream ID, and collector state or None if absent.
     pub async fn read_latest_snapshot(
         &mut self,
-    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>, Vec<pb::SentryOrderState>)>> {
+    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>, Vec<pb::SentryOrderState>, Vec<pb::EscortOrderState>)>> {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
@@ -774,6 +776,7 @@ impl RedisClient {
         let convoys = snapshot.convoys.clone();
         let move_orders = snapshot.move_orders.clone();
         let sentry_orders = snapshot.sentry_orders.clone();
+        let escort_orders = snapshot.escort_orders.clone();
         let (state, collector_states) = restore_snapshot(snapshot)?;
 
         info!(
@@ -784,7 +787,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary, collector_states, convoys, move_orders, sentry_orders)))
+        Ok(Some((state, boundary, collector_states, convoys, move_orders, sentry_orders, escort_orders)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -899,6 +902,40 @@ impl RedisClient {
             last_client_cmd_id: last_cmd_id.map(format_uuid).unwrap_or_default(),
         });
         let _: () = self.conn.hset(key, field, serde_json::to_string(&entry)?).await?;
+        Ok(())
+    }
+
+    fn escort_orders_key(&self) -> String { format!("rts:match:{}:escorts", self.game_id) }
+
+    pub async fn clear_escort_orders(&mut self) -> anyhow::Result<()> {
+        let _: () = self.conn.del(self.escort_orders_key()).await?;
+        Ok(())
+    }
+
+    pub async fn persist_escort_changes(&mut self, updates: &[pb::EscortOrderState], removed: &[Vec<u8>]) -> anyhow::Result<()> {
+        let root_key = self.escort_orders_key();
+        let active_key = self.active_intents_key();
+        let mut pipe = redis::pipe(); pipe.atomic();
+        for id in removed { pipe.cmd("HDEL").arg(&root_key).arg(format_uuid(id)).ignore(); }
+        for order in updates {
+            let summary = serde_json::json!({
+                "intent_id": format_uuid(&order.intent_id), "client_cmd_id": format_uuid(&order.client_cmd_id),
+                "player_id": order.player_id, "started_tick": order.started_tick, "target_entity_id": order.target_entity_id,
+                "slots": order.slots.iter().map(|slot| serde_json::json!({
+                    "entity_id": slot.entity_id, "slot_index": slot.slot_index, "status": slot.status,
+                    "offset": slot.offset.map(|p| serde_json::json!({"x": p.x, "y": p.y}))
+                })).collect::<Vec<_>>()
+            });
+            pipe.cmd("HSET").arg(&root_key).arg(format_uuid(&order.client_cmd_id)).arg(summary.to_string()).ignore();
+            for slot in &order.slots {
+                let entry = EntityActiveIntent { entity_id: slot.entity_id, intent_id: format_uuid(&order.intent_id),
+                    client_cmd_id: format_uuid(&order.client_cmd_id), player_id: order.player_id.clone(), started_tick: order.started_tick,
+                    intent_kind: "escort".into(), ..Default::default() };
+                pipe.cmd("HSET").arg(&active_key).arg(slot.entity_id).arg(serde_json::to_string(&entry)?).ignore();
+            }
+        }
+        pipe.cmd("PERSIST").arg(&active_key).ignore();
+        let _: () = pipe.query_async(&mut self.conn).await?;
         Ok(())
     }
 

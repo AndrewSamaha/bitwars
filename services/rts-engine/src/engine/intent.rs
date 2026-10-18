@@ -41,6 +41,9 @@ pub struct ActivationOutcome {
 pub struct IntentManager {
     pub(super) current_action: HashMap<u64, ActiveIntent>,
     pub convoys: Vec<pb::ConvoyOrderState>,
+    pub(super) escorts: Vec<pb::EscortOrderState>,
+    pub(super) published_escorts: HashMap<Vec<u8>, pb::EscortOrderState>,
+    pub(super) persisted_escorts: HashMap<Vec<u8>, pb::EscortOrderState>,
     pub(super) sentries: Vec<pb::SentryOrderState>,
     pub(super) published_sentries: HashMap<Vec<u8>, pb::SentryOrderState>,
     pub(super) persisted_sentries: HashMap<Vec<u8>, pb::SentryOrderState>,
@@ -63,6 +66,9 @@ impl IntentManager {
         Self {
             current_action: HashMap::new(),
             convoys: Vec::new(),
+            escorts: Vec::new(),
+            published_escorts: HashMap::new(),
+            persisted_escorts: HashMap::new(),
             sentries: Vec::new(),
             published_sentries: HashMap::new(),
             persisted_sentries: HashMap::new(),
@@ -202,6 +208,7 @@ impl IntentManager {
         let mut members: std::collections::HashSet<u64> = self.convoys.iter()
             .flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)).collect();
         members.extend(self.sentry_member_ids());
+        members.extend(self.escort_member_ids());
         for (eid, active) in self.current_action.iter_mut() {
             if members.contains(eid) {
                 // Convoy positions are advanced as a group after ordinary physics.

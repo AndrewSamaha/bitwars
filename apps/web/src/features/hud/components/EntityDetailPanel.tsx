@@ -195,6 +195,8 @@ export default function EntityDetailPanel() {
       { key: "m", name: "move", enabled: true, value: "Move" },
       ...(selectedEntities.length >= 2 ? [{ key: "v", name: "convoy", enabled: selectedEntities.length <= 256 && selectedEntities.every((id) =>
         (contentManager.getEntityType(idToType.get(id) ?? "")?.speed ?? 0) > 0), value: "Convoy" as const }] : []),
+      { key: "e", name: "escort", value: "Escort", enabled: selectedEntities.length >= 1 && selectedEntities.length <= 256
+        && selectedEntities.every((id) => (contentManager.getEntityType(idToType.get(id) ?? "")?.speed ?? 0) > 0) },
       { key: "p", name: "sentry", value: "Sentry", enabled: selectedEntities.length >= 1 && selectedEntities.length <= 256
         && selectedEntities.every((id) => (contentManager.getEntityType(idToType.get(id) ?? "")?.speed ?? 0) > 0) },
       { key: "d", name: "distance", enabled: selectedEntities.length === 1, value: "Measure" },
@@ -302,7 +304,7 @@ export default function EntityDetailPanel() {
       return;
     }
     // Toggle Move mode selection
-    const action = val === "Sentry" ? "Sentry" : val === "Convoy" ? "Convoy" : "Move";
+    const action = val === "Escort" ? "Escort" : val === "Sentry" ? "Sentry" : val === "Convoy" ? "Convoy" : "Move";
     actions.setSelectedAction(selectedAction === action ? null : action);
   };
 
@@ -589,7 +591,7 @@ export default function EntityDetailPanel() {
                       ? isMeasuring
                       : a.value === "Deliver" || a.value === "Transport"
                       ? deliverySelection?.kind === a.value
-                      : a.value === "Move" || a.value === "Convoy" || a.value === "Sentry"
+                      : a.value === "Escort" || a.value === "Move" || a.value === "Convoy" || a.value === "Sentry"
                       ? selectedAction === a.value
                       : a.value === "Collect"
                         ? collectMenuOpen || isCollectActiveForSelection
