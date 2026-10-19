@@ -22,6 +22,15 @@ command detaches only its target ship. Destruction also removes a member. Existi
 offsets and anchor remain stable; the minimum speed is recalculated. A convoy with
 one remaining member continues to its destination; an empty convoy dissolves.
 
+## Laser fire during movement
+
+Move and Convoy orders allow opportunistic laser fire at hostile targets within
+both acquisition and weapon range. Target choice remains deterministic and uses
+the existing cooldowns and operating-supply checks. Combat does not change the
+route, speed, velocity, formation, or order lifecycle; it never stops or pursues
+a target during these orders. Contact attacks remain suppressed. Sentry and
+Escort retain their existing combat interruption and pursuit behavior.
+
 ## Protocol and storage
 
 Protocol version 14 adds `IntentEnvelope.convoy`, containing `entity_ids` and

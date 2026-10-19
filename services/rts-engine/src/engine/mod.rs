@@ -3085,7 +3085,13 @@ impl Engine {
         let escort_leashes = self.intents.escort_combat_leashes(&self.state);
         let commanded_entity_ids: HashSet<u64> = self.intents.active_intents().keys()
             .filter(|id| !sentry_members.contains(id)).copied().collect();
-        let outcome = self.combat.tick_with_escort_leashes(
+        // Move also represents convoy members. Sentry and escort keep their
+        // existing engagement/pursuit behavior instead of opportunistic fire.
+        let moving_entity_ids: HashSet<u64> = self.intents.active_intents().iter()
+            .filter(|(id, active)| !sentry_members.contains(id)
+                && matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Move(_))))
+            .map(|(id, _)| *id).collect();
+        let outcome = self.combat.tick_with_ordered_movement(
             &mut self.state.entities,
             content,
             self.state.tick,
@@ -3094,6 +3100,7 @@ impl Engine {
             &commands.target_by_entity,
             &commands.scripted_entity_ids,
             &escort_leashes,
+            &moving_entity_ids,
         );
         self.update_combat_effect_states(&outcome.dismantling);
         if outcome.dead_entity_ids.is_empty() {

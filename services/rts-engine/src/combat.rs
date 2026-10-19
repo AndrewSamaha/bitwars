@@ -110,6 +110,17 @@ impl CombatSystem {
         commanded_entity_ids: &HashSet<u64>, scripted_targets: &HashMap<u64, u64>,
         scripted_entity_ids: &HashSet<u64>, leashes: &HashMap<u64, (Vec2, f32)>,
     ) -> CombatTick {
+        self.tick_with_ordered_movement(entities, content, tick, dt, commanded_entity_ids,
+            scripted_targets, scripted_entity_ids, leashes, &HashSet::new())
+    }
+
+    /// Ordered movement owns position and velocity; combat may only fire in-range lasers.
+    pub fn tick_with_ordered_movement(
+        &mut self, entities: &mut [Entity], content: &ContentPack, tick: u64, dt: f32,
+        commanded_entity_ids: &HashSet<u64>, scripted_targets: &HashMap<u64, u64>,
+        scripted_entity_ids: &HashSet<u64>, leashes: &HashMap<u64, (Vec2, f32)>,
+        moving_entity_ids: &HashSet<u64>,
+    ) -> CombatTick {
         if dt <= 0.0 {
             return CombatTick {
                 dead_entity_ids: Vec::new(),
@@ -162,7 +173,7 @@ impl CombatSystem {
             if attacker.owner_player_id.is_empty()
                 || attacker.supply.as_ref().is_some_and(|s| !s.operational)
                 || attacker.health <= 0.0
-                || commanded_entity_ids.contains(&attacker.id)
+                || (commanded_entity_ids.contains(&attacker.id) && !moving_entity_ids.contains(&attacker.id))
             {
                 continue;
             }
@@ -178,6 +189,7 @@ impl CombatSystem {
             let Some(pos) = attacker.pos.as_mut() else {
                 continue;
             };
+            let ordered_movement = moving_entity_ids.contains(&attacker.id);
             let acquisition_sq = profile.acquisition_range.max(0.0).powi(2);
             let target = if scripted_entity_ids.contains(&attacker.id) {
                 scripted_targets
@@ -203,6 +215,10 @@ impl CombatSystem {
                             }
                         }
                         let distance_sq = squared_distance(pos.x, pos.y, candidate.x, candidate.y);
+                        if ordered_movement && select_attack(&profile.attacks, distance_sq,
+                            definition.hull_radius.max(0.0), candidate.hull_radius, true).is_none() {
+                            return None;
+                        }
                         (distance_sq <= acquisition_sq).then_some((distance_sq, candidate))
                     })
                     .min_by(|(distance_a, target_a), (distance_b, target_b)| {
@@ -217,6 +233,7 @@ impl CombatSystem {
                 // Neutrals have no player-issued movement to preserve. Player
                 // units resume their current intent after hostiles leave range.
                 if is_system_owner(&attacker.owner_player_id)
+                    && !ordered_movement
                     && !scripted_entity_ids.contains(&attacker.id)
                 {
                     zero_velocity(attacker);
@@ -234,36 +251,39 @@ impl CombatSystem {
                 .iter()
                 .map(|attack| attack_range(attack, attacker_hull_radius, target.hull_radius))
                 .fold(0.0_f32, f32::max);
-            match profile.on_near_enemy_strategy {
-                NearEnemyStrategy::Flee => {
-                    if distance_sq > f32::EPSILON {
-                        let distance = distance_sq.sqrt();
-                        let speed = content
-                            .get(&attacker.entity_type_id)
-                            .map(|definition| definition.speed.max(0.0))
-                            .unwrap_or(0.0);
-                        let velocity = attacker.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
-                        velocity.x = -dx / distance * speed;
-                        velocity.y = -dy / distance * speed;
-                    } else {
-                        zero_velocity(attacker);
+            if !ordered_movement {
+                match profile.on_near_enemy_strategy {
+                    NearEnemyStrategy::Flee => {
+                        if distance_sq > f32::EPSILON {
+                            let distance = distance_sq.sqrt();
+                            let speed = content
+                                .get(&attacker.entity_type_id)
+                                .map(|definition| definition.speed.max(0.0))
+                                .unwrap_or(0.0);
+                            let velocity = attacker.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
+                            velocity.x = -dx / distance * speed;
+                            velocity.y = -dy / distance * speed;
+                        } else {
+                            zero_velocity(attacker);
+                        }
+                        continue;
                     }
-                    continue;
+                    NearEnemyStrategy::Stay if distance_sq > max_range * max_range => {
+                        zero_velocity(attacker);
+                        continue;
+                    }
+                    NearEnemyStrategy::Approach | NearEnemyStrategy::Stay => {}
                 }
-                NearEnemyStrategy::Stay if distance_sq > max_range * max_range => {
-                    zero_velocity(attacker);
-                    continue;
-                }
-                NearEnemyStrategy::Approach | NearEnemyStrategy::Stay => {}
             }
             if let Some(attack) = select_attack(
                 &profile.attacks,
                 distance_sq,
                 attacker_hull_radius,
                 target.hull_radius,
+                ordered_movement,
             ) {
                 let origin = Vec2 { x: pos.x, y: pos.y };
-                zero_velocity(attacker);
+                if !ordered_movement { zero_velocity(attacker); }
                 let next_tick = self
                     .next_attack_tick
                     .get(&(attacker.id, attack.id.clone()))
@@ -318,6 +338,7 @@ impl CombatSystem {
                 continue;
             }
 
+            if ordered_movement { continue; }
             let distance = distance_sq.sqrt();
             let direction_x = dx / distance;
             let direction_y = dy / distance;
@@ -392,9 +413,11 @@ fn select_attack<'a>(
     distance_sq: f32,
     attacker_hull_radius: f32,
     target_hull_radius: f32,
+    laser_only: bool,
 ) -> Option<&'a AttackDef> {
     attacks
         .iter()
+        .filter(|attack| !laser_only || attack.attack_type == AttackType::Laser)
         .filter(|attack| {
             distance_sq <= attack_range(attack, attacker_hull_radius, target_hull_radius).powi(2)
         })
@@ -750,6 +773,101 @@ mod tests {
 
         assert!(result.laser_shots.is_empty());
         assert_eq!(entities[0].vel, Some(Vec2 { x: -10.0, y: 0.0 }));
+    }
+
+    fn moving_tick(combat: &mut CombatSystem, entities: &mut [Entity], pack: &ContentPack, tick: u64) -> CombatTick {
+        combat.tick_with_ordered_movement(entities, pack, tick, 1.0,
+            &HashSet::from([1]), &HashMap::new(), &HashSet::new(), &HashMap::new(), &HashSet::from([1]))
+    }
+
+    #[test]
+    fn ordered_movement_fires_lasers_without_stopping_and_keeps_cooldowns() {
+        let pack = content();
+        let mut entities = vec![entity(1, "raider", "me", 0.0, 20.0), entity(2, "worker", "enemy", 5.0, 100.0)];
+        entities[0].vel = Some(Vec2 { x: 0.0, y: 10.0 });
+        let before = entities[0].clone();
+        let mut combat = CombatSystem::default();
+        assert_eq!(moving_tick(&mut combat, &mut entities, &pack, 0).laser_shots.len(), 1);
+        assert_eq!(entities[1].health, 94.0);
+        assert_eq!(entities[0], before);
+        assert!(moving_tick(&mut combat, &mut entities, &pack, 1).laser_shots.is_empty());
+        assert_eq!(entities[0], before);
+        // Finishing/replacing Move cannot reset the weapon cooldown.
+        assert_eq!(combat.tick(&mut entities, &pack, 2, 1.0).laser_shots.len(), 1);
+        entities[0].vel = before.vel;
+        assert!(moving_tick(&mut combat, &mut entities, &pack, 3).laser_shots.is_empty());
+        assert_eq!(moving_tick(&mut combat, &mut entities, &pack, 4).laser_shots.len(), 1);
+        assert_eq!(entities[0], before);
+    }
+
+    #[test]
+    fn ordered_movement_never_pursues_or_flees_and_only_acquires_in_range_hostiles() {
+        for strategy in [NearEnemyStrategy::Approach, NearEnemyStrategy::Stay, NearEnemyStrategy::Flee] {
+            let mut pack = content();
+            pack.entity_types.get_mut("raider").unwrap().combat.as_mut().unwrap().on_near_enemy_strategy = strategy;
+            let mut entities = vec![entity(1, "raider", "me", 0.0, 20.0),
+                entity(2, "worker", "enemy", 20.0, 100.0), entity(3, "worker", "me", 1.0, 100.0)];
+            entities[0].vel = Some(Vec2 { x: -3.0, y: 7.0 });
+            let before = entities[0].clone();
+            let mut combat = CombatSystem::default();
+            let result = moving_tick(&mut combat, &mut entities, &pack, 0);
+            assert!(result.laser_shots.is_empty());
+            assert!(result.engagements.is_empty());
+            assert_eq!(entities[0], before);
+            entities[1].pos.as_mut().unwrap().x = 10.0;
+            let result = moving_tick(&mut combat, &mut entities, &pack, 1);
+            assert_eq!(result.laser_shots[0].target_id, 2);
+            assert_eq!(entities[2].health, 100.0);
+            assert_eq!(entities[0], before);
+        }
+    }
+
+    #[test]
+    fn ordered_movement_ignores_contact_attacks_and_requires_operating_supply() {
+        let mut pack = content();
+        let profile = pack.entity_types.get_mut("raider").unwrap().combat.as_mut().unwrap();
+        let mut contact = profile.attacks[0].clone();
+        contact.id = "dismantle".into(); contact.attack_type = AttackType::Dismantle;
+        contact.priority = 100; contact.contact_tolerance = 10.0;
+        profile.attacks.push(contact);
+        let mut entities = vec![entity(1, "raider", "me", 0.0, 20.0), entity(2, "worker", "enemy", 5.0, 100.0)];
+        entities[0].vel = Some(Vec2 { x: 0.0, y: 10.0 });
+        let mut combat = CombatSystem::default();
+        let result = moving_tick(&mut combat, &mut entities, &pack, 0);
+        assert_eq!(result.laser_shots.len(), 1);
+        assert!(result.dismantling.is_empty());
+        pack.entity_types.get_mut("raider").unwrap().combat.as_mut().unwrap().attacks.remove(0);
+        assert!(moving_tick(&mut combat, &mut entities, &pack, 2).dismantling.is_empty());
+        let before = entities[0].clone();
+        pack = content();
+        entities[0].supply = Some(crate::pb::DepotSupply { operational: false, ..Default::default() });
+        assert!(moving_tick(&mut combat, &mut entities, &pack, 4).laser_shots.is_empty());
+        assert_eq!(entities[0].vel, before.vel);
+    }
+
+    #[test]
+    fn move_route_advances_while_firing() {
+        use crate::engine::{intent::{IntentManager, IntentMetadata}, state::GameState};
+        use crate::pb;
+        let pack = content();
+        let mut manager = IntentManager::new(pack.entity_types.clone(), 0.5, 10.0);
+        manager.try_activate(pb::Intent { kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
+            entity_id: 1, target: Some(Vec2 { x: 0.0, y: 50.0 }), ..Default::default()
+        })) }, IntentMetadata { entity_id: 1, intent_id: vec![1;16], client_cmd_id: vec![2;16],
+            player_id: "me".into(), protocol_version: crate::engine::ENGINE_PROTOCOL_MAJOR,
+            server_tick: 0, policy: pb::IntentPolicy::ReplaceActive }, "raider");
+        let mut state = GameState { tick: 0, technologies: HashMap::new(), entities: vec![
+            entity(1, "raider", "me", 0.0, 20.0), entity(2, "worker", "enemy", 5.0, 100.0)] };
+        assert!(manager.follow_targets(&mut state, 10.0, 0.1).is_empty());
+        let velocity = state.entities[0].vel.unwrap();
+        let mut combat = CombatSystem::default();
+        assert_eq!(moving_tick(&mut combat, &mut state.entities, &pack, 0).laser_shots.len(), 1);
+        assert_eq!(state.entities[0].vel.unwrap(), velocity);
+        let config = crate::config::GameConfig { friction: 0.0, ..Default::default() };
+        crate::physics::integrate(&config, &mut state, 0.1);
+        assert!(state.entities[0].pos.unwrap().y > 0.0);
+        assert_eq!(state.entities[0].pos.unwrap().x, 0.0);
+        assert!(manager.active_intents().contains_key(&1));
     }
 
     #[test]
