@@ -67,6 +67,7 @@ export const mapDeltaToJson = (d: Delta) => ({
       ...(uAny.health !== undefined ? { health: uAny.health } : {}),
       ...(u.damageType ? { damage_type: u.damageType } : {}),
       ...(u.resourceDeposit ? { resource_deposit: { amount: u.resourceDeposit.amount, remaining: u.resourceDeposit.remaining } } : {}),
+      ...(u.supply ? { supply: { depot_id: biToNumOrStr(u.supply.depotId), missing_resources: u.supply.missingResources, operational: u.supply.operational, waiting_for: u.supply.waitingFor } } : {}),
       ...(u.resources ? { resources: u.resources.resources.map((r) => ({ resource_type: r.resourceType, amount: r.amount })) } : {}),
     };
   }),
@@ -99,6 +100,7 @@ export const mapEntityToJson = (e: Entity) => {
     ...(eAny.ownerPlayerId !== undefined ? { owner_player_id: eAny.ownerPlayerId } : {}),
     ...(eAny.health !== undefined ? { health: eAny.health } : {}),
     ...(e.resourceDeposit ? { resource_deposit: { amount: e.resourceDeposit.amount, remaining: e.resourceDeposit.remaining } } : {}),
+    ...(e.supply ? { supply: { depot_id: biToNumOrStr(e.supply.depotId), missing_resources: e.supply.missingResources, operational: e.supply.operational, waiting_for: e.supply.waitingFor } } : {}),
     ...(e.resources ? { resources: e.resources.resources.map((r) => ({ resource_type: r.resourceType, amount: r.amount })) } : {}),
   };
 };

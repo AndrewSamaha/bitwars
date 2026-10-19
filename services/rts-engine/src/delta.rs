@@ -35,6 +35,7 @@ pub fn compute_delta(
             resource_deposit: None,
             resources: None,
             damage_type: None,
+            supply: None,
         };
 
         if let Some(pe) = prev_by_id.get(&ce.id) {
@@ -52,6 +53,7 @@ pub fn compute_delta(
                     ed.damage_type = Some("radiation".to_string());
                 }
             }
+            if pe.supply != ce.supply { ed.supply = ce.supply.clone(); }
             if pe.resources != ce.resources {
                 ed.resources = ce.resources.clone();
             }
@@ -92,6 +94,7 @@ pub fn compute_delta(
             } else if radiation_damaged_entities.contains(&ce.id) {
                 ed.damage_type = Some("radiation".to_string());
             }
+            ed.supply = ce.supply.clone();
             ed.resources = ce.resources.clone();
             ed.resource_deposit = ce.resource_deposit.clone();
         }
@@ -102,6 +105,7 @@ pub fn compute_delta(
             || ed.owner_player_id.is_some()
             || ed.entity_type_id.is_some()
             || ed.health.is_some()
+            || ed.supply.is_some()
             || ed.resources.is_some()
             || ed.resource_deposit.is_some()
         {
@@ -179,6 +183,7 @@ mod tests {
 
     fn entity(id: u64) -> Entity {
         Entity {
+            supply: None,
             resource_deposit: None,
             resources: None,
             id,

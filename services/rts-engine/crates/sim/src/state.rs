@@ -28,6 +28,8 @@ pub struct SerializableEntity {
     pub resources: BTreeMap<String, f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_deposit: Option<SerializableDeposit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supply: Option<SerializableSupply>,
     pub id: u64,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub entity_type_id: String,
@@ -44,6 +46,18 @@ pub struct SerializableDeposit {
     pub remaining: f64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SerializableSupply {
+    pub depot_id: u64,
+    pub missing_resources: Vec<String>,
+    pub operational: bool,
+    pub waiting_for: String,
+    #[serde(default)]
+    pub paid_intent_id: Vec<u8>,
+    #[serde(default)]
+    pub construction_progress: f32,
+}
+
 /// Serializable version of Vec2 for JSON serialization
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct SerializableVec2 {
@@ -54,6 +68,7 @@ pub struct SerializableVec2 {
 impl From<&Entity> for SerializableEntity {
     fn from(entity: &Entity) -> Self {
         Self {
+            supply: entity.supply.as_ref().map(|s| SerializableSupply { depot_id: s.depot_id, missing_resources: s.missing_resources.clone(), operational: s.operational, waiting_for: s.waiting_for.clone(), paid_intent_id: s.paid_intent_id.clone(), construction_progress: s.construction_progress }),
             id: entity.id,
             owner_player_id: entity.owner_player_id.clone(),
             resources: entity.resources.as_ref().map(|inventory| inventory.resources.iter()
@@ -71,6 +86,7 @@ impl From<&Entity> for SerializableEntity {
 impl From<&SerializableEntity> for Entity {
     fn from(entity: &SerializableEntity) -> Self {
         Self {
+            supply: entity.supply.as_ref().map(|s| crate::pb::DepotSupply { depot_id: s.depot_id, missing_resources: s.missing_resources.clone(), operational: s.operational, waiting_for: s.waiting_for.clone(), paid_intent_id: s.paid_intent_id.clone(), construction_progress: s.construction_progress }),
             id: entity.id,
             owner_player_id: entity.owner_player_id.clone(),
             resources: (!entity.resources.is_empty()).then(|| ResourceInventory { resources: entity.resources.iter()

@@ -1,3 +1,5 @@
+# Depot logistics: former consumer stock is held in physical depots.
+
 version: 1
 id: bookmark-test
 name: bookmark-test
@@ -40,9 +42,9 @@ entities:
     y: 68908.234
   health: 400.0
   resources:
-    energy: 3022.4194968268275
-    food: 657.0
-    minerals: 270.0
+    energy: 3124.033571764827
+    food: 657
+    minerals: 270
 - id: 478
   entity_type: scout
   owner: player1
@@ -50,8 +52,7 @@ entities:
     x: -91698.086
     y: 70882.12
   health: 60.0
-  resources:
-    energy: 100.0
+  resources: {}
 - id: 479
   entity_type: worker
   owner: player1
@@ -89,8 +90,7 @@ entities:
     x: -91023.41
     y: 68241.46
   health: 100.0
-  resources:
-    energy: 0.8621382713317871
+  resources: {}
 - id: 486
   entity_type: worker
   owner: player1
@@ -119,8 +119,7 @@ entities:
     x: -90794.65
     y: 67351.54
   health: 100.0
-  resources:
-    energy: 0.4246422052383423
+  resources: {}
 - id: 489
   entity_type: worker
   owner: player1
@@ -148,8 +147,7 @@ entities:
     x: -91061.78
     y: 66557.46
   health: 100.0
-  resources:
-    energy: 0.24696063995361328
+  resources: {}
 - id: 493
   entity_type: worker
   owner: player1
@@ -167,6 +165,5 @@ entities:
     x: -92024.45
     y: 66083.11
   health: 100.0
-  resources:
-    energy: 0.08033382147550583
+  resources: {}
 captured_tick: 47085

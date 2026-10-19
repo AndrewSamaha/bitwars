@@ -37,18 +37,22 @@ pub struct EntityTypeDef {
     pub mass: f32,
     /// Hull hit points before the entity is destroyed.
     pub health: f32,
-    /// Maximum local inventory by resource type, shared by collection, shipments and upkeep.
-    /// Required for every entity type. Each resource has its own limit; there is no shared cargo quota.
+    /// Per-resource physical depot stock or carrier cargo capacity. Ordinary consumers may omit this.
+    #[serde(default)]
     pub max_capacity: HashMap<String, f32>,
-    /// Per-resource upkeep buffers in the shared inventory. Automatic supply tops up only to this stock;
-    /// sharing, delivery and transport loading retain it. Upkeep and explicit action costs may consume it.
-    /// Each entry requires a known resource with positive max_capacity and 0 <= reserve <= capacity.
-    /// Omitted entries use one minute of upkeep (at least one whole unit, capped at capacity) for automatic operating supply.
-    /// This is entity-type configuration, not another resource balance.
+    /// Enables a physical stockpile that nearby friendly consumers may spend from.
+    #[serde(default)]
+    pub depot: bool,
+    /// Service radius; required and positive when depot is true. Never links depot inventories.
+    #[serde(default)]
+    pub depot_range: f32,
+    /// DEPRECATED: ignored by depot logistics. Cargo has no protected upkeep reserve.
+    #[schemars(extend("deprecated" = true))]
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub resource_reserves: HashMap<String, f64>,
-    /// Supplies operating buffers before bulk stock to nearby same-owner entities.
-    #[serde(default)]
+    /// DEPRECATED: ignored. Configure depot and depot_range; ship stock between depots.
+    #[schemars(extend("deprecated" = true))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_sharing: Option<ResourceSharingDef>,
     /// Physical hull radius in world units used by contact attacks. Defaults to 0.
     /// Independent of visual scale and movement-order stop radius.
@@ -80,8 +84,9 @@ pub struct EntityTypeDef {
     /// Optional resource source that collectors can gather from.
     #[serde(default)]
     pub resource_node: Option<ResourceNodeDef>,
-    /// Optional drop-off point for resources carried by transport collectors.
-    #[serde(default)]
+    /// DEPRECATED: ignored. Depot status and positive max_capacity define collection drop-offs.
+    #[schemars(extend("deprecated" = true))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refinery: Option<RefineryDef>,
     /// Environmental hazard emitters attached to this entity type.
     #[serde(default)]
@@ -89,14 +94,14 @@ pub struct EntityTypeDef {
     /// Shielding keyed by radiation type ID. Missing types use zero distance offset and a damage multiplier of 1.
     #[serde(default)]
     pub radiation_shielding: HashMap<String, RadiationShieldingDef>,
-    /// Total construction or upgrade cost, keyed by resource ID. Spent progressively at the producer's spend_rates; omitted means no cost.
+    /// Total construction or upgrade cost, paid upfront from one depot or remote carrier cargo.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub build_cost: HashMap<String, f32>,
     /// Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.
-    /// Charged to the entity inventory while active; balances stop at zero without accruing debt. Omitted means free upkeep.
+    /// Paid atomically from the associated depot. Shortage pauses powered capabilities without damage or debt.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub maintenance_cost_per_minute: HashMap<String, f32>,
-    /// Optional area sensor. Its operating costs are charged continuously.
+    /// Optional area sensor. Its depot-paid operating costs are charged continuously; unpaid sensors pause.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sensor: Option<SensorDef>,
     /// Distance in world units at which this entity can be detected from an owned sensor source.
@@ -121,35 +126,37 @@ pub struct EntityTypeDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceSharingDef {
-    /// Maximum distance for outgoing resource sharing and wireless receipt.
+    /// DEPRECATED: retained for legacy content decoding; ignored by depot logistics.
+    #[schemars(extend("deprecated" = true))]
     pub range: f32,
-    /// Resource types this entity can receive wirelessly from nearby collectors.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// DEPRECATED: retained for legacy content decoding; ignored by depot logistics.
+    #[schemars(extend("deprecated" = true))]
     pub wireless_receives: Vec<String>,
-    /// Optional per-resource receiving targets, bulk priorities and outgoing reserves.
-    /// Automatic sharing supplies operating buffers first, before upkeep is charged.
-    /// Bulk donations protect the donor's receiving target and go only to strictly higher effective receiving priorities.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    /// DEPRECATED: retained for legacy content decoding; ignored by depot logistics.
+    #[schemars(extend("deprecated" = true))]
     pub resources: HashMap<String, ResourceSharingPolicy>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceSharingPolicy {
-    /// Higher priorities receive bulk supply first; distance then entity ID break ties.
-    /// Bulk sharing requires higher effective priority than the donor. Operating buffers are supplied first regardless of priority.
+    /// DEPRECATED: retained for legacy content decoding; ignored by depot logistics.
+    #[schemars(extend("deprecated" = true))]
     pub priority: i32,
-    /// Optional priority for accepting surplus up to max_capacity when not actively refilling. Omitted means no overflow requests.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// DEPRECATED: retained for legacy content decoding; ignored by depot logistics.
+    #[schemars(extend("deprecated" = true))]
     pub overflow_priority: Option<i32>,
-    /// Start requesting below this stock; keep requesting until fill_to is reached. Must be between zero and fill_to.
-    /// Also the donor's minimum retained stock for bulk sharing when not actively refilling.
+    /// DEPRECATED: retained for legacy content decoding; ignored by depot logistics.
+    #[schemars(extend("deprecated" = true))]
     pub refill_below: f64,
-    /// Stop refilling at this stock. Must not exceed this resource's max_capacity.
-    /// Retained by bulk donors while actively refilling; operating supply may draw below it.
+    /// DEPRECATED: retained for legacy content decoding; ignored by depot logistics.
+    #[schemars(extend("deprecated" = true))]
     pub fill_to: f64,
-    /// Keep this stock when sharing outward, in addition to protecting accrued upkeep and the operating buffer. Must be between zero and max_capacity.
-    /// Bulk sharing also protects the donor's own refill target.
+    /// DEPRECATED: retained for legacy content decoding; ignored by depot logistics.
+    #[schemars(extend("deprecated" = true))]
     pub reserve: f64,
 }
 
@@ -318,23 +325,30 @@ pub enum NearEnemyStrategy {
 pub struct BuildOptionDef {
     /// ID of the entity type this entity can build.
     pub entity_type_id: String,
-    /// Resource units spent per second, keyed by resource ID, toward the target's build_cost. Missing rates default to 1/s.
+    /// DEPRECATED: legacy build-time fallback only. Use duration_seconds; construction is paid upfront.
+    #[schemars(extend("deprecated" = true))]
     #[serde(default)]
     pub spend_rates: HashMap<String, f32>,
+    /// Seconds to construct/upgrade after upfront payment. Required for new content.
+    #[serde(default)]
+    pub duration_seconds: Option<f32>,
 }
 
 /// One content-defined in-place transformation available to an entity.
 ///
-/// The target type's `build_cost` supplies the resource cost. A missing
-/// required resource rate defaults to 1/s, matching production builds.
+/// The target type's build_cost is paid upfront; duration_seconds controls progress.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpgradeOptionDef {
     /// ID of the entity type this entity transforms into.
     pub entity_type_id: String,
-    /// Resource units spent per second, keyed by resource ID. Uses the target type's build_cost; missing rates default to 1/s.
+    /// DEPRECATED: legacy upgrade-time fallback only. Use duration_seconds; upgrades are paid upfront.
+    #[schemars(extend("deprecated" = true))]
     #[serde(default)]
     pub spend_rates: HashMap<String, f32>,
+    /// Seconds to construct/upgrade after upfront payment. Required for new content.
+    #[serde(default)]
+    pub duration_seconds: Option<f32>,
 }
 
 /// Client-only sprite presentation settings.
@@ -446,8 +460,8 @@ pub struct CollectorDef {
     /// Units/second gathered in proximity mode while in effective band.
     #[serde(default = "default_proximity_rate_per_second")]
     pub proximity_rate_per_second: f32,
-    /// Optional allowed refinery entity type ids for transport deposits.
-    /// Empty means any refinery that accepts the resource.
+    /// DEPRECATED: ignored. Collectors deliver to any compatible same-owner depot.
+    #[schemars(extend("deprecated" = true))]
     #[serde(default)]
     pub deposit_entity_types: Vec<String>,
     /// Optional same-owner spacing required before proximity collection credits resources.
@@ -493,7 +507,8 @@ pub struct ResourceNodeDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RefineryDef {
-    /// Resource type ids this structure accepts for deposit.
+    /// DEPRECATED: ignored. Positive depot max_capacity entries define accepted resources.
+    #[schemars(extend("deprecated" = true))]
     #[serde(default)]
     pub accepts: Vec<String>,
 }
@@ -633,6 +648,17 @@ fn validate_resource_content(
     resource_types: &HashMap<String, ResourceTypeDef>,
 ) -> Result<()> {
     for (id, def) in entity_types {
+        if !def.depot_range.is_finite() || def.depot_range < 0.0 || (def.depot && def.depot_range <= 0.0) {
+            anyhow::bail!("entity type {id} depot requires a positive finite depot_range");
+        }
+        if def.max_capacity.keys().any(|resource| !resource_types.contains_key(resource)) {
+            anyhow::bail!("entity type {id} max_capacity contains an unknown resource");
+        }
+        for duration in def.builds.iter().map(|o| o.duration_seconds).chain(def.upgrades.iter().map(|o| o.duration_seconds)) {
+            if duration.is_some_and(|d| !d.is_finite() || d <= 0.0) {
+                anyhow::bail!("entity type {id} duration_seconds must be positive and finite");
+            }
+        }
         if def.max_capacity.values().any(|capacity| !capacity.is_finite() || *capacity < 0.0) {
             anyhow::bail!("entity type {id} has an invalid max_capacity");
         }
@@ -884,13 +910,14 @@ mod tests {
         let mut def = content.get("habitat").unwrap().clone();
         for (refill_below, fill_to, reserve) in [(-1.0, 900.0, 900.0), (901.0, 900.0, 900.0),
             (700.0, 1001.0, 900.0), (700.0, 900.0, -1.0), (700.0, 900.0, 1001.0), (f64::NAN, 900.0, 900.0)] {
-            def.resource_sharing.as_mut().unwrap().resources.insert("energy".into(), ResourceSharingPolicy {
+            def.resource_sharing.get_or_insert_with(|| ResourceSharingDef { range: 1000.0, wireless_receives: Vec::new(), resources: HashMap::new() }).resources.insert("energy".into(), ResourceSharingPolicy {
                 priority: 10, overflow_priority: None, refill_below, fill_to, reserve,
             });
             assert!(validate_resource_content(&HashMap::from([("habitat".into(), def.clone())]), &content.resource_types).is_err());
         }
-        def = content.get("habitat").unwrap().clone();
         let policy = def.resource_sharing.as_mut().unwrap().resources.remove("energy").unwrap();
+        def = content.get("habitat").unwrap().clone();
+        def.resource_sharing = Some(ResourceSharingDef { range: 1000.0, wireless_receives: Vec::new(), resources: HashMap::new() });
         def.resource_sharing.as_mut().unwrap().resources.insert("unknown".into(), policy);
         assert!(validate_resource_content(&HashMap::from([("habitat".into(), def)]), &content.resource_types).is_err());
     }
@@ -918,6 +945,8 @@ mod tests {
             EntityTypeDef {
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
+                depot: false,
+                depot_range: 0.0,
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
@@ -951,6 +980,8 @@ mod tests {
             EntityTypeDef {
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
+                depot: false,
+                depot_range: 0.0,
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
@@ -996,6 +1027,8 @@ mod tests {
             EntityTypeDef {
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
+                depot: false,
+                depot_range: 0.0,
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
@@ -1029,6 +1062,8 @@ mod tests {
             EntityTypeDef {
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
+                depot: false,
+                depot_range: 0.0,
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
@@ -1064,6 +1099,8 @@ mod tests {
             EntityTypeDef {
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
+                depot: false,
+                depot_range: 0.0,
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
@@ -1097,6 +1134,8 @@ mod tests {
             EntityTypeDef {
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
+                depot: false,
+                depot_range: 0.0,
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,

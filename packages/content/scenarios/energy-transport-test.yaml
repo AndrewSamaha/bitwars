@@ -1,3 +1,5 @@
+# Depot logistics: former consumer stock is held in physical depots.
+
 version: 1
 id: energy-transport-test
 name: energy-transport-test
@@ -40,9 +42,9 @@ entities:
     y: 68908.234
   health: 400.0
   resources:
-    energy: 4599.3702923208475
-    food: 4633.0
-    minerals: 1440.0
+    energy: 5601.967546954751
+    food: 4633
+    minerals: 1440
 - id: 478
   entity_type: scout
   owner: player1
@@ -50,8 +52,7 @@ entities:
     x: -91698.086
     y: 70882.12
   health: 60.0
-  resources:
-    energy: 100.0
+  resources: {}
 - id: 479
   entity_type: worker
   owner: player1
@@ -89,8 +90,7 @@ entities:
     x: -91023.41
     y: 68241.46
   health: 100.0
-  resources:
-    energy: 0.35793793201446533
+  resources: {}
 - id: 486
   entity_type: worker
   owner: player1
@@ -118,8 +118,7 @@ entities:
     x: -90794.65
     y: 67351.54
   health: 100.0
-  resources:
-    energy: 0.9204355478286743
+  resources: {}
 - id: 489
   entity_type: worker
   owner: player1
@@ -148,8 +147,7 @@ entities:
     x: -91061.78
     y: 66557.46
   health: 100.0
-  resources:
-    energy: 0.7427539825439453
+  resources: {}
 - id: 493
   entity_type: worker
   owner: player1
@@ -167,8 +165,7 @@ entities:
     x: -92024.45
     y: 66083.11
   health: 100.0
-  resources:
-    energy: 0.5761271715164185
+  resources: {}
 - id: 507
   entity_type: worker
   owner: player1
@@ -186,8 +183,7 @@ entities:
     x: -90812.0
     y: 70983.414
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 510
   entity_type: defense_pylon
   owner: player1
@@ -195,8 +191,7 @@ entities:
     x: -91930.11
     y: 65999.09
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 511
   entity_type: factory
   owner: player1
@@ -204,8 +199,7 @@ entities:
     x: -90658.62
     y: 71028.53
   health: 150.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 512
   entity_type: defense_pylon
   owner: player1
@@ -213,8 +207,7 @@ entities:
     x: -90615.95
     y: 70820.07
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 514
   entity_type: military_factory
   owner: player1
@@ -222,8 +215,7 @@ entities:
     x: -90498.87
     y: 70918.88
   health: 150.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 515
   entity_type: processor
   owner: player1
@@ -232,9 +224,9 @@ entities:
     y: 71226.35
   health: 150.0
   resources:
-    energy: 500.0
-    food: 500.0
-    minerals: 350.0
+    energy: 3100
+    food: 500
+    minerals: 350
 - id: 516
   entity_type: defense_pylon
   owner: player1
@@ -242,8 +234,7 @@ entities:
     x: -90509.34
     y: 71091.375
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 517
   entity_type: defense_pylon
   owner: player1
@@ -251,6 +242,5 @@ entities:
     x: -91172.88
     y: 66493.45
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 captured_tick: 172942

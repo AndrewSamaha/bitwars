@@ -17,4 +17,5 @@ message EntityDelta {
   optional ResourceInventory resources = 8; // set when local inventory changes
   optional string damage_type = 9; // e.g. resource_starvation
   optional ResourceDeposit resource_deposit = 10;
+  optional DepotSupply supply = 11;
 }

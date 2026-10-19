@@ -151,6 +151,7 @@ fn snapshot_inventory_is_preserved_and_changes_deterministic_state() {
             id: 718,
             owner_player_id: "andrew".into(),
             resources: Some(ResourceInventory { resources: vec![ResourceAmount { resource_type: "food".into(), amount: 48.0 }] }),
+            supply: None,
             resource_deposit: Some(ResourceDeposit { amount: 100.0, remaining: 55.0 }),
             ..Default::default()
         }],
@@ -172,4 +173,27 @@ fn snapshot_inventory_is_preserved_and_changes_deterministic_state() {
     for _ in 0..10 { first.tick(); second.tick(); }
     assert_eq!(to_sorted_json(&first.state).unwrap(), to_sorted_json(&second.state).unwrap());
     assert_eq!(first.state.entities[0].resources["food"], 98.0);
+}
+
+#[test]
+fn depot_association_and_payment_checkpoint_survive_replay_serialization() {
+    let entity = sim::pb::Entity {
+        id: 1,
+        supply: Some(sim::pb::DepotSupply {
+            depot_id: 2,
+            operational: false,
+            missing_resources: vec!["energy".into()],
+            waiting_for: "operation".into(),
+            paid_intent_id: vec![3; 16],
+            construction_progress: 0.25,
+        }),
+        ..Default::default()
+    };
+    let state = sim::state::WorldState::new(1, vec![entity.clone()]);
+    let saved = to_sorted_json(&state).unwrap();
+    let restored: sim::state::WorldState = serde_json::from_str(&saved).unwrap();
+    assert_eq!(sim::pb::Entity::from(&restored.entities[0]), entity);
+    let mut changed = restored;
+    changed.entities[0].supply.as_mut().unwrap().depot_id = 9;
+    assert_ne!(saved, to_sorted_json(&changed).unwrap());
 }

@@ -1050,6 +1050,14 @@ export default function GameStage() {
             const maxHealth = contentManager.getEntityType(typeId)?.health;
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
             const isSelected = latestSelectorsRef.current.isSelected(id);
+            const depotDef = contentManager.getEntityType(typeId);
+            let depotCoverage = container.children.find(c => c.label === "depotCoverage") as Graphics | undefined;
+            if (isOwned && !remembered && isSelected && depotDef?.depot && depotDef.depot_range) {
+              if (!depotCoverage) { depotCoverage = new Graphics(); depotCoverage.label = "depotCoverage"; container.addChild(depotCoverage); }
+              const scale = Math.abs(container.scale.x) || 1;
+              depotCoverage.clear().circle(0, 0, depotDef.depot_range / scale).stroke({ width: 2 / scale, color: 0x55ccaa, alpha: 0.5 });
+            } else if (depotCoverage) { depotCoverage.destroy(); }
+
             const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildState = buildProgressStore.getSnapshot()[id];
             const buildProgress = buildState?.progress;
@@ -1307,14 +1315,14 @@ export default function GameStage() {
             const carrier = findLiveEntityById(sel.firstSelectedId ?? "");
             const capacity = contentManager.getEntityType(carrier?.entity_type_id ?? "")?.max_capacity ?? {};
             const targetCapacity = contentManager.getEntityType(target?.entity_type_id ?? "")?.max_capacity ?? {};
-            if (!target || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
+            if (!target || !contentManager.getEntityType(target.entity_type_id ?? "")?.depot || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
               || !Object.keys(targetCapacity).some(resource => targetCapacity[resource] > 0 && (capacity[resource] ?? 0) > 0)) return;
             setSelectedAction({ kind: "Transport", donorId: targetId, resourceTypeIds: [] });
             return;
           }
           if (!delivery.resourceTypeIds.length) return;
           const definition = contentManager.getEntityType(target?.entity_type_id ?? "");
-          if (!target || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
+          if (!target || !contentManager.getEntityType(target.entity_type_id ?? "")?.depot || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
             || (delivery.kind === "Transport" ? targetId === delivery.donorId
                 || !delivery.resourceTypeIds.every(resource => (definition?.max_capacity?.[resource] ?? 0) > 0)
               : !delivery.resourceTypeIds.some((r) => (definition?.max_capacity?.[r] ?? 0)

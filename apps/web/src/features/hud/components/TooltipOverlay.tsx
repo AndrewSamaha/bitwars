@@ -143,6 +143,8 @@ export function TooltipOverlay() {
         const amount = inventory?.find((resource) => resource.resource_type === resource_type)?.amount ?? 0;
         return <div key={resource_type}><b>{resource_type}:</b> {Number(amount).toFixed(1)} / {capacity}</div>;
       })}
+      {ownerPlayerId === player?.id && hoveredEntity.supply && <div><b>depot:</b> {String(hoveredEntity.supply.depot_id || "none")}
+        {hoveredEntity.supply.waiting_for && ` · ${hoveredEntity.supply.waiting_for} paused: missing ${hoveredEntity.supply.missing_resources.join(", ")}`}</div>}
       <div><b>pos:</b> {Math.round(hoveredEntity.pos?.x ?? 0)}, {Math.round(hoveredEntity.pos?.y ?? 0)}</div>
       <div><b>vel:</b> {Math.round(hoveredEntity.vel?.x ?? 0)}, {Math.round(hoveredEntity.vel?.y ?? 0)}</div>
       {collectorState && <div><b>collector:</b> {activity}{resourceType ? ` (${resourceType})` : ""}</div>}

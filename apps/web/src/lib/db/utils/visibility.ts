@@ -10,6 +10,7 @@ export type StreamEntity = {
   vel?: Pos;
   force?: Pos;
   resources?: Array<{ resource_type: string; amount: number }>;
+  supply?: { depot_id: number | string; missing_resources: string[]; operational: boolean; waiting_for: string };
   resource_deposit?: { amount: number; remaining: number } | null;
 };
 
@@ -54,7 +55,7 @@ const idOf = (id: number | string) => String(id);
 const hasPosition = (entity: StreamEntity): entity is StreamEntity & { pos: Pos } =>
   Number.isFinite(entity.pos?.x) && Number.isFinite(entity.pos?.y);
 const forClient = (entity: StreamEntity, playerId: string, withinSensors: boolean): StreamEntity => {
-  const visible = entity.owner_player_id === playerId ? { ...entity } : (({ resources: _resources, ...rest }) => rest)(entity);
+  const visible = entity.owner_player_id === playerId ? { ...entity } : (({ resources: _resources, supply: _supply, ...rest }) => rest)(entity);
   if (entity.resource_deposit !== undefined && !withinSensors) visible.resource_deposit = null;
   return visible;
 };
@@ -207,7 +208,7 @@ export class VisibilityFilter {
         if (effect.operation === "set") range = effect.value;
         if (effect.operation === "cap") range = Math.min(range, effect.value);
       }
-      return entity.owner_player_id === this.playerId && hasPosition(entity) && Number.isFinite(range) && range > 0
+      return entity.owner_player_id === this.playerId && entity.supply?.operational !== false && hasPosition(entity) && Number.isFinite(range) && range > 0
         ? [{ pos: entity.pos, range }]
         : [];
     });

@@ -6,7 +6,7 @@ import { configureMonacoYaml } from "monaco-yaml";
 import { parseDocument } from "yaml";
 import entitySchema from "@bitwars/content/entity.schema.json";
 import technologySchema from "@bitwars/content/technology.schema.json";
-import { entityCombatRangeWarnings, resourceSharingPolicyErrors, resourceReserveErrors } from "@/lib/content/schemaValidation";
+import { entityCombatRangeWarnings, resourceSharingPolicyErrors, resourceReserveErrors, depotErrors } from "@/lib/content/schemaValidation";
 import { completionHelp, hoverHelp } from "@/lib/content/editorHelp";
 
 let yamlConfigured = false;
@@ -120,11 +120,18 @@ function updateContentMarkers(model: Parameters<OnMount>[0]["getModel"] extends 
     }];
   });
   monaco.editor.setModelMarkers(model, "bitwars-content-unknown-fields", markers);
+  const deprecated = new Set(["resource_sharing", "resource_reserves", "refinery", "deposit_entity_types", "spend_rates"]);
+  monaco.editor.setModelMarkers(model, "bitwars-content-deprecated-fields", model.getLinesContent().flatMap((line, index) => {
+    const field = line.match(/^\s*([a-z][a-z0-9_]*):/i)?.[1];
+    if (!field || !deprecated.has(field)) return [];
+    const replacement = field === "spend_rates" ? "Use duration_seconds; costs are paid upfront." : "Use depot, depot_range, and physical cargo. This field is ignored.";
+    return [{...markerForLine(monaco, line, index + 1, `${field} is deprecated. ${replacement}`), severity: monaco.MarkerSeverity.Warning}];
+  }));
   const document = parseDocument(model.getValue());
   const lines = model.getLinesContent();
   monaco.editor.setModelMarkers(model, "bitwars-content-resource-sharing", document.errors.length ? []
-    : [...resourceSharingPolicyErrors(document.toJS()), ...resourceReserveErrors(document.toJS())].map((message) => {
-      const field = message.startsWith("resource_reserves") ? "resource_reserves:" : "resource_sharing:";
+    : [...depotErrors(document.toJS()), ...resourceSharingPolicyErrors(document.toJS()), ...resourceReserveErrors(document.toJS())].map((message) => {
+      const field = `${message.split(/[.:[\s]/)[0]}:`;
       const line = Math.max(0, lines.findIndex((text) => text.startsWith(field)));
       return { ...markerForLine(monaco, lines[line], line + 1, message), severity: monaco.MarkerSeverity.Error };
     }));

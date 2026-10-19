@@ -160,6 +160,7 @@ impl CombatSystem {
         let mut dismantling = Vec::new();
         for attacker in entities.iter_mut() {
             if attacker.owner_player_id.is_empty()
+                || attacker.supply.as_ref().is_some_and(|s| !s.operational)
                 || attacker.health <= 0.0
                 || commanded_entity_ids.contains(&attacker.id)
             {
@@ -429,6 +430,8 @@ mod tests {
         let raider = EntityTypeDef {
             resource_reserves: HashMap::new(),
             max_capacity: HashMap::new(),
+            depot: false,
+            depot_range: 0.0,
             resource_sharing: None,
             fog_memory: Default::default(),
             speed: 10.0,
@@ -484,6 +487,7 @@ mod tests {
 
     fn entity(id: u64, kind: &str, owner: &str, x: f32, health: f32) -> Entity {
         Entity {
+            supply: None,
             resource_deposit: None,
             resources: None,
             id,

@@ -1,5 +1,7 @@
 # Localized Resources
 
+> Superseded by [Depot Logistics](./depot-logistics.md). Legacy sharing fields are [deprecated](./resource-field-deprecations.md).
+
 **Status:** Proposed
 
 ## Goal

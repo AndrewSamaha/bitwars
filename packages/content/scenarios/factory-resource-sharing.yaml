@@ -1,3 +1,5 @@
+# Depot logistics: former consumer stock is held in physical depots.
+
 version: 1
 id: factory-resource-sharing
 name: factory-resource-sharing
@@ -236,8 +238,7 @@ entities:
     x: -45706.844
     y: -22795.797
   health: 60.0
-  resources:
-    energy: 36.0
+  resources: {}
 - id: 680
   entity_type: habitat
   owner: player1
@@ -246,9 +247,9 @@ entities:
     y: -23256.508
   health: 400.0
   resources:
-    energy: 1804.5330558866262
+    energy: 8340.533055886626
     food: 1277.922206878662
-    minerals: 5000.0
+    minerals: 5000
 - id: 681
   entity_type: worker
   owner: player1
@@ -285,8 +286,7 @@ entities:
     x: -35442.402
     y: -24219.988
   health: 100.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 685
   entity_type: worker
   owner: player1
@@ -304,8 +304,7 @@ entities:
     x: -35177.645
     y: -25100.812
   health: 100.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 688
   entity_type: worker
   owner: player1
@@ -323,8 +322,7 @@ entities:
     x: -36321.285
     y: -23804.004
   health: 100.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 690
   entity_type: worker
   owner: player1
@@ -342,8 +340,7 @@ entities:
     x: -37418.39
     y: -23952.223
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 693
   entity_type: collector_solar
   owner: player1
@@ -351,8 +348,7 @@ entities:
     x: -35384.164
     y: -25970.959
   health: 100.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 695
   entity_type: collector_solar
   owner: player1
@@ -360,8 +356,7 @@ entities:
     x: -37393.324
     y: -24119.928
   health: 100.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 696
   entity_type: collector_solar
   owner: player1
@@ -369,8 +364,7 @@ entities:
     x: -36014.125
     y: -26502.002
   health: 100.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 698
   entity_type: factory
   owner: player1
@@ -378,8 +372,7 @@ entities:
     x: -36446.812
     y: -23521.174
   health: 150.0
-  resources:
-    energy: 3000.0
+  resources: {}
 - id: 702
   entity_type: worker
   owner: player1

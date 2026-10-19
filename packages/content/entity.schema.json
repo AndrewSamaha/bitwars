@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "build_cost": {
-      "description": "Total construction or upgrade cost, keyed by resource ID. Spent progressively at the producer's spend_rates; omitted means no cost.",
+      "description": "Total construction or upgrade cost, paid upfront from one depot or remote carrier cargo.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -47,6 +47,17 @@
       "description": "Whether autonomous combat may select this entity type as a target.\nDefaults to false so scenery and resource entities are safe by default.",
       "type": "boolean"
     },
+    "depot": {
+      "description": "Enables a physical stockpile that nearby friendly consumers may spend from.",
+      "type": "boolean",
+      "default": false
+    },
+    "depot_range": {
+      "description": "Service radius; required and positive when depot is true. Never links depot inventories.",
+      "type": "number",
+      "format": "float",
+      "default": 0.0
+    },
     "fog_memory": {
       "description": "Client behavior when this entity leaves sensor coverage.",
       "$ref": "#/$defs/FogMemory"
@@ -63,7 +74,7 @@
       "default": 0.0
     },
     "maintenance_cost_per_minute": {
-      "description": "Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.\nCharged to the entity inventory while active; balances stop at zero without accruing debt. Omitted means free upkeep.",
+      "description": "Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.\nPaid atomically from the associated depot. Shortage pauses powered capabilities without damage or debt.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -76,12 +87,13 @@
       "format": "float"
     },
     "max_capacity": {
-      "description": "Maximum local inventory by resource type, shared by collection, shipments and upkeep.\nRequired for every entity type. Each resource has its own limit; there is no shared cargo quota.",
+      "description": "Per-resource physical depot stock or carrier cargo capacity. Ordinary consumers may omit this.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
         "format": "float"
-      }
+      },
+      "default": {}
     },
     "radiation_shielding": {
       "description": "Shielding keyed by radiation type ID. Missing types use zero distance offset and a damage multiplier of 1.",
@@ -100,7 +112,7 @@
       }
     },
     "refinery": {
-      "description": "Optional drop-off point for resources carried by transport collectors.",
+      "description": "DEPRECATED: ignored. Depot status and positive max_capacity define collection drop-offs.",
       "anyOf": [
         {
           "$ref": "#/$defs/RefineryDef"
@@ -109,7 +121,7 @@
           "type": "null"
         }
       ],
-      "default": null
+      "deprecated": true
     },
     "repair": {
       "description": "Optional resource-powered repair ability.",
@@ -153,15 +165,16 @@
       "default": null
     },
     "resource_reserves": {
-      "description": "Per-resource upkeep buffers in the shared inventory. Automatic supply tops up only to this stock;\nsharing, delivery and transport loading retain it. Upkeep and explicit action costs may consume it.\nEach entry requires a known resource with positive max_capacity and 0 <= reserve <= capacity.\nOmitted entries use one minute of upkeep (at least one whole unit, capped at capacity) for automatic operating supply.\nThis is entity-type configuration, not another resource balance.",
+      "description": "DEPRECATED: ignored by depot logistics. Cargo has no protected upkeep reserve.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
         "format": "double"
-      }
+      },
+      "deprecated": true
     },
     "resource_sharing": {
-      "description": "Supplies operating buffers before bulk stock to nearby same-owner entities.",
+      "description": "DEPRECATED: ignored. Configure depot and depot_range; ship stock between depots.",
       "anyOf": [
         {
           "$ref": "#/$defs/ResourceSharingDef"
@@ -170,10 +183,10 @@
           "type": "null"
         }
       ],
-      "default": null
+      "deprecated": true
     },
     "sensor": {
-      "description": "Optional area sensor. Its operating costs are charged continuously.",
+      "description": "Optional area sensor. Its depot-paid operating costs are charged continuously; unpaid sensors pause.",
       "anyOf": [
         {
           "$ref": "#/$defs/SensorDef"
@@ -228,8 +241,7 @@
     "speed",
     "stop_radius",
     "mass",
-    "health",
-    "max_capacity"
+    "health"
   ],
   "$defs": {
     "AttackDef": {
@@ -299,18 +311,28 @@
       "description": "One content-defined production option available to a builder.",
       "type": "object",
       "properties": {
+        "duration_seconds": {
+          "description": "Seconds to construct/upgrade after upfront payment. Required for new content.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "default": null
+        },
         "entity_type_id": {
           "description": "ID of the entity type this entity can build.",
           "type": "string"
         },
         "spend_rates": {
-          "description": "Resource units spent per second, keyed by resource ID, toward the target's build_cost. Missing rates default to 1/s.",
+          "description": "DEPRECATED: legacy build-time fallback only. Use duration_seconds; construction is paid upfront.",
           "type": "object",
           "additionalProperties": {
             "type": "number",
             "format": "float"
           },
-          "default": {}
+          "default": {},
+          "deprecated": true
         }
       },
       "additionalProperties": false,
@@ -360,9 +382,10 @@
           }
         },
         "deposit_entity_types": {
-          "description": "Optional allowed refinery entity type ids for transport deposits.\nEmpty means any refinery that accepts the resource.",
+          "description": "DEPRECATED: ignored. Collectors deliver to any compatible same-owner depot.",
           "type": "array",
           "default": [],
+          "deprecated": true,
           "items": {
             "type": "string"
           }
@@ -600,9 +623,10 @@
       "type": "object",
       "properties": {
         "accepts": {
-          "description": "Resource type ids this structure accepts for deposit.",
+          "description": "DEPRECATED: ignored. Positive depot max_capacity entries define accepted resources.",
           "type": "array",
           "default": [],
+          "deprecated": true,
           "items": {
             "type": "string"
           }
@@ -691,20 +715,23 @@
       "type": "object",
       "properties": {
         "range": {
-          "description": "Maximum distance for outgoing resource sharing and wireless receipt.",
+          "description": "DEPRECATED: retained for legacy content decoding; ignored by depot logistics.",
           "type": "number",
-          "format": "float"
+          "format": "float",
+          "deprecated": true
         },
         "resources": {
-          "description": "Optional per-resource receiving targets, bulk priorities and outgoing reserves.\nAutomatic sharing supplies operating buffers first, before upkeep is charged.\nBulk donations protect the donor's receiving target and go only to strictly higher effective receiving priorities.",
+          "description": "DEPRECATED: retained for legacy content decoding; ignored by depot logistics.",
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/ResourceSharingPolicy"
-          }
+          },
+          "deprecated": true
         },
         "wireless_receives": {
-          "description": "Resource types this entity can receive wirelessly from nearby collectors.",
+          "description": "DEPRECATED: retained for legacy content decoding; ignored by depot logistics.",
           "type": "array",
+          "deprecated": true,
           "items": {
             "type": "string"
           }
@@ -719,32 +746,37 @@
       "type": "object",
       "properties": {
         "fill_to": {
-          "description": "Stop refilling at this stock. Must not exceed this resource's max_capacity.\nRetained by bulk donors while actively refilling; operating supply may draw below it.",
+          "description": "DEPRECATED: retained for legacy content decoding; ignored by depot logistics.",
           "type": "number",
-          "format": "double"
+          "format": "double",
+          "deprecated": true
         },
         "overflow_priority": {
-          "description": "Optional priority for accepting surplus up to max_capacity when not actively refilling. Omitted means no overflow requests.",
+          "description": "DEPRECATED: retained for legacy content decoding; ignored by depot logistics.",
           "type": [
             "integer",
             "null"
           ],
-          "format": "int32"
+          "format": "int32",
+          "deprecated": true
         },
         "priority": {
-          "description": "Higher priorities receive bulk supply first; distance then entity ID break ties.\nBulk sharing requires higher effective priority than the donor. Operating buffers are supplied first regardless of priority.",
+          "description": "DEPRECATED: retained for legacy content decoding; ignored by depot logistics.",
           "type": "integer",
-          "format": "int32"
+          "format": "int32",
+          "deprecated": true
         },
         "refill_below": {
-          "description": "Start requesting below this stock; keep requesting until fill_to is reached. Must be between zero and fill_to.\nAlso the donor's minimum retained stock for bulk sharing when not actively refilling.",
+          "description": "DEPRECATED: retained for legacy content decoding; ignored by depot logistics.",
           "type": "number",
-          "format": "double"
+          "format": "double",
+          "deprecated": true
         },
         "reserve": {
-          "description": "Keep this stock when sharing outward, in addition to protecting accrued upkeep and the operating buffer. Must be between zero and max_capacity.\nBulk sharing also protects the donor's own refill target.",
+          "description": "DEPRECATED: retained for legacy content decoding; ignored by depot logistics.",
           "type": "number",
-          "format": "double"
+          "format": "double",
+          "deprecated": true
         }
       },
       "additionalProperties": false,
@@ -817,21 +849,31 @@
       ]
     },
     "UpgradeOptionDef": {
-      "description": "One content-defined in-place transformation available to an entity.\n\nThe target type's `build_cost` supplies the resource cost. A missing\nrequired resource rate defaults to 1/s, matching production builds.",
+      "description": "One content-defined in-place transformation available to an entity.\n\nThe target type's build_cost is paid upfront; duration_seconds controls progress.",
       "type": "object",
       "properties": {
+        "duration_seconds": {
+          "description": "Seconds to construct/upgrade after upfront payment. Required for new content.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float",
+          "default": null
+        },
         "entity_type_id": {
           "description": "ID of the entity type this entity transforms into.",
           "type": "string"
         },
         "spend_rates": {
-          "description": "Resource units spent per second, keyed by resource ID. Uses the target type's build_cost; missing rates default to 1/s.",
+          "description": "DEPRECATED: legacy upgrade-time fallback only. Use duration_seconds; upgrades are paid upfront.",
           "type": "object",
           "additionalProperties": {
             "type": "number",
             "format": "float"
           },
-          "default": {}
+          "default": {},
+          "deprecated": true
         }
       },
       "additionalProperties": false,
