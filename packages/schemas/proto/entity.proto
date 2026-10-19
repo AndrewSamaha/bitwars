@@ -13,6 +13,7 @@ message Entity {
   float  health           = 7;  // current health; max health is defined by content
   ResourceInventory resources = 8; // local inventory; omitted from client projections for non-owned entities
   ResourceDeposit resource_deposit = 9; // finite source stock; visible within sensor coverage
+  DepotSupply supply = 10; // association and operating/action shortage; owner-only
 }
 
 message ResourceDeposit {
@@ -27,4 +28,16 @@ message ResourceAmount {
 
 message ResourceInventory {
   repeated ResourceAmount resources = 1;
+}
+
+// Physical resource source. Zero depot_id means no depot in range.
+message DepotSupply {
+  uint64 depot_id = 1;
+  // Explicit collection destination; zero uses automatic selection. Independent of spending.
+  uint64 delivery_depot_id = 7;
+  repeated string missing_resources = 2;
+  bool operational = 3; // false pauses powered capabilities; movement remains available
+  bytes paid_intent_id = 5; // construction payment checkpoint, stored with inventory
+  float construction_progress = 6;
+  string waiting_for = 4; // e.g. operation, construction, research, repair
 }

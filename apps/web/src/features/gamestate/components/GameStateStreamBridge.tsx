@@ -49,6 +49,7 @@ type SnapshotPayload = {
     pos?: Pos;
     vel?: Pos;
     force?: Pos;
+    supply?: Entity["supply"];
     resources?: Array<{ resource_type: string; amount: number }>;
     resource_deposit?: { amount: number; remaining: number } | null;
   }>;
@@ -73,6 +74,7 @@ type DeltaPayload = {
     owner_player_id?: string;
     health?: number;
     damage_type?: string;
+    supply?: Entity["supply"];
     resources?: Array<{ resource_type: string; amount: number }>;
     resource_deposit?: { amount: number; remaining: number } | null;
     pos?: Pos;
@@ -251,6 +253,7 @@ export default function GameStateStreamBridge() {
           if (s.entity_type_id !== undefined) remembered.entity_type_id = s.entity_type_id;
           if (s.owner_player_id !== undefined) remembered.owner_player_id = s.owner_player_id;
           if (s.health !== undefined) remembered.health = s.health;
+          if (s.supply !== undefined) remembered.supply = s.supply;
           if (s.resources !== undefined) remembered.resources = s.resources;
           if (s.resource_deposit !== undefined) remembered.resource_deposit = s.resource_deposit;
           if (s.pos) remembered.pos = { x: s.pos.x, y: s.pos.y };
@@ -265,6 +268,7 @@ export default function GameStateStreamBridge() {
           ...(s.owner_player_id !== undefined ? { owner_player_id: s.owner_player_id } : {}),
           ...(s.health !== undefined ? { health: s.health } : {}),
           ...(s.resource_deposit !== undefined ? { resource_deposit: s.resource_deposit } : {}),
+          ...(s.supply !== undefined ? { supply: s.supply } : {}),
           ...(s.resources !== undefined ? { resources: s.resources } : {}),
           ...(s.pos ? { pos: { x: s.pos.x, y: s.pos.y } } : {}),
           ...(s.vel ? { vel: { x: s.vel.x, y: s.vel.y } } : {}),
@@ -362,6 +366,7 @@ export default function GameStateStreamBridge() {
             else { existing.vel.x = u.vel.x; existing.vel.y = u.vel.y; }
           }
           if (u.owner_player_id !== undefined) existing.owner_player_id = u.owner_player_id;
+          if (u.supply !== undefined) existing.supply = u.supply;
           if (u.resources !== undefined) existing.resources = u.resources;
           if (u.resource_deposit !== undefined) existing.resource_deposit = u.resource_deposit;
           if (u.health !== undefined) {
@@ -400,6 +405,7 @@ export default function GameStateStreamBridge() {
             ...(u.owner_player_id !== undefined ? { owner_player_id: u.owner_player_id } : {}),
             ...(u.health !== undefined ? { health: u.health } : {}),
             ...(u.resource_deposit !== undefined ? { resource_deposit: u.resource_deposit } : {}),
+            ...(u.supply !== undefined ? { supply: u.supply } : {}),
             ...(u.resources !== undefined ? { resources: u.resources } : {}),
             ...(u.pos ? { pos: { x: u.pos.x, y: u.pos.y } } : {}),
             ...(u.vel ? { vel: { x: u.vel.x, y: u.vel.y } } : {}),

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import * as PIXI from "pixi.js";
+import { CollectionAssignment } from "./CollectionAssignment";
 import { useHUD } from "./HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { contentManager } from "@/features/content/contentManager";
@@ -128,6 +129,7 @@ export function TooltipOverlay() {
       {ownerPlayerName && <div><b>owner:</b> {ownerPlayerName}</div>}
       <div><b>{entityTypeId || "—"}</b></div>
       <div><b>id:</b> {(hoveredEntity as any).id}</div>
+      {ownerPlayerId === player?.id && <CollectionAssignment entity={hoveredEntity} tooltip />}
       {Number.isFinite(health) && (
         <div>
           <b>health:</b> {health.toFixed(1)}
@@ -143,6 +145,8 @@ export function TooltipOverlay() {
         const amount = inventory?.find((resource) => resource.resource_type === resource_type)?.amount ?? 0;
         return <div key={resource_type}><b>{resource_type}:</b> {Number(amount).toFixed(1)} / {capacity}</div>;
       })}
+      {ownerPlayerId === player?.id && hoveredEntity.supply && <div><b>depot:</b> {String(hoveredEntity.supply.depot_id || "none")}
+        {hoveredEntity.supply.waiting_for && ` · ${hoveredEntity.supply.waiting_for} paused: missing ${hoveredEntity.supply.missing_resources.join(", ")}`}</div>}
       <div><b>pos:</b> {Math.round(hoveredEntity.pos?.x ?? 0)}, {Math.round(hoveredEntity.pos?.y ?? 0)}</div>
       <div><b>vel:</b> {Math.round(hoveredEntity.vel?.x ?? 0)}, {Math.round(hoveredEntity.vel?.y ?? 0)}</div>
       {collectorState && <div><b>collector:</b> {activity}{resourceType ? ` (${resourceType})` : ""}</div>}

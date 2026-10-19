@@ -23,6 +23,7 @@ mod tests {
     fn proto_sanity() {
         let v = pb::Vec2 { x: 1.0, y: 2.0 };
         let _e = pb::Entity {
+            supply: None,
             resource_deposit: None,
             resources: None,
             id: 1,

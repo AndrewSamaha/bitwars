@@ -139,6 +139,7 @@ impl Scenario {
                 }),
                 vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                supply: None,
                 resource_deposit: def.resource_node.as_ref().and_then(|node| node.amount)
                     .map(|amount| pb::ResourceDeposit { amount, remaining: amount }),
                 resources: None,
@@ -269,8 +270,6 @@ impl Engine {
         self.joined_players = bindings.values().cloned().collect();
         self.transport_node_by_entity.clear();
         self.transport_wait_since_tick_by_entity.clear();
-        self.maintenance_spend_fractional.clear();
-        self.resource_refilling.clear();
         self.resource_spend_total.clear();
         self.resource_gain_total.clear();
         self.collector_ui_state_by_entity.clear();

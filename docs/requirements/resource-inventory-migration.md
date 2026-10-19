@@ -1,5 +1,7 @@
 # Shared inventory and upkeep reserve migration
 
+> Superseded by [Depot Logistics](./depot-logistics.md). Legacy sharing fields are [deprecated](./resource-field-deprecations.md).
+
 ## Agreed model
 
 Each entity has one current amount per resource. Cargo and upkeep consume that same amount, under the existing per-resource `max_capacity`. Add optional entity-type configuration:

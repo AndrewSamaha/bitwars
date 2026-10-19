@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { game } from "@/features/gamestate/world";
 import { contentManager } from "@/features/content/contentManager";
+import { CollectionAssignment } from "./CollectionAssignment";
 import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { GAMESTATE_UPDATED_EVENT, type GameStateUpdatedDetail } from "@/features/gamestate/events";
@@ -62,7 +63,8 @@ export default function EntityDetailPanel() {
     const onGameStateUpdated = (event: Event) => {
       const changedIds = (event as CustomEvent<GameStateUpdatedDetail>).detail?.entityIds;
       if (selectedEntities.length === 0) return;
-      if (changedIds && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen && !selectedEntities.some((id) => changedIds.includes(id)) && !(donorId && changedIds.includes(donorId))) return;
+      const selectedDepotChanged = changedIds && Array.from(game.world.with("id")).some(entity => selectedEntities.includes(String(entity.id)) && (changedIds.includes(String(entity.supply?.depot_id)) || changedIds.includes(String(entity.supply?.delivery_depot_id))));
+      if (changedIds && !selectedDepotChanged && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen && !selectedEntities.some((id) => changedIds.includes(id)) && !(donorId && changedIds.includes(donorId))) return;
       const remaining = GAMESTATE_UI_REFRESH_INTERVAL_MS - (performance.now() - lastRefreshAt);
       if (remaining <= 0) {
         refresh();
@@ -200,6 +202,7 @@ export default function EntityDetailPanel() {
       { key: "p", name: "sentry", value: "Sentry", enabled: selectedEntities.length >= 1 && selectedEntities.length <= 256
         && selectedEntities.every((id) => (contentManager.getEntityType(idToType.get(id) ?? "")?.speed ?? 0) > 0) },
       { key: "d", name: "distance", enabled: selectedEntities.length === 1, value: "Measure" },
+      ...(canCollect ? [{ key: "a", name: "assign", value: "Assign" as const }] : []),
       { key: "c", name: "collect", enabled: canCollect, value: "Collect" },
       ...(canDeliver ? [{ key: "l", name: "deliver", value: "Deliver" as const }] : []),
       ...(canTransport ? [{ key: "s", name: "transport resources", value: "Transport" as const }] : []),
@@ -236,6 +239,10 @@ export default function EntityDetailPanel() {
     && (carrierEntity?.resources ?? []).some(resource => transferableResourceAmount(carrierEntity, carrierDef, resource.resource_type) > 0);
   const toggleDeliveryResource = (resource: string) => {
     const current = deliverySelection?.resourceTypeIds ?? [];
+    if (transportSelection) {
+      actions.setSelectedAction({ ...transportSelection, resourceTypeIds: current.includes(resource) ? [] : [resource] });
+      return;
+    }
     actions.setSelectedAction({ ...deliverySelection, kind: deliverySelection?.kind ?? "Deliver", resourceTypeIds: current.includes(resource)
       ? current.filter((id) => id !== resource) : [...current, resource] });
   };
@@ -285,6 +292,11 @@ export default function EntityDetailPanel() {
       setResearchMenuOpen((open) => !open);
       setBuildMenuOpen(false);
       setUpgradeMenuOpen(false);
+      return;
+    }
+    if (val === "Assign") {
+      actions.setSelectedAction(selectedAction === "Assign" ? null : "Assign");
+      setCollectMenuOpen(false); setBuildMenuOpen(false); setUpgradeMenuOpen(false); setResearchMenuOpen(false);
       return;
     }
     if (val === "Collect") {
@@ -465,6 +477,13 @@ export default function EntityDetailPanel() {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable=true]")) return;
       const key = event.key.toLowerCase();
+      if (key === "a" && !deliverySelection && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen
+        && availableActions.some(action => action.value === "Assign")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!event.repeat) onClickAction("Assign");
+        return;
+      }
       if (((key === "l" && canDeliver) || (key === "s" && canTransport)) && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -473,7 +492,7 @@ export default function EntityDetailPanel() {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (key === "escape") actions.setSelectedAction(null);
-        else if (key === "a") actions.setSelectedAction({ ...deliverySelection!, kind: deliverySelection?.kind ?? "Deliver", resourceTypeIds: deliveryOptions });
+        else if (key === "a" && !transportSelection) actions.setSelectedAction({ ...deliverySelection!, kind: deliverySelection?.kind ?? "Deliver", resourceTypeIds: deliveryOptions });
         else {
           const resource = deliveryOptions[Number(key) - 1];
           if (resource) toggleDeliveryResource(resource);
@@ -500,6 +519,7 @@ export default function EntityDetailPanel() {
                     <li key={id} className="flex items-center gap-3">
                       <span className="font-mono">{idToType.get(id) ?? "—"}</span>
                       <span className="font-mono text-muted-foreground">id: {id}</span>
+                      {entities.find(e => String(e.id) === id) && <CollectionAssignment entity={entities.find(e => String(e.id) === id)!} />}
                     </li>
                   ))
                 : selectedEntities.map((id) => {
@@ -508,6 +528,9 @@ export default function EntityDetailPanel() {
                 const health = idToHealth.get(id);
                 const entityDef = contentManager.getEntityType(entityTypeId);
                 const maxHealth = entityDef?.health;
+                const selected = entities.find(e => String(e.id) === id);
+                const supply = selected?.supply;
+                const source = supply?.depot_id ? entities.find(e => String(e.id) === String(supply.depot_id)) : undefined;
                 const activeIntent = idToActiveIntent.get(id);
                 const collectorState = idToCollectorState.get(id);
                 const buildState = buildStateById[id];
@@ -524,6 +547,12 @@ export default function EntityDetailPanel() {
                   <li key={id} className="flex items-center justify-between gap-4">
                     <span className="font-mono">{entityTypeId}</span>
                     <span className="font-mono">id: {id}</span>
+                    <span className="font-mono text-muted-foreground">
+                      {entityDef?.depot ? `depot · service radius ${entityDef.depot_range}` : `depot: ${supply?.depot_id || "none"}`}
+                      {source ? ` · stock: ${(source.resources ?? []).map(r => `${r.resource_type} ${r.amount.toFixed(1)}`).join(", ")}` : ""}
+                    </span>
+                    {selected && <CollectionAssignment entity={selected} />}
+                    {supply?.waiting_for && <span className="font-mono text-amber-300">{supply.waiting_for} paused: missing {supply.missing_resources.join(", ")}{!supply.depot_id ? " · no depot in range" : ""}</span>}
                     <span className="font-mono text-muted-foreground">
                       {pos ? `x: ${pos.x.toFixed(1)}, y: ${pos.y.toFixed(1)}` : "pos: —"}
                     </span>
@@ -558,22 +587,12 @@ export default function EntityDetailPanel() {
                         return `${resource} ${inventory.toFixed(1)}`;
                       }).join(", ")}</span>
                     )}
-                    {activeIntent?.kind === "transport" && collectorState && (
+                    {(activeIntent?.kind === "transport" || activeIntent?.kind === "collect") && collectorState && (
                       <span className="font-mono text-muted-foreground">{collectorState.activity.replaceAll("_", " ")}</span>
-                    )}
-                    {collectorState && (collectorState.assigned_nearest_compatible || collectorState.assigned_resource_type) && (
-                      <span className="font-mono text-muted-foreground">
-                        assigned: {collectorState.assigned_nearest_compatible ? "nearest" : collectorState.assigned_resource_type}
-                      </span>
                     )}
                     {collectorState && (
                       <span className="font-mono text-muted-foreground">
                         rate: {collectorState.effective_rate_per_second.toFixed(1)}/s
-                      </span>
-                    )}
-                    {collectorState?.receiving_entity_id != null && (
-                      <span className="font-mono text-muted-foreground">
-                        wireless recipient: {collectorState.receiving_entity_id}
                       </span>
                     )}
                   </li>
@@ -591,7 +610,7 @@ export default function EntityDetailPanel() {
                       ? isMeasuring
                       : a.value === "Deliver" || a.value === "Transport"
                       ? deliverySelection?.kind === a.value
-                      : a.value === "Escort" || a.value === "Move" || a.value === "Convoy" || a.value === "Sentry"
+                      : a.value === "Assign" || a.value === "Escort" || a.value === "Move" || a.value === "Convoy" || a.value === "Sentry"
                       ? selectedAction === a.value
                       : a.value === "Collect"
                         ? collectMenuOpen || isCollectActiveForSelection
@@ -609,13 +628,20 @@ export default function EntityDetailPanel() {
                 />
               ))}
             </div>
+            {selectedAction === "Assign" && <div className="mt-2 text-xs text-muted-foreground">
+              Click a friendly depot to assign collection deliveries. Solar collectors require coverage; workers travel to the depot.
+              <button type="button" className="ml-2 rounded border px-2 py-1" onClick={() => {
+                selectedEntities.forEach(id => intentQueue.handleAssignCommand(Number(id), 0));
+                actions.setSelectedAction(null);
+              }}>Use automatic destination</button> · [Esc] cancel
+            </div>}
             {deliverySelection && (
               <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
                 <span className="text-muted-foreground">{transportSelection ? `Transport${transportSelection.donorId ? ` from ${transportSelection.donorId}` : ""}:` : "Deliver:"}</span>
-                <button type="button" disabled={!!transportSelection && !transportSelection.donorId} className="rounded border border-border bg-muted px-2 py-1 hover:bg-accent disabled:opacity-40"
+                {!transportSelection && <button type="button" className="rounded border border-border bg-muted px-2 py-1 hover:bg-accent disabled:opacity-40"
                   onClick={() => actions.setSelectedAction({ ...deliverySelection!, kind: deliverySelection?.kind ?? "Deliver", resourceTypeIds: deliveryOptions })}>
                   [A]ll
-                </button>
+                </button>}
                 {deliveryOptions.map((resource, index) => (
                   <button key={resource} type="button"
                     aria-pressed={deliverySelection.resourceTypeIds.includes(resource)}
@@ -626,8 +652,8 @@ export default function EntityDetailPanel() {
                     {` (${(deliveryAmounts.get(resource) ?? 0).toFixed(1)})`}
                   </button>
                 ))}
-                <span className="text-muted-foreground">{transportSelection && !transportSelection.donorId ? "Click a friendly donor"
-                  : deliverySelection.resourceTypeIds.length ? "Click a friendly recipient" : deliveryOptions.length ? "Select resources first" : "Donor has no compatible resources available"} · [Esc] cancel</span>
+                <span className="text-muted-foreground">{transportSelection && !transportSelection.donorId ? "Click a friendly source depot"
+                  : deliverySelection.resourceTypeIds.length ? "Click a friendly destination depot" : deliveryOptions.length ? "Select a resource first" : "Donor has no compatible resources available"} · [Esc] cancel</span>
               </div>
             )}
             {collectMenuOpen && (

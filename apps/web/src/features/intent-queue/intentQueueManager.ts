@@ -82,6 +82,8 @@ type PersistedState = {
 };
 
 export type SendIntentParams =
+  | { kind: "Assign"; entityId: number; targetId: number;
+      clientCmdId: string; clientSeq: number; policy: IntentPolicyName }
   | { kind: "Escort"; entityIds: number[]; targetEntityId: number;
       clientCmdId: string; clientSeq: number; policy: IntentPolicyName }
   | { kind: "Sentry"; entityIds: number[]; target: { x: number; y: number };
@@ -409,6 +411,16 @@ export class IntentQueueManager {
   ) {
     const clientCmdId = uuidv7();
     this.sendCollectNow(entityId, clientCmdId, assignment, policy);
+  }
+
+  /** Assignment is a setting: leave active work and queued moves intact. */
+  handleAssignCommand(entityId: number, targetId: number) {
+    const clientCmdId = uuidv7();
+    this.clientSeq++;
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.persist();
+    void this.submit({ kind: "Assign", entityId, targetId, clientCmdId,
+      clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
   /** Deliver currently held resources in one trip. */

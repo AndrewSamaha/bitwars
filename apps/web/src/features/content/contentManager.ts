@@ -54,14 +54,33 @@ export type EntityTypeDef = {
   suppress_hover?: boolean;
   /** Resources required to produce one instance of this entity type. */
   build_cost?: Record<string, number>;
-  /** Maximum local inventory per resource type. */
+  /** Physical depot stock or carrier cargo capacity, per resource. */
   max_capacity?: Record<string, number>;
-  /** Operating targets retained in shared inventory; omitted entries use one minute of upkeep for automatic supply. */
+  /** Enables local spending from this physical stockpile. */
+  depot?: boolean;
+  /** Local service radius; depot inventories never merge. */
+  depot_range?: number;
+  /** @deprecated Ignored by depot logistics. */
   resource_reserves?: Record<string, number>;
+  /** @deprecated Ignored. Use depot and depot_range. */
   resource_sharing?: {
+    /** @deprecated Ignored; use depot_range. */
     range: number;
+    /** @deprecated Ignored; local producers credit their associated depot. */
     wireless_receives?: string[];
-    resources?: Record<string, { priority: number; overflow_priority?: number | null; refill_below: number; fill_to: number; reserve: number }>;
+    /** @deprecated All policy fields are ignored; ship physical cargo between depots. */
+    resources?: Record<string, {
+      /** @deprecated Ignored. */
+      priority: number;
+      /** @deprecated Ignored. */
+      overflow_priority?: number | null;
+      /** @deprecated Ignored. */
+      refill_below: number;
+      /** @deprecated Ignored. */
+      fill_to: number;
+      /** @deprecated Ignored. */
+      reserve: number;
+    }>;
   };
   /** Per-resource upkeep charged to the owner, in units per minute. */
   maintenance_cost_per_minute?: Record<string, number>;
@@ -80,11 +99,15 @@ export type EntityTypeDef = {
   /** Content-defined production options offered by this entity type. */
   builds?: Array<{
     entity_type_id: string;
+    duration_seconds?: number;
+    /** @deprecated Duration fallback for legacy content only; costs are paid upfront. */
     spend_rates?: Record<string, number>;
   }>;
   /** Content-defined in-place transformations offered by this entity type. */
   upgrades?: Array<{
     entity_type_id: string;
+    duration_seconds?: number;
+    /** @deprecated Duration fallback for legacy content only; costs are paid upfront. */
     spend_rates?: Record<string, number>;
   }>;
   requires_technologies?: TechnologyRequirement;

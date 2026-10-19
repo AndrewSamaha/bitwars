@@ -23,7 +23,7 @@ export function ResourceHUD() {
     let pendingRefresh: number | undefined;
     const onGameStateUpdated = (event: Event) => {
       const changedIds = (event as CustomEvent<GameStateUpdatedDetail>).detail?.entityIds;
-      if (changedIds && !changedIds.includes(selectedId)) return;
+
       if (pendingRefresh !== undefined) return;
       pendingRefresh = window.setTimeout(() => {
         pendingRefresh = undefined;
@@ -40,15 +40,18 @@ export function ResourceHUD() {
   const entity = selectedId === null
     ? undefined
     : Array.from(game.world.with("id")).find((entry) => String(entry.id) === selectedId);
+  const depot = entity?.supply?.depot_id ? Array.from(game.world.with("id")).find(e => String(e.id) === String(entity.supply!.depot_id)) : undefined;
+  const source = entity?.resources?.length ? entity : depot ?? entity;
   const amounts = RESOURCE_KEYS.map((key) => {
     if (!entity || entity.remembered) return "—";
-    const amount = entity.resources?.find((entry) => entry.resource_type === key)?.amount ?? 0;
+    const amount = source?.resources?.find((entry) => entry.resource_type === key)?.amount ?? 0;
     return String(Math.round(amount));
   });
 
   return (
     <div className={`${HUD_BASE} flex items-center gap-2`}>
       <AudioToggle />
+      <span className="text-white/60">{source === depot && depot ? `Depot ${depot.id}` : "Stock / cargo"}</span>
       <output
         className="flex items-center gap-3"
         aria-label={`Resources: ${RESOURCE_KEYS.map((key, index) => `${key} ${amounts[index]}`).join(", ")}`}

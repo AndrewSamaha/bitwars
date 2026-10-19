@@ -1,28 +1,30 @@
 import type { EntityTypeDef } from "@/features/content/contentManager";
 import type { Entity } from "@/features/gamestate/world";
 
-/** Match the engine's actor inventory plus same-owner donors in each donor's sharing range. */
-export function canAffordAction(
-  actorId: string,
-  entities: readonly Entity[],
-  entityTypes: Record<string, Pick<EntityTypeDef, "resource_sharing">>,
-  costs: Record<string, number>,
-): boolean {
-  const actor = entities.find((entity) => String(entity.id) === actorId);
-  if (!actor?.owner_player_id || actor.remembered) return false;
-  const donors = entities.filter((entity) => {
-    if (entity.remembered || entity.owner_player_id !== actor.owner_player_id) return false;
-    if (entity === actor) return true;
-    if (!actor.pos || !entity.pos) return false;
-    const range = entityTypes[entity.entity_type_id ?? ""]?.resource_sharing?.range;
-    if (range === undefined) return false;
-    const dx = entity.pos.x - actor.pos.x;
-    const dy = entity.pos.y - actor.pos.y;
-    return dx * dx + dy * dy <= range * range;
+type LogisticsDefinition = Pick<EntityTypeDef, "depot" | "depot_range" | "collector">;
+
+/** One stable depot, or a carrier's own cargo outside depot coverage. */
+export function actionResourceSource(actorId: string, entities: readonly Entity[], entityTypes: Record<string, LogisticsDefinition>): Entity | undefined {
+  const actor = entities.find(e => String(e.id) === actorId);
+  if (!actor?.owner_player_id || actor.remembered || (actor.health !== undefined && actor.health <= 0)) return undefined;
+  const def = entityTypes[actor.entity_type_id ?? ""];
+  if (def?.depot) return actor;
+  const eligible = entities.filter(e => {
+    if (e.remembered || e.owner_player_id !== actor.owner_player_id || (e.health !== undefined && e.health <= 0) || !actor.pos || !e.pos) return false;
+    const d = entityTypes[e.entity_type_id ?? ""];
+    return d?.depot && Math.hypot(e.pos.x-actor.pos.x,e.pos.y-actor.pos.y) <= (d.depot_range ?? 0);
   });
-  return Object.entries(costs).every(([resource, cost]) => {
-    const available = donors.reduce((total, donor) =>
-      total + (donor.resources?.find((entry) => entry.resource_type === resource)?.amount ?? 0), 0);
-    return available + Number.EPSILON >= cost;
-  });
+  const bound = eligible.find(e => String(e.id) === String(actor.supply?.depot_id));
+  const nearest = eligible.sort((a,b) => {
+    const distance = (e: Entity) => Math.hypot(e.pos!.x-actor.pos!.x,e.pos!.y-actor.pos!.y);
+    return distance(a)-distance(b) || Number(a.id)-Number(b.id);
+  })[0];
+  return bound ?? nearest ?? ((def?.collector?.transport_rate_per_second ?? 0) > 0 ? actor : undefined);
+}
+
+export function canAffordAction(actorId: string, entities: readonly Entity[], entityTypes: Record<string, LogisticsDefinition>, costs: Record<string, number>): boolean {
+  const actor = entities.find(e => String(e.id) === actorId);
+  if (actor?.supply?.operational === false) return false;
+  const source = actionResourceSource(actorId, entities, entityTypes);
+  return Object.entries(costs).every(([resource,cost]) => (source?.resources?.find(e => e.resource_type === resource)?.amount ?? 0) + 1e-9 >= cost);
 }

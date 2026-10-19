@@ -67,7 +67,7 @@ export function unknownTechnologyFieldErrors(value: unknown): string[] {
   return errors;
 }
 
-/** Validate upkeep buffers against each entity type's capacity. */
+/** Validate deprecated reserve syntax for legacy content; reserves have no runtime effect. */
 export function resourceReserveErrors(value: unknown, knownResources?: Set<string>): string[] {
   if (!value || typeof value !== "object") return [];
   const entity = value as { max_capacity?: Record<string, unknown>; resource_reserves?: unknown };
@@ -85,7 +85,7 @@ export function resourceReserveErrors(value: unknown, knownResources?: Set<strin
   return errors;
 }
 
-/** Cross-field constraints that JSON Schema cannot express for inventory policies. */
+/** Validate deprecated sharing syntax for legacy content; policies have no runtime effect. */
 export function resourceSharingPolicyErrors(value: unknown, knownResources?: Set<string>): string[] {
   if (!value || typeof value !== "object") return [];
   const entity = value as { max_capacity?: Record<string, unknown>; resource_sharing?: { resources?: unknown } };
@@ -176,4 +176,23 @@ export function entityCombatRangeWarnings(value: unknown): EntityCombatRangeWarn
     }
   }
   return warnings;
+}
+
+/** Depot cross-field validation, shared by editor and content writes. */
+export function depotErrors(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  const entity = value as { depot?: unknown; depot_range?: unknown; builds?: unknown; upgrades?: unknown };
+  const errors: string[] = [];
+  if (entity.depot !== undefined && typeof entity.depot !== "boolean") errors.push("depot: must be a boolean");
+  if (entity.depot === true && (typeof entity.depot_range !== "number" || !Number.isFinite(entity.depot_range) || entity.depot_range <= 0)) errors.push("depot_range: a depot requires a positive finite service radius");
+  if (entity.depot_range !== undefined && (typeof entity.depot_range !== "number" || !Number.isFinite(entity.depot_range) || entity.depot_range < 0)) errors.push("depot_range: must be finite and nonnegative");
+  for (const field of ["builds", "upgrades"] as const) {
+    const options = entity[field];
+    if (!Array.isArray(options)) continue;
+    options.forEach((option, index) => {
+      const duration = option?.duration_seconds;
+      if (duration !== undefined && (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0)) errors.push(`${field}[${index}].duration_seconds: must be positive and finite`);
+    });
+  }
+  return errors;
 }

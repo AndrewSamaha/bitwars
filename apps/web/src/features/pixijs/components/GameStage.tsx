@@ -108,7 +108,10 @@ export default function GameStage() {
     // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
       const payload =
-        params.kind === "Escort"
+        params.kind === "Assign"
+          ? { type: "Assign", entity_id: params.entityId, target_id: params.targetId,
+              client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Escort"
           ? { type: "Escort", entity_ids: params.entityIds, target_entity_id: params.targetEntityId,
               client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
           : params.kind === "Sentry"
@@ -1050,6 +1053,14 @@ export default function GameStage() {
             const maxHealth = contentManager.getEntityType(typeId)?.health;
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
             const isSelected = latestSelectorsRef.current.isSelected(id);
+            const depotDef = contentManager.getEntityType(typeId);
+            let depotCoverage = container.children.find(c => c.label === "depotCoverage") as Graphics | undefined;
+            if (isOwned && !remembered && isSelected && depotDef?.depot && depotDef.depot_range) {
+              if (!depotCoverage) { depotCoverage = new Graphics(); depotCoverage.label = "depotCoverage"; container.addChild(depotCoverage); }
+              const scale = Math.abs(container.scale.x) || 1;
+              depotCoverage.clear().circle(0, 0, depotDef.depot_range / scale).stroke({ width: 2 / scale, color: 0x55ccaa, alpha: 0.5 });
+            } else if (depotCoverage) { depotCoverage.destroy(); }
+
             const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildState = buildProgressStore.getSnapshot()[id];
             const buildProgress = buildState?.progress;
@@ -1297,6 +1308,24 @@ export default function GameStage() {
           if (!shift && !ctrl) setSelectedAction(null);
         };
 
+        const dispatchAssign = (targetId: string) => {
+          const sel = latestSelectorsRef.current;
+          const target = findLiveEntityById(targetId);
+          const depot = contentManager.getEntityType(target?.entity_type_id ?? "");
+          if (!target || target.remembered || target.health <= 0 || target.owner_player_id !== myPlayerIdRef.current || !depot?.depot) return;
+          // Match server validation before submitting any members of a selection.
+          if (!sel.selectedEntities.every(id => {
+            const actor = findLiveEntityById(id);
+            const def = contentManager.getEntityType(actor?.entity_type_id ?? "");
+            if (!actor || actor.owner_player_id !== myPlayerIdRef.current || !def?.collector) return false;
+            return (def.collector.collects ?? []).some(r => (depot.max_capacity?.[r] ?? 0) > 0)
+              && (((def.collector.transport_rate_per_second ?? 8) > 0) || (!!actor.pos && !!target.pos
+                && Math.hypot(actor.pos.x - target.pos.x, actor.pos.y - target.pos.y) <= (depot.depot_range ?? 0)));
+          })) return;
+          sel.selectedEntities.forEach(id => intentQueue.handleAssignCommand(Number(id), Number(targetId)));
+          setSelectedAction(null);
+        };
+
         const dispatchDeliver = (targetId: string) => {
           const sel = latestSelectorsRef.current;
           const delivery = typeof sel.selectedAction === "object" ? sel.selectedAction : null;
@@ -1307,14 +1336,14 @@ export default function GameStage() {
             const carrier = findLiveEntityById(sel.firstSelectedId ?? "");
             const capacity = contentManager.getEntityType(carrier?.entity_type_id ?? "")?.max_capacity ?? {};
             const targetCapacity = contentManager.getEntityType(target?.entity_type_id ?? "")?.max_capacity ?? {};
-            if (!target || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
+            if (!target || !contentManager.getEntityType(target.entity_type_id ?? "")?.depot || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
               || !Object.keys(targetCapacity).some(resource => targetCapacity[resource] > 0 && (capacity[resource] ?? 0) > 0)) return;
             setSelectedAction({ kind: "Transport", donorId: targetId, resourceTypeIds: [] });
             return;
           }
           if (!delivery.resourceTypeIds.length) return;
           const definition = contentManager.getEntityType(target?.entity_type_id ?? "");
-          if (!target || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
+          if (!target || !contentManager.getEntityType(target.entity_type_id ?? "")?.depot || target.remembered || target.owner_player_id !== myPlayerIdRef.current || target.health <= 0
             || (delivery.kind === "Transport" ? targetId === delivery.donorId
                 || !delivery.resourceTypeIds.every(resource => (definition?.max_capacity?.[resource] ?? 0) > 0)
               : !delivery.resourceTypeIds.some((r) => (definition?.max_capacity?.[r] ?? 0)
@@ -1446,6 +1475,7 @@ export default function GameStage() {
             const press = entityPress;
             entityPress = null;
             if (press) {
+              if (latestSelectorsRef.current.selectedAction === "Assign") { dispatchAssign(press.id); return; }
               if (latestSelectorsRef.current.selectedAction === "Escort") { dispatchEscort(press.id); return; }
               if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
                 dispatchDeliver(press.id);
@@ -1460,7 +1490,7 @@ export default function GameStage() {
             }
             if ((latestSelectorsRef.current.selectedAction === 'Move' || latestSelectorsRef.current.selectedAction === 'Convoy' || latestSelectorsRef.current.selectedAction === 'Sentry')) dispatchMove(ev.global, false, false);
             else if (latestSelectorsRef.current.selectedAction === "Repair" || (latestSelectorsRef.current.selectedAction && typeof latestSelectorsRef.current.selectedAction === "object")) setSelectedAction(null);
-            else if (latestSelectorsRef.current.selectedAction !== "Escort") setSelection([]);
+            else if (latestSelectorsRef.current.selectedAction !== "Escort" && latestSelectorsRef.current.selectedAction !== "Assign") setSelection([]);
             return;
           }
           const drag = selectionDrag;
@@ -1476,6 +1506,7 @@ export default function GameStage() {
           const height = Math.abs(endY - drag.startY);
           if (width < SELECTION_DRAG_THRESHOLD_PX && height < SELECTION_DRAG_THRESHOLD_PX) {
             if (press) {
+              if (latestSelectorsRef.current.selectedAction === "Assign") { dispatchAssign(press.id); return; }
               if (latestSelectorsRef.current.selectedAction === "Escort") { dispatchEscort(press.id); return; }
               if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
                 dispatchDeliver(press.id);
@@ -1492,7 +1523,7 @@ export default function GameStage() {
               setSelectedAction(null);
               return;
             }
-            if (latestSelectorsRef.current.selectedAction === "Escort") return;
+            if (latestSelectorsRef.current.selectedAction === "Escort" || latestSelectorsRef.current.selectedAction === "Assign") return;
             if (drag.moveMode) dispatchMove(ev.global, drag.shift, drag.ctrl);
             if (!drag.shift) setSelection([]);
             return;

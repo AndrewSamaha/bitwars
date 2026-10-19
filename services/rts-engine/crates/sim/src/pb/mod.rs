@@ -8,6 +8,8 @@ pub struct Vec2 {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Entity {
+    #[prost(message, optional, tag = "10")]
+    pub supply: Option<DepotSupply>,
     #[prost(string, tag = "6")]
     pub owner_player_id: String,
     #[prost(message, optional, tag = "8")]
@@ -470,4 +472,22 @@ pub struct CollectorState {
     pub resource_type: String,
     #[prost(float, tag = "4")]
     pub carry_amount: f32,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DepotSupply {
+    #[prost(uint64, tag = "1")]
+    pub depot_id: u64,
+    #[prost(uint64, tag = "7")]
+    pub delivery_depot_id: u64,
+    #[prost(string, repeated, tag = "2")]
+    pub missing_resources: Vec<String>,
+    #[prost(bool, tag = "3")]
+    pub operational: bool,
+    #[prost(string, tag = "4")]
+    pub waiting_for: String,
+    #[prost(bytes = "vec", tag = "5")]
+    pub paid_intent_id: Vec<u8>,
+    #[prost(float, tag = "6")]
+    pub construction_progress: f32,
 }

@@ -467,6 +467,7 @@ impl RedisClient {
         player_technologies.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
         let snap = Snapshot {
+            economy_version: 1,
             convoys,
             move_orders,
             sentry_orders,
@@ -777,6 +778,8 @@ impl RedisClient {
         let move_orders = snapshot.move_orders.clone();
         let sentry_orders = snapshot.sentry_orders.clone();
         let escort_orders = snapshot.escort_orders.clone();
+        anyhow::ensure!(snapshot.economy_version == 1 || !snapshot.entities.iter().any(|e| crate::spawn_config::is_player_owner(&e.owner_player_id)),
+            "this match predates depot logistics; archive it and run game:reset before restarting the upgraded engine");
         let (state, collector_states) = restore_snapshot(snapshot)?;
 
         info!(

@@ -248,6 +248,7 @@ fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &Conte
             .get(entity_type_id)
             .map(|def| def.health.max(0.0))
             .unwrap_or(0.0),
+        supply: None,
         resource_deposit: None,
         resources: None,
     }
@@ -297,6 +298,7 @@ pub fn on_player_spawn(
                     .get(type_id)
                     .map(|def| def.health.max(0.0))
                     .unwrap_or(0.0),
+                supply: None,
                 resource_deposit: None,
                 resources: Some(Default::default()),
             });
@@ -340,6 +342,7 @@ pub fn on_player_spawn(
                     .get(&neutral.entity_type_id)
                     .map(|def| def.health.max(0.0))
                     .unwrap_or(0.0),
+                supply: None,
                 resource_deposit: None,
                 resources: None,
             });

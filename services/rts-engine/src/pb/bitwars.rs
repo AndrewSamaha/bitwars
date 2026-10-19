@@ -30,6 +30,9 @@ pub struct Entity {
     /// finite source stock; visible within sensor coverage
     #[prost(message, optional, tag = "9")]
     pub resource_deposit: ::core::option::Option<ResourceDeposit>,
+    /// association and operating/action shortage; owner-only
+    #[prost(message, optional, tag = "10")]
+    pub supply: ::core::option::Option<DepotSupply>,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct ResourceDeposit {
@@ -50,6 +53,28 @@ pub struct ResourceAmount {
 pub struct ResourceInventory {
     #[prost(message, repeated, tag = "1")]
     pub resources: ::prost::alloc::vec::Vec<ResourceAmount>,
+}
+/// Physical resource source. Zero depot_id means no depot in range.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DepotSupply {
+    #[prost(uint64, tag = "1")]
+    pub depot_id: u64,
+    /// Explicit collection destination; zero uses automatic selection. Independent of spending.
+    #[prost(uint64, tag = "7")]
+    pub delivery_depot_id: u64,
+    #[prost(string, repeated, tag = "2")]
+    pub missing_resources: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// false pauses powered capabilities; movement remains available
+    #[prost(bool, tag = "3")]
+    pub operational: bool,
+    /// construction payment checkpoint, stored with inventory
+    #[prost(bytes = "vec", tag = "5")]
+    pub paid_intent_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(float, tag = "6")]
+    pub construction_progress: f32,
+    /// e.g. operation, construction, research, repair
+    #[prost(string, tag = "4")]
+    pub waiting_for: ::prost::alloc::string::String,
 }
 /// Sparse delta: only include fields that changed meaningfully.
 /// proto3 'optional' yields Option<T> in Rust (prost) and presence in TS.
@@ -80,6 +105,8 @@ pub struct EntityDelta {
     pub damage_type: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "10")]
     pub resource_deposit: ::core::option::Option<ResourceDeposit>,
+    #[prost(message, optional, tag = "11")]
+    pub supply: ::core::option::Option<DepotSupply>,
 }
 /// Authoritative collector telemetry for one entity. This travels with the
 /// normal snapshot/delta stream instead of a separately polled UI side channel.
@@ -456,6 +483,14 @@ pub struct DeliverIntent {
     #[prost(uint64, tag = "4")]
     pub donor_id: u64,
 }
+/// Changes collection destination without replacing the active order. Zero restores automatic selection.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct AssignDepotIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub target_id: u64,
+}
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntentEnvelope {
@@ -481,7 +516,7 @@ pub struct IntentEnvelope {
     pub policy: i32,
     #[prost(
         oneof = "intent_envelope::Payload",
-        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21"
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22"
     )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
@@ -511,6 +546,8 @@ pub mod intent_envelope {
         Sentry(super::SentryIntent),
         #[prost(message, tag = "21")]
         Escort(super::EscortIntent),
+        #[prost(message, tag = "22")]
+        AssignDepot(super::AssignDepotIntent),
     }
 }
 /// Extensible Intent envelope.
@@ -937,6 +974,9 @@ pub struct PlayerTechnologyState {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
+    /// 1 = depot logistics; earlier matches require reset
+    #[prost(uint32, tag = "12")]
+    pub economy_version: u32,
     #[prost(int64, tag = "2")]
     pub tick: i64,
     #[prost(message, repeated, tag = "3")]

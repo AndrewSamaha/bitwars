@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity.proto.
  */
 export const file_entity: GenFile = /*@__PURE__*/
-  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMijgIKBkVudGl0eRIKCgJpZBgBIAEoBBIWCg5lbnRpdHlfdHlwZV9pZBgCIAEoCRIaCgNwb3MYAyABKAsyDS5iaXR3YXJzLlZlYzISGgoDdmVsGAQgASgLMg0uYml0d2Fycy5WZWMyEhwKBWZvcmNlGAUgASgLMg0uYml0d2Fycy5WZWMyEhcKD293bmVyX3BsYXllcl9pZBgGIAEoCRIOCgZoZWFsdGgYByABKAISLQoJcmVzb3VyY2VzGAggASgLMhouYml0d2Fycy5SZXNvdXJjZUludmVudG9yeRIyChByZXNvdXJjZV9kZXBvc2l0GAkgASgLMhguYml0d2Fycy5SZXNvdXJjZURlcG9zaXQiNAoPUmVzb3VyY2VEZXBvc2l0Eg4KBmFtb3VudBgBIAEoARIRCglyZW1haW5pbmcYAiABKAEiNwoOUmVzb3VyY2VBbW91bnQSFQoNcmVzb3VyY2VfdHlwZRgBIAEoCRIOCgZhbW91bnQYAiABKAEiPwoRUmVzb3VyY2VJbnZlbnRvcnkSKgoJcmVzb3VyY2VzGAEgAygLMhcuYml0d2Fycy5SZXNvdXJjZUFtb3VudGIGcHJvdG8z", [file_vec2]);
+  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMitAIKBkVudGl0eRIKCgJpZBgBIAEoBBIWCg5lbnRpdHlfdHlwZV9pZBgCIAEoCRIaCgNwb3MYAyABKAsyDS5iaXR3YXJzLlZlYzISGgoDdmVsGAQgASgLMg0uYml0d2Fycy5WZWMyEhwKBWZvcmNlGAUgASgLMg0uYml0d2Fycy5WZWMyEhcKD293bmVyX3BsYXllcl9pZBgGIAEoCRIOCgZoZWFsdGgYByABKAISLQoJcmVzb3VyY2VzGAggASgLMhouYml0d2Fycy5SZXNvdXJjZUludmVudG9yeRIyChByZXNvdXJjZV9kZXBvc2l0GAkgASgLMhguYml0d2Fycy5SZXNvdXJjZURlcG9zaXQSJAoGc3VwcGx5GAogASgLMhQuYml0d2Fycy5EZXBvdFN1cHBseSI0Cg9SZXNvdXJjZURlcG9zaXQSDgoGYW1vdW50GAEgASgBEhEKCXJlbWFpbmluZxgCIAEoASI3Cg5SZXNvdXJjZUFtb3VudBIVCg1yZXNvdXJjZV90eXBlGAEgASgJEg4KBmFtb3VudBgCIAEoASI/ChFSZXNvdXJjZUludmVudG9yeRIqCglyZXNvdXJjZXMYASADKAsyFy5iaXR3YXJzLlJlc291cmNlQW1vdW50IrYBCgtEZXBvdFN1cHBseRIQCghkZXBvdF9pZBgBIAEoBBIZChFkZWxpdmVyeV9kZXBvdF9pZBgHIAEoBBIZChFtaXNzaW5nX3Jlc291cmNlcxgCIAMoCRITCgtvcGVyYXRpb25hbBgDIAEoCBIWCg5wYWlkX2ludGVudF9pZBgFIAEoDBIdChVjb25zdHJ1Y3Rpb25fcHJvZ3Jlc3MYBiABKAISEwoLd2FpdGluZ19mb3IYBCABKAliBnByb3RvMw", [file_vec2]);
 
 /**
  * @generated from message bitwars.Entity
@@ -70,6 +70,13 @@ export type Entity = Message<"bitwars.Entity"> & {
    * @generated from field: bitwars.ResourceDeposit resource_deposit = 9;
    */
   resourceDeposit?: ResourceDeposit;
+
+  /**
+   * association and operating/action shortage; owner-only
+   *
+   * @generated from field: bitwars.DepotSupply supply = 10;
+   */
+  supply?: DepotSupply;
 };
 
 /**
@@ -141,4 +148,61 @@ export type ResourceInventory = Message<"bitwars.ResourceInventory"> & {
  */
 export const ResourceInventorySchema: GenMessage<ResourceInventory> = /*@__PURE__*/
   messageDesc(file_entity, 3);
+
+/**
+ * Physical resource source. Zero depot_id means no depot in range.
+ *
+ * @generated from message bitwars.DepotSupply
+ */
+export type DepotSupply = Message<"bitwars.DepotSupply"> & {
+  /**
+   * @generated from field: uint64 depot_id = 1;
+   */
+  depotId: bigint;
+
+  /**
+   * Explicit collection destination; zero uses automatic selection. Independent of spending.
+   *
+   * @generated from field: uint64 delivery_depot_id = 7;
+   */
+  deliveryDepotId: bigint;
+
+  /**
+   * @generated from field: repeated string missing_resources = 2;
+   */
+  missingResources: string[];
+
+  /**
+   * false pauses powered capabilities; movement remains available
+   *
+   * @generated from field: bool operational = 3;
+   */
+  operational: boolean;
+
+  /**
+   * construction payment checkpoint, stored with inventory
+   *
+   * @generated from field: bytes paid_intent_id = 5;
+   */
+  paidIntentId: Uint8Array;
+
+  /**
+   * @generated from field: float construction_progress = 6;
+   */
+  constructionProgress: number;
+
+  /**
+   * e.g. operation, construction, research, repair
+   *
+   * @generated from field: string waiting_for = 4;
+   */
+  waitingFor: string;
+};
+
+/**
+ * Describes the message bitwars.DepotSupply.
+ * Use `create(DepotSupplySchema)` to create a new message.
+ */
+export const DepotSupplySchema: GenMessage<DepotSupply> = /*@__PURE__*/
+  messageDesc(file_entity, 4);
 

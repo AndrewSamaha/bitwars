@@ -15,6 +15,7 @@ export function isWithinSensorRange(
 type PositionedEntity = {
   entity_type_id?: string;
   owner_player_id?: string;
+  supply?: { operational: boolean };
   pos: { x: number; y: number };
 };
 
@@ -26,7 +27,7 @@ export function getOwnedSensorSources(
   if (!playerId) return [];
   return Array.from(entities).flatMap((entity) => {
     const range = getSensorRange(entity.entity_type_id ?? "") ?? 0;
-    return entity.owner_player_id === playerId && Number.isFinite(range) && range > 0
+    return entity.owner_player_id === playerId && entity.supply?.operational !== false && Number.isFinite(range) && range > 0
       ? [{ x: entity.pos.x, y: entity.pos.y, range }]
       : [];
   });

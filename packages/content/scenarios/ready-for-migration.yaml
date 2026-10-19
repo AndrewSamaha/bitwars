@@ -1,3 +1,5 @@
+# Depot logistics: former consumer stock is held in physical depots.
+
 version: 1
 id: ready-for-migration
 name: ready-for-migration
@@ -5328,9 +5330,9 @@ entities:
     y: -43747.32
   health: 400.0
   resources:
-    energy: 1000.0
+    energy: 8318.051110811532
     food: 2650.3699293651916
-    minerals: 897.9907073974609
+    minerals: 2181.53328704834
 - id: 678
   entity_type: worker
   owner: player1
@@ -5369,8 +5371,7 @@ entities:
     x: -34399.45
     y: -43045.652
   health: 60.0
-  resources:
-    energy: 100.0
+  resources: {}
 - id: 682
   entity_type: worker
   owner: player1
@@ -5396,8 +5397,7 @@ entities:
     x: -35661.473
     y: -43770.934
   health: 100.0
-  resources:
-    energy: 1.0
+  resources: {}
 - id: 685
   entity_type: worker
   owner: player1
@@ -5425,8 +5425,7 @@ entities:
     x: -35414.086
     y: -44621.984
   health: 100.0
-  resources:
-    energy: 1.0
+  resources: {}
 - id: 688
   entity_type: worker
   owner: player1
@@ -5444,8 +5443,7 @@ entities:
     x: -32812.785
     y: -43863.37
   health: 100.0
-  resources:
-    energy: 1.0
+  resources: {}
 - id: 691
   entity_type: worker
   owner: player1
@@ -5464,8 +5462,8 @@ entities:
     y: -43969.68
   health: 50.0
   resources:
-    energy: 100.0
-    minerals: 1000.0
+    energy: 1602
+    minerals: 1000
 - id: 693
   entity_type: collector_solar
   owner: player1
@@ -5473,8 +5471,7 @@ entities:
     x: -32524.578
     y: -44661.434
   health: 100.0
-  resources:
-    energy: 1.0
+  resources: {}
 - id: 694
   entity_type: worker
   owner: player1
@@ -5501,9 +5498,9 @@ entities:
     y: -44059.383
   health: 50.0
   resources:
-    energy: 100.0
-    food: 1000.0
-    minerals: 100.0
+    energy: 600
+    food: 1000
+    minerals: 100
 - id: 697
   entity_type: defense_pylon
   owner: player1
@@ -5511,8 +5508,7 @@ entities:
     x: -32572.695
     y: -44855.082
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 698
   entity_type: worker
   owner: player1
@@ -5531,8 +5527,7 @@ entities:
     x: -32925.05
     y: -42967.527
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 700
   entity_type: raider
   owner: raiders
@@ -5548,8 +5543,7 @@ entities:
     x: -36422.81
     y: -43415.8
   health: 100.0
-  resources:
-    energy: 1.0
+  resources: {}
 - id: 702
   entity_type: defense_pylon
   owner: player1
@@ -5557,8 +5551,7 @@ entities:
     x: -35311.434
     y: -44900.547
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 703
   entity_type: defense_pylon
   owner: player1
@@ -5566,8 +5559,7 @@ entities:
     x: -36566.887
     y: -43163.695
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 704
   entity_type: defense_pylon
   owner: player1
@@ -5575,8 +5567,7 @@ entities:
     x: -34790.113
     y: -43749.824
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 705
   entity_type: raider
   owner: raiders
@@ -5592,8 +5583,7 @@ entities:
     x: -34834.945
     y: -44581.598
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 707
   entity_type: defense_pylon
   owner: player1
@@ -5601,8 +5591,7 @@ entities:
     x: -34983.074
     y: -41601.477
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 708
   entity_type: raider
   owner: raiders
@@ -5618,8 +5607,7 @@ entities:
     x: -34141.414
     y: -44519.84
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 710
   entity_type: factory
   owner: player1
@@ -5627,10 +5615,7 @@ entities:
     x: -35329.3
     y: -44151.96
   health: 150.0
-  resources:
-    energy: 3000.0
-    food: 500.0
-    minerals: 3000.0
+  resources: {}
 - id: 711
   entity_type: raider
   owner: raiders
@@ -5646,8 +5631,7 @@ entities:
     x: -32695.182
     y: -42690.37
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 713
   entity_type: mineral_storage_container
   owner: player1
@@ -5656,8 +5640,9 @@ entities:
     y: -44250.402
   health: 50.0
   resources:
-    energy: 100.0
-    minerals: 1000.0
+    energy: 3601
+    minerals: 4000
+    food: 500
 - id: 714
   entity_type: defense_pylon
   owner: player1
@@ -5665,8 +5650,7 @@ entities:
     x: -34524.54
     y: -41753.953
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 715
   entity_type: collector_solar
   owner: player1
@@ -5674,8 +5658,7 @@ entities:
     x: -32652.732
     y: -42834.562
   health: 100.0
-  resources:
-    energy: 216.05111081153154
+  resources: {}
 - id: 716
   entity_type: raider
   owner: raiders
@@ -5691,8 +5674,7 @@ entities:
     x: -31679.002
     y: -42406.402
   health: 100.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 718
   entity_type: defense_pylon
   owner: player1
@@ -5700,8 +5682,7 @@ entities:
     x: -35318.19
     y: -43718.457
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 719
   entity_type: raider
   owner: raiders
@@ -5727,8 +5708,7 @@ entities:
     x: -31874.2
     y: -42140.016
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 722
   entity_type: worker
   owner: player1
@@ -5747,9 +5727,9 @@ entities:
     y: -44234.043
   health: 50.0
   resources:
-    energy: 100.0
-    food: 1000.0
-    minerals: 100.0
+    energy: 600
+    food: 1000
+    minerals: 100
 - id: 724
   entity_type: worker
   owner: player1
@@ -5775,8 +5755,7 @@ entities:
     x: -31811.115
     y: -45050.824
   health: 100.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 728
   entity_type: defense_pylon
   owner: player1
@@ -5784,8 +5763,7 @@ entities:
     x: -31608.975
     y: -45022.277
   health: 500.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 729
   entity_type: raider
   owner: raiders
@@ -5906,9 +5884,9 @@ entities:
     y: -43650.48
   health: 50.0
   resources:
-    energy: 100.0
-    food: 704.0
-    minerals: 100.0
+    energy: 1200
+    food: 704
+    minerals: 100
 - id: 745
   entity_type: raider
   owner: raiders
@@ -5924,8 +5902,7 @@ entities:
     x: -33701.85
     y: -43557.18
   health: 150.0
-  resources:
-    energy: 500.0
+  resources: {}
 - id: 747
   entity_type: factory
   owner: player1
@@ -5933,9 +5910,7 @@ entities:
     x: -33500.496
     y: -44153.977
   health: 150.0
-  resources:
-    energy: 3000.0
-    minerals: 1283.542579650879
+  resources: {}
 - id: 748
   entity_type: raider
   owner: raiders
@@ -5951,6 +5926,5 @@ entities:
     x: -33680.12
     y: -43542.902
   health: 100.0
-  resources:
-    energy: 100.0
+  resources: {}
 captured_tick: 255637

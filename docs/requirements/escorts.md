@@ -94,7 +94,8 @@ states; keep movement clamping precise and avoid per-tick status flicker.
 
 Escorting fighters should defend while scouts can simply accompany the leader.
 Explicitly allow Escort members through autonomous combat eligibility, as Sentry
-does; an ordinary active action currently suppresses autonomous combat.
+does. Other work orders suppress autonomous combat; Move and Convoy permit
+opportunistic laser fire while preserving ordered movement.
 
 Use the existing weapon, acquisition, cooldown, and targeting rules. Add a finite
 escort leash around the leader so an enemy cannot draw defenders indefinitely
@@ -121,8 +122,8 @@ subject to the same leash. Explicit player-issued replacement commands still
 detach the ship and end its automatic return behavior.
 
 This uses the combat interruption pattern already implemented for Sentry.
-Current Convoy orders suppress autonomous combat; adding combat to Convoy itself
-is a separate change.
+Convoy members can fire in-range lasers while keeping formation and following
+their route; they do not interrupt movement to pursue threats.
 
 Resolve movement ownership before physics, and apply follower positioning only
 to non-engaged escorts after the leader's movement is resolved. Account for combat

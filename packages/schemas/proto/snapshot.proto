@@ -31,6 +31,7 @@ message PlayerTechnologyState {
 }
 
 message Snapshot {
+  uint32 economy_version = 12; // 1 = depot logistics; earlier matches require reset
   int64 tick = 2;
   repeated Entity entities = 3;
   repeated PlayerResourceLedger player_ledgers = 4;
