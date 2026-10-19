@@ -38,7 +38,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_
 use prost::Message;
 use state::{initialize_resource_deposits, take_from_deposit, ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 18;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 19;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -484,6 +484,18 @@ mod transport_capacity_tests {
                 ..Default::default()
             })
             .collect();
+        entities.push(pb::Entity { id: 1, supply: Some(pb::DepotSupply { delivery_depot_id: 4, ..Default::default() }), ..Default::default() });
+        assert_eq!(Engine::pick_collection_depot(&collector, &refineries, &entities,
+            &collection_entity_index(&entities), "minerals", &content).map(|r| r.id), Some(4));
+        set_resource_amount(&mut entities[2], "minerals", 100.0);
+        assert!(Engine::pick_collection_depot(&collector, &refineries, &entities,
+            &collection_entity_index(&entities), "minerals", &content).is_none());
+        entities[2].health = 0.0;
+        assert!(Engine::pick_collection_depot(&collector, &refineries, &entities,
+            &collection_entity_index(&entities), "minerals", &content).is_none());
+        entities[2].health = 100.0;
+        set_resource_amount(&mut entities[2], "minerals", 0.0);
+        entities[3].supply.as_mut().unwrap().delivery_depot_id = 0;
         let pick = |entities: &[pb::Entity]| {
             Engine::pick_collection_depot(
                 &collector,
@@ -3574,7 +3586,9 @@ impl Engine {
         by_id: &HashMap<u64, usize>, resource_type: &str,
         content: &ContentPack,
     ) -> Option<&'a DepotSnapshot> {
-        refineries.iter().filter(|r| r.owner_player_id == collector.owner_player_id && r.accepts.iter().any(|v| v == resource_type))
+        let assigned = collection_entity(entities, collector.id, by_id)
+            .and_then(|e| e.supply.as_ref()).map_or(0, |s| s.delivery_depot_id);
+        refineries.iter().filter(|r| assigned == 0 || r.id == assigned).filter(|r| r.owner_player_id == collector.owner_player_id && r.accepts.iter().any(|v| v == resource_type))
             .filter(|r| content.get(&r.entity_type_id).is_some_and(|d| d.depot))
             .filter(|r| collection_entity(entities, r.id, by_id).is_some_and(|e| e.health > 0.0 &&
                 r.max_capacity.get(resource_type).copied().unwrap_or(0.0) as f64 > resource_amount(e, resource_type)))
@@ -4011,7 +4025,7 @@ impl Engine {
                     operating_collectors.insert(collector.id);
                     let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
                     let (amount, recipient) = logistics::collect_to_depot(&mut self.state.entities, self.content.as_ref().unwrap(), collector.id, node.id, &node.resource_type, rate as f64);
-                    self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING, &node.resource_type, if dt > 0.0 { (amount / dt as f64) as f32 } else { 0.0 });
+                    self.set_collector_ui_state(collector.id, if amount > 0.0 { COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING } else { "waiting_for_dropoff" }, &node.resource_type, if dt > 0.0 { (amount / dt as f64) as f32 } else { 0.0 });
                     if let Some(state) = self.collector_ui_state_by_entity.get_mut(&collector.id) { state.receiving_entity_id = recipient; }
                     if let Some(entity) = collection_entity_mut(
                         &mut self.state.entities, collector.id, &entity_by_id,
@@ -4912,6 +4926,19 @@ impl Engine {
             .await?;
 
         let mut payload_intent = match envelope.payload {
+            Some(intent_envelope::Payload::AssignDepot(order)) => {
+                let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
+                let result = self.content.as_ref().ok_or(pb::LifecycleReason::InvalidTarget)
+                    .and_then(|content| logistics::assign_delivery_depot(&mut self.state.entities, content,
+                        &player_id, order.entity_id, order.target_id));
+                if let Err(reason) = result {
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
+                    return Err(anyhow!("invalid collection depot assignment"));
+                }
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Accepted, pb::LifecycleReason::None, accept_tick).await?;
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished, pb::LifecycleReason::None, accept_tick).await?;
+                return Ok(());
+            }
             Some(intent_envelope::Payload::Escort(order)) => {
                 return self.activate_escort(order, metadata).await;
             }

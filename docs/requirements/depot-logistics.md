@@ -60,11 +60,19 @@ Factories cease to be independent stockpiles in this proposal. Specialized depot
 
 Automatically associate a consumer with a nearby same-owner depot when needed. Keep the association while the depot remains alive, friendly, and in range. Show the association and coverage in the UI.
 
-Use a deterministic nearest-depot choice, with entity ID breaking distance ties. An empty associated depot does not silently cause a consumer to drain a different depot. Reassociate when the current depot becomes invalid. Manual reassignment is an optional later enhancement.
+Use a deterministic nearest-depot choice, with entity ID breaking distance ties. An empty associated depot does not silently cause a consumer to drain a different depot. Reassociate when the current depot becomes invalid. Manual collection destination assignment is available as described below; spending associations still use automatic selection.
 
 Check range when spending or contributing resources. Moving a depot changes its service coverage. There is no stock transfer into a consumer merely because it enters coverage.
 
 For local production, gathered energy credits the associated depot up to capacity. Excess cannot be credited or silently moved elsewhere. Transport collection remains physical: workers gather into cargo and deliver to a depot. Retain ordinary capacity and compatibility checks.
+
+## Assigning collection destinations
+
+Select solar collectors or workers, press **[A] Assign**, and click a friendly compatible depot. Multiple selected collectors may be assigned together. Assignment changes a persistent collection destination without replacing the active order; an idle collector still needs a Collect order. It does not change the depot used to pay for operations or construction.
+
+Solar collectors require their destination's service coverage at assignment and whenever energy is credited. Workers physically deliver cargo to their assigned depot, including outside service coverage. A depot must accept at least one resource the collector gathers; other resources wait if they cannot be accepted. Full, destroyed, hostile, or out-of-range destinations never trigger automatic fallback. Collection pauses or cargo waits until the destination is usable or the player changes the assignment. The detail panel shows the assignment and collection activity.
+
+Assignments survive stopping/restarting Collect, reconnects, and snapshot restoration. In Assign mode, **Use automatic destination** clears the explicit destination: solar returns to its automatic supply-depot association, while workers choose the nearest compatible depot with room. Explicit Deliver and Transport orders continue to use their own specified destinations.
 
 ## Spending and shortages
 
@@ -159,10 +167,10 @@ If extended fleet operations need direct logistical limits later, consider one e
 - Build and upgrade options now declare `duration_seconds`. Existing rates were converted into equivalent durations. Costs are paid once when simulation work first starts, with no cancellation or destruction refund. Payment identity and progress are checkpointed in the same entity snapshot as inventories to prevent duplicate charges after restore.
 - Research continues to charge atomically as work progresses. Research and upgrade progress can be restored along with construction.
 - Solar collection without a valid depot pauses resource intake; full depots also stop intake. There is no solar collector buffer. Positive depot capacity determines accepted resources.
-- Depot selection uses nearest distance, then entity ID; a valid association stays fixed regardless of stock. Depot service is local and never links other depot inventories. The initial UI has automatic association only.
+- Depot selection uses nearest distance, then entity ID; a valid association stays fixed regardless of stock. Depot service is local and never links other depot inventories. Spending associations remain automatic. Collection destinations can be assigned independently using the Assign command.
 - Freight routes select one resource. One-trip delivery can select several held resources. Existing convoy formation and leashed escort orders are reused.
 - Depots retain current movement capabilities. Destruction loses their stock; upgrades retain inventory under the existing entity transformation behavior. No new capture mechanic is introduced.
-- Authoritative and client intent protocol versions are now 18. Snapshots use `economy_version: 1`. The upgraded engine refuses to restore an older populated player match, rather than silently discarding consumer stock or misinterpreting partially paid construction.
+- Authoritative and client intent protocol versions are now 19. Snapshots use `economy_version: 1`. The upgraded engine refuses to restore an older populated player match, rather than silently discarding consumer stock or misinterpreting partially paid construction.
 - Before deploying to an existing match, archive the old match and perform an explicit `game:reset`. Implementation does not reset the running game. Bundled scenarios were adapted by relocating old consumer stock to physical depots; above-capacity saved stock remains preserved and cannot receive further inflows until room exists.
 - Deprecated configuration remains decodable and syntax-validated but does not enable sharing, reservations, or old drop-off behavior. See [Resource field deprecations](./resource-field-deprecations.md).
 

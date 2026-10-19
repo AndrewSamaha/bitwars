@@ -14,12 +14,12 @@ describe("depot logistics", () => {
     expect(depotErrors({})).toEqual([]);
   });
   it("round-trips association and shortage state through snapshot and sparse delta mapping", () => {
-    const entity = create(EntitySchema, {id:1n, supply:{depotId:2n, missingResources:["energy"],operational:false,waitingFor:"operation"}});
+    const entity = create(EntitySchema, {id:1n, supply:{depotId:2n,deliveryDepotId:3n, missingResources:["energy"],operational:false,waitingFor:"operation"}});
     const mapped=mapEntityToJson(fromBinary(EntitySchema,toBinary(EntitySchema,entity)));
-    expect(mapped.supply).toEqual({depot_id:2,missing_resources:["energy"],operational:false,waiting_for:"operation"});
+    expect(mapped.supply).toEqual({depot_id:2,delivery_depot_id:3,missing_resources:["energy"],operational:false,waiting_for:"operation"});
     const delta=create(DeltaSchema,{updates:[{id:1n,supply:{depotId:0n,operational:true}}]});
     const update=mapDeltaToJson(fromBinary(DeltaSchema,toBinary(DeltaSchema,delta))).updates[0];
-    expect(update.supply).toEqual({depot_id:0,missing_resources:[],operational:true,waiting_for:""});
+    expect(update.supply).toEqual({depot_id:0,delivery_depot_id:0,missing_resources:[],operational:true,waiting_for:""});
   });
   it("hides enemy logistics and disables unpaid sensors until supply returns", () => {
     const filter=new VisibilityFilter("me",{habitat:{sensor:{range:100}}});

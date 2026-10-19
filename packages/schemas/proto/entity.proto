@@ -33,6 +33,8 @@ message ResourceInventory {
 // Physical resource source. Zero depot_id means no depot in range.
 message DepotSupply {
   uint64 depot_id = 1;
+  // Explicit collection destination; zero uses automatic selection. Independent of spending.
+  uint64 delivery_depot_id = 7;
   repeated string missing_resources = 2;
   bool operational = 3; // false pauses powered capabilities; movement remains available
   bytes paid_intent_id = 5; // construction payment checkpoint, stored with inventory

@@ -10,7 +10,7 @@ export type StreamEntity = {
   vel?: Pos;
   force?: Pos;
   resources?: Array<{ resource_type: string; amount: number }>;
-  supply?: { depot_id: number | string; missing_resources: string[]; operational: boolean; waiting_for: string };
+  supply?: { depot_id: number | string; delivery_depot_id?: number | string; missing_resources: string[]; operational: boolean; waiting_for: string };
   resource_deposit?: { amount: number; remaining: number } | null;
 };
 

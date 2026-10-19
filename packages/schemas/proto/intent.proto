@@ -111,6 +111,12 @@ message DeliverIntent {
   uint64 donor_id = 4;
 }
 
+// Changes collection destination without replacing the active order. Zero restores automatic selection.
+message AssignDepotIntent {
+  uint64 entity_id = 1;
+  uint64 target_id = 2;
+}
+
 // Transport envelope that wraps all intent payloads and carries authoritative metadata.
 message IntentEnvelope {
   bytes  client_cmd_id    = 1;  // UUIDv7 (16 bytes), supplied by client
@@ -133,6 +139,7 @@ message IntentEnvelope {
     ConvoyIntent         convoy = 19;
     SentryIntent         sentry = 20;
     EscortIntent         escort = 21;
+    AssignDepotIntent    assign_depot = 22;
   }
   reserved 8, 9, 15;
 }

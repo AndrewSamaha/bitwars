@@ -130,6 +130,39 @@ pub(super) fn pay(
     true
 }
 
+/// A manual collection destination never falls back to another depot.
+pub(super) fn collection_depot_id(
+    entities: &[pb::Entity], content: &ContentPack, actor: &pb::Entity,
+) -> Option<u64> {
+    let assigned = actor.supply.as_ref().map_or(0, |s| s.delivery_depot_id);
+    if assigned == 0 { return depot_id(entities, content, actor); }
+    entities.iter().find(|d| d.id == assigned && eligible_depot(actor, d, content)).map(|d| d.id)
+}
+
+/// Validate both the collector and destination before changing persistent state.
+pub(super) fn assign_delivery_depot(
+    entities: &mut [pb::Entity], content: &ContentPack, player: &str, actor_id: u64, target_id: u64,
+) -> Result<(), pb::LifecycleReason> {
+    let actor = entities.iter().find(|e| e.id == actor_id && e.health > 0.0)
+        .ok_or(pb::LifecycleReason::InvalidTarget)?;
+    if actor.owner_player_id != player { return Err(pb::LifecycleReason::NotOwned); }
+    let def = content.get(&actor.entity_type_id).ok_or(pb::LifecycleReason::InvalidTarget)?;
+    let collector = def.collector.as_ref().filter(|c| !c.collects.is_empty())
+        .ok_or(pb::LifecycleReason::InvalidTarget)?;
+    if target_id != 0 {
+        let target = entities.iter().find(|e| e.id == target_id && e.health > 0.0 && e.owner_player_id == player)
+            .ok_or(pb::LifecycleReason::InvalidTarget)?;
+        let target_def = content.get(&target.entity_type_id).filter(|d| d.depot)
+            .ok_or(pb::LifecycleReason::InvalidTarget)?;
+        if !collector.collects.iter().any(|r| target_def.max_capacity.get(r).is_some_and(|v| *v > 0.0))
+            || (collector.transport_rate_per_second <= 0.0 && !eligible_depot(actor, target, content)) {
+            return Err(pb::LifecycleReason::InvalidTarget);
+        }
+    }
+    entities.iter_mut().find(|e| e.id == actor_id).unwrap().supply.get_or_insert_with(Default::default).delivery_depot_id = target_id;
+    Ok(())
+}
+
 /// Collection credits the one associated depot; no intermediate producer balance.
 pub(super) fn collect_to_depot(
     entities: &mut [pb::Entity],
@@ -142,7 +175,7 @@ pub(super) fn collect_to_depot(
     let target = entities
         .iter()
         .find(|e| e.id == actor_id)
-        .and_then(|actor| depot_id(entities, content, actor));
+        .and_then(|actor| collection_depot_id(entities, content, actor));
     let Some(index) = target.and_then(|id| entities.iter().position(|e| e.id == id)) else {
         return (0.0, None);
     };
@@ -510,5 +543,57 @@ mod construction_tests {
             restored[0].supply.as_ref().unwrap().paid_intent_id,
             b"first"
         );
+    }
+}
+
+#[cfg(test)]
+mod assignment_tests {
+    use super::*;
+    use prost::Message;
+
+    fn content() -> ContentPack {
+        ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap()
+    }
+    fn entity(id: u64, kind: &str, x: f32) -> pb::Entity {
+        pb::Entity { id, entity_type_id: kind.into(), owner_player_id: "me".into(), health: 100.0,
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default() }
+    }
+
+    #[test]
+    fn solar_assignment_redirects_generation_preserves_spending_and_survives_restore() {
+        let c = content();
+        let mut es = vec![entity(1, "collector_solar", 0.0), entity(2, "habitat", 1000.0),
+            entity(3, "habitat", 2000.0), entity(4, "theta", 0.0)];
+        es[3].resource_deposit = Some(pb::ResourceDeposit { amount: 100.0, remaining: 100.0 });
+        refresh_associations(&mut es, &c);
+        assign_delivery_depot(&mut es, &c, "me", 1, 3).unwrap();
+        refresh_associations(&mut es, &c);
+        assert_eq!(depot_id(&es, &c, &es[0]), Some(2));
+        assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 10.0), (10.0, Some(3)));
+        assert_eq!(resource_amount(&es[1], "energy"), 0.0);
+        es[0] = pb::Entity::decode(es[0].encode_to_vec().as_slice()).unwrap();
+        assert_eq!(collection_depot_id(&es, &c, &es[0]), Some(3));
+        set_resource_amount(&mut es[2], "energy", 1000.0);
+        assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 10.0), (0.0, Some(3)));
+        es[2].pos.as_mut().unwrap().x = 5000.0;
+        assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 10.0), (0.0, None));
+        assign_delivery_depot(&mut es, &c, "me", 1, 0).unwrap();
+        assert_eq!(collection_depot_id(&es, &c, &es[0]), Some(2));
+    }
+
+    #[test]
+    fn validates_ownership_capability_and_solar_range_but_allows_remote_worker_delivery() {
+        let c = content();
+        let mut es = vec![entity(1, "collector_solar", 0.0), entity(2, "habitat", 5000.0),
+            entity(3, "worker", 0.0), entity(4, "factory", 0.0)];
+        assert_eq!(assign_delivery_depot(&mut es, &c, "other", 1, 2), Err(pb::LifecycleReason::NotOwned));
+        assert!(assign_delivery_depot(&mut es, &c, "me", 1, 2).is_err());
+        assert!(assign_delivery_depot(&mut es, &c, "me", 3, 4).is_err());
+        assert!(assign_delivery_depot(&mut es, &c, "me", 4, 0).is_err());
+        assign_delivery_depot(&mut es, &c, "me", 3, 2).unwrap();
+        es[1].owner_player_id = "enemy".into();
+        assert!(assign_delivery_depot(&mut es, &c, "me", 3, 2).is_err());
+        assert_eq!(es[2].supply.as_ref().unwrap().delivery_depot_id, 2);
     }
 }

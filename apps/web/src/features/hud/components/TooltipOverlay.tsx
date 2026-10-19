@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import * as PIXI from "pixi.js";
+import { CollectionAssignment } from "./CollectionAssignment";
 import { useHUD } from "./HUDContext";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { contentManager } from "@/features/content/contentManager";
@@ -128,6 +129,7 @@ export function TooltipOverlay() {
       {ownerPlayerName && <div><b>owner:</b> {ownerPlayerName}</div>}
       <div><b>{entityTypeId || "—"}</b></div>
       <div><b>id:</b> {(hoveredEntity as any).id}</div>
+      {ownerPlayerId === player?.id && <CollectionAssignment entity={hoveredEntity} tooltip />}
       {Number.isFinite(health) && (
         <div>
           <b>health:</b> {health.toFixed(1)}

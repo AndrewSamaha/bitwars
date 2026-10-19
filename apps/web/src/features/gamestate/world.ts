@@ -56,7 +56,7 @@ export type Entity = Partial<
   EntityTypeId &
   OwnerPlayerId &
   Health &
-  { supply?: { depot_id: number | string; missing_resources: string[]; operational: boolean; waiting_for: string }; resources?: ResourceAmountView[]; resource_deposit?: { amount: number; remaining: number } | null } &
+  { supply?: { depot_id: number | string; delivery_depot_id?: number | string; missing_resources: string[]; operational: boolean; waiting_for: string }; resources?: ResourceAmountView[]; resource_deposit?: { amount: number; remaining: number } | null } &
   FogMemoryView &
   RadiationDamagePresentation &
   ActiveIntentView &

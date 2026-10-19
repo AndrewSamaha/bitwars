@@ -478,6 +478,8 @@ pub struct CollectorState {
 pub struct DepotSupply {
     #[prost(uint64, tag = "1")]
     pub depot_id: u64,
+    #[prost(uint64, tag = "7")]
+    pub delivery_depot_id: u64,
     #[prost(string, repeated, tag = "2")]
     pub missing_resources: Vec<String>,
     #[prost(bool, tag = "3")]

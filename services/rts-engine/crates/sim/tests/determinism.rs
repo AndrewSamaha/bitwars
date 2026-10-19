@@ -181,6 +181,7 @@ fn depot_association_and_payment_checkpoint_survive_replay_serialization() {
         id: 1,
         supply: Some(sim::pb::DepotSupply {
             depot_id: 2,
+            delivery_depot_id: 7,
             operational: false,
             missing_resources: vec!["energy".into()],
             waiting_for: "operation".into(),
@@ -196,4 +197,14 @@ fn depot_association_and_payment_checkpoint_survive_replay_serialization() {
     let mut changed = restored;
     changed.entities[0].supply.as_mut().unwrap().depot_id = 9;
     assert_ne!(saved, to_sorted_json(&changed).unwrap());
+}
+
+#[test]
+fn delivery_assignment_affects_deterministic_state() {
+    let entity = sim::pb::Entity { id: 1, supply: Some(sim::pb::DepotSupply::default()), ..Default::default() };
+    let state = sim::state::WorldState::new(1, vec![entity]);
+    let before = to_sorted_json(&state).unwrap();
+    let mut changed = state;
+    changed.entities[0].supply.as_mut().unwrap().delivery_depot_id = 9;
+    assert_ne!(before, to_sorted_json(&changed).unwrap());
 }

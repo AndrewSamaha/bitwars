@@ -59,6 +59,9 @@ pub struct ResourceInventory {
 pub struct DepotSupply {
     #[prost(uint64, tag = "1")]
     pub depot_id: u64,
+    /// Explicit collection destination; zero uses automatic selection. Independent of spending.
+    #[prost(uint64, tag = "7")]
+    pub delivery_depot_id: u64,
     #[prost(string, repeated, tag = "2")]
     pub missing_resources: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// false pauses powered capabilities; movement remains available
@@ -480,6 +483,14 @@ pub struct DeliverIntent {
     #[prost(uint64, tag = "4")]
     pub donor_id: u64,
 }
+/// Changes collection destination without replacing the active order. Zero restores automatic selection.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct AssignDepotIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub target_id: u64,
+}
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntentEnvelope {
@@ -505,7 +516,7 @@ pub struct IntentEnvelope {
     pub policy: i32,
     #[prost(
         oneof = "intent_envelope::Payload",
-        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21"
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22"
     )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
@@ -535,6 +546,8 @@ pub mod intent_envelope {
         Sentry(super::SentryIntent),
         #[prost(message, tag = "21")]
         Escort(super::EscortIntent),
+        #[prost(message, tag = "22")]
+        AssignDepot(super::AssignDepotIntent),
     }
 }
 /// Extensible Intent envelope.

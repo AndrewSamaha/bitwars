@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
-import { EscortIntentSchema, SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
+import { AssignDepotIntentSchema, EscortIntentSchema, SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
 import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
@@ -122,8 +122,8 @@ export async function POST(req: NextRequest) {
     }
 
     const t = (body?.type ?? "").toString();
-    if (t !== "Escort" && t !== "Sentry" && t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport") {
-      return NextResponse.json({ error: "unsupported type; expected Escort, Sentry, Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, or Transport" }, { status: 400 });
+    if (t !== "Escort" && t !== "Sentry" && t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport" && t !== "Assign") {
+      return NextResponse.json({ error: "unsupported type; expected Escort, Sentry, Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, Transport, or Assign" }, { status: 400 });
     }
 
     const entityIdVal = body?.entity_id;
@@ -153,6 +153,10 @@ export async function POST(req: NextRequest) {
       || body.resource_type_ids.length === 0 || body.resource_type_ids.length > 64
       || body.resource_type_ids.some((id: unknown) => typeof id !== "string" || !id.trim()))) {
       return NextResponse.json({ error: "Deliver requires at least one resource_type_ids entry" }, { status: 400 });
+    }
+    if (t === "Assign" && (!Number.isSafeInteger(Number(entityIdVal)) || Number(entityIdVal) <= 0
+      || !Number.isSafeInteger(body.target_id) || body.target_id < 0)) {
+      return NextResponse.json({ error: "Assign requires a positive entity_id and nonnegative target_id (0 for automatic)" }, { status: 400 });
     }
     if (t === "Transport" && (!Number.isSafeInteger(Number(body?.donor_id)) || Number(body.donor_id) <= 0)) {
       return NextResponse.json({ error: "Transport requires a positive donor_id" }, { status: 400 });
@@ -205,7 +209,12 @@ export async function POST(req: NextRequest) {
     }
 
     let bytes: Uint8Array;
-    if (t === "Escort") {
+    if (t === "Assign") {
+      bytes = toBinary(IntentEnvelopeSchema, create(IntentEnvelopeSchema, {
+        clientCmdId: clientCmdBytes, playerId, clientSeq: BigInt(clientSeqVal), protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
+        payload: { case: "assignDepot", value: create(AssignDepotIntentSchema, { entityId, targetId: BigInt(body.target_id) }) },
+      }));
+    } else if (t === "Escort") {
       bytes = toBinary(IntentEnvelopeSchema, create(IntentEnvelopeSchema, {
         clientCmdId: clientCmdBytes, playerId, clientSeq: BigInt(clientSeqVal), protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
         payload: { case: "escort", value: create(EscortIntentSchema, {
