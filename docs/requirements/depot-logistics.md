@@ -64,6 +64,8 @@ Use a deterministic nearest-depot choice, with entity ID breaking distance ties.
 
 Check range when spending or contributing resources. Moving a depot changes its service coverage. There is no stock transfer into a consumer merely because it enters coverage.
 
+Solar collectors move into the radiation source's collection band and transmit energy wirelessly to their collection destination; they never travel to a depot to unload. A full destination reports `waiting_for_depot_capacity`; a missing or out-of-range destination reports `waiting_for_depot`. Both states hold position at the source and resume when wireless delivery is possible. Source approach movement still runs when the destination is full.
+
 For local production, gathered energy credits the associated depot up to capacity. Excess cannot be credited or silently moved elsewhere. Transport collection remains physical: workers gather into cargo and deliver to a depot. Retain ordinary capacity and compatibility checks.
 
 ## Assigning collection destinations

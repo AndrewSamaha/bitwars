@@ -381,6 +381,76 @@ mod action_resource_tests {
 }
 
 #[cfg(test)]
+mod wireless_collection_tests {
+    use super::*;
+
+    fn setup(x: f32) -> (ContentPack, Vec<pb::Entity>, ResourceNodeSnapshot) {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let entity = |id, kind: &str, x| pb::Entity {
+            id, entity_type_id: kind.into(), health: 100.0, owner_player_id: "me".into(),
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default()
+        };
+        let mut entities = vec![entity(1, "collector_solar", x), entity(2, "habitat", 3000.0),
+            entity(3, "star_yellow", 0.0)];
+        entities[0].supply = Some(pb::DepotSupply { depot_id: 2, delivery_depot_id: 2, ..Default::default() });
+        let source = content.get("star_yellow").unwrap().resource_node.as_ref().unwrap();
+        let node = ResourceNodeSnapshot { id: 3, x: 0.0, y: 0.0, resource_type: "energy".into(),
+            mode: CollectionMode::Proximity, max_simultaneous_collectors: None,
+            min_effective_distance: source.min_effective_distance, max_effective_distance: source.max_effective_distance };
+        (content, entities, node)
+    }
+
+    fn advance(content: &ContentPack, entities: &mut [pb::Entity], node: &ResourceNodeSnapshot)
+        -> (&'static str, f32, Option<u64>) {
+        let pos = entities[0].pos.unwrap();
+        let collector = CollectorSnapshot { id: 1, entity_type_id: "collector_solar".into(),
+            owner_player_id: "me".into(), x: pos.x, y: pos.y };
+        Engine::advance_wireless_collection(entities, content, &collector, node,
+            content.get("collector_solar").unwrap(), 1.0)
+    }
+
+    #[test]
+    fn moves_toward_radiation_source_even_when_wireless_depot_is_full() {
+        let (content, mut entities, node) = setup(2000.0);
+        set_resource_amount(&mut entities[1], "energy", 1000.0);
+        assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, 0.0, None));
+        // The star is to the left; the receiving depot is to the right.
+        assert!(entities[0].vel.unwrap().x < 0.0);
+        assert_eq!(resource_amount(&entities[1], "energy"), 1000.0);
+    }
+
+    #[test]
+    fn transmits_wirelessly_from_source_band_without_travel_or_cargo() {
+        let (content, mut entities, node) = setup(1393.0);
+        let pos = entities[0].pos;
+        let (activity, rate, recipient) = advance(&content, &mut entities, &node);
+        assert_eq!(activity, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING);
+        assert_eq!(rate, 3.0);
+        assert_eq!(recipient, Some(2));
+        assert_eq!(resource_amount(&entities[1], "energy"), 3.0);
+        assert_eq!(resource_amount(&entities[0], "energy"), 0.0);
+        assert_eq!(entities[0].pos, pos);
+        assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
+    }
+
+    #[test]
+    fn full_or_unavailable_wireless_destination_waits_at_source_then_resumes() {
+        let (content, mut entities, node) = setup(1393.0);
+        set_resource_amount(&mut entities[1], "energy", 1000.0);
+        assert_eq!(advance(&content, &mut entities, &node), ("waiting_for_depot_capacity", 0.0, Some(2)));
+        assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
+        entities[1].pos.as_mut().unwrap().x = 6000.0;
+        assert_eq!(advance(&content, &mut entities, &node), ("waiting_for_depot", 0.0, None));
+        assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
+        entities[1].pos.as_mut().unwrap().x = 3000.0;
+        set_resource_amount(&mut entities[1], "energy", 990.0);
+        assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING, 3.0, Some(2)));
+        assert_eq!(resource_amount(&entities[1], "energy"), 993.0);
+    }
+}
+
+#[cfg(test)]
 mod collection_distance_tests {
     use super::*;
 
@@ -3708,6 +3778,37 @@ impl Engine {
         }
     }
 
+    /// Proximity collectors travel only to their source band, never to the receiving depot.
+    /// Wireless backpressure affects production, not the movement destination.
+    fn advance_wireless_collection(
+        entities: &mut [pb::Entity],
+        content: &ContentPack,
+        collector: &CollectorSnapshot,
+        node: &ResourceNodeSnapshot,
+        def: &EntityTypeDef,
+        dt: f32,
+    ) -> (&'static str, f32, Option<u64>) {
+        let distance = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
+        if let Some(entity) = entities.iter_mut().find(|e| e.id == collector.id) {
+            Self::drive_velocity_to_band(entity, def.speed.max(0.0), node.x, node.y,
+                node.min_effective_distance, node.max_effective_distance);
+        }
+        if distance < node.min_effective_distance || distance > node.max_effective_distance {
+            return (COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, 0.0, None);
+        }
+        let rate = def.collector.as_ref().map_or(0.0, |c| c.proximity_rate_per_second.max(0.0));
+        let (amount, recipient) = logistics::collect_to_depot(entities, content,
+            collector.id, node.id, &node.resource_type, (rate * dt) as f64);
+        let activity = if recipient.is_none() {
+            "waiting_for_depot"
+        } else if amount == 0.0 {
+            "waiting_for_depot_capacity"
+        } else {
+            COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING
+        };
+        (activity, if dt > 0.0 { (amount / dt as f64) as f32 } else { 0.0 }, recipient)
+    }
+
     async fn apply_resource_collection(&mut self, dt: f32) {
         if self.content.is_none() {
             return;
@@ -4023,32 +4124,14 @@ impl Engine {
                     }
                     self.collection_retry_tick_by_entity.remove(&collector.id);
                     operating_collectors.insert(collector.id);
-                    let rate = collector_def.proximity_rate_per_second.max(0.0) * dt;
-                    let (amount, recipient) = logistics::collect_to_depot(&mut self.state.entities, self.content.as_ref().unwrap(), collector.id, node.id, &node.resource_type, rate as f64);
-                    self.set_collector_ui_state(collector.id, if amount > 0.0 { COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING } else { "waiting_for_dropoff" }, &node.resource_type, if dt > 0.0 { (amount / dt as f64) as f32 } else { 0.0 });
-                    if let Some(state) = self.collector_ui_state_by_entity.get_mut(&collector.id) { state.receiving_entity_id = recipient; }
-                    if let Some(entity) = collection_entity_mut(
-                        &mut self.state.entities, collector.id, &entity_by_id,
-                    )
-                    {
-                        let vel = entity.vel.get_or_insert(pb::Vec2 { x: 0.0, y: 0.0 });
-                        vel.x = 0.0;
-                        vel.y = 0.0;
-                    }
-                } else if let Some(entity) = collection_entity_mut(
-                    &mut self.state.entities, collector.id, &entity_by_id,
-                )
-                {
+                } else {
                     self.collection_retry_tick_by_entity.remove(&collector.id);
-                    Self::drive_velocity_to_band(
-                        entity,
-                        speed,
-                        node.x,
-                        node.y,
-                        node.min_effective_distance,
-                        node.max_effective_distance,
-                    );
-                    self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, &node.resource_type, 0.0);
+                }
+                let (activity, rate, recipient) = Self::advance_wireless_collection(
+                    &mut self.state.entities, self.content.as_ref().unwrap(), &collector, node, &def, dt);
+                self.set_collector_ui_state(collector.id, activity, &node.resource_type, rate);
+                if let Some(state) = self.collector_ui_state_by_entity.get_mut(&collector.id) {
+                    state.receiving_entity_id = recipient;
                 }
             } else {
                 self.set_collector_ui_state(collector.id, COLLECTOR_ACTIVITY_IDLE, load_snapshot
