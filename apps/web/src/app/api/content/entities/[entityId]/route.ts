@@ -26,11 +26,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ enti
   const entity = parseDocument(definition);
   const types: any = doc.get("entity_types", true);
   if (doc.errors.length || entity.errors.length || !types?.has(entityId) || (newId !== entityId && types.has(newId))) return NextResponse.json({ error: "Invalid YAML or duplicate id" }, { status: 400 });
-  const validationErrors = [...depotErrors(entity.toJS()), ...unknownEntityFieldErrors(entity.toJS()), ...resourceSharingPolicyErrors(entity.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(entity.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {})))];
+  const normalizedDefinition = omitNulls(entity.toJS());
+  const validationErrors = [...depotErrors(normalizedDefinition), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {})))];
   if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
   const replace = (value: any): any => Array.isArray(value) ? value.map(replace) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replace(item)])) : value === entityId ? newId : value;
   const content = replace(doc.toJS());
-  content.entity_types[newId] = omitNulls(entity.toJS());
+  content.entity_types[newId] = normalizedDefinition;
   if (newId !== entityId) delete content.entity_types[entityId];
   const spawn = parseDocument(await readFile(spawnPath, "utf8"));
   if (newId !== entityId) {

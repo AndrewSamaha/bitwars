@@ -31,14 +31,15 @@ export async function POST(request: Request) {
   const doc = parseDocument(await readFile(contentPath, "utf8"));
   const child = parseDocument(definition);
   if (doc.errors.length || child.errors.length) return NextResponse.json({ error: "Invalid YAML" }, { status: 400 });
-  const validationErrors = [...depotErrors(child.toJS()), ...unknownEntityFieldErrors(child.toJS()), ...resourceSharingPolicyErrors(child.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(child.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {})))];
+  const normalizedDefinition = omitNulls(child.toJS());
+  const validationErrors = [...depotErrors(normalizedDefinition), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {})))];
   if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
   const types: any = doc.get("entity_types", true);
   if (!types?.has(parentId) || types.has(childId)) return NextResponse.json({ error: "Invalid parent or duplicate child" }, { status: 400 });
   const parent: any = types.get(parentId, true);
   const builds: any = parent.get("builds", true);
   if (builds) builds.add({ entity_type_id: childId }); else parent.set("builds", [{ entity_type_id: childId }]);
-  types.set(childId, omitNulls(child.toJS()));
+  types.set(childId, normalizedDefinition);
   await writeFile(contentPath, String(doc));
   return NextResponse.json({ ok: true });
 }

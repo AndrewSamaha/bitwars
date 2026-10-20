@@ -1,6 +1,6 @@
 "use client";
 
-import Editor, { type BeforeMount, type OnMount } from "@monaco-editor/react";
+import Editor, { loader, type BeforeMount, type OnMount } from "@monaco-editor/react";
 import type { editor, Position } from "monaco-editor";
 import { configureMonacoYaml } from "monaco-yaml";
 import { parseDocument } from "yaml";
@@ -8,6 +8,9 @@ import entitySchema from "@bitwars/content/entity.schema.json";
 import technologySchema from "@bitwars/content/technology.schema.json";
 import { entityCombatRangeWarnings, resourceSharingPolicyErrors, resourceReserveErrors, depotErrors } from "@/lib/content/schemaValidation";
 import { completionHelp, hoverHelp } from "@/lib/content/editorHelp";
+
+// Keep the CDN editor version aligned with the installed language workers.
+loader.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.54.0/min/vs" } });
 
 let yamlConfigured = false;
 function ids(path: "entities" | "technologies"): Promise<string[]> {
@@ -18,8 +21,31 @@ function ids(path: "entities" | "technologies"): Promise<string[]> {
 }
 
 const configureYaml: BeforeMount = (monaco) => {
+  // The CDN loader installs its own workers; register YAML after it has loaded.
+  if (typeof window !== "undefined") {
+    window.MonacoEnvironment = {
+      getWorker(_moduleId, label) {
+        if (label === "yaml") return new Worker(new URL("monaco-yaml/yaml.worker.js", import.meta.url));
+        return new Worker(new URL("monaco-editor/esm/vs/editor/editor.worker.js", import.meta.url));
+      },
+    };
+  }
+
   if (yamlConfigured) return;
-  configureMonacoYaml(monaco, {
+  // monaco-worker-manager passes legacy moduleId/createData options. Recent
+  // Monaco expects an initialized Worker instead, so adapt this plugin locally.
+  const yamlMonaco = {
+    ...monaco,
+    editor: {
+      ...monaco.editor,
+      createWebWorker<T extends object>(options: editor.IWebWorkerOptions) {
+        const worker = new Worker(new URL("monaco-yaml/yaml.worker.js", import.meta.url));
+        worker.postMessage(options.createData);
+        return monaco.editor.createWebWorker<T>({ ...options, worker } as editor.IWebWorkerOptions);
+      },
+    },
+  };
+  configureMonacoYaml(yamlMonaco as Parameters<typeof configureMonacoYaml>[0], {
     schemas: [{
       fileMatch: ["**/*.entity.yaml"],
       schema: entitySchema,

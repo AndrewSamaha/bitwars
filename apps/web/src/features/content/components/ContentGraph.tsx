@@ -270,7 +270,13 @@ export default function ContentGraph() {
     const presentFields = new Set([...parent.definition.matchAll(/^([a-z_]+):/gm)].map((match) => match[1]));
     const definition = `${parent.definition.trimEnd()}\n${ENTITY_FIELDS.filter((field) => !presentFields.has(field)).map((field) => `${field}: null`).join("\n")}`.trim();
     const response = await savingFetch("/api/content/entities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentId, childId, definition }) });
-    if (!response.ok) return;
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      setSaveError(body?.error ?? "Unable to create child entity.");
+      setMenu(null);
+      return;
+    }
+    setSaveError(null);
     setEntities((current) => current.flatMap((entity) => entity.id === parentId
       ? [{ ...entity, builds: [...entity.builds, childId], definition: addBuild(entity.definition, childId) }, { id: childId, builds: [...parent.builds], upgrades: [...parent.upgrades], definition }]
       : [entity]));
