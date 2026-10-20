@@ -83,7 +83,7 @@ entity_types:
       amount: 2000
       regeneration:
         model: hill
-        max_rate_per_second: 7.529411764705882
+        max_rate_per_second: 3.529411764705882
         half_saturation_fraction: 0.5
         exponent: 4
       depleted_entity_type_id: dead_planet_blue

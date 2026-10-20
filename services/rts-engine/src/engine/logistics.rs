@@ -59,6 +59,35 @@ pub(super) fn depot_id(
         .map(|d| d.id)
 }
 
+/// Keep a funded association; otherwise choose the nearest depot that can pay
+/// the entire operating bill. Depots continue to fund themselves.
+fn operating_depot_id(
+    entities: &[pb::Entity],
+    content: &ContentPack,
+    actor: &pb::Entity,
+    costs: &HashMap<String, f32>,
+) -> Option<u64> {
+    let current = depot_id(entities, content, actor);
+    if content.get(&actor.entity_type_id).is_some_and(|def| def.depot)
+        || missing_resources(current.and_then(|id| entities.iter().find(|e| e.id == id)), costs).is_empty()
+    {
+        return current;
+    }
+    let pos = actor.pos?;
+    entities.iter()
+        .filter(|depot| eligible_depot(actor, depot, content)
+            && missing_resources(Some(depot), costs).is_empty())
+        .min_by(|a, b| {
+            let distance = |depot: &pb::Entity| {
+                let p = depot.pos.unwrap();
+                (p.x - pos.x).powi(2) + (p.y - pos.y).powi(2)
+            };
+            distance(a).total_cmp(&distance(b)).then_with(|| a.id.cmp(&b.id))
+        })
+        .map(|depot| depot.id)
+        .or(current)
+}
+
 pub(super) fn refresh_associations(entities: &mut [pb::Entity], content: &ContentPack) {
     let ids: Vec<_> = entities
         .iter()
@@ -264,13 +293,14 @@ pub(super) fn operate(
         } else {
             operating_costs(def, dt)
         };
-        let source = depot_id(entities, content, entity);
+        let source = operating_depot_id(entities, content, entity, &costs);
         let missing = missing_resources(
             source.and_then(|id| entities.iter().find(|e| e.id == id)),
             &costs,
         );
         let paid = pay(entities, source, &costs);
         let status = entities[index].supply.get_or_insert_with(Default::default);
+        status.depot_id = source.unwrap_or(0);
         status.operational = paid;
         status.missing_resources = missing;
         status.waiting_for = if paid {
@@ -404,6 +434,65 @@ mod operation_tests {
         assert_eq!(resource_amount(&es[0], "energy"), 4.0);
         assert_eq!(resource_amount(&es[1], "energy"), 0.0);
     }
+    #[test]
+    fn operating_shortage_pivots_to_stocked_depot_and_keeps_new_association() {
+        let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        for kind in ["habitat", "food_storage_container"] {
+            let def = content.entity_types.get_mut(kind).unwrap();
+            def.maintenance_cost_per_minute.clear();
+            def.sensor.as_mut().unwrap().cost_per_minute.clear();
+        }
+        let factory = content.entity_types.get_mut("military_factory").unwrap();
+        factory.sensor.as_mut().unwrap().cost_per_minute = HashMap::from([("energy".into(), 60.0)]);
+        let entity = |id, kind: &str, x| pb::Entity {
+            id, entity_type_id: kind.into(), owner_player_id: "me".into(), health: 100.0,
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default()
+        };
+        let mut es = vec![entity(896, "military_factory", 0.0),
+            entity(893, "food_storage_container", 392.0), entity(716, "habitat", 626.0)];
+        refresh_associations(&mut es, &content);
+        assert_eq!(es[0].supply.as_ref().unwrap().depot_id, 893);
+        set_resource_amount(&mut es[2], "energy", 10.0);
+        operate(&mut es, &content, 1.0, &Default::default());
+        let status = es[0].supply.as_ref().unwrap();
+        assert_eq!(status.depot_id, 716);
+        assert!(status.operational);
+        assert!(status.missing_resources.is_empty());
+        assert_eq!(status.waiting_for, "");
+        assert_eq!(resource_amount(&es[2], "energy"), 9.0);
+        set_resource_amount(&mut es[1], "energy", 5.0);
+        operate(&mut es, &content, 1.0, &Default::default());
+        assert_eq!(es[0].supply.as_ref().unwrap().depot_id, 716);
+        assert_eq!(resource_amount(&es[1], "energy"), 5.0);
+    }
+
+    #[test]
+    fn operating_fallback_requires_one_eligible_depot_to_cover_all_costs() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let entity = |id, x| pb::Entity {
+            id, entity_type_id: "habitat".into(), owner_player_id: "me".into(), health: 100.0,
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default()
+        };
+        let mut es = vec![entity(1, 0.0), entity(2, 100.0), entity(3, 200.0),
+            entity(4, 300.0), entity(5, 5000.0), entity(6, 250.0)];
+        es[0].entity_type_id = "military_factory".into();
+        es[0].supply = Some(pb::DepotSupply { depot_id: 2, ..Default::default() });
+        let costs = HashMap::from([("energy".into(), 1.0), ("food".into(), 1.0)]);
+        set_resource_amount(&mut es[1], "food", 10.0);
+        for depot in &mut es[2..] { set_resource_amount(depot, "energy", 10.0); }
+        for index in [3, 4, 5] { set_resource_amount(&mut es[index], "food", 10.0); }
+        es[3].owner_player_id = "enemy".into();
+        es[5].health = 0.0;
+        // Partial stocks, hostile, distant, and destroyed depots cannot supply the bill.
+        assert_eq!(operating_depot_id(&es, &content, &es[0], &costs), Some(2));
+        set_resource_amount(&mut es[2], "food", 10.0);
+        assert_eq!(operating_depot_id(&es, &content, &es[0], &costs), Some(3));
+        // Storage depots still pay from their own stock.
+        assert_eq!(operating_depot_id(&es, &content, &es[1], &costs), Some(2));
+    }
+
     #[test]
     fn mobile_fleet_operates_without_depots_or_cargo() {
         let content = ContentPack::load(

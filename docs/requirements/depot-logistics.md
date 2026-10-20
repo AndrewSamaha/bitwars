@@ -58,9 +58,9 @@ Factories cease to be independent stockpiles in this proposal. Specialized depot
 
 ## Depot association and local distribution
 
-Automatically associate a consumer with a nearby same-owner depot when needed. Keep the association while the depot remains alive, friendly, and in range. Show the association and coverage in the UI.
+Automatically associate a consumer with a nearby same-owner depot when needed. Keep the association while the depot remains alive, friendly, in range, and able to cover the consumer's operating bill. Show the association and coverage in the UI.
 
-Use a deterministic nearest-depot choice, with entity ID breaking distance ties. An empty associated depot does not silently cause a consumer to drain a different depot. Reassociate when the current depot becomes invalid. Manual collection destination assignment is available as described below; spending associations still use automatic selection.
+Use a deterministic nearest-depot choice, with entity ID breaking distance ties. For operating costs, if the associated depot cannot cover the entire bill, switch to the nearest eligible depot that can, with entity ID breaking distance ties. Persist the new association. If no depot can cover the full bill, keep the current association and report the shortage; never combine stock from multiple depots. Depots fund their own operation rather than borrowing from neighboring depots. Reassociate when the current depot becomes invalid. Manual collection destination assignment is available as described below; spending associations still use automatic selection.
 
 Check range when spending or contributing resources. Moving a depot changes its service coverage. There is no stock transfer into a consumer merely because it enters coverage.
 
@@ -169,7 +169,7 @@ If extended fleet operations need direct logistical limits later, consider one e
 - Build and upgrade options now declare `duration_seconds`. Existing rates were converted into equivalent durations. Costs are paid once when simulation work first starts, with no cancellation or destruction refund. Payment identity and progress are checkpointed in the same entity snapshot as inventories to prevent duplicate charges after restore.
 - Research continues to charge atomically as work progresses. Research and upgrade progress can be restored along with construction.
 - Solar collection without a valid depot pauses resource intake; full depots also stop intake. There is no solar collector buffer. Positive depot capacity determines accepted resources.
-- Depot selection uses nearest distance, then entity ID; a valid association stays fixed regardless of stock. Depot service is local and never links other depot inventories. Spending associations remain automatic. Collection destinations can be assigned independently using the Assign command.
+- Depot selection uses nearest distance, then entity ID; a valid association stays fixed while it can fund operating costs; otherwise the consumer switches to the nearest eligible depot that can cover the entire operating bill. Depot service is local and never links other depot inventories. Spending associations remain automatic. Collection destinations can be assigned independently using the Assign command.
 - Freight routes select one resource. One-trip delivery can select several held resources. Existing convoy formation and leashed escort orders are reused.
 - Depots retain current movement capabilities. Destruction loses their stock; upgrades retain inventory under the existing entity transformation behavior. No new capture mechanic is introduced.
 - Authoritative and client intent protocol versions are now 19. Snapshots use `economy_version: 1`. The upgraded engine refuses to restore an older populated player match, rather than silently discarding consumer stock or misinterpreting partially paid construction.
