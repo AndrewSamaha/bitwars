@@ -80,7 +80,7 @@ entity_types:
       scale: 4
     resource_node:
       resource_type: food
-      amount: 2000
+      amount: 10000
       regeneration:
         model: hill
         max_rate_per_second: 3.529411764705882

@@ -1084,6 +1084,37 @@ export default function GameStage() {
               depotCoverage.clear().circle(0, 0, depotDef.depot_range / scale).stroke({ width: 2 / scale, color: 0x55ccaa, alpha: 0.5 });
             } else if (depotCoverage) { depotCoverage.destroy(); }
 
+            let attackCoverage = container.children.find(c => c.label === "attackCoverage") as Graphics | undefined;
+            const attackRanges = isOwned && !remembered && isSelected
+              ? [...new Set((depotDef?.combat?.attacks ?? []).map(attack =>
+                // Contact reach is measured from our hull to the target's hull.
+                attack.type === "dismantle"
+                  ? (depotDef?.hull_radius ?? 0) + Math.max(0, attack.contact_tolerance ?? 0)
+                  : attack.range ?? 0,
+              ))].filter(range => Number.isFinite(range) && range > 0)
+              : [];
+            if (attackRanges.length) {
+              if (!attackCoverage) {
+                attackCoverage = new Graphics();
+                attackCoverage.label = "attackCoverage";
+                attackCoverage.eventMode = "none";
+                container.addChild(attackCoverage);
+              }
+              const scale = Math.abs(container.scale.x) || 1;
+              attackCoverage.clear();
+              for (const range of attackRanges) {
+                const radius = range / scale;
+                const dashCount = Math.max(12, Math.ceil(2 * Math.PI * range / 24));
+                const step = 2 * Math.PI / dashCount;
+                for (let dash = 0; dash < dashCount; dash++) {
+                  const start = dash * step;
+                  attackCoverage.moveTo(Math.cos(start) * radius, Math.sin(start) * radius);
+                  attackCoverage.arc(0, 0, radius, start, start + step * 0.6);
+                }
+              }
+              attackCoverage.stroke({ width: 2 / scale, color: 0xff4444, alpha: 0.7 });
+            } else if (attackCoverage) { attackCoverage.destroy(); }
+
             const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildState = buildProgressStore.getSnapshot()[id];
             const buildProgress = buildState?.progress;

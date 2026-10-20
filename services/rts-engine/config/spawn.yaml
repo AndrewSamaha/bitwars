@@ -51,23 +51,21 @@ resource_amounts:
     sd: 2000
     min: 1000
     max: 40000
-
 exposure:
   reference_distance: 3750
   minimum_distance: 300
   sources:
     star_yellow: 1
     theta: 1
-
 solar_systems:
   anchor_type: star_yellow
   planets:
     count_weights:
-      0: 15
-      1: 25
-      2: 30
-      3: 20
-      4: 10
+      "0": 15
+      "1": 25
+      "2": 30
+      "3": 20
+      "4": 10
     placement:
       min_distance: 1800
       max_distance: 8000
@@ -79,19 +77,36 @@ solar_systems:
       interpolation: linear
       points:
         - exposure: 0.2
-          weights: { planet_inhospitable: 20, planet_blue: 0, planet_ice: 80 }
+          weights:
+            planet_inhospitable: 20
+            planet_blue: 0
+            planet_ice: 80
         - exposure: 0.7
-          weights: { planet_inhospitable: 20, planet_blue: 10, planet_ice: 70 }
+          weights:
+            planet_inhospitable: 20
+            planet_blue: 10
+            planet_ice: 70
         - exposure: 1
-          weights: { planet_inhospitable: 15, planet_blue: 75, planet_ice: 10 }
+          weights:
+            planet_inhospitable: 15
+            planet_blue: 75
+            planet_ice: 10
         - exposure: 1.6
-          weights: { planet_inhospitable: 90, planet_blue: 10, planet_ice: 0 }
+          weights:
+            planet_inhospitable: 90
+            planet_blue: 10
+            planet_ice: 0
         - exposure: 4.3
-          weights: { planet_inhospitable: 100, planet_blue: 0, planet_ice: 0 }
+          weights:
+            planet_inhospitable: 100
+            planet_blue: 0
+            planet_ice: 0
   populations:
     - type: asteroid
       probability: 0.65
-      count: { min: 3, max: 10 }
+      count:
+        min: 3
+        max: 10
       placement:
         min_distance: 1800
         max_distance: 9000
@@ -101,7 +116,9 @@ solar_systems:
         avoid_damaging_radiation: true
     - type: minerals
       probability: 0.7
-      count: { min: 1, max: 4 }
+      count:
+        min: 1
+        max: 4
       placement:
         min_distance: 1800
         max_distance: 9000
@@ -109,10 +126,11 @@ solar_systems:
         min_separation: 200
         max_attempts_per_object: 64
         avoid_damaging_radiation: true
-
 player_starts:
   planet_type: planet_blue
-  exposure: { min: 0.7, max: 1.6 }
+  exposure:
+    min: 0.7
+    max: 1.6
   min_planet_food_fraction: 0.5
   max_starts_per_planet: 1
   placement:
