@@ -111,6 +111,13 @@ message DeliverIntent {
   uint64 donor_id = 4;
 }
 
+// Load physical cargo up to requested absolute inventory targets at a friendly depot.
+message ResupplyIntent {
+  uint64 entity_id = 1;
+  uint64 depot_id = 2;
+  map<string, double> target_amounts = 3;
+}
+
 // Changes collection destination without replacing the active order. Zero restores automatic selection.
 message AssignDepotIntent {
   uint64 entity_id = 1;
@@ -140,6 +147,7 @@ message IntentEnvelope {
     SentryIntent         sentry = 20;
     EscortIntent         escort = 21;
     AssignDepotIntent    assign_depot = 22;
+    ResupplyIntent       resupply = 23;
   }
   reserved 8, 9, 15;
 }
@@ -156,6 +164,7 @@ message Intent {
     UpgradeIntent        upgrade = 6;
     ResearchIntent       research = 7;
     DeliverIntent        deliver = 8;
+    ResupplyIntent       resupply = 9;
   }
 }
 
@@ -275,6 +284,7 @@ message ActionState {
     UpgradeState upgrade = 7;
     ResearchState research = 8;
     DeliverState deliver = 9;
+    ResupplyIntent resupply = 10;
   }
 }
 

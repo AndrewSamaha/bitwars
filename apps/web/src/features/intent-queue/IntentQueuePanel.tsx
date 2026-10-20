@@ -21,7 +21,7 @@ export default function IntentQueuePanel() {
   const entries: Array<{ entityId: string; state: PerEntityState }> = [];
   for (const id of selectedEntities) {
     const state = intentQueue.getEntityState(Number(id));
-    if (state.active || state.pendingMoves.length > 0) {
+    if (state.active || state.pendingMoves.length > 0 || state.queuedOrders?.length) {
       entries.push({ entityId: id, state });
     }
   }
@@ -52,6 +52,8 @@ export default function IntentQueuePanel() {
                       ? "convoy"
                       : state.active.kind === "collect"
                       ? "collecting"
+                      : state.active.kind === "resupply"
+                        ? `resupplying at #${state.active.resupply?.depotId ?? "?"}`
                       : state.active.kind === "deliver"
                         ? "delivering"
                       : state.active.kind === "repair"
@@ -66,6 +68,9 @@ export default function IntentQueuePanel() {
                         ? `(${state.active.target.x.toFixed(0)}, ${state.active.target.y.toFixed(0)})`
                         : "awaiting reconciliation"}
                   </span>
+                  {state.active.resupply && <span className="ml-1 text-muted-foreground">
+                    {Object.entries(state.active.resupply.targetAmounts).map(([resource, amount]) => `${resource} ${amount}`).join(", ")}
+                  </span>}
                   {state.active.intentId && (
                     <span className="text-muted-foreground ml-1">
                       @{state.active.serverTick ?? "?"}
@@ -85,6 +90,10 @@ export default function IntentQueuePanel() {
               </div>
             ))}
 
+            {state.queuedOrders?.map((order, index) => <div key={`queued-${index}`} className="ml-2 text-muted-foreground">
+              {index + 1}. {order.kind === "Move" ? `move to (${order.target.x.toFixed(0)}, ${order.target.y.toFixed(0)})`
+                : order.kind === "Build" ? `build ${order.blueprintId}` : `resupply at #${order.depotId}`} · queued
+            </div>)}
             {!state.active && state.pendingMoves.length === 0 && (
               <div className="ml-2 text-muted-foreground">idle</div>
             )}

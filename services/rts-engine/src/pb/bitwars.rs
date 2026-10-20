@@ -483,6 +483,16 @@ pub struct DeliverIntent {
     #[prost(uint64, tag = "4")]
     pub donor_id: u64,
 }
+/// Load physical cargo up to requested absolute inventory targets at a friendly depot.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ResupplyIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub depot_id: u64,
+    #[prost(map = "string, double", tag = "3")]
+    pub target_amounts: ::std::collections::HashMap<::prost::alloc::string::String, f64>,
+}
 /// Changes collection destination without replacing the active order. Zero restores automatic selection.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct AssignDepotIntent {
@@ -516,7 +526,7 @@ pub struct IntentEnvelope {
     pub policy: i32,
     #[prost(
         oneof = "intent_envelope::Payload",
-        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22"
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23"
     )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
@@ -548,13 +558,15 @@ pub mod intent_envelope {
         Escort(super::EscortIntent),
         #[prost(message, tag = "22")]
         AssignDepot(super::AssignDepotIntent),
+        #[prost(message, tag = "23")]
+        Resupply(super::ResupplyIntent),
     }
 }
 /// Extensible Intent envelope.
 /// Additional intent kinds can be added to this oneof later (Attack, Patrol, etc.)
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Intent {
-    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+    #[prost(oneof = "intent::Kind", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     pub kind: ::core::option::Option<intent::Kind>,
 }
 /// Nested message and enum types in `Intent`.
@@ -577,6 +589,8 @@ pub mod intent {
         Research(super::ResearchIntent),
         #[prost(message, tag = "8")]
         Deliver(super::DeliverIntent),
+        #[prost(message, tag = "9")]
+        Resupply(super::ResupplyIntent),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -738,7 +752,7 @@ pub struct ActionState {
     /// Echo original intent for correlation/observability (optional but useful)
     #[prost(message, optional, tag = "1")]
     pub intent: ::core::option::Option<Intent>,
-    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "action_state::Exec", tags = "2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub exec: ::core::option::Option<action_state::Exec>,
 }
 /// Nested message and enum types in `ActionState`.
@@ -761,6 +775,8 @@ pub mod action_state {
         Research(super::ResearchState),
         #[prost(message, tag = "9")]
         Deliver(super::DeliverState),
+        #[prost(message, tag = "10")]
+        Resupply(super::ResupplyIntent),
     }
 }
 /// One temporary group order. Formation is computed by the authoritative engine.

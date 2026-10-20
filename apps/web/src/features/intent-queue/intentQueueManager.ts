@@ -51,7 +51,7 @@ export type EscortOrderPayload = {
 };
 export type EscortOrderRemovalPayload = { client_cmd_id: string; player_id: string };
 
-export type ActiveIntentKind = "escort" | "sentry" | "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "unknown";
+export type ActiveIntentKind = "escort" | "sentry" | "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "resupply" | "unknown";
 
 export type ActiveIntentInfo = {
   clientCmdId: string;
@@ -64,11 +64,19 @@ export type ActiveIntentInfo = {
   escort?: EscortOrderPayload;
   escortTargetId?: number;
   transfer?: { donorId: number; targetId: number; resourceTypeIds: string[] };
+  resupply?: { depotId: number; targetAmounts: Record<string, number> };
   intentId?: string;      // server-assigned, set on ACCEPTED
   serverTick?: string;    // set on ACCEPTED
 };
 
+export type QueuedOrder =
+  | { kind: "Move"; target: { x: number; y: number } }
+  | { kind: "Build"; blueprintId: string }
+  | { kind: "Resupply"; depotId: number; targetAmounts: Record<string, number> };
+
 export type PerEntityState = {
+  queuedOrders?: QueuedOrder[];
+  queuedAfter?: string;
   pendingMoves: PendingMoveCommand[];
   active: ActiveIntentInfo | null;
 };
@@ -82,6 +90,8 @@ type PersistedState = {
 };
 
 export type SendIntentParams =
+  | { kind: "Resupply"; entityId: number; depotId: number; targetAmounts: Record<string, number>;
+      clientCmdId: string; clientSeq: number; policy: IntentPolicyName }
   | { kind: "Assign"; entityId: number; targetId: number;
       clientCmdId: string; clientSeq: number; policy: IntentPolicyName }
   | { kind: "Escort"; entityIds: number[]; targetEntityId: number;
@@ -178,6 +188,7 @@ export type ReconnectHandshake = {
     started_tick: number;
     intent_kind?: string;
     transfer_route?: { donor_id: number; target_id: number; resource_type_ids: string[] };
+    resupply?: { depot_id: number; target_amounts: Record<string, number> };
     move_target?: { x: number; y: number };
     move_route?: MoveRouteSummary;
     blueprint_id?: string;
@@ -211,7 +222,7 @@ export class IntentQueueManager {
   private sendCallback: SendCallback | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
-  private cmdToKind = new Map<string, "escort" | "sentry" | "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport">();
+  private cmdToKind = new Map<string, "escort" | "sentry" | "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "resupply">();
 
   constructor(storageKey = "bitwars:intent-queue") {
     this.storageKey = storageKey;
@@ -256,6 +267,7 @@ export class IntentQueueManager {
     for (const entityId of entityIds) {
       const state = this.getOrCreate(entityId);
       state.pendingMoves = [];
+      state.queuedOrders = []; state.queuedAfter = undefined;
       state.active = { clientCmdId, entityId, kind: "convoy", target };
     }
     this.cmdToKind.set(clientCmdId, "convoy");
@@ -272,6 +284,7 @@ export class IntentQueueManager {
     for (const id of ids) {
       const state = this.getOrCreate(id);
       state.pendingMoves = [];
+      state.queuedOrders = []; state.queuedAfter = undefined;
       state.active = { clientCmdId, entityId: id, kind: "escort", escortTargetId: targetEntityId };
     }
     this.cmdToKind.set(clientCmdId, "escort");
@@ -327,6 +340,7 @@ export class IntentQueueManager {
       const state = this.getOrCreate(id);
       if (policy === "REPLACE_ACTIVE") {
         state.pendingMoves = [];
+        state.queuedOrders = []; state.queuedAfter = undefined;
         state.active = { clientCmdId, entityId: id, kind: "sentry", target };
       }
       state.pendingMoves.push({ entityId: id, clientCmdId, target, policy, createdAt: Date.now() });
@@ -384,12 +398,16 @@ export class IntentQueueManager {
   /** Send every waypoint mutation immediately; the server owns execution. */
   handleMoveCommand(entityId: number, target: { x: number; y: number },
     modifiers: { shift: boolean; ctrl: boolean }) {
+    const existing = this.getOrCreate(entityId);
+    if ((modifiers.shift || modifiers.ctrl) && (existing.active?.kind !== "move" || existing.queuedOrders?.length)
+      && this.deferOrder(entityId, { kind: "Move", target }, modifiers.ctrl)) return;
     const policy: IntentPolicyName = modifiers.ctrl ? "CLEAR_THEN_APPEND"
       : modifiers.shift ? "APPEND" : "REPLACE_ACTIVE";
     const clientCmdId = uuidv7();
     const state = this.getOrCreate(entityId);
     if (policy === "REPLACE_ACTIVE") {
       state.pendingMoves = [];
+      state.queuedOrders = []; state.queuedAfter = undefined;
       state.active = { clientCmdId, entityId, kind: "move", target };
     }
     state.pendingMoves.push({ clientCmdId, entityId, target, policy, createdAt: Date.now() });
@@ -423,11 +441,50 @@ export class IntentQueueManager {
       clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
+  handleResupplyCommand(entityId: number, depotId: number, targetAmounts: Record<string, number>, append = false, clear = false) {
+    const order: QueuedOrder = { kind: "Resupply", depotId, targetAmounts: { ...targetAmounts } };
+    if (append && this.deferOrder(entityId, order, clear)) return;
+    const clientCmdId = uuidv7();
+    const state = this.getOrCreate(entityId);
+    state.pendingMoves = []; state.queuedOrders = []; state.queuedAfter = undefined;
+    state.active = { clientCmdId, entityId, kind: "resupply", resupply: { depotId, targetAmounts: { ...targetAmounts } } };
+    this.clientSeq++;
+    this.cmdToEntity.set(clientCmdId, entityId); this.cmdToKind.set(clientCmdId, "resupply");
+    void this.submit({ kind: "Resupply", entityId, depotId, targetAmounts: { ...targetAmounts },
+      clientCmdId, clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
+    this.persist(); this.notify();
+  }
+
+  private deferOrder(entityId: number, order: QueuedOrder, clear = false): boolean {
+    const state = this.getOrCreate(entityId);
+    if (!state.active && !state.queuedOrders?.length) return false;
+    if (clear) state.queuedOrders = [];
+    state.queuedAfter ??= state.active?.clientCmdId;
+    (state.queuedOrders ??= []).push(order);
+    this.persist(); this.notify();
+    return true;
+  }
+
+  private startNextOrder(entityId: number) {
+    const state = this.getOrCreate(entityId);
+    if (state.active) return;
+    const order = state.queuedOrders?.shift();
+    if (!order) { state.queuedAfter = undefined; return; }
+    const remaining = state.queuedOrders ?? [];
+    if (order.kind === "Move") this.handleMoveCommand(entityId, order.target, { shift: false, ctrl: false });
+    else if (order.kind === "Build") this.handleBuildCommand(entityId, order.blueprintId);
+    else this.handleResupplyCommand(entityId, order.depotId, order.targetAmounts);
+    state.queuedOrders = remaining;
+    state.queuedAfter = this.getOrCreate(entityId).active?.clientCmdId;
+    this.persist(); this.notify();
+  }
+
   /** Deliver currently held resources in one trip. */
   handleDeliverCommand(entityId: number, targetId: number, resourceTypeIds: string[], donorId?: number) {
     const clientCmdId = uuidv7();
     const state = this.getOrCreate(entityId);
     state.pendingMoves = [];
+    state.queuedOrders = []; state.queuedAfter = undefined;
     state.active = { clientCmdId, entityId, kind: donorId ? "transport" : "deliver", ...(donorId ? { transfer: { donorId, targetId, resourceTypeIds } } : {}) };
     this.clientSeq++;
     this.cmdToEntity.set(clientCmdId, entityId);
@@ -443,6 +500,7 @@ export class IntentQueueManager {
     const clientCmdId = uuidv7();
     const state = this.getOrCreate(entityId);
     state.pendingMoves = [];
+    state.queuedOrders = []; state.queuedAfter = undefined;
     state.active = { clientCmdId, entityId, kind: "repair" };
     this.clientSeq++;
     this.cmdToEntity.set(clientCmdId, entityId);
@@ -460,11 +518,13 @@ export class IntentQueueManager {
   }
 
   /** Start a content-defined production action immediately. */
-  handleBuildCommand(entityId: number, blueprintId: string) {
+  handleBuildCommand(entityId: number, blueprintId: string, append = false) {
+    if (append && this.deferOrder(entityId, { kind: "Build", blueprintId })) return;
     const clientCmdId = uuidv7();
     this.clientSeq += 1;
     const state = this.getOrCreate(entityId);
     state.pendingMoves = [];
+    state.queuedOrders = []; state.queuedAfter = undefined;
     state.active = { clientCmdId, entityId, kind: "build" };
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "build");
@@ -486,6 +546,7 @@ export class IntentQueueManager {
     this.clientSeq += 1;
     const state = this.getOrCreate(entityId);
     state.pendingMoves = [];
+    state.queuedOrders = []; state.queuedAfter = undefined;
     state.active = { clientCmdId, entityId, kind: "upgrade" };
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "upgrade");
@@ -507,6 +568,7 @@ export class IntentQueueManager {
     this.clientSeq += 1;
     const state = this.getOrCreate(entityId);
     state.pendingMoves = [];
+    state.queuedOrders = []; state.queuedAfter = undefined;
     state.active = { clientCmdId, entityId, kind: "research" };
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "research");
@@ -543,19 +605,26 @@ export class IntentQueueManager {
         state.pendingMoves = state.pendingMoves.filter((item) => !item.finished && item.clientCmdId !== root);
         continue;
       }
+      if (state.queuedAfter && state.queuedAfter !== item.client_cmd_id) {
+        state.queuedOrders = []; state.queuedAfter = undefined;
+      }
       const kindName = item.intent_kind?.toLowerCase() ?? "unknown";
-      const kind = ["escort", "sentry", "convoy", "move", "collect", "build", "repair", "upgrade", "research", "deliver", "transport"].includes(kindName)
+      const kind = ["escort", "sentry", "convoy", "move", "collect", "build", "repair", "upgrade", "research", "deliver", "transport", "resupply"].includes(kindName)
         ? kindName as ActiveIntentKind : "unknown";
       state.active = { entityId: id, clientCmdId: item.client_cmd_id, intentId: item.intent_id,
         serverTick: String(item.started_tick), kind,
         ...((kind === "move" || kind === "convoy" || kind === "sentry") && item.move_target ? { target: item.move_target } : {}),
         ...(kind === "move" && item.move_route ? { route: item.move_route } : {}),
+        ...(item.resupply ? { resupply: { depotId: item.resupply.depot_id, targetAmounts: item.resupply.target_amounts } } : {}),
         ...(item.transfer_route ? { transfer: { donorId: item.transfer_route.donor_id,
           targetId: item.transfer_route.target_id, resourceTypeIds: item.transfer_route.resource_type_ids } } : {}),
       };
       if (kind !== "escort" && kind !== "convoy" && kind !== "sentry") this.cmdToEntity.set(item.client_cmd_id, id);
       if (kind !== "unknown") this.cmdToKind.set(item.client_cmd_id, kind);
       this.retirePendingMoves(state, item.move_route?.last_client_cmd_id || item.client_cmd_id);
+    }
+    for (const [id, state] of this.entities) {
+      if (!state.active && state.queuedOrders?.length) this.startNextOrder(Number(id));
     }
     this.applySentryOrders(handshake.sentry_orders ?? [], [], true);
     this.applyEscortOrders(handshake.escort_orders ?? [], [], true);
@@ -641,6 +710,13 @@ export class IntentQueueManager {
     if ([LIFECYCLE_STATE_ACCEPTED, LIFECYCLE_STATE_FINISHED, LIFECYCLE_STATE_CANCELED, LIFECYCLE_STATE_REJECTED].includes(event.state)) {
       this.pendingCommands.delete(event.clientCmdId);
     }
+    if (!event.routeEdit && [LIFECYCLE_STATE_FINISHED, LIFECYCLE_STATE_CANCELED, LIFECYCLE_STATE_REJECTED].includes(event.state)) {
+      for (const [id, state] of this.entities) {
+        if (state.queuedAfter !== event.clientCmdId) continue;
+        if (event.state === LIFECYCLE_STATE_FINISHED) this.startNextOrder(Number(id));
+        else { state.queuedOrders = []; state.queuedAfter = undefined; }
+      }
+    }
     this.persist(); this.notify();
     if (event.state === LIFECYCLE_STATE_REJECTED && !event.routeEdit) void this.reconcileWithServer();
   }
@@ -674,6 +750,9 @@ export class IntentQueueManager {
         for (const id of ids) {
           const state = this.getOrCreate(id);
           state.pendingMoves = state.pendingMoves.filter((item) => item.clientCmdId !== params.clientCmdId);
+          if (state.queuedAfter === params.clientCmdId) {
+            state.queuedOrders = []; state.queuedAfter = undefined;
+          }
         }
         this.persist(); this.notify();
         // Acceptance may have happened before the HTTP connection failed.
@@ -703,7 +782,7 @@ export class IntentQueueManager {
     return typeof v === "number" ? v : null;
   }
 
-  getKindForClientCmd(clientCmdId: string): "escort" | "sentry" | "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | null {
+  getKindForClientCmd(clientCmdId: string): "escort" | "sentry" | "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "resupply" | null {
     return this.cmdToKind.get(clientCmdId) ?? null;
   }
 
@@ -774,6 +853,7 @@ export class IntentQueueManager {
     // by the server against this maintained order.
     if (policy === "REPLACE_ACTIVE" || policy === "CLEAR_THEN_APPEND") {
       state.pendingMoves = [];
+      state.queuedOrders = []; state.queuedAfter = undefined;
     }
     this.clientSeq++;
     this.cmdToEntity.set(clientCmdId, entityId);
@@ -808,7 +888,7 @@ export class IntentQueueManager {
       const data: PersistedState = { schemaVersion: 2, migrationNotice: this.migrationNotice,
         clientSeq: this.clientSeq, runId: this.runId,
         entities: Object.fromEntries([...this.entities].map(([id, state]) =>
-          [id, { active: state.active, pendingMoves: [] }])) };
+          [id, { active: state.active, pendingMoves: [], queuedOrders: state.queuedOrders, queuedAfter: state.queuedAfter }])) };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
     } catch { /* SSR guard / quota exceeded */ }
   }
@@ -827,7 +907,7 @@ export class IntentQueueManager {
         this.migrationNotice = "Saved waypoints were cleared during this update. Reissue any remaining destinations.";
       }
       this.entities = new Map(Object.entries(data.entities || {}).map(([id, state]) =>
-        [id, { active: state.active ?? null, pendingMoves: [] }]));
+        [id, { active: state.active ?? null, pendingMoves: [], queuedOrders: state.queuedOrders ?? [], queuedAfter: state.queuedAfter }]));
       this.persist();
     } catch { /* Ignore corrupt browser storage; reconnect restores server state. */ }
   }

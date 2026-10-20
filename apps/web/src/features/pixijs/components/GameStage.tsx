@@ -108,7 +108,10 @@ export default function GameStage() {
     // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
       const payload =
-        params.kind === "Assign"
+        params.kind === "Resupply"
+          ? { type: "Resupply", entity_id: params.entityId, depot_id: params.depotId, target_amounts: params.targetAmounts,
+              client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Assign"
           ? { type: "Assign", entity_id: params.entityId, target_id: params.targetId,
               client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
           : params.kind === "Escort"
@@ -1326,12 +1329,31 @@ export default function GameStage() {
           setSelectedAction(null);
         };
 
-        const dispatchDeliver = (targetId: string) => {
+        const dispatchDeliver = (targetId: string, shift = false, ctrl = false) => {
           const sel = latestSelectorsRef.current;
           const delivery = typeof sel.selectedAction === "object" ? sel.selectedAction : null;
           if (!delivery) return;
           if (targetId === sel.firstSelectedId) { setSelectedAction(null); return; }
           const target = findLiveEntityById(targetId);
+          if (delivery.kind === "Resupply") {
+            const depotDef = contentManager.getEntityType(target?.entity_type_id ?? "");
+            if (!target || target.remembered || target.health <= 0 || target.owner_player_id !== myPlayerIdRef.current || !depotDef?.depot) return;
+            const orders = sel.selectedEntities.map(id => {
+              const actor = findLiveEntityById(id);
+              const def = contentManager.getEntityType(actor?.entity_type_id ?? "");
+              const amounts = Object.fromEntries(Object.entries(def?.max_capacity ?? {}).filter(([, capacity]) => capacity > 0));
+              return { id, actor, def, amounts };
+            });
+            if (!orders.every(({ actor, def, amounts }) => actor && !actor.remembered && actor.health > 0
+              && actor.owner_player_id === myPlayerIdRef.current && (def?.speed ?? 0) > 0
+              && (def?.collector?.transport_rate_per_second ?? 0) > 0 && Object.keys(amounts).length > 0
+              && Object.keys(amounts).every(resource => (depotDef.max_capacity?.[resource] ?? 0) > 0))) return;
+            for (const { id, amounts } of orders) {
+              intentQueue.handleResupplyCommand(Number(id), Number(targetId), amounts, shift || ctrl, ctrl);
+            }
+            setSelectedAction(null);
+            return;
+          }
           if (delivery.kind === "Transport" && !delivery.donorId) {
             const carrier = findLiveEntityById(sel.firstSelectedId ?? "");
             const capacity = contentManager.getEntityType(carrier?.entity_type_id ?? "")?.max_capacity ?? {};
@@ -1478,7 +1500,7 @@ export default function GameStage() {
               if (latestSelectorsRef.current.selectedAction === "Assign") { dispatchAssign(press.id); return; }
               if (latestSelectorsRef.current.selectedAction === "Escort") { dispatchEscort(press.id); return; }
               if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
-                dispatchDeliver(press.id);
+                dispatchDeliver(press.id, !!ev.shiftKey, !!ev.ctrlKey);
                 return;
               }
               if (latestSelectorsRef.current.selectedAction === "Repair") {
@@ -1509,7 +1531,7 @@ export default function GameStage() {
               if (latestSelectorsRef.current.selectedAction === "Assign") { dispatchAssign(press.id); return; }
               if (latestSelectorsRef.current.selectedAction === "Escort") { dispatchEscort(press.id); return; }
               if (typeof latestSelectorsRef.current.selectedAction === "object" && latestSelectorsRef.current.selectedAction) {
-                dispatchDeliver(press.id);
+                dispatchDeliver(press.id, !!ev.shiftKey, !!ev.ctrlKey);
                 return;
               }
               if (latestSelectorsRef.current.selectedAction === "Repair") {

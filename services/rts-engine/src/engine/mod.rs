@@ -1,3 +1,4 @@
+mod resupply;
 pub mod intent;
 mod logistics;
 mod convoy;
@@ -38,7 +39,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_
 use prost::Message;
 use state::{initialize_resource_deposits, take_from_deposit, ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 19;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 20;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -1687,6 +1688,15 @@ impl Engine {
                         ))
                     })
                     .collect();
+                let restored_resupplies: Vec<_> = tracking.active_intents.iter().filter_map(|entry| {
+                    if entry.intent_kind != "resupply" { return None; }
+                    let saved = entry.resupply.as_ref()?;
+                    let order = pb::ResupplyIntent { entity_id: entry.entity_id, depot_id: saved.depot_id,
+                        target_amounts: saved.target_amounts.clone() };
+                    let actor = state.entities.iter().find(|e| e.id == entry.entity_id && e.owner_player_id == entry.player_id)?;
+                    resupply::valid(&state.entities, content.as_ref()?, &order)
+                        .then(|| (entry.clone(), order, actor.entity_type_id.clone()))
+                }).collect();
                 let restored_transfers: Vec<_> = tracking.active_intents.iter().filter_map(|entry| {
                     if entry.intent_kind != "transport" { return None; }
                     let route = entry.transfer_route.as_ref()?;
@@ -1720,6 +1730,7 @@ impl Engine {
                     .map(|(entry, ..)| entry.entity_id)
                     .chain(restored_builds.iter().map(|(entry, ..)| entry.entity_id))
                     .chain(restored_transfers.iter().map(|(entry, ..)| entry.entity_id))
+                    .chain(restored_resupplies.iter().map(|(entry, ..)| entry.entity_id))
                     .chain(snapshot_escorts.iter().flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)))
                     .chain(snapshot_sentries.iter().flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)))
                     .chain(snapshot_moves.iter().map(|order| order.entity_id))
@@ -1796,6 +1807,17 @@ impl Engine {
                             receiving_entity_id: view.receiving_entity_id, updated_tick: engine.state.tick,
                         });
                     }
+                }
+                for (entry, order, entity_type_id) in restored_resupplies {
+                    let (Ok(intent_id), Ok(client_cmd_id)) = (Uuid::parse_str(&entry.intent_id), Uuid::parse_str(&entry.client_cmd_id)) else {
+                        engine.redis.clear_active_intent(entry.entity_id).await?; continue;
+                    };
+                    let metadata = IntentMetadata { entity_id: 0, intent_id: intent_id.into_bytes().to_vec(),
+                        client_cmd_id: client_cmd_id.into_bytes().to_vec(), player_id: entry.player_id,
+                        protocol_version: ENGINE_PROTOCOL_MAJOR, server_tick: entry.started_tick, policy: pb::IntentPolicy::ReplaceActive };
+                    engine.intents.try_activate(pb::Intent { kind: Some(pb::intent::Kind::Resupply(order.clone())) }, metadata.clone(), &entity_type_id);
+                    engine.redis.persist_active_intent(entry.entity_id, &metadata, "resupply", None, None, None).await?;
+                    engine.redis.persist_resupply(entry.entity_id, &order).await?;
                 }
                 for (entry, route, entity_type_id) in restored_transfers {
                     let (Ok(intent_id), Ok(client_cmd_id)) = (Uuid::parse_str(&entry.intent_id), Uuid::parse_str(&entry.client_cmd_id)) else {
@@ -2286,6 +2308,7 @@ impl Engine {
             Some(pb::intent::Kind::Upgrade(u)) => u.entity_id,
             Some(pb::intent::Kind::Research(r)) => r.entity_id,
             Some(pb::intent::Kind::Deliver(d)) => d.entity_id,
+            Some(pb::intent::Kind::Resupply(r)) => r.entity_id,
             None => return String::new(),
         };
         self.state
@@ -3271,6 +3294,42 @@ impl Engine {
         }
         let resource = if delivery.resource_type_ids.len() == 1 { delivery.resource_type_ids[0].as_str() } else { "" };
         self.set_collector_ui_state(id, activity, resource, 0.0);
+    }
+
+    async fn advance_resupplies(&mut self, dt: f32) {
+        let mut orders: Vec<_> = self.intents.active_intents().iter().filter_map(|(id, active)| {
+            match active.action.exec.as_ref() {
+                Some(pb::action_state::Exec::Resupply(order)) => Some((*id, order.clone())),
+                _ => None,
+            }
+        }).collect();
+        orders.sort_by_key(|(id, _)| *id);
+        for (id, order) in orders {
+            let Some(content) = self.content.as_ref() else { return; };
+            let progress = resupply::advance(&mut self.state.entities, content, &order, dt);
+            let (activity, resource) = match &progress {
+                resupply::Progress::Moving => ("moving_to_resupply", ""),
+                resupply::Progress::Waiting(missing) => ("waiting_for_resupply", missing.first().map(String::as_str).unwrap_or("")),
+                _ => (COLLECTOR_ACTIVITY_IDLE, ""),
+            };
+            self.set_collector_ui_state(id, activity, resource, 0.0);
+            if matches!(progress, resupply::Progress::Finished | resupply::Progress::Lost) {
+                if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == id) {
+                    entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+                }
+                if let Some(metadata) = self.intents.finish(id) {
+                    if let Err(error) = self.redis.clear_active_intent(id).await {
+                        warn!(?error, entity_id = id, "failed to clear resupply tracking");
+                    }
+                    let (state, reason) = if progress == resupply::Progress::Lost {
+                        (pb::LifecycleState::Canceled, pb::LifecycleReason::TransferEndpointLost)
+                    } else { (pb::LifecycleState::Finished, pb::LifecycleReason::None) };
+                    if let Err(error) = self.emit_lifecycle_event(&metadata, state, reason, self.state.tick).await {
+                        warn!(?error, entity_id = id, "failed to publish resupply lifecycle");
+                    }
+                }
+            }
+        }
     }
 
     /// Follow a friendly recipient and complete a single delivery trip.
@@ -4398,6 +4457,7 @@ impl Engine {
         self.apply_repairs(dt).await;
         self.apply_resource_collection(dt).await;
         self.advance_deliveries(dt).await;
+        self.advance_resupplies(dt).await;
         let starvation_damage = self.maintain_depot_operations(dt).await;
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
@@ -4672,6 +4732,7 @@ impl Engine {
 
             let subphase_started = phase_started.as_ref().map(|_| Instant::now());
             self.advance_deliveries(dt).await;
+            self.advance_resupplies(dt).await;
             record_tick_subphase(phase_durations.as_mut(), raider_ai_spatial_index_enabled,
                 "economy_deliveries", subphase_started);
 
@@ -5122,6 +5183,9 @@ impl Engine {
                     kind: Some(pb::intent::Kind::Collect(c)),
                 }
             }
+            Some(intent_envelope::Payload::Resupply(r)) => {
+                pb::Intent { kind: Some(pb::intent::Kind::Resupply(r)) }
+            }
             Some(intent_envelope::Payload::Deliver(d)) => {
                 if d.donor_id == 0 {
                     info!(entity_id = d.entity_id, target_id = d.target_id, player = %player_id, "accept intent=Deliver");
@@ -5160,6 +5224,7 @@ impl Engine {
             Some(pb::intent::Kind::Upgrade(u)) => u.entity_id,
             Some(pb::intent::Kind::Research(r)) => r.entity_id,
             Some(pb::intent::Kind::Deliver(d)) => d.entity_id,
+            Some(pb::intent::Kind::Resupply(r)) => r.entity_id,
             None => {
                 self.emit_lifecycle_event(
                     &metadata,
@@ -5414,6 +5479,13 @@ impl Engine {
             }
         }
 
+        if let Some(pb::intent::Kind::Resupply(order)) = payload_intent.kind.as_ref() {
+            if !self.content.as_ref().is_some_and(|content| resupply::valid(&self.state.entities, content, order)) {
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::InvalidTarget, accept_tick).await?;
+                return Err(anyhow!("invalid resupply worker, depot, or resource targets"));
+            }
+        }
         if let Some(pb::intent::Kind::Deliver(delivery)) = payload_intent.kind.as_mut() {
             delivery.resource_type_ids.sort(); delivery.resource_type_ids.dedup();
         }
@@ -5528,9 +5600,14 @@ impl Engine {
             Some(pb::intent::Kind::Upgrade(u)) => ("upgrade", None, None, Some((u.target_entity_type_id.clone(), None, 0.0))),
             Some(pb::intent::Kind::Research(r)) => ("research", None, None, Some((r.technology_id.clone(), None, 0.0))),
             Some(pb::intent::Kind::Deliver(delivery)) => (if delivery.donor_id == 0 { "deliver" } else { "transport" }, None, None, None),
+            Some(pb::intent::Kind::Resupply(_)) => ("resupply", None, None, None),
             None => ("unknown", None, None, None),
         };
 
+        let resupply = match payload_intent.kind.as_ref() {
+            Some(pb::intent::Kind::Resupply(r)) => Some(r.clone()),
+            _ => None,
+        };
         let transfer = match payload_intent.kind.as_ref() {
             Some(pb::intent::Kind::Deliver(delivery)) if delivery.donor_id != 0 => Some(delivery.clone()),
             _ => None,
@@ -5627,6 +5704,7 @@ impl Engine {
 
             self.persist_changed_move_routes().await?;
             if let Some(transfer) = &transfer { self.redis.persist_transfer_route(entity_id, transfer).await?; }
+            if let Some(resupply) = &resupply { self.redis.persist_resupply(entity_id, resupply).await?; }
             // Emit ACCEPTED then immediately IN_PROGRESS (M1: no intermediate queue)
             self.emit_lifecycle_event(
                 &metadata,
@@ -5658,6 +5736,7 @@ impl Engine {
             Some(pb::intent::Kind::Upgrade(u)) => intent_envelope::Payload::Upgrade(u),
             Some(pb::intent::Kind::Research(r)) => intent_envelope::Payload::Research(r),
             Some(pb::intent::Kind::Deliver(d)) => intent_envelope::Payload::Deliver(d),
+            Some(pb::intent::Kind::Resupply(r)) => intent_envelope::Payload::Resupply(r),
             None => return Err(anyhow!("legacy intent missing kind")),
         };
 
@@ -5669,7 +5748,7 @@ impl Engine {
             Some(pb::intent::Kind::Repair(r)) => r.client_cmd_id.as_str(),
             Some(pb::intent::Kind::Upgrade(_)) => "",
             Some(pb::intent::Kind::Research(_)) => "",
-            Some(pb::intent::Kind::Deliver(_)) => "",
+            Some(pb::intent::Kind::Deliver(_)) | Some(pb::intent::Kind::Resupply(_)) => "",
             None => "",
         };
 
@@ -5693,7 +5772,7 @@ impl Engine {
             Some(pb::intent::Kind::Repair(r)) => r.player_id.clone(),
             Some(pb::intent::Kind::Upgrade(_)) => String::new(),
             Some(pb::intent::Kind::Research(_)) => String::new(),
-            Some(pb::intent::Kind::Deliver(_)) => String::new(),
+            Some(pb::intent::Kind::Deliver(_)) | Some(pb::intent::Kind::Resupply(_)) => String::new(),
             None => String::new(),
         };
 

@@ -56,6 +56,8 @@ This model replaces `resource_sharing`, including `wireless_receives`, per-resou
 
 Factories cease to be independent stockpiles in this proposal. Specialized depot resource capacities must still support any retained local operating costs, or those costs must be revised.
 
+Workers can [Resupply](./resupply.md) physical cargo at a depot for remote construction.
+
 ## Depot association and local distribution
 
 Automatically associate a consumer with a nearby same-owner depot when needed. Keep the association while the depot remains alive, friendly, in range, and able to cover the consumer's operating bill. Show the association and coverage in the UI.

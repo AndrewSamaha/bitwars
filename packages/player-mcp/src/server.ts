@@ -24,6 +24,9 @@ const intentSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("Research"), entity_id: entityId, technology_id: z.string().min(1), policy }),
   z.object({ type: z.literal("Collect"), entity_id: entityId, resource_type_id: z.string().min(1).optional(), nearest_compatible: z.boolean().optional(), policy }),
   z.object({ type: z.literal("Repair"), entity_id: entityId, target_id: entityId, policy }),
+  z.object({ type: z.literal("Resupply"), entity_id: entityId, depot_id: entityId,
+    target_amounts: z.record(z.string().min(1), z.number().finite().nonnegative())
+      .refine(targets => Object.keys(targets).length <= 64 && Object.values(targets).some(amount => amount > 0)), policy }),
   z.object({ type: z.literal("Deliver"), entity_id: entityId, target_id: entityId, resource_type_ids: z.array(z.string().min(1)).min(1).max(64), policy }),
   z.object({ type: z.literal("Transport"), entity_id: entityId, target_id: entityId, donor_id: entityId, resource_type_ids: z.array(z.string().min(1)).min(1).max(64), policy }),
 ]);

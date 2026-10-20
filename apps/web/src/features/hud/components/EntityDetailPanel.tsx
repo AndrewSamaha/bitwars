@@ -23,6 +23,7 @@ export default function EntityDetailPanel() {
   const statusBarRef = useRef<HTMLDivElement>(null);
   const [, forceRerender] = useState(0);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
+  const [queueBuild, setQueueBuild] = useState(false);
   const [upgradeMenuOpen, setUpgradeMenuOpen] = useState(false);
   const [researchMenuOpen, setResearchMenuOpen] = useState(false);
   const [collectMenuOpen, setCollectMenuOpen] = useState(false);
@@ -204,6 +205,7 @@ export default function EntityDetailPanel() {
       { key: "d", name: "distance", enabled: selectedEntities.length === 1, value: "Measure" },
       ...(canCollect ? [{ key: "a", name: "assign", value: "Assign" as const }] : []),
       { key: "c", name: "collect", enabled: canCollect, value: "Collect" },
+      ...(canResupply ? [{ key: "h", name: "resupply", value: "Resupply" as const }] : []),
       ...(canDeliver ? [{ key: "l", name: "deliver", value: "Deliver" as const }] : []),
       ...(canTransport ? [{ key: "s", name: "transport resources", value: "Transport" as const }] : []),
       { key: "b", name: "build", enabled: canBuild, value: "Build" },
@@ -213,10 +215,16 @@ export default function EntityDetailPanel() {
     ];
   };
   // Shared build options are intersected above; other action gates retain their existing behavior.
-  const deliverySelection = typeof selectedAction === "object" ? selectedAction : null;
+  const resupplySelection = typeof selectedAction === "object" && selectedAction?.kind === "Resupply" ? selectedAction : null;
+  const deliverySelection = typeof selectedAction === "object" && selectedAction?.kind !== "Resupply" ? selectedAction : null;
   const entities = Array.from(game.world.with("id"));
   const carrierEntity = entities.find((e) => String(e.id) === firstId);
   const carrierDef = contentManager.getEntityType(idToType.get(firstId) ?? "");
+  const canResupply = selectedEntities.length > 0 && selectedEntities.every(id => {
+    const def = contentManager.getEntityType(idToType.get(id) ?? "");
+    return (def?.speed ?? 0) > 0 && (def?.collector?.transport_rate_per_second ?? 0) > 0
+      && Object.values(def?.max_capacity ?? {}).some(capacity => capacity > 0);
+  });
   const canTransport = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0 && (carrierDef?.collector != null && (carrierDef.collector.transport_rate_per_second ?? 8) > 0);
   const transportSelection = deliverySelection?.kind === "Transport" ? deliverySelection : null;
   const deliveryEntity = transportSelection
@@ -292,6 +300,12 @@ export default function EntityDetailPanel() {
       setResearchMenuOpen((open) => !open);
       setBuildMenuOpen(false);
       setUpgradeMenuOpen(false);
+      return;
+    }
+    if (val === "Resupply") {
+      if (resupplySelection) { actions.setSelectedAction(null); return; }
+      actions.setSelectedAction({ kind: "Resupply", resourceTypeIds: [] });
+      setCollectMenuOpen(false); setBuildMenuOpen(false); setUpgradeMenuOpen(false); setResearchMenuOpen(false);
       return;
     }
     if (val === "Assign") {
@@ -373,12 +387,12 @@ export default function EntityDetailPanel() {
     const costs = contentManager.getEntityType(entityTypeId)?.build_cost ?? {};
     return entityIds.length > 0 && entityIds.every((id) => canAffordCosts(id, costs));
   };
-  const startBuild = (entityTypeId: string) => {
-    if (!buildOptions.some((option) => option.entity_type_id === entityTypeId) || !canAfford(entityTypeId)) return;
+  const startBuild = (entityTypeId: string, append = queueBuild) => {
+    if (!buildOptions.some((option) => option.entity_type_id === entityTypeId) || (!append && !canAfford(entityTypeId))) return;
     actions.setSelectedAction(null);
     for (const id of selectedEntities) {
       const entityId = Number(id);
-      if (Number.isSafeInteger(entityId)) intentQueue.handleBuildCommand(entityId, entityTypeId);
+      if (Number.isSafeInteger(entityId)) intentQueue.handleBuildCommand(entityId, entityTypeId, append);
     }
     setBuildMenuOpen(false);
   };
@@ -456,7 +470,7 @@ export default function EntityDetailPanel() {
         const option = index >= 0 ? buildOptions[index] : undefined;
         if (option) {
           event.preventDefault();
-          startBuild(option.entity_type_id);
+          startBuild(option.entity_type_id, event.shiftKey || queueBuild);
         }
       }
       if (upgradeMenuOpen) {
@@ -470,13 +484,22 @@ export default function EntityDetailPanel() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [buildMenuOpen, buildOptions, collectMenuOpen, collectOptions, firstId, selectedIdsKey, upgradeMenuOpen, upgradeOptions]);
+  }, [buildMenuOpen, buildOptions, collectMenuOpen, collectOptions, firstId, selectedIdsKey, upgradeMenuOpen, upgradeOptions, queueBuild]);
 
   useEffect(() => {
     const onDeliverKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable=true]")) return;
       const key = event.key.toLowerCase();
+      if (key === "h" && canResupply && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
+        event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
+        if (!event.repeat) onClickAction("Resupply");
+        return;
+      }
+      if (resupplySelection) {
+        if (key === "escape") { event.preventDefault(); event.stopImmediatePropagation(); actions.setSelectedAction(null); }
+        return;
+      }
       if (key === "a" && !deliverySelection && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen
         && availableActions.some(action => action.value === "Assign")) {
         event.preventDefault();
@@ -587,8 +610,8 @@ export default function EntityDetailPanel() {
                         return `${resource} ${inventory.toFixed(1)}`;
                       }).join(", ")}</span>
                     )}
-                    {(activeIntent?.kind === "transport" || activeIntent?.kind === "collect") && collectorState && (
-                      <span className="font-mono text-muted-foreground">{collectorState.activity.replaceAll("_", " ")}</span>
+                    {(activeIntent?.kind === "transport" || activeIntent?.kind === "collect" || activeIntent?.kind === "resupply") && collectorState && (
+                      <span className="font-mono text-muted-foreground">{collectorState.activity.replaceAll("_", " ")}{collectorState.activity === "waiting_for_resupply" ? `: missing ${collectorState.resource_type}` : ""}</span>
                     )}
                     {collectorState && (
                       <span className="font-mono text-muted-foreground">
@@ -608,6 +631,8 @@ export default function EntityDetailPanel() {
                   active={
                     a.value === "Measure"
                       ? isMeasuring
+                      : a.value === "Resupply"
+                      ? !!resupplySelection
                       : a.value === "Deliver" || a.value === "Transport"
                       ? deliverySelection?.kind === a.value
                       : a.value === "Assign" || a.value === "Escort" || a.value === "Move" || a.value === "Convoy" || a.value === "Sentry"
@@ -634,6 +659,9 @@ export default function EntityDetailPanel() {
                 selectedEntities.forEach(id => intentQueue.handleAssignCommand(Number(id), 0));
                 actions.setSelectedAction(null);
               }}>Use automatic destination</button> · [Esc] cancel
+            </div>}
+            {resupplySelection && <div className="mt-2 text-xs text-muted-foreground">
+              Click a friendly depot to fill all resources to carrying capacity · Shift-click to queue · [Esc] cancel
             </div>}
             {deliverySelection && (
               <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
@@ -679,19 +707,23 @@ export default function EntityDetailPanel() {
                 <span className="text-muted-foreground">[Esc] cancel</span>
               </div>
             )}
+            {buildMenuOpen && <label className="mt-2 flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={queueBuild} onChange={event => setQueueBuild(event.target.checked)} />
+              Queue build after current orders
+            </label>}
             {buildMenuOpen && (
               <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
                 <span className="text-muted-foreground">Build:</span>
                 {buildOptions.map((option, index) => {
                   const costs = contentManager.getEntityType(option.entity_type_id)?.build_cost ?? {};
-                  const enabled = canAfford(option.entity_type_id);
+                  const enabled = queueBuild || canAfford(option.entity_type_id);
                   const costText = Object.entries(costs).map(([resource, amount]) => `${amount} ${resource}`).join(", ");
                   return (
                     <button
                       key={option.entity_type_id}
                       type="button"
                       disabled={!enabled}
-                      onClick={() => startBuild(option.entity_type_id)}
+                      onClick={event => startBuild(option.entity_type_id, event.shiftKey || queueBuild)}
                       className={enabled ? "rounded border border-border bg-muted px-2 py-1 hover:bg-accent" : "cursor-not-allowed rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground"}
                     >
                       [{buildKeys[index]?.toUpperCase()}] {option.entity_type_id} — {costText}

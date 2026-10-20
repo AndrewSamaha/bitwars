@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
-import { AssignDepotIntentSchema, EscortIntentSchema, SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
+import { ResupplyIntentSchema, AssignDepotIntentSchema, EscortIntentSchema, SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
 import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
@@ -122,8 +122,8 @@ export async function POST(req: NextRequest) {
     }
 
     const t = (body?.type ?? "").toString();
-    if (t !== "Escort" && t !== "Sentry" && t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport" && t !== "Assign") {
-      return NextResponse.json({ error: "unsupported type; expected Escort, Sentry, Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, Transport, or Assign" }, { status: 400 });
+    if (t !== "Escort" && t !== "Sentry" && t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport" && t !== "Assign" && t !== "Resupply") {
+      return NextResponse.json({ error: "unsupported type; expected Escort, Sentry, Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, Transport, Assign, or Resupply" }, { status: 400 });
     }
 
     const entityIdVal = body?.entity_id;
@@ -153,6 +153,14 @@ export async function POST(req: NextRequest) {
       || body.resource_type_ids.length === 0 || body.resource_type_ids.length > 64
       || body.resource_type_ids.some((id: unknown) => typeof id !== "string" || !id.trim()))) {
       return NextResponse.json({ error: "Deliver requires at least one resource_type_ids entry" }, { status: 400 });
+    }
+    if (t === "Resupply" && (!Number.isSafeInteger(Number(entityIdVal)) || Number(entityIdVal) <= 0
+      || !Number.isSafeInteger(body.depot_id) || body.depot_id <= 0
+      || !body.target_amounts || typeof body.target_amounts !== "object" || Array.isArray(body.target_amounts)
+      || Object.keys(body.target_amounts).length === 0 || Object.keys(body.target_amounts).length > 64
+      || Object.entries(body.target_amounts).some(([id, amount]) => !id.trim() || typeof amount !== "number" || !Number.isFinite(amount) || amount < 0)
+      || !Object.values(body.target_amounts).some(amount => typeof amount === "number" && amount > 0))) {
+      return NextResponse.json({ error: "Resupply requires a positive entity_id and depot_id, and finite nonnegative target_amounts with at least one positive target" }, { status: 400 });
     }
     if (t === "Assign" && (!Number.isSafeInteger(Number(entityIdVal)) || Number(entityIdVal) <= 0
       || !Number.isSafeInteger(body.target_id) || body.target_id < 0)) {
@@ -299,6 +307,15 @@ export async function POST(req: NextRequest) {
         protocolVersion: ENGINE_PROTOCOL_MAJOR,
         policy,
         payload: { case: "upgrade", value: upgrade },
+      });
+      bytes = toBinary(IntentEnvelopeSchema, envelope);
+    } else if (t === "Resupply") {
+      const envelope = create(IntentEnvelopeSchema, {
+        clientCmdId: clientCmdBytes, intentId: new Uint8Array(), playerId,
+        clientSeq: BigInt(clientSeqVal), serverTick: 0n, protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
+        payload: { case: "resupply", value: create(ResupplyIntentSchema, {
+          entityId, depotId: BigInt(body.depot_id), targetAmounts: body.target_amounts,
+        }) },
       });
       bytes = toBinary(IntentEnvelopeSchema, envelope);
     } else if (t === "Deliver" || t === "Transport") {

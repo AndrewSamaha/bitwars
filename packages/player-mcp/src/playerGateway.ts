@@ -73,6 +73,7 @@ export type WaitCondition =
   | { type: "resource_at_least"; entity_id: number; resource_type_id: string; amount: number };
 
 export type IntentInput =
+  | { type: "Resupply"; entity_id: number; depot_id: number; target_amounts: Record<string, number>; policy?: string }
   | { type: "Move"; entity_id: number; target: { x: number; y: number }; policy?: string }
   | { type: "Build"; entity_id: number; blueprint_id: string; policy?: string }
   | { type: "Upgrade"; entity_id: number; target_entity_type_id: string; policy?: string }

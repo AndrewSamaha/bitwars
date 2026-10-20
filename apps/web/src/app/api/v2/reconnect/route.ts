@@ -82,6 +82,7 @@ export async function GET() {
       transfer_route?: { donor_id: number; target_id: number; resource_type_ids: string[] };
       move_target?: { x: number; y: number };
       move_route?: { waypoints: Array<{ x: number; y: number }>; next_waypoint_index: number; last_client_cmd_id?: string };
+      resupply?: { depot_id: number; target_amounts: Record<string, number> };
       blueprint_id?: string;
       progress?: number;
     }> = [];
@@ -99,6 +100,7 @@ export async function GET() {
             started_tick: Number(entry.started_tick ?? 0),
             intent_kind: String(entry.intent_kind ?? ""),
             ...(entry.move_route ? { move_route: entry.move_route } : {}),
+            ...(entry.resupply ? { resupply: entry.resupply } : {}),
             ...(entry.transfer_route ? { transfer_route: entry.transfer_route } : {}),
             ...(typeof entry.blueprint_id === "string" ? { blueprint_id: entry.blueprint_id } : {}),
             ...(Number.isFinite(Number(entry.progress)) ? { progress: Number(entry.progress) } : {}),

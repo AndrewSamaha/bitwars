@@ -1,12 +1,13 @@
 import { expect, it, vi } from "vitest";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 
-it("replaces collection with a delivery and clears it when the server finishes", () => {
+it("replaces collection with a delivery and clears it when the server finishes", async () => {
   const send = vi.fn().mockResolvedValue(undefined);
   intentQueue.setSendCallback(send);
   const entityId = 123456;
   intentQueue.handleCollectCommand(entityId, { resourceTypeId: "minerals", nearestCompatible: false });
   intentQueue.handleDeliverCommand(entityId, 654321, ["minerals", "energy"]);
+  await intentQueue.whenSubmitted();
   expect(send).toHaveBeenLastCalledWith(expect.objectContaining({
     kind: "Deliver", entityId, targetId: 654321,
     resourceTypeIds: ["minerals", "energy"], policy: "REPLACE_ACTIVE",

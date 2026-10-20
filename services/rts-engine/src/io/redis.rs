@@ -78,6 +78,14 @@ pub struct EntityActiveIntent {
     pub build_location: Option<IntentPoint>,
     #[serde(default)]
     pub transfer_route: Option<TransferRoute>,
+    #[serde(default)]
+    pub resupply: Option<ResupplyOrder>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResupplyOrder {
+    pub depot_id: u64,
+    pub target_amounts: HashMap<String, f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1023,6 +1031,7 @@ impl RedisClient {
             collect_nearest_compatible: collect_assignment.map(|(_, nearest)| nearest),
             build_location: construction.and_then(|(_, location, _)| location),
             transfer_route: None,
+            resupply: None,
         };
         let json = serde_json::to_string(&entry)?;
         let key = self.active_intents_key();
@@ -1033,6 +1042,17 @@ impl RedisClient {
             .cmd("HSET").arg(&key).arg(&field).arg(&json).ignore()
             .cmd("PERSIST").arg(&key).ignore()
             .query_async(&mut self.conn).await?;
+        Ok(())
+    }
+
+    pub async fn persist_resupply(&mut self, entity_id: u64, intent: &pb::ResupplyIntent) -> anyhow::Result<()> {
+        let key = self.active_intents_key();
+        let json: Option<String> = self.conn.hget(&key, entity_id.to_string()).await?;
+        if let Some(json) = json {
+            let mut entry: EntityActiveIntent = serde_json::from_str(&json)?;
+            entry.resupply = Some(ResupplyOrder { depot_id: intent.depot_id, target_amounts: intent.target_amounts.clone() });
+            let _: () = self.conn.hset(key, entity_id.to_string(), serde_json::to_string(&entry)?).await?;
+        }
         Ok(())
     }
 

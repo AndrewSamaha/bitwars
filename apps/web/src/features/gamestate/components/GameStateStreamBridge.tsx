@@ -566,14 +566,13 @@ export default function GameStateStreamBridge() {
 
           if (payload.routeEdit === true) return;
           const localActive = entityIdFromCmd == null ? null : intentQueue.getEntityState(entityIdFromCmd).active;
+          if (isCompletedConstruction && entityIdFromCmd != null) {
+            const entity = byId.get(String(entityIdFromCmd));
+            if (entity) dispatchBuildCompleted(entity);
+          }
           if (localActive && localActive.clientCmdId !== clientCmdId) return;
           const entityKey =
             entityIdFromCmd != null ? String(entityIdFromCmd) : null;
-
-          if (isCompletedConstruction && entityKey) {
-            const entity = byId.get(entityKey);
-            if (entity) dispatchBuildCompleted(entity);
-          }
 
           if (entityKey) {
             if (
