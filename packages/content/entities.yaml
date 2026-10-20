@@ -81,6 +81,12 @@ entity_types:
     resource_node:
       resource_type: food
       amount: 2000
+      regeneration:
+        model: hill
+        max_rate_per_second: 7.529411764705882
+        half_saturation_fraction: 0.5
+        exponent: 4
+      depleted_entity_type_id: dead_planet_blue
       collection_mode: transport
       max_simultaneous_collectors: 1
       min_effective_distance: 20

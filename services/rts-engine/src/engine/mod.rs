@@ -619,6 +619,31 @@ mod transport_capacity_tests {
     }
 
     #[test]
+    fn depleted_planet_preserves_last_food_load_for_delivery() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let worker_def = content.get("worker").unwrap();
+        let mut entities = vec![
+            pb::Entity { id: 1, entity_type_id: "worker".into(), health: 100.0, ..Default::default() },
+            pb::Entity { id: 2, entity_type_id: "planet_blue".into(), health: 100.0,
+                resource_deposit: Some(pb::ResourceDeposit { amount: 2000.0, remaining: 3.0 }),
+                ..Default::default() },
+        ];
+        let index = collection_entity_index(&entities);
+        assert_eq!(gather_transport_inventory(&mut entities, 1, 2, worker_def, "food", 8.0, &index), 3.0);
+        assert_eq!(state::transform_depleted_resource_nodes(&mut entities, &content), vec![2]);
+        assert_eq!(entities[1].entity_type_id, "dead_planet_blue");
+        assert_eq!(resource_amount(&entities[0], "food"), 3.0);
+        assert_eq!(resource_amount(&entities[0], "minerals"), 0.0);
+        let mut depot = pb::Entity::default();
+        deposit_collection_inventory(&mut entities[0], worker_def, &mut depot,
+            content.get("habitat").unwrap(), "food");
+        assert_eq!(resource_amount(&depot, "food"), 3.0);
+        assert_eq!(resource_amount(&entities[0], "food"), 0.0);
+        assert_eq!(entities[1].resource_deposit.unwrap().remaining, 1000.0);
+    }
+
+    #[test]
     fn content_configures_transport_node_capacity() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml");
@@ -3824,6 +3849,7 @@ impl Engine {
         // until this call returns.
         let entity_by_id = collection_entity_index(&self.state.entities);
         initialize_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), None, &mut rand::thread_rng());
+        state::regenerate_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), dt as f64);
         let collect_active_entities: HashSet<u64> = self
             .intents
             .active_intents()
@@ -4155,6 +4181,24 @@ impl Engine {
                 }
             }
         }
+        let transformed: HashSet<_> = state::transform_depleted_resource_nodes(
+            &mut self.state.entities, self.content.as_ref().unwrap(),
+        ).into_iter().collect();
+        // Preserve partially loaded workers' delivery cycle when a food source
+        // changes type but keeps its entity ID.
+        self.transport_node_by_entity.retain(|collector_id, node_id| {
+            if !transformed.contains(node_id) { return true; }
+            self.transport_wait_since_tick_by_entity.remove(collector_id);
+            if let Some(ui) = self.collector_ui_state_by_entity.get_mut(collector_id) {
+                if collection_entity(&self.state.entities, *collector_id, &entity_by_id)
+                    .is_some_and(|entity| resource_amount(entity, &ui.resource_type) > 0.0)
+                {
+                    ui.activity = COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF.to_string();
+                }
+                ui.effective_rate_per_second = 0.0;
+            }
+            false
+        });
     }
 
     fn collector_states_for_stream(&self) -> Vec<pb::CollectorState> {

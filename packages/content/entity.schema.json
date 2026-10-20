@@ -679,6 +679,13 @@
           "description": "Whether gathering fills cargo for delivery (transport) or credits resources directly (proximity).",
           "$ref": "#/$defs/CollectionMode"
         },
+        "depleted_entity_type_id": {
+          "description": "Replace this entity in place when its finite deposit reaches zero.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "max_effective_distance": {
           "description": "Outer center-to-center gathering distance in world units, inclusive. Defaults to 120 and is clamped to at least the inner distance.",
           "type": "number",
@@ -700,6 +707,17 @@
           "format": "float",
           "default": 0.0
         },
+        "regeneration": {
+          "description": "Optional stock-dependent regeneration; omitted means no regrowth.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResourceRegenerationDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "resource_type": {
           "description": "Resource ID produced by this source; must be included in the collector's collects list.",
           "type": "string"
@@ -709,6 +727,46 @@
       "required": [
         "resource_type",
         "collection_mode"
+      ]
+    },
+    "ResourceRegenerationDef": {
+      "description": "Regeneration uses x = remaining / the planet's sampled maximum stock.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "exponent": {
+              "description": "Positive Hill exponent controlling the steepness of the decline.",
+              "type": "number",
+              "format": "double",
+              "exclusiveMinimum": 0
+            },
+            "half_saturation_fraction": {
+              "description": "Underlying Hill half-saturation fraction; normalization makes the rate\nhere slightly greater than half the rate at full stock.",
+              "type": "number",
+              "format": "double",
+              "exclusiveMinimum": 0,
+              "maximum": 1.0
+            },
+            "max_rate_per_second": {
+              "description": "Rate at full stock for the normalized Hill curve, in resource units/second.",
+              "type": "number",
+              "format": "double",
+              "exclusiveMinimum": 0
+            },
+            "model": {
+              "type": "string",
+              "const": "hill"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "max_rate_per_second",
+            "half_saturation_fraction",
+            "exponent"
+          ]
+        }
       ]
     },
     "ResourceSharingDef": {

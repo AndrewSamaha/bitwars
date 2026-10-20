@@ -59,6 +59,41 @@ pub fn initialize_resource_deposits(
     }
 }
 
+/// Grow only living finite deposits, using each entity's sampled maximum.
+pub fn regenerate_resource_deposits(entities: &mut [Entity], content: &ContentPack, dt: f64) {
+    if !dt.is_finite() || dt <= 0.0 { return; }
+    for entity in entities {
+        let Some(regeneration) = content.get(&entity.entity_type_id)
+            .and_then(|def| def.resource_node.as_ref())
+            .and_then(|node| node.regeneration.as_ref()) else { continue; };
+        let Some(deposit) = entity.resource_deposit.as_mut() else { continue; };
+        if entity.health <= 0.0 || deposit.remaining <= 0.0 || deposit.amount <= 0.0 { continue; }
+        let rate = regeneration.rate_per_second(deposit.remaining / deposit.amount);
+        deposit.remaining = (deposit.remaining + rate * dt).min(deposit.amount);
+    }
+}
+
+/// Convert exhausted sources after collection, preserving identity and position.
+/// The replacement gets its own content-defined deposit, never the exhausted stock.
+pub fn transform_depleted_resource_nodes(entities: &mut [Entity], content: &ContentPack) -> Vec<u64> {
+    let mut transformed = Vec::new();
+    for entity in entities {
+        if !entity.resource_deposit.as_ref().is_some_and(|deposit| deposit.remaining <= 0.0) {
+            continue;
+        }
+        let Some(target_id) = content.get(&entity.entity_type_id)
+            .and_then(|def| def.resource_node.as_ref())
+            .and_then(|node| node.depleted_entity_type_id.as_ref()) else { continue; };
+        let Some(target) = content.get(target_id) else { continue; };
+        entity.entity_type_id = target_id.clone();
+        entity.health = target.health;
+        entity.resource_deposit = target.resource_node.as_ref().and_then(|node| node.amount)
+            .map(|amount| crate::pb::ResourceDeposit { amount, remaining: amount });
+        transformed.push(entity.id);
+    }
+    transformed
+}
+
 /// Unlimited sources have no deposit. Finite sources debit exactly the amount granted.
 pub fn take_from_deposit(entity: &mut Entity, requested: f64) -> f64 {
     let requested = requested.max(0.0);
@@ -510,6 +545,44 @@ mod tests {
         let mut fixed = vec![neutral_entity(3, "planet_blue", 0.0, 0.0, &content)];
         initialize_resource_deposits(&mut fixed, &content, None, &mut rng);
         assert_eq!(fixed[0].resource_deposit.as_ref().unwrap().amount, 2000.0);
+    }
+
+    #[test]
+    fn renewable_deposits_use_sampled_caps_and_depletion_is_irreversible() {
+        let content = ContentPack::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut entities = vec![
+            neutral_entity(1, "planet_blue", 20.0, 30.0, &content),
+            neutral_entity(2, "minerals", 0.0, 0.0, &content),
+            neutral_entity(3, "star_yellow", 0.0, 0.0, &content),
+        ];
+        initialize_resource_deposits(&mut entities, &content, None, &mut rand::thread_rng());
+        // A spawn override defines the maximum, independently of content's 2000.
+        entities[0].resource_deposit = Some(crate::pb::ResourceDeposit { amount: 10000.0, remaining: 5000.0 });
+        let nonrenewable = entities[1].resource_deposit;
+        regenerate_resource_deposits(&mut entities, &content, 0.25);
+        assert_eq!(entities[0].resource_deposit.unwrap().remaining, 5001.0);
+        assert_eq!(entities[1].resource_deposit, nonrenewable);
+        assert!(entities[2].resource_deposit.is_none());
+        regenerate_resource_deposits(&mut entities, &content, 100000.0);
+        assert_eq!(entities[0].resource_deposit.unwrap().remaining, 10000.0);
+        let original_pos = entities[0].pos;
+        let original_owner = entities[0].owner_player_id.clone();
+        assert_eq!(take_from_deposit(&mut entities[0], 20000.0), 10000.0);
+        regenerate_resource_deposits(&mut entities, &content, 100.0);
+        assert_eq!(entities[0].resource_deposit.unwrap().remaining, 0.0);
+        assert_eq!(transform_depleted_resource_nodes(&mut entities, &content), vec![1]);
+        assert_eq!(entities[0].entity_type_id, "dead_planet_blue");
+        assert_eq!(entities[0].id, 1);
+        assert_eq!(entities[0].pos, original_pos);
+        assert_eq!(entities[0].owner_player_id, original_owner);
+        assert_eq!(entities[0].resource_deposit.unwrap().remaining, 1000.0);
+        regenerate_resource_deposits(&mut entities, &content, 100.0);
+        assert_eq!(entities[0].resource_deposit.unwrap().remaining, 1000.0);
+        assert!(transform_depleted_resource_nodes(&mut entities, &content).is_empty());
+        take_from_deposit(&mut entities[1], f64::MAX);
+        assert!(transform_depleted_resource_nodes(&mut entities, &content).is_empty());
+        assert_eq!(entities[1].entity_type_id, "minerals");
     }
 
     #[test]

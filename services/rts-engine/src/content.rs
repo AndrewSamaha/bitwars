@@ -488,6 +488,12 @@ pub struct ResourceNodeDef {
     /// Initial finite resource stock. Omitted means unlimited; spawn configuration may override it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amount: Option<f64>,
+    /// Optional stock-dependent regeneration; omitted means no regrowth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regeneration: Option<ResourceRegenerationDef>,
+    /// Replace this entity in place when its finite deposit reaches zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depleted_entity_type_id: Option<String>,
     /// Resource ID produced by this source; must be included in the collector's collects list.
     pub resource_type: String,
     /// Whether gathering fills cargo for delivery (transport) or credits resources directly (proximity).
@@ -501,6 +507,39 @@ pub struct ResourceNodeDef {
     /// Outer center-to-center gathering distance in world units, inclusive. Defaults to 120 and is clamped to at least the inner distance.
     #[serde(default = "default_max_effective_distance")]
     pub max_effective_distance: f32,
+}
+
+/// Regeneration uses x = remaining / the planet's sampled maximum stock.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "model", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ResourceRegenerationDef {
+    Hill {
+        /// Rate at full stock for the normalized Hill curve, in resource units/second.
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        max_rate_per_second: f64,
+        /// Underlying Hill half-saturation fraction; normalization makes the rate
+        /// here slightly greater than half the rate at full stock.
+        #[schemars(range(max = 1.0), extend("exclusiveMinimum" = 0))]
+        half_saturation_fraction: f64,
+        /// Positive Hill exponent controlling the steepness of the decline.
+        #[schemars(extend("exclusiveMinimum" = 0))]
+        exponent: f64,
+    },
+}
+
+impl ResourceRegenerationDef {
+    pub fn rate_per_second(&self, fraction: f64) -> f64 {
+        match *self {
+            Self::Hill { max_rate_per_second, half_saturation_fraction, exponent } => {
+                let x = fraction.clamp(0.0, 1.0);
+                if x <= 0.0 { return 0.0; }
+                // Equivalent to x^n(1+a^n)/(x^n+a^n), avoiding 0/0
+                // when both powers underflow for large valid exponents.
+                max_rate_per_second * (1.0 + half_saturation_fraction.powf(exponent))
+                    / (1.0 + (half_saturation_fraction / x).powf(exponent))
+            }
+        }
+    }
 }
 
 /// Drop-off point for transported resources.
@@ -754,6 +793,23 @@ fn validate_technologies(
         if let Some(node) = entity.resource_node.as_ref() {
             if node.amount.is_some_and(|amount| !amount.is_finite() || amount < 0.0) {
                 anyhow::bail!("entity type {entity_id} has an invalid resource node amount");
+            }
+            if let Some(ResourceRegenerationDef::Hill {
+                max_rate_per_second, half_saturation_fraction, exponent,
+            }) = &node.regeneration {
+                if !node.amount.is_some_and(|amount| amount.is_finite() && amount > 0.0)
+                    || !max_rate_per_second.is_finite() || *max_rate_per_second <= 0.0
+                    || !half_saturation_fraction.is_finite()
+                    || *half_saturation_fraction <= 0.0 || *half_saturation_fraction > 1.0
+                    || !exponent.is_finite() || *exponent <= 0.0
+                {
+                    anyhow::bail!("entity type {entity_id} has invalid regeneration parameters or maximum stock");
+                }
+            }
+            if let Some(target) = &node.depleted_entity_type_id {
+                if !entity_types.contains_key(target) || target == entity_id {
+                    anyhow::bail!("entity type {entity_id} has invalid depleted entity type {target}");
+                }
             }
             if let Some(limit) = node.max_simultaneous_collectors {
                 if limit == 0 || node.collection_mode != CollectionMode::Transport {
@@ -1212,6 +1268,51 @@ mod tests {
         assert_eq!(worker.stop_radius, 0.75);
         let scout = pack.get("scout").unwrap();
         assert_eq!(scout.speed, 140.0);
+    }
+
+    #[test]
+    fn hill_regeneration_matches_worker_balance_and_declines_with_stock() {
+        let pack = ContentPack::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let regeneration = pack.get("planet_blue").unwrap().resource_node.as_ref().unwrap()
+            .regeneration.as_ref().unwrap();
+        let worker_rate = pack.get("worker").unwrap().collector.as_ref().unwrap().transport_rate_per_second as f64;
+        assert!((regeneration.rate_per_second(0.5) - worker_rate / 2.0).abs() < 1e-12);
+        assert!((regeneration.rate_per_second(1.0) - 128.0 / 17.0).abs() < 1e-12);
+        assert!((regeneration.rate_per_second(0.25) - 8.0 / 17.0).abs() < 1e-12);
+        assert_eq!(regeneration.rate_per_second(0.0), 0.0);
+    }
+
+    #[test]
+    fn regeneration_schema_rejects_invalid_parameters_and_depletion_targets() {
+        let pack = ContentPack::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        for (rate, fraction, exponent, amount) in [
+            (0.0, 0.5, 4.0, Some(2000.0)),
+            (f64::NAN, 0.5, 4.0, Some(2000.0)),
+            (8.0, 0.0, 4.0, Some(2000.0)),
+            (8.0, 1.1, 4.0, Some(2000.0)),
+            (8.0, 0.5, f64::INFINITY, Some(2000.0)),
+            (8.0, 0.5, -1.0, Some(2000.0)),
+            (8.0, 0.5, 4.0, None),
+            (8.0, 0.5, 4.0, Some(0.0)),
+        ] {
+            let mut types = pack.entity_types.clone();
+            let node = types.get_mut("planet_blue").unwrap().resource_node.as_mut().unwrap();
+            node.amount = amount;
+            node.regeneration = Some(ResourceRegenerationDef::Hill {
+                max_rate_per_second: rate, half_saturation_fraction: fraction, exponent,
+            });
+            assert!(validate_technologies(&types, &pack.technologies).is_err());
+        }
+        let mut types = pack.entity_types.clone();
+        types.get_mut("planet_blue").unwrap().resource_node.as_mut().unwrap()
+            .depleted_entity_type_id = Some("missing_planet".into());
+        assert!(validate_technologies(&types, &pack.technologies).is_err());
+        let node = pack.get("planet_blue").unwrap().resource_node.as_ref().unwrap();
+        let mut json = serde_json::to_value(node).unwrap();
+        json["regeneration"]["model"] = serde_json::json!("unknown");
+        assert!(serde_json::from_value::<ResourceNodeDef>(json).is_err());
     }
 
     #[test]
