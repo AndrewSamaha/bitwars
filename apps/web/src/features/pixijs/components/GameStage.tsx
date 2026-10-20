@@ -57,6 +57,7 @@ const MINIMAP_MY_COLOR = 0x44_aa_ff;
 const MINIMAP_HOSTILE_COLOR = 0xef_44_44;
 const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
 const MINIMAP_STAR_YELLOW_COLOR = 0xff_dd_22;
+const MINIMAP_PLANET_BLUE_COLOR = 0x44_cc_66;
 const BUILD_PROGRESS_SCAN_MS = 500;
 const FOG_COLOR = 0x67_6b_73;
 const FOG_ALPHA = 0.20;
@@ -478,6 +479,7 @@ export default function GameStage() {
         const MINIMAP_DISTANCE_SCALE = 45_000;
         const MINIMAP_MARGIN = 10;
         const MINIMAP_UNIT_DOT_RADIUS = 2;
+        const MINIMAP_PLANET_BLUE_DOT_RADIUS = 4;
         const minimapGraphics = new Graphics();
         (minimapGraphics as any).label = "minimap";
         minimapGraphics.eventMode = "none";
@@ -508,6 +510,11 @@ export default function GameStage() {
         const minimapMemoryGraphics = new Graphics();
         minimapMemoryGraphics.eventMode = "none";
         minimapContainer.addChild(minimapMemoryGraphics);
+        // Adversary dots stay above both visible and remembered entity dots.
+        const minimapAdversaryGraphics = new Graphics();
+        minimapAdversaryGraphics.label = "minimapAdversaries";
+        minimapAdversaryGraphics.eventMode = "none";
+        minimapContainer.addChild(minimapAdversaryGraphics);
         const minimapViewportGraphics = new Graphics();
         minimapViewportGraphics.eventMode = "none";
         const minimapNotificationGraphics = new Graphics();
@@ -629,6 +636,7 @@ export default function GameStage() {
           );
           minimapGraphics.clear();
           minimapMemoryGraphics.clear();
+          minimapAdversaryGraphics.clear();
           minimapViewportGraphics.clear();
           minimapNotificationGraphics.clear();
           // Background
@@ -663,9 +671,15 @@ export default function GameStage() {
             }
           }
           // Unit dots: own units are blue; all non-owned combat targets are
-          // red, while planets and other non-targetable entities stay gray.
+          // red; yellow stars and blue planets use yellow and green respectively.
+          // Other non-targetable entities stay gray.
           const myId = myPlayerIdRef.current;
-          for (const e of game.world.with("pos", "id")) {
+          // Keep habitable planets visible when nearby units overlap their dots.
+          const minimapEntities = [...game.world.with("pos", "id")].sort(
+            (a, b) => Number(a.entity_type_id?.trim() === "planet_blue")
+              - Number(b.entity_type_id?.trim() === "planet_blue"),
+          );
+          for (const e of minimapEntities) {
             const pos = (e as { pos: { x: number; y: number } }).pos;
             const ownerId = (e as { owner_player_id?: string }).owner_player_id;
             const isOwned = myId != null && ownerId === myId;
@@ -674,15 +688,21 @@ export default function GameStage() {
             const isCombatTarget = contentManager.getEntityType(entityTypeId)?.combat_targetable === true;
             const color = entityTypeId === "star_yellow"
               ? MINIMAP_STAR_YELLOW_COLOR
-              : isOwned
-                ? MINIMAP_MY_COLOR
-                : isCombatTarget
-                  ? MINIMAP_HOSTILE_COLOR
-                  : MINIMAP_NEUTRAL_COLOR;
+              : entityTypeId === "planet_blue"
+                ? MINIMAP_PLANET_BLUE_COLOR
+                : isOwned
+                  ? MINIMAP_MY_COLOR
+                  : isCombatTarget
+                    ? MINIMAP_HOSTILE_COLOR
+                    : MINIMAP_NEUTRAL_COLOR;
             const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
             if (Math.hypot(px - MINIMAP_RADIUS_PX, py - MINIMAP_RADIUS_PX) < MINIMAP_RADIUS_PX) {
-              (remembered ? minimapMemoryGraphics : minimapGraphics)
-                .circle(px, py, MINIMAP_UNIT_DOT_RADIUS)
+              (color === MINIMAP_HOSTILE_COLOR
+                ? minimapAdversaryGraphics
+                : remembered ? minimapMemoryGraphics : minimapGraphics)
+                .circle(px, py, entityTypeId === "planet_blue"
+                  ? MINIMAP_PLANET_BLUE_DOT_RADIUS
+                  : MINIMAP_UNIT_DOT_RADIUS)
                 .fill({ color });
             }
           }
