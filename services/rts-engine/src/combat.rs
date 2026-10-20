@@ -856,7 +856,7 @@ mod tests {
         })) }, IntentMetadata { entity_id: 1, intent_id: vec![1;16], client_cmd_id: vec![2;16],
             player_id: "me".into(), protocol_version: crate::engine::ENGINE_PROTOCOL_MAJOR,
             server_tick: 0, policy: pb::IntentPolicy::ReplaceActive }, "raider");
-        let mut state = GameState { tick: 0, technologies: HashMap::new(), entities: vec![
+        let mut state = GameState { generation: Default::default(), tick: 0, technologies: HashMap::new(), entities: vec![
             entity(1, "raider", "me", 0.0, 20.0), entity(2, "worker", "enemy", 5.0, 100.0)] };
         assert!(manager.follow_targets(&mut state, 10.0, 0.1).is_empty());
         let velocity = state.entities[0].vel.unwrap();

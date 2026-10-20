@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { parseDocument } from "yaml";
 import { NextResponse } from "next/server";
 import { requireAuthOr401 } from "@/features/users/utils/auth";
 import { parseSpawnConfig } from "@/lib/content/spawnConfig";
@@ -24,7 +25,8 @@ export async function PUT(request: Request) {
   let yaml: string;
   try {
     const body = await request.json();
-    parseSpawnConfig(body.yaml);
+    const content = parseDocument(await readFile(path.resolve(process.cwd(), "../../packages/content/entities.yaml"), "utf8")).toJS();
+    parseSpawnConfig(body.yaml, content);
     yaml = body.yaml;
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid spawn configuration" }, { status: 400 });

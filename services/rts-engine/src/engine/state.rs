@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use anyhow::{bail, Result};
-use rand::seq::SliceRandom;
 use tracing::debug;
 
 use crate::content::ContentPack;
@@ -105,17 +103,12 @@ pub fn take_from_deposit(entity: &mut Entity, requested: f64) -> f64 {
 
 const RADIATION_SPAWN_SAFETY_MULTIPLIER: f32 = 1.5;
 const MAX_RADIATION_SOURCE_SPAWN_ATTEMPTS: usize = 64;
-const MAX_MINERAL_SPAWN_ATTEMPTS: usize = 256;
-const PLAYER_MINERAL_SEARCH_RADIUS: f32 = 4_000.0;
-// Keep planets well outside a star's 1,200-unit radiation range while leaving
-// room for a player loadout to spawn 200–800 units from the planet.
-const PLANET_MIN_DISTANCE_FROM_STAR: f32 = 3_000.0;
-const PLANET_MAX_DISTANCE_FROM_STAR: f32 = 4_500.0;
 
 pub type PlayerTechnologies = HashMap<String, std::collections::HashSet<String>>;
 
 #[derive(Clone)]
 pub struct GameState {
+    pub generation: super::generation::GenerationState,
     pub tick: u64,
     pub entities: Vec<Entity>,
     /// Completed, player-owned technologies. Definitions remain immutable content.
@@ -130,6 +123,7 @@ pub fn init_world(spawn_config: &SpawnConfig) -> GameState {
         "init_world requires valid spawn config (at least one loadout)"
     );
     GameState {
+        generation: super::generation::GenerationState { version: 1, ..Default::default() },
         tick: 0,
         entities: Vec::new(),
         technologies: PlayerTechnologies::new(),
@@ -143,118 +137,11 @@ pub fn spawn_celestial_field(
     spawn_config: &SpawnConfig,
     rng: &mut impl rand::Rng,
 ) {
-    let mut next_id = entities.iter().map(|entity| entity.id).max().unwrap_or(0) + 1;
-    let star_field = spawn_config
-        .global_neutral_fields
-        .iter()
-        .find(|field| field.entity_type_id == "star_yellow")
-        .expect("spawn config must define a global star_yellow field");
-    let mut star_positions = Vec::with_capacity(star_field.count);
-    for _ in 0..star_field.count {
-        let (x, y) = sample_normal_position(
-            star_field.origin[0],
-            star_field.origin[1],
-            star_field.standard_deviation.max(0.0),
-            rng,
-        );
-        star_positions.push((x, y));
-        entities.push(neutral_entity(next_id, "star_yellow", x, y, content));
-        next_id += 1;
-    }
-
-    star_positions.shuffle(rng);
-    let planet_count = star_positions.len() * 3 / 4;
-    for (star_x, star_y) in star_positions.into_iter().take(planet_count) {
-        let (x, y) = sample_position_in_annulus(
-            star_x,
-            star_y,
-            PLANET_MIN_DISTANCE_FROM_STAR,
-            PLANET_MAX_DISTANCE_FROM_STAR,
-            rng,
-        );
-        entities.push(neutral_entity(next_id, "planet_blue", x, y, content));
-        next_id += 1;
-    }
-
-    for field in spawn_config
-        .global_neutral_fields
-        .iter()
-        .filter(|field| field.entity_type_id != "star_yellow")
-    {
-        for _ in 0..field.count {
-            let (x, y) = sample_normal_position(
-                field.origin[0],
-                field.origin[1],
-                field.standard_deviation.max(0.0),
-                rng,
-            );
-            entities.push(neutral_entity(
-                next_id,
-                &field.entity_type_id,
-                x,
-                y,
-                content,
-            ));
-            next_id += 1;
-        }
-    }
-    initialize_resource_deposits(entities, content, Some(spawn_config), rng);
-}
-
-/// Ensures a player spawn has a mineral node within 4,000 units.
-/// Returns the next free entity ID.
-pub fn ensure_minerals_near_spawn(
-    entities: &mut Vec<Entity>,
-    next_id: u64,
-    spawn_x: f32,
-    spawn_y: f32,
-    content: &ContentPack,
-    rng: &mut impl rand::Rng,
-) -> Result<u64> {
-    if entities.iter().any(|entity| {
-        entity.entity_type_id == "minerals"
-            && entity.resource_deposit.as_ref().is_none_or(|deposit| deposit.remaining > 0.0)
-            && entity.pos.as_ref().is_some_and(|pos| {
-                squared_distance(spawn_x, spawn_y, pos.x, pos.y)
-                    <= PLAYER_MINERAL_SEARCH_RADIUS.powi(2)
-            })
-    }) {
-        return Ok(next_id);
-    }
-
-    let Some(mineral_type) = content.get("minerals") else {
-        bail!("cannot ensure nearby minerals: content pack has no minerals entity type");
-    };
-    if !mineral_type.resource_node.as_ref().is_some_and(|node| node.resource_type == "minerals") {
-        bail!("cannot ensure nearby minerals: minerals entity type is not a mineral resource node");
-    }
-
-    for _ in 0..MAX_MINERAL_SPAWN_ATTEMPTS {
-        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-        let distance = rng.gen_range(0.0_f32..1.0).sqrt() * PLAYER_MINERAL_SEARCH_RADIUS;
-        let (x, y) = (spawn_x + angle.cos() * distance, spawn_y + angle.sin() * distance);
-        let in_radiation = entities.iter().any(|entity| {
-            let Some(pos) = entity.pos.as_ref() else { return false };
-            content.get(&entity.entity_type_id).is_some_and(|definition| {
-                definition.radiation_sources.iter().any(|source| {
-                    if source.damage_per_second <= 0.0 { return false }
-                    let d = squared_distance(x, y, pos.x, pos.y).sqrt();
-                    d >= source.min_effective_distance.max(0.0)
-                        && d <= source.max_effective_distance.max(0.0)
-                })
-            })
-        });
-        if !in_radiation {
-            entities.push(neutral_entity(next_id, "minerals", x, y, content));
-            return Ok(next_id + 1);
-        }
-    }
-
-    bail!("cannot ensure nearby minerals: no radiation-free spawn point found within 4,000 units")
+    super::generation::generate_world(entities, content, spawn_config, rng);
 }
 
 /// Samples independent normal X/Y coordinates around an origin using Box-Muller.
-fn sample_normal_position(
+pub(super) fn sample_normal_position(
     origin_x: f32,
     origin_y: f32,
     standard_deviation: f32,
@@ -271,7 +158,7 @@ fn sample_normal_position(
     )
 }
 
-fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &ContentPack) -> Entity {
+pub(super) fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &ContentPack) -> Entity {
     Entity {
         id,
         entity_type_id: entity_type_id.to_string(),
@@ -310,7 +197,9 @@ pub fn on_player_spawn(
     let mut placed_player_positions: Vec<Vec2> = Vec::new();
 
     // Player-owned units: each new unit is placed at a random distance from already placed units.
-    for (type_id, count) in loadout {
+    let mut types: Vec<_> = loadout.iter().collect();
+    types.sort_by_key(|(id, _)| *id);
+    for (type_id, count) in types {
         for _ in 0..*count {
             let (x, y) = if placed_player_positions.is_empty() {
                 (spawn_x, spawn_y)
@@ -586,7 +475,7 @@ mod tests {
     }
 
     #[test]
-    fn celestial_field_has_one_hundred_stars_and_seventy_five_planets() {
+    fn celestial_field_preserves_configured_source_counts() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
         let config =
@@ -612,27 +501,13 @@ mod tests {
                 .count(),
             star_count
         );
-        assert_eq!(
-            entities
-                .iter()
-                .filter(|entity| entity.entity_type_id == "planet_blue")
-                .count(),
-            star_count * 3 / 4
-        );
-        assert_eq!(
-            entities
-                .iter()
-                .filter(|entity| entity.entity_type_id == "theta")
-                .count(),
-            1
-        );
-        assert_eq!(
-            entities
-                .iter()
-                .filter(|entity| entity.entity_type_id == "minerals")
-                .count(),
-            1
-        );
+        for kind in ["theta", "minerals", "asteroid"] {
+            let configured = config.global_neutral_fields.iter().filter(|f| f.entity_type_id == kind).map(|f| f.count).sum::<usize>();
+            let actual = entities.iter().filter(|e| e.entity_type_id == kind).count();
+            if kind == "theta" { assert_eq!(actual, configured); } else { assert!(actual >= configured); }
+        }
+        assert!(entities.iter().any(|e| e.entity_type_id == "planet_ice"));
+        assert!(entities.iter().any(|e| e.entity_type_id == "planet_inhospitable"));
     }
 
     #[test]

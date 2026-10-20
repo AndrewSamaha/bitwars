@@ -10,6 +10,7 @@ This directory contains specifications, designs, and decision records for the pr
   - [Entity Intent System Requirements](./requirements/entity-intents.md)
   - [Entities and Abilities Requirements](./requirements/entities-and-abilities.md)
   - [Localized Resources](./requirements/localized_resources.md)
+  - [Procedural Solar Systems and Player Starts](./requirements/procedural-solar-systems.md)
   - [Depot Logistics and Physical Supply Lines](./requirements/depot-logistics.md)
   - [Resource field deprecations](./requirements/resource-field-deprecations.md)
 - Architecture Decision Records (ADRs)

@@ -201,7 +201,7 @@ mod tests {
         use prost::Message;
         let mut source = entity(1);
         source.resource_deposit = Some(crate::pb::ResourceDeposit { amount: 10.0, remaining: 1.0 });
-        let previous = GameState { tick: 1, entities: vec![source], technologies: HashMap::new() };
+        let previous = GameState { generation: Default::default(), tick: 1, entities: vec![source], technologies: HashMap::new() };
         let mut current = previous.clone();
         current.entities[0].resource_deposit.as_mut().unwrap().remaining = 0.0;
         let delta = compute_delta(&previous, &current, &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(), 0.01, 0.01, &HashMap::new(), &HashSet::new());
@@ -214,12 +214,12 @@ mod tests {
 
     #[test]
     fn reports_removed_entities_in_stable_id_order() {
-        let previous = GameState {
+        let previous = GameState { generation: Default::default(),
             tick: 10,
             entities: vec![entity(9), entity(2), entity(5)],
             technologies: HashMap::new(),
         };
-        let current = GameState {
+        let current = GameState { generation: Default::default(),
             tick: 11,
             entities: vec![entity(5)],
             technologies: HashMap::new(),
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn reports_collector_telemetry_only_when_displayed_values_change() {
-        let state = GameState {
+        let state = GameState { generation: Default::default(),
             tick: 10,
             entities: vec![entity(4)],
             technologies: HashMap::new(),

@@ -186,7 +186,7 @@ impl Scenario {
             }
             technologies.insert(owner.clone(), techs.iter().cloned().collect());
         }
-        Ok(GameState { tick: 0, entities, technologies })
+        Ok(GameState { generation: super::generation::GenerationState { version: 1, ..Default::default() }, tick: 0, entities, technologies })
     }
 }
 

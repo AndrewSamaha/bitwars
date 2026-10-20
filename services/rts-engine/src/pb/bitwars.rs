@@ -990,6 +990,10 @@ pub struct PlayerTechnologyState {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
+    /// Server checkpoint: versioned reservations and pending procedural starts.
+    /// Clients may ignore this JSON; it is persisted atomically with entities.
+    #[prost(string, tag = "13")]
+    pub generation_state_json: ::prost::alloc::string::String,
     /// 1 = depot logistics; earlier matches require reset
     #[prost(uint32, tag = "12")]
     pub economy_version: u32,

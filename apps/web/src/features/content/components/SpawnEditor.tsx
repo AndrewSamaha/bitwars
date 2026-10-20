@@ -56,7 +56,7 @@ export default function SpawnEditor() {
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 className="text-xl font-semibold">Spawn configuration</h1>
-        <p className="mt-1 text-sm text-slate-400">Edit loadouts, neutral fields, starting resources and deposit amounts. Changes take effect when the engine restarts.</p>
+        <p className="mt-1 text-sm text-slate-400">Edit exposure, solar systems, player starts, loadouts and deposits. Changes take effect when the engine restarts.</p>
       </div>
       <button type="button" className="rounded border border-slate-600 px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-40" disabled={busy || savedYaml === null || yaml === savedYaml} onClick={() => void save()}>{busy ? "Saving…" : "Save changes"}</button>
     </div>

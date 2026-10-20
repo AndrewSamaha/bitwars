@@ -55,7 +55,14 @@ curl 'http://localhost:3000/api/v2/game-query/script-debug?owner=raiders'
 Snapshots and entities are JSON-safe API representations: protobuf integer IDs
 and ticks are returned as numbers when safe and strings otherwise. Snapshots
 include `sentry_orders` with route cursor/direction, formation anchor and slots,
-and phase, alongside `move_orders` and `convoys`.
+and phase, alongside `move_orders` and `convoys`. The authoritative snapshot query also
+includes `generation_state_json`, a versioned server checkpoint containing
+historical player-start reservations and pending join diagnostics. It remains a
+JSON string so 64-bit IDs/revision hashes retain their exact representation.
+Pending entries retain their selected loadout and last failure reason. An empty
+checkpoint denotes an older world; procedural joins require a reservation
+backfill or a fresh world. Normal player snapshot mapping does not expose this
+operator checkpoint.
 
 ## Write endpoint
 

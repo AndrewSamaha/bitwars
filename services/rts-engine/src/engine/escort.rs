@@ -634,7 +634,7 @@ mod tests {
             })
             .collect();
         let mut manager = IntentManager::new(types, 5.0, 1.0);
-        let mut state = GameState {
+        let mut state = GameState { generation: Default::default(),
             tick: 0,
             entities: vec![],
             technologies: HashMap::new(),

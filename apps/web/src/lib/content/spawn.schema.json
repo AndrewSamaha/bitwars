@@ -1,0 +1,617 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "min_entity_spawn_distance": {
+      "default": 0,
+      "type": "number",
+      "minimum": 0,
+      "description": "Minimum spacing between newly spawned player units."
+    },
+    "max_entity_spawn_distance": {
+      "default": 25,
+      "type": "number",
+      "minimum": 0,
+      "description": "Maximum sampling distance from previously placed player units."
+    },
+    "max_raiders": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991,
+      "description": "Maximum number of living raiders."
+    },
+    "loadouts": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "additionalProperties": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "description": "Pool of player loadouts; select one once per pending join."
+    },
+    "global_neutral_fields": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Content entity type to generate."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Number of objects, or inclusive random count bounds for a local population."
+          },
+          "origin": {
+            "type": "array",
+            "items": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "description": "Gaussian field center as [x, y] in game units."
+          },
+          "standard_deviation": {
+            "description": "Per-axis Gaussian spread about origin.",
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "type",
+          "count",
+          "origin",
+          "standard_deviation"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Gaussian populations generated once, with exposure sources placed first."
+    },
+    "neutrals_near_spawn": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Content entity type to generate."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "description": "Number of objects, or inclusive random count bounds for a local population."
+          },
+          "min_distance_from_spawn": {
+            "default": 0,
+            "type": "number",
+            "minimum": 0,
+            "description": "Minimum radius from the player-start origin."
+          },
+          "max_distance_from_spawn": {
+            "default": 0,
+            "type": "number",
+            "minimum": 0,
+            "description": "Maximum radius from the player-start origin."
+          }
+        },
+        "required": [
+          "type",
+          "count",
+          "min_distance_from_spawn",
+          "max_distance_from_spawn"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Optional neutral entities generated for each player start; exposure sources are prohibited."
+    },
+    "starting_resources": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      },
+      "description": "Resource amounts granted to the selected loadout's recipient inventory."
+    },
+    "starting_resources_recipient_type": {
+      "default": "habitat",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Entity type receiving starting stock; must occur exactly once in every loadout."
+    },
+    "resource_amounts": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "average": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Mean before clamping to the configured bounds."
+          },
+          "sd": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Standard deviation; zero gives a fixed amount."
+          },
+          "min": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Inclusive minimum bound for this range."
+          },
+          "max": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Inclusive maximum bound for this range."
+          }
+        },
+        "required": [
+          "average",
+          "sd",
+          "min",
+          "max"
+        ],
+        "additionalProperties": false
+      },
+      "description": "Per-entity overrides for initial finite deposits, sampled once from a clamped normal distribution."
+    },
+    "exposure": {
+      "type": "object",
+      "properties": {
+        "reference_distance": {
+          "description": "A strength-1 source contributes exposure 1 at this distance.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "minimum_distance": {
+          "description": "Positive distance clamp, preventing singular exposure near a source.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "sources": {
+          "description": "Entity type to relative heating strength; stars and theta contribute additively.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "reference_distance",
+        "minimum_distance",
+        "sources"
+      ],
+      "additionalProperties": false,
+      "description": "Combined dimensionless heating exposure from all configured sources, separate from collectable energy."
+    },
+    "solar_systems": {
+      "type": "object",
+      "properties": {
+        "anchor_type": {
+          "description": "Generate one random system around each initial anchor.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "planets": {
+          "type": "object",
+          "properties": {
+            "count_weights": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "additionalProperties": {
+                "type": "number",
+                "minimum": 0
+              },
+              "description": "Relative weights keyed by target planet count, including zero for barren systems."
+            },
+            "placement": {
+              "type": "object",
+              "properties": {
+                "min_distance": {
+                  "description": "Minimum radius from the system anchor, in game units.",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "max_distance": {
+                  "description": "Maximum radius from the system anchor, in game units.",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "sampling": {
+                  "description": "Uniform radius favors inner regions; uniform area spreads objects evenly over the annulus.",
+                  "type": "string",
+                  "enum": [
+                    "uniform_radius",
+                    "uniform_area"
+                  ]
+                },
+                "min_separation": {
+                  "description": "Minimum center separation from previously placed objects; hull overlap is also prohibited.",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "max_attempts_per_object": {
+                  "description": "Skip an object after this many failed placements.",
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "avoid_damaging_radiation": {
+                  "type": "boolean",
+                  "description": "Reject objects whose hulls intersect damaging radiation zones."
+                }
+              },
+              "required": [
+                "min_distance",
+                "max_distance",
+                "sampling",
+                "min_separation",
+                "max_attempts_per_object",
+                "avoid_damaging_radiation"
+              ],
+              "additionalProperties": false,
+              "description": "Geometry, radiation exclusions and bounded placement attempts."
+            },
+            "type_weights": {
+              "type": "object",
+              "properties": {
+                "interpolation": {
+                  "type": "string",
+                  "const": "linear",
+                  "description": "Linearly interpolate each type's weight between exposure points; clamp beyond endpoints."
+                },
+                "points": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "exposure": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "Combined dimensionless heating exposure from all configured sources, separate from collectable energy."
+                      },
+                      "weights": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]*$"
+                        },
+                        "additionalProperties": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "description": "Relative entity-type selection weights; omitted types have zero weight."
+                      }
+                    },
+                    "required": [
+                      "exposure",
+                      "weights"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "Strictly increasing exposure control points, each with positive total type weight."
+                }
+              },
+              "required": [
+                "interpolation",
+                "points"
+              ],
+              "additionalProperties": false,
+              "description": "Planet selection weights based on combined exposure from every source."
+            }
+          },
+          "required": [
+            "count_weights",
+            "placement",
+            "type_weights"
+          ],
+          "additionalProperties": false,
+          "description": "Random planet count, placement and exposure-dependent type selection."
+        },
+        "populations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "description": "Content entity type to generate."
+              },
+              "probability": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Probability from zero to one that this population occurs in a system."
+              },
+              "count": {
+                "type": "object",
+                "properties": {
+                  "min": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "description": "Inclusive minimum bound for this range."
+                  },
+                  "max": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "description": "Inclusive maximum bound for this range."
+                  }
+                },
+                "required": [
+                  "min",
+                  "max"
+                ],
+                "additionalProperties": false,
+                "description": "Number of objects, or inclusive random count bounds for a local population."
+              },
+              "placement": {
+                "type": "object",
+                "properties": {
+                  "min_distance": {
+                    "description": "Minimum radius from the system anchor, in game units.",
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "max_distance": {
+                    "description": "Maximum radius from the system anchor, in game units.",
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "sampling": {
+                    "description": "Uniform radius favors inner regions; uniform area spreads objects evenly over the annulus.",
+                    "type": "string",
+                    "enum": [
+                      "uniform_radius",
+                      "uniform_area"
+                    ]
+                  },
+                  "min_separation": {
+                    "description": "Minimum center separation from previously placed objects; hull overlap is also prohibited.",
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "max_attempts_per_object": {
+                    "description": "Skip an object after this many failed placements.",
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "avoid_damaging_radiation": {
+                    "type": "boolean",
+                    "description": "Reject objects whose hulls intersect damaging radiation zones."
+                  }
+                },
+                "required": [
+                  "min_distance",
+                  "max_distance",
+                  "sampling",
+                  "min_separation",
+                  "max_attempts_per_object",
+                  "avoid_damaging_radiation"
+                ],
+                "additionalProperties": false,
+                "description": "Geometry, radiation exclusions and bounded placement attempts."
+              }
+            },
+            "required": [
+              "type",
+              "probability",
+              "count",
+              "placement"
+            ],
+            "additionalProperties": false
+          },
+          "description": "Independent local populations, rolled once per system and distributed through their annuli."
+        }
+      },
+      "required": [
+        "anchor_type",
+        "planets",
+        "populations"
+      ],
+      "additionalProperties": false,
+      "description": "Populations generated around every initial system anchor."
+    },
+    "player_starts": {
+      "type": "object",
+      "properties": {
+        "planet_type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Eligible starting planet type; must have finite food stock."
+        },
+        "exposure": {
+          "description": "Inclusive Goldilocks interval for both start origin and planet.",
+          "type": "object",
+          "properties": {
+            "min": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Inclusive minimum bound for this range."
+            },
+            "max": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Inclusive maximum bound for this range."
+            }
+          },
+          "required": [
+            "min",
+            "max"
+          ],
+          "additionalProperties": false
+        },
+        "min_planet_food_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum remaining divided by sampled initial food stock; depleted planets are excluded."
+        },
+        "max_starts_per_planet": {
+          "description": "Historical reservation limit; disconnects do not release starts.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "placement": {
+          "type": "object",
+          "properties": {
+            "min_distance_from_planet": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Minimum player-start radius from its associated planet."
+            },
+            "max_distance_from_planet": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Maximum player-start radius from its associated planet."
+            },
+            "max_attempts_per_planet": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Maximum complete start-placement attempts for each eligible planet."
+            },
+            "radiation_clearance_multiplier": {
+              "type": "number",
+              "minimum": 1,
+              "description": "Expand damaging-source exclusion radii by this factor, at least one, for player units."
+            }
+          },
+          "required": [
+            "min_distance_from_planet",
+            "max_distance_from_planet",
+            "max_attempts_per_planet",
+            "radiation_clearance_multiplier"
+          ],
+          "additionalProperties": false,
+          "description": "Geometry, radiation exclusions and bounded placement attempts."
+        },
+        "min_distance_between_starts": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum distance between historical committed start origins."
+        },
+        "enemy_clearance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum clearance from hostile players and NPCs."
+        },
+        "minerals": {
+          "type": "object",
+          "properties": {
+            "search_radius": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Maximum distance from the start origin to a usable mineral node."
+            },
+            "min_remaining": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Minimum remaining mineral stock for a node to qualify."
+            },
+            "create_if_missing": {
+              "type": "boolean",
+              "description": "Stage a mineral node if none qualifies; failed starts leave no staged objects behind."
+            }
+          },
+          "required": [
+            "search_radius",
+            "min_remaining",
+            "create_if_missing"
+          ],
+          "additionalProperties": false,
+          "description": "Minimum nearby mineral stock and safe harvesting approach required for a start."
+        },
+        "fallback": {
+          "type": "object",
+          "properties": {
+            "generate_additional_systems": {
+              "type": "boolean",
+              "description": "Allow expansion systems to provide a blue planet while preserving all start safety requirements."
+            },
+            "max_additional_systems": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "description": "Maximum tentative expansion attempts per relevant eligibility revision; failed systems are discarded."
+            }
+          },
+          "required": [
+            "generate_additional_systems",
+            "max_additional_systems"
+          ],
+          "additionalProperties": false,
+          "description": "Bounded creation of an additional system when ordinary start selection fails."
+        }
+      },
+      "required": [
+        "planet_type",
+        "exposure",
+        "min_planet_food_fraction",
+        "max_starts_per_planet",
+        "placement",
+        "min_distance_between_starts",
+        "enemy_clearance",
+        "minerals",
+        "fallback"
+      ],
+      "additionalProperties": false,
+      "description": "Safe, resource-supported starts selected near eligible planets, with persistent reservations."
+    }
+  },
+  "required": [
+    "min_entity_spawn_distance",
+    "max_entity_spawn_distance",
+    "loadouts",
+    "global_neutral_fields",
+    "neutrals_near_spawn",
+    "starting_resources",
+    "starting_resources_recipient_type",
+    "resource_amounts",
+    "exposure",
+    "solar_systems",
+    "player_starts"
+  ],
+  "additionalProperties": false
+}

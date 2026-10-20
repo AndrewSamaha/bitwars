@@ -475,6 +475,7 @@ impl RedisClient {
         player_technologies.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
         let snap = Snapshot {
+            generation_state_json: serde_json::to_string(&state.generation)?,
             economy_version: 1,
             convoys,
             move_orders,
@@ -1316,7 +1317,13 @@ fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<Co
         collector.carry_amount = 0.0;
         collector.carry_capacity = 0.0;
     }
+    let generation = if snapshot.generation_state_json.is_empty() {
+        Default::default()
+    } else {
+        serde_json::from_str(&snapshot.generation_state_json)?
+    };
     Ok((GameState {
+        generation,
         tick: snapshot.tick as u64,
         entities: snapshot.entities,
         technologies: snapshot.player_technologies.into_iter()
@@ -1357,6 +1364,22 @@ mod inventory_restore_tests {
         let next_snapshot = Snapshot { entities: state.entities, collector_states: collectors, ..Default::default() };
         let (restored, _) = restore_snapshot(Snapshot::decode(next_snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
         assert_eq!(resource_amount(&restored.entities[0], "food"), 98.0);
+    }
+
+    #[test]
+    fn procedural_start_checkpoints_preserve_reservations_and_pending_failures() {
+        use crate::engine::generation::{GenerationState, PendingStart, StartReservation};
+        let mut generation = GenerationState { version: 1, ..Default::default() };
+        generation.starts.insert("alice".into(), StartReservation { planet_id: 42, origin: [3000.0,400.0], planet_position: [3500.0,0.0] });
+        generation.pending.insert("bob".into(), PendingStart { loadout_index: 0,last_revision: Some(123),error: Some("no safe start".into()) });
+        let json = serde_json::to_string(&generation).unwrap();
+        let snapshot = Snapshot { generation_state_json: json.clone(), ..Default::default() };
+        let (state,_) = restore_snapshot(Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(serde_json::to_string(&state.generation).unwrap(),json);
+        assert_eq!(state.generation.starts["alice"].planet_id,42);
+        assert_eq!(state.generation.pending["bob"].last_revision,Some(123));
+        assert_eq!(restore_snapshot(Snapshot::default()).unwrap().0.generation.version,0);
+        assert!(restore_snapshot(Snapshot { generation_state_json: "invalid".into(), ..Default::default() }).is_err());
     }
 
     #[test]

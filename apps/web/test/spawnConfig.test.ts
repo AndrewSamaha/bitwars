@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { stringify } from "yaml";
-import { parseSpawnConfig } from "../src/lib/content/spawnConfig";
+import { parse, stringify } from "yaml";
+import { parseSpawnConfig, renameSpawnEntity } from "../src/lib/content/spawnConfig";
 
 const mocks = vi.hoisted(() => ({ readFile: vi.fn(), writeFile: vi.fn(), auth: vi.fn() }));
 vi.mock("node:fs/promises", () => ({ readFile: mocks.readFile, writeFile: mocks.writeFile }));
@@ -11,11 +11,13 @@ import { GET, PUT } from "../src/app/api/content/spawn/route";
 
 const yaml = readFileSync(path.resolve(process.cwd(), "../../services/rts-engine/config/spawn.yaml"), "utf8");
 
+const content = readFileSync(path.resolve(process.cwd(), "../../packages/content/entities.yaml"), "utf8");
+
 describe("spawn configuration editor", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.auth.mockResolvedValue({ res: null });
-    mocks.readFile.mockResolvedValue(yaml);
+    mocks.readFile.mockImplementation((file: string) => Promise.resolve(file.endsWith("entities.yaml") ? content : yaml));
     mocks.writeFile.mockResolvedValue(undefined);
   });
 
@@ -30,7 +32,7 @@ describe("spawn configuration editor", () => {
   it("rejects invalid distributions, counts, fields and YAML before writing", async () => {
     for (const invalid of [
       yaml.replace("sd: 2000", "sd: -1"),
-      yaml.replace("min: 2000", "min: 11000"),
+      yaml.replace("min: 6000", "min: 11000"),
       yaml.replace("max: 20000", "max: 9000"),
       yaml.replace("count: 100", "count: -1"),
       yaml.replace("average: 10000", "average: .inf"),
@@ -56,5 +58,47 @@ describe("spawn configuration editor", () => {
     expect((await PUT(new Request("http://localhost/api/content/spawn", { method: "PUT" }))).status).toBe(401);
     expect(mocks.readFile).not.toHaveBeenCalled();
     expect(mocks.writeFile).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("procedural spawn rules", () => {
+  it("validates the real content and rejects unknown references", () => {
+    const config = parseSpawnConfig(yaml, parse(content));
+    config.exposure.sources.missing_star = 1;
+    expect(() => parseSpawnConfig(stringify(config), parse(content))).toThrow("Unknown spawn entity");
+  });
+  it("rejects invalid exposure tables, incomplete configuration and local sources", () => {
+    for (const edit of [
+      (v: any) => { delete v.exposure; },
+      (v: any) => { v.exposure.minimum_distance = 0; },
+      (v: any) => { v.solar_systems.planets.count_weights = { 0: 100 }; },
+      (v: any) => { v.solar_systems.planets.type_weights.points[1].exposure = 0.1; },
+      (v: any) => { v.solar_systems.planets.type_weights.points[0].weights.planet_blue = -1; },
+      (v: any) => { v.solar_systems.populations[0].type = "theta"; },
+      (v: any) => { v.player_starts.exposure.min = 5; },
+      (v: any) => { v.player_starts.placement.radiation_clearance_multiplier = 0.5; },
+      (v: any) => { v.solar_systems.planets.placement.unknown = true; },
+    ]) {
+      const config = parse(yaml); edit(config);
+      expect(() => parseSpawnConfig(stringify(config))).toThrow();
+    }
+  });
+  it("accepts quoted count keys but rejects numeric/string key collisions", () => {
+    const quoted = yaml.replace("      0: 15", '      "0": 15');
+    expect(parseSpawnConfig(quoted).solar_systems.planets.count_weights["0"]).toBe(15);
+    expect(() => parseSpawnConfig(yaml.replace("      0: 15", '      0: 15\n      "0": 10'))).toThrow("Duplicate spawn key");
+  });
+  it("renames entity keys and values without changing resource IDs or count keys", () => {
+    const renamed = renameSpawnEntity(parseSpawnConfig(yaml), "planet_blue", "planet_temperate");
+    expect(renamed.player_starts.planet_type).toBe("planet_temperate");
+    expect(renamed.solar_systems.planets.type_weights.points[0].weights).toHaveProperty("planet_temperate");
+    expect(renamed.resource_amounts).toHaveProperty("planet_temperate");
+    const minerals = renameSpawnEntity(parseSpawnConfig(yaml), "minerals", "mineral_node");
+    expect(minerals.starting_resources).toHaveProperty("minerals");
+    expect(minerals.resource_amounts).toHaveProperty("mineral_node");
+    const sources = renameSpawnEntity(parseSpawnConfig(yaml), "star_yellow", "star_red");
+    expect(sources.exposure.sources).toHaveProperty("star_red");
+    expect(sources.solar_systems.anchor_type).toBe("star_red");
   });
 });

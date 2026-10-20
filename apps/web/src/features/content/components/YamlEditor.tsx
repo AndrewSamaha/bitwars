@@ -5,6 +5,7 @@ import type { editor, Position } from "monaco-editor";
 import { configureMonacoYaml } from "monaco-yaml";
 import { parseDocument } from "yaml";
 import entitySchema from "@bitwars/content/entity.schema.json";
+import spawnSchema from "@/lib/content/spawn.schema.json";
 import technologySchema from "@bitwars/content/technology.schema.json";
 import { entityCombatRangeWarnings, resourceSharingPolicyErrors, resourceReserveErrors, depotErrors } from "@/lib/content/schemaValidation";
 import { completionHelp, hoverHelp } from "@/lib/content/editorHelp";
@@ -54,6 +55,10 @@ const configureYaml: BeforeMount = (monaco) => {
       fileMatch: ["**/*.technology.yaml"],
       schema: technologySchema,
       uri: "bitwars://schemas/technology.schema.json",
+    }, {
+      fileMatch: ["**/*.spawn.yaml"],
+      schema: spawnSchema,
+      uri: "bitwars://schemas/spawn.schema.json",
     }],
     disableAdditionalProperties: true,
     // Schema-based help below also works without a YAML language-service worker.
@@ -63,8 +68,8 @@ const configureYaml: BeforeMount = (monaco) => {
   });
   monaco.languages.registerHoverProvider("yaml", {
     provideHover(model: editor.ITextModel, position: Position) {
-      if (!model.uri.toString().includes("file:///bitwars/") || /\.(scenario|spawn)\.yaml$/.test(model.uri.toString())) return null;
-      const kind = model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
+      if (!model.uri.toString().includes("file:///bitwars/") || /\.scenario\.yaml$/.test(model.uri.toString())) return null;
+      const kind = model.uri.toString().endsWith(".spawn.yaml") ? "spawn" : model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
       const description = hoverHelp(model.getValue(), model.getOffsetAt(position), kind);
       return description ? { contents: [{ value: description }] } : null;
     },
@@ -72,10 +77,10 @@ const configureYaml: BeforeMount = (monaco) => {
   monaco.languages.registerCompletionItemProvider("yaml", {
     triggerCharacters: [":", " ", "."],
     async provideCompletionItems(model: editor.ITextModel, position: Position) {
-      if (!model.uri.toString().includes("file:///bitwars/") || /\.(scenario|spawn)\.yaml$/.test(model.uri.toString())) return { suggestions: [] };
+      if (!model.uri.toString().includes("file:///bitwars/") || /\.scenario\.yaml$/.test(model.uri.toString())) return { suggestions: [] };
       const segment = model.getLineContent(position.lineNumber).slice(0, position.column - 1).match(/[a-z0-9_-]*$/i)?.[0] ?? "";
       const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: position.column - segment.length, endColumn: position.column };
-      const kind = model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
+      const kind = model.uri.toString().endsWith(".spawn.yaml") ? "spawn" : model.uri.toString().endsWith(".technology.yaml") ? "technology" : "entity";
       const help = completionHelp(model.getValue(), model.getOffsetAt({ ...position, column: range.startColumn }), model.getOffsetAt({ ...position, column: range.endColumn }), kind);
       const suggestions = help.suggestions.map((item) => ({ ...item, range, kind: item.property ? monaco.languages.CompletionItemKind.Property : monaco.languages.CompletionItemKind.EnumMember }));
       if (help.references) suggestions.push(...(await ids(help.references)).map((label) => ({ label, insertText: label, range, kind: monaco.languages.CompletionItemKind.Reference })));
