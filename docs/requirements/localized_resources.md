@@ -106,7 +106,7 @@ replace delivery normally; canceled trips preserve inventory and cargo.
 ## Maintained resource transport (implemented)
 
 Select one movable worker/collector with a positive `collector.transport_rate_per_second`, then choose
-`[s] Transport Resources`. Click a friendly donor, select one or more of its
+`[o] Transport Resources`. Click a friendly donor, select one or more of its
 available compatible resources (`[A]ll` selects the displayed choices), then click
 a different friendly recipient. The recipient must have capacity for every
 selected resource; it may already be full. Open space, clicking the carrier again,

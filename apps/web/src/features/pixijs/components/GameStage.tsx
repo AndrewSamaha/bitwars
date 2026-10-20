@@ -109,7 +109,10 @@ export default function GameStage() {
     // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
       const payload =
-        params.kind === "Resupply"
+        params.kind === "SelfDestruct"
+          ? { type: "SelfDestruct", entity_id: params.entityId,
+              client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Resupply"
           ? { type: "Resupply", entity_id: params.entityId, depot_id: params.depotId, target_amounts: params.targetAmounts,
               client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
           : params.kind === "Assign"

@@ -1123,6 +1123,25 @@ mod radiation_tests {
     }
 
     #[test]
+    fn self_destruct_requires_ownership_and_publishes_removal() {
+        let entity = pb::Entity { id: 42, owner_player_id: "me".into(), health: 100.0, ..Default::default() };
+        let mut entities = vec![entity];
+        let previous = GameState { entities: entities.clone(), generation: Default::default(), tick: 0, technologies: HashMap::new() };
+        assert_eq!(self_destruct_entity(&mut entities, "other", 42), Err(pb::LifecycleReason::NotOwned));
+        assert_eq!(self_destruct_entity(&mut entities, "me", 99), Err(pb::LifecycleReason::InvalidTarget));
+        assert_eq!(entities.len(), 1);
+        assert_eq!(self_destruct_entity(&mut entities, "me", 42), Ok(()));
+        let current = GameState { entities, ..previous.clone() };
+        let delta = compute_delta(&previous, &current,
+            &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(),
+            0.0, 0.0, &HashMap::new(), &HashSet::new());
+        assert_eq!(delta.removed_entity_ids, vec![42]);
+        assert!(should_publish_delta(&delta));
+        let mut entities = current.entities;
+        assert_eq!(self_destruct_entity(&mut entities, "me", 42), Err(pb::LifecycleReason::InvalidTarget));
+    }
+
+    #[test]
     fn zero_health_entities_are_removed_after_radiation_resolution() {
         let mut entities = vec![
             pb::Entity {
@@ -1418,6 +1437,20 @@ fn remove_zero_health_entities(entities: &mut Vec<pb::Entity>) -> Vec<u64> {
     let dead_ids: HashSet<u64> = dead_entity_ids.iter().copied().collect();
     entities.retain(|entity| !dead_ids.contains(&entity.id));
     dead_entity_ids
+}
+
+fn self_destruct_entity(entities: &mut Vec<pb::Entity>, player_id: &str, entity_id: u64) -> std::result::Result<(), pb::LifecycleReason> {
+    let index = entities.iter().position(|entity| entity.id == entity_id)
+        .ok_or(pb::LifecycleReason::InvalidTarget)?;
+    let entity = &entities[index];
+    if player_id.is_empty() || entity.owner_player_id != player_id {
+        return Err(pb::LifecycleReason::NotOwned);
+    }
+    if entity.health <= 0.0 {
+        return Err(pb::LifecycleReason::InvalidTarget);
+    }
+    entities.remove(index);
+    Ok(())
 }
 
 /// A removal-only delta is still an authoritative state change. Keep all
@@ -5049,6 +5082,18 @@ impl Engine {
             .await?;
 
         let mut payload_intent = match envelope.payload {
+            Some(intent_envelope::Payload::SelfDestruct(order)) => {
+                let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
+                if let Err(reason) = self_destruct_entity(&mut self.state.entities, &player_id, order.entity_id) {
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
+                    return Err(anyhow!("invalid self-destruct target"));
+                }
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Accepted, pb::LifecycleReason::None, accept_tick).await?;
+                self.clear_fractional_for_entity(order.entity_id);
+                self.cancel_destroyed_intents(&[order.entity_id]).await;
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished, pb::LifecycleReason::None, accept_tick).await?;
+                return Ok(());
+            }
             Some(intent_envelope::Payload::AssignDepot(order)) => {
                 let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
                 let result = self.content.as_ref().ok_or(pb::LifecycleReason::InvalidTarget)

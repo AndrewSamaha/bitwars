@@ -124,6 +124,11 @@ message AssignDepotIntent {
   uint64 target_id = 2;
 }
 
+// Immediately destroy an owned entity without a resource refund.
+message SelfDestructIntent {
+  uint64 entity_id = 1;
+}
+
 // Transport envelope that wraps all intent payloads and carries authoritative metadata.
 message IntentEnvelope {
   bytes  client_cmd_id    = 1;  // UUIDv7 (16 bytes), supplied by client
@@ -148,6 +153,7 @@ message IntentEnvelope {
     EscortIntent         escort = 21;
     AssignDepotIntent    assign_depot = 22;
     ResupplyIntent       resupply = 23;
+    SelfDestructIntent   self_destruct = 24;
   }
   reserved 8, 9, 15;
 }
