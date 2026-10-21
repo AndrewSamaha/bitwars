@@ -16,6 +16,26 @@ import { useSession } from "@/features/users/components/identity/SessionContext"
 
 const GAMESTATE_UI_REFRESH_INTERVAL_MS = 100;
 
+function MaintenanceCosts({ entityTypeId }: { entityTypeId: string }) {
+  const definition = contentManager.getEntityType(entityTypeId);
+  const costs = new Map<string, number>();
+  for (const [resource, amount] of [
+    ...Object.entries(definition?.maintenance_cost_per_minute ?? {}),
+    ...Object.entries(definition?.sensor?.cost_per_minute ?? {}),
+  ]) {
+    if (Number.isFinite(amount) && amount > 0) costs.set(resource, (costs.get(resource) ?? 0) + amount);
+  }
+  const entries = [...costs].sort(([a], [b]) =>
+    (contentManager.getResourceType(a)?.order ?? 0) - (contentManager.getResourceType(b)?.order ?? 0)
+    || a.localeCompare(b));
+  return (
+    <span className="font-mono text-muted-foreground" title="Maintenance and sensor operating costs per minute">
+      maintenance: {entries.length ? entries.map(([resource, amount]) =>
+        `${resource} ${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}/min`).join(", ") : "none"}
+    </span>
+  );
+}
+
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
   const { effectivePlayerId } = useSession();
@@ -562,6 +582,7 @@ export default function EntityDetailPanel() {
                     <li key={id} className="flex items-center gap-3">
                       <span className="font-mono">{idToType.get(id) ?? "—"}</span>
                       <span className="font-mono text-muted-foreground">id: {id}</span>
+                      <MaintenanceCosts entityTypeId={idToType.get(id) ?? ""} />
                       {entities.find(e => String(e.id) === id) && <CollectionAssignment entity={entities.find(e => String(e.id) === id)!} />}
                     </li>
                   ))
@@ -590,6 +611,7 @@ export default function EntityDetailPanel() {
                   <li key={id} className="flex items-center justify-between gap-4">
                     <span className="font-mono">{entityTypeId}</span>
                     <span className="font-mono">id: {id}</span>
+                    <MaintenanceCosts entityTypeId={entityTypeId} />
                     <span className="font-mono text-muted-foreground">
                       {entityDef?.depot ? `depot · service radius ${entityDef.depot_range}` : `depot: ${supply?.depot_id || "none"}`}
                       {source ? ` · stock: ${(source.resources ?? []).map(r => `${r.resource_type} ${r.amount.toFixed(1)}`).join(", ")}` : ""}
