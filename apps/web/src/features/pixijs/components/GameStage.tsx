@@ -28,6 +28,7 @@ import {
 import { PLAYER_PALETTES, paletteForOwner } from "@/lib/playerPalettes";
 import { gameEntityScale } from "@/features/pixijs/renderer/entityScale";
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
+import { minimapMemory } from "@/features/gamestate/minimapMemory";
 import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog";
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
 import { selectEntitiesOfTypeInView } from "@/features/pixijs/utils/typeSelection";
@@ -678,7 +679,12 @@ export default function GameStage() {
           // Other non-targetable entities stay gray.
           const myId = myPlayerIdRef.current;
           // Keep habitable planets visible when nearby units overlap their dots.
-          const minimapEntities = [...game.world.with("pos", "id")].sort(
+          const liveMinimapEntities = [...game.world.with("pos", "id")];
+          const liveMinimapIds = new Set(liveMinimapEntities.map(entity => String(entity.id)));
+          const minimapEntities = [
+            ...[...minimapMemory.entries()].filter(entity => !liveMinimapIds.has(String(entity.id))),
+            ...liveMinimapEntities,
+          ].sort(
             (a, b) => Number(a.entity_type_id?.trim() === "planet_blue")
               - Number(b.entity_type_id?.trim() === "planet_blue"),
           );
@@ -706,7 +712,7 @@ export default function GameStage() {
                 .circle(px, py, entityTypeId === "planet_blue"
                   ? MINIMAP_PLANET_BLUE_DOT_RADIUS
                   : MINIMAP_UNIT_DOT_RADIUS)
-                .fill({ color });
+                .fill({ color, alpha: remembered ? 0.45 : 1 });
             }
           }
           if (updateFog) {

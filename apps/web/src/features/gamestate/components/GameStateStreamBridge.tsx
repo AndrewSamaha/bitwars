@@ -10,6 +10,7 @@ import { useSession } from "@/features/users/components/identity/SessionContext"
 import { dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
+import { minimapMemory } from "@/features/gamestate/minimapMemory";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -207,6 +208,8 @@ export default function GameStateStreamBridge() {
     };
 
     const applySnapshot = (payload: SnapshotPayload & { run_id?: string; paused?: boolean }) => {
+      minimapMemory.setContext(currentPlayerIdRef.current, payload.run_id ?? game.runId);
+      for (const entity of payload.entities) minimapMemory.observe(entity);
       const worldChanged = !!payload.run_id && payload.run_id !== game.runId;
       if (worldChanged) {
         buildProgressStore.resetStream();
@@ -298,6 +301,8 @@ export default function GameStateStreamBridge() {
     };
 
     const applyDelta = (payload: DeltaPayload) => {
+      for (const update of payload.updates) minimapMemory.observe(update);
+      for (const id of payload.removed_entity_ids ?? []) minimapMemory.forget(id);
       if (payload.escort_order_updates?.length || payload.escort_order_removals?.length) {
         intentQueue.applyEscortOrders(payload.escort_order_updates ?? [], payload.escort_order_removals ?? []);
         syncMoveOverlays([...activeIntentByEntityRef.current.keys(),
@@ -745,6 +750,7 @@ export default function GameStateStreamBridge() {
         world.remove(ent);
       }
       byId.clear();
+      minimapMemory.clear();
       knownEntityIdsRef.current.clear();
       activeIntentByEntityRef.current.clear();
       // Reset readiness so a subsequent mount waits for the next snapshot
