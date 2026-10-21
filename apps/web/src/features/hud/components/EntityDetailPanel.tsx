@@ -580,7 +580,14 @@ export default function EntityDetailPanel() {
               {selectedEntities.length > 1
                 ? selectedEntities.map((id) => (
                     <li key={id} className="flex items-center gap-3">
-                      <span className="font-mono">{idToType.get(id) ?? "—"}</span>
+                      <button
+                        type="button"
+                        className="cursor-pointer font-mono hover:underline focus-visible:underline"
+                        onClick={() => actions.setSelection([id])}
+                        aria-label={`Select only ${idToType.get(id) ?? "entity"} (id: ${id})`}
+                      >
+                        {idToType.get(id) ?? "—"}
+                      </button>
                       <span className="font-mono text-muted-foreground">id: {id}</span>
                       <MaintenanceCosts entityTypeId={idToType.get(id) ?? ""} />
                       {entities.find(e => String(e.id) === id) && <CollectionAssignment entity={entities.find(e => String(e.id) === id)!} />}

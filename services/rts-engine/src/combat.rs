@@ -350,6 +350,15 @@ impl CombatSystem {
             if speed * dt >= remaining {
                 pos.x = target.x - direction_x * max_range;
                 pos.y = target.y - direction_y * max_range;
+                // Rounding at large world coordinates can put this point just
+                // outside weapon range, causing every tick to snap here without
+                // ever attacking. If needed, inset by a few coordinate ULPs.
+                if squared_distance(pos.x, pos.y, target.x, target.y) > max_range * max_range {
+                    let coordinate_scale = target.x.abs().max(target.y.abs()).max(max_range);
+                    let inset_range = (max_range - 4.0 * f32::EPSILON * coordinate_scale).max(0.0);
+                    pos.x = target.x - direction_x * inset_range;
+                    pos.y = target.y - direction_y * inset_range;
+                }
                 zero_velocity(attacker);
             } else {
                 let velocity = attacker.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
@@ -667,6 +676,50 @@ mod tests {
         assert_eq!(outcome.dismantling[0].attacker_id, 1);
         assert_eq!(outcome.dismantling[0].target_id, 2);
         assert_eq!(entities[1].health, 15.0);
+    }
+
+    #[test]
+    fn pursuit_reaches_attack_range_at_large_world_coordinates() {
+        for attack_type in [AttackType::Dismantle, AttackType::Laser] {
+            let mut pack = content();
+            let worker = pack.entity_types.get_mut("worker").unwrap();
+            worker.speed = 90.0;
+            worker.hull_radius = 50.0;
+            worker.combat = Some(CombatDef {
+                acquisition_range: 250.0,
+                on_near_enemy_strategy: NearEnemyStrategy::Approach,
+                attacks: vec![AttackDef {
+                    id: "attack".to_string(),
+                    attack_type,
+                    range: 102.0,
+                    damage: 4.0,
+                    cooldown_ticks: 20,
+                    priority: 0,
+                    contact_tolerance: 2.0,
+                }],
+            });
+            let raider = pack.entity_types.get_mut("raider").unwrap();
+            raider.hull_radius = 50.0;
+            raider.combat = None;
+
+            for angle_index in 0..32 {
+                let angle = angle_index as f32 * std::f32::consts::TAU / 32.0;
+                let mut entities = vec![
+                    entity(1, "worker", "player", 103059.65, 200.0),
+                    entity(2, "raider", RAIDERS_OWNER, 103059.65 + 150.0 * angle.cos(), 40.0),
+                ];
+                entities[0].pos.as_mut().unwrap().y = -6904.713;
+                entities[1].pos.as_mut().unwrap().y = -6904.713 + 150.0 * angle.sin();
+                let mut combat = CombatSystem::default();
+                // A one-second step reaches the stopping point. Subsequent ticks
+                // must attack rather than repeatedly snap to an out-of-range point.
+                for tick in 0..4 {
+                    combat.tick(&mut entities, &pack, tick, 1.0);
+                }
+                assert!(entities[1].health < 40.0,
+                    "{attack_type:?} never fired at angle {angle_index}: {:?}", entities[0].pos);
+            }
+        }
     }
 
     #[test]
