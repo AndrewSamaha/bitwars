@@ -38,7 +38,7 @@ use crate::physics::integrate;
 use crate::spatial::SpatialIndex;
 use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_OWNER};
 use prost::Message;
-use state::{initialize_resource_deposits, take_from_deposit, init_world, log_sample, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
+use state::{take_from_deposit, init_world, log_sample, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
 pub const ENGINE_PROTOCOL_MAJOR: u32 = 20;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
@@ -633,7 +633,9 @@ mod transport_capacity_tests {
         ];
         let index = collection_entity_index(&entities);
         assert_eq!(gather_transport_inventory(&mut entities, 1, 2, worker_def, "food", 8.0, &index), 3.0);
-        assert_eq!(state::transform_depleted_resource_nodes(&mut entities, &content), vec![2]);
+        let config = SpawnConfig::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config/spawn.yaml")).unwrap();
+        assert_eq!(state::transform_depleted_resource_nodes(&mut entities, &content, Some(&config)), vec![2]);
         assert_eq!(entities[1].entity_type_id, "dead_planet_blue");
         assert_eq!(resource_amount(&entities[0], "food"), 3.0);
         assert_eq!(resource_amount(&entities[0], "minerals"), 0.0);
@@ -3878,7 +3880,8 @@ impl Engine {
         // Collection only changes entity fields, so vector indexes remain valid
         // until this call returns.
         let entity_by_id = collection_entity_index(&self.state.entities);
-        initialize_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), None, &mut rand::thread_rng());
+        state::initialize_fixed_resource_deposits(
+            &mut self.state.entities, self.content.as_ref().unwrap(), &self.spawn_config);
         state::regenerate_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), dt as f64);
         let collect_active_entities: HashSet<u64> = self
             .intents
@@ -4212,7 +4215,7 @@ impl Engine {
             }
         }
         let transformed: HashSet<_> = state::transform_depleted_resource_nodes(
-            &mut self.state.entities, self.content.as_ref().unwrap(),
+            &mut self.state.entities, self.content.as_ref().unwrap(), Some(&self.spawn_config),
         ).into_iter().collect();
         // Preserve partially loaded workers' delivery cycle when a food source
         // changes type but keeps its entity ID.

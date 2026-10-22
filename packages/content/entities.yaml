@@ -80,7 +80,6 @@ entity_types:
       scale: 4
     resource_node:
       resource_type: food
-      amount: 10000
       regeneration:
         model: hill
         max_rate_per_second: 3.529411764705882
@@ -136,7 +135,6 @@ entity_types:
       scale: 3
     resource_node:
       resource_type: minerals
-      amount: 10000
       collection_mode: transport
       max_simultaneous_collectors: 1
       min_effective_distance: 20
@@ -855,7 +853,6 @@ entity_types:
       scale: 4
     resource_node:
       resource_type: minerals
-      amount: 1000
       collection_mode: transport
       max_simultaneous_collectors: 1
       min_effective_distance: 20

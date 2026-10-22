@@ -51,6 +51,11 @@ resource_amounts:
     sd: 2000
     min: 1000
     max: 40000
+  dead_planet_blue:
+    average: 1000
+    sd: 0
+    min: 1000
+    max: 1000
 exposure:
   reference_distance: 3750
   minimum_distance: 300

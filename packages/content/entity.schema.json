@@ -668,12 +668,13 @@
       "type": "object",
       "properties": {
         "amount": {
-          "description": "Initial finite resource stock. Omitted means unlimited; spawn configuration may override it.",
+          "description": "DEPRECATED: legacy fallback for initial stock. Configure resource_amounts in spawn.yaml instead.\nA source without either setting is unlimited. Existing saved deposits retain their stock.",
           "type": [
             "number",
             "null"
           ],
-          "format": "double"
+          "format": "double",
+          "deprecated": true
         },
         "collection_mode": {
           "description": "Whether gathering fills cargo for delivery (transport) or credits resources directly (proximity).",

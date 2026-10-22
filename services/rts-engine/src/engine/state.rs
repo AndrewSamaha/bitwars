@@ -37,7 +37,26 @@ pub fn resource_capacity(content: &ContentPack, entity_type_id: &str, resource_t
         .unwrap_or(0.0) as f64
 }
 
-/// Initialize each finite deposit once; zero stock must never be refilled.
+/// Fixed stock for scenarios, restoration and depletion replacements.
+pub fn fixed_resource_deposit(id: &str, content: &ContentPack, config: Option<&SpawnConfig>) -> Option<crate::pb::ResourceDeposit> {
+    let node = content.get(id)?.resource_node.as_ref()?;
+    let amount = match config {
+        Some(config) => config.initial_resource_amount(id, node),
+        None => node.amount,
+    }?;
+    Some(crate::pb::ResourceDeposit { amount, remaining: amount })
+}
+
+/// Initialize missing restored deposits without resampling or refilling saved stock.
+pub fn initialize_fixed_resource_deposits(entities: &mut [Entity], content: &ContentPack, config: &SpawnConfig) {
+    for entity in entities {
+        if entity.resource_deposit.is_none() {
+            entity.resource_deposit = fixed_resource_deposit(&entity.entity_type_id, content, Some(config));
+        }
+    }
+}
+
+/// Initialize each generated finite deposit once; zero stock must never be refilled.
 pub fn initialize_resource_deposits(
     entities: &mut [Entity],
     content: &ContentPack,
@@ -72,8 +91,8 @@ pub fn regenerate_resource_deposits(entities: &mut [Entity], content: &ContentPa
 }
 
 /// Convert exhausted sources after collection, preserving identity and position.
-/// The replacement gets its own content-defined deposit, never the exhausted stock.
-pub fn transform_depleted_resource_nodes(entities: &mut [Entity], content: &ContentPack) -> Vec<u64> {
+/// The replacement gets its configured average stock, never the exhausted stock.
+pub fn transform_depleted_resource_nodes(entities: &mut [Entity], content: &ContentPack, config: Option<&SpawnConfig>) -> Vec<u64> {
     let mut transformed = Vec::new();
     for entity in entities {
         if !entity.resource_deposit.as_ref().is_some_and(|deposit| deposit.remaining <= 0.0) {
@@ -85,8 +104,7 @@ pub fn transform_depleted_resource_nodes(entities: &mut [Entity], content: &Cont
         let Some(target) = content.get(target_id) else { continue; };
         entity.entity_type_id = target_id.clone();
         entity.health = target.health;
-        entity.resource_deposit = target.resource_node.as_ref().and_then(|node| node.amount)
-            .map(|amount| crate::pb::ResourceDeposit { amount, remaining: amount });
+        entity.resource_deposit = fixed_resource_deposit(target_id, content, config);
         transformed.push(entity.id);
     }
     transformed
@@ -414,13 +432,14 @@ mod tests {
     #[test]
     fn finite_deposits_are_sampled_once_and_cannot_be_overdrawn_or_refilled() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
+        let mut content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
         let config = SpawnConfig::load(&root.join("services/rts-engine/config/spawn.yaml")).unwrap();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut entities = vec![neutral_entity(1, "minerals", 0.0, 0.0, &content), neutral_entity(2, "star_yellow", 0.0, 0.0, &content)];
         initialize_resource_deposits(&mut entities, &content, Some(&config), &mut rng);
         let initial = entities[0].resource_deposit.clone().unwrap();
-        assert!((2000.0..=20000.0).contains(&initial.amount));
+        let distribution = &config.resource_amounts["minerals"];
+        assert!((distribution.min..=distribution.max).contains(&initial.amount));
         assert_eq!(initial.amount, initial.remaining);
         assert_eq!(take_from_deposit(&mut entities[0], 3.5), 3.5);
         assert_eq!(take_from_deposit(&mut entities[0], initial.amount), initial.amount - 3.5);
@@ -430,8 +449,16 @@ mod tests {
         assert_eq!(entities[0].resource_deposit.as_ref().unwrap().amount, initial.amount);
         assert!(entities[1].resource_deposit.is_none());
         assert_eq!(take_from_deposit(&mut entities[1], 100.0), 100.0);
+        // Restored saved stock, including zero, wins over changed configuration.
+        initialize_fixed_resource_deposits(&mut entities, &content, &config);
+        assert_eq!(entities[0].resource_deposit.unwrap().remaining, 0.0);
+        assert_eq!(entities[0].resource_deposit.unwrap().amount, initial.amount);
+        let mut restored = vec![neutral_entity(4, "minerals", 0.0, 0.0, &content)];
+        initialize_fixed_resource_deposits(&mut restored, &content, &config);
+        assert_eq!(restored[0].resource_deposit.unwrap().amount, distribution.average);
 
         let mut fixed = vec![neutral_entity(3, "planet_blue", 0.0, 0.0, &content)];
+        content.entity_types.get_mut("planet_blue").unwrap().resource_node.as_mut().unwrap().amount = Some(2000.0);
         initialize_resource_deposits(&mut fixed, &content, None, &mut rng);
         assert_eq!(fixed[0].resource_deposit.as_ref().unwrap().amount, 2000.0);
     }
@@ -445,12 +472,15 @@ mod tests {
             neutral_entity(2, "minerals", 0.0, 0.0, &content),
             neutral_entity(3, "star_yellow", 0.0, 0.0, &content),
         ];
-        initialize_resource_deposits(&mut entities, &content, None, &mut rand::thread_rng());
-        // A spawn override defines the maximum, independently of content's 2000.
+        let config = SpawnConfig::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/spawn.yaml")).unwrap();
+        initialize_resource_deposits(&mut entities, &content, Some(&config), &mut rand::thread_rng());
+        // Regeneration uses the saved maximum rather than resampling spawn stock.
         entities[0].resource_deposit = Some(crate::pb::ResourceDeposit { amount: 10000.0, remaining: 5000.0 });
         let nonrenewable = entities[1].resource_deposit;
         regenerate_resource_deposits(&mut entities, &content, 0.25);
-        assert_eq!(entities[0].resource_deposit.unwrap().remaining, 5001.0);
+        let rate = content.get("planet_blue").unwrap().resource_node.as_ref().unwrap()
+            .regeneration.as_ref().unwrap().rate_per_second(0.5);
+        assert_eq!(entities[0].resource_deposit.unwrap().remaining, 5000.0 + rate * 0.25);
         assert_eq!(entities[1].resource_deposit, nonrenewable);
         assert!(entities[2].resource_deposit.is_none());
         regenerate_resource_deposits(&mut entities, &content, 100000.0);
@@ -460,7 +490,7 @@ mod tests {
         assert_eq!(take_from_deposit(&mut entities[0], 20000.0), 10000.0);
         regenerate_resource_deposits(&mut entities, &content, 100.0);
         assert_eq!(entities[0].resource_deposit.unwrap().remaining, 0.0);
-        assert_eq!(transform_depleted_resource_nodes(&mut entities, &content), vec![1]);
+        assert_eq!(transform_depleted_resource_nodes(&mut entities, &content, Some(&config)), vec![1]);
         assert_eq!(entities[0].entity_type_id, "dead_planet_blue");
         assert_eq!(entities[0].id, 1);
         assert_eq!(entities[0].pos, original_pos);
@@ -468,9 +498,9 @@ mod tests {
         assert_eq!(entities[0].resource_deposit.unwrap().remaining, 1000.0);
         regenerate_resource_deposits(&mut entities, &content, 100.0);
         assert_eq!(entities[0].resource_deposit.unwrap().remaining, 1000.0);
-        assert!(transform_depleted_resource_nodes(&mut entities, &content).is_empty());
+        assert!(transform_depleted_resource_nodes(&mut entities, &content, Some(&config)).is_empty());
         take_from_deposit(&mut entities[1], f64::MAX);
-        assert!(transform_depleted_resource_nodes(&mut entities, &content).is_empty());
+        assert!(transform_depleted_resource_nodes(&mut entities, &content, Some(&config)).is_empty());
         assert_eq!(entities[1].entity_type_id, "minerals");
     }
 

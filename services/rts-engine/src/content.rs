@@ -485,7 +485,9 @@ pub struct MinimumDistanceDef {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResourceNodeDef {
-    /// Initial finite resource stock. Omitted means unlimited; spawn configuration may override it.
+    /// DEPRECATED: legacy fallback for initial stock. Configure resource_amounts in spawn.yaml instead.
+    /// A source without either setting is unlimited. Existing saved deposits retain their stock.
+    #[schemars(extend("deprecated" = true))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amount: Option<f64>,
     /// Optional stock-dependent regeneration; omitted means no regrowth.
@@ -797,7 +799,7 @@ fn validate_technologies(
             if let Some(ResourceRegenerationDef::Hill {
                 max_rate_per_second, half_saturation_fraction, exponent,
             }) = &node.regeneration {
-                if !node.amount.is_some_and(|amount| amount.is_finite() && amount > 0.0)
+                if node.amount.is_some_and(|amount| amount <= 0.0)
                     || !max_rate_per_second.is_finite() || *max_rate_per_second <= 0.0
                     || !half_saturation_fraction.is_finite()
                     || *half_saturation_fraction <= 0.0 || *half_saturation_fraction > 1.0
@@ -1294,7 +1296,6 @@ mod tests {
             (8.0, 1.1, 4.0, Some(2000.0)),
             (8.0, 0.5, f64::INFINITY, Some(2000.0)),
             (8.0, 0.5, -1.0, Some(2000.0)),
-            (8.0, 0.5, 4.0, None),
             (8.0, 0.5, 4.0, Some(0.0)),
         ] {
             let mut types = pack.entity_types.clone();

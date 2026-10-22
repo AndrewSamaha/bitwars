@@ -428,6 +428,12 @@ impl SpawnConfig {
         Ok(())
     }
 
+    /// Deterministic stock for scenarios, restored missing deposits and replacements.
+    /// Procedural generation samples the distribution instead.
+    pub fn initial_resource_amount(&self, id: &str, node: &crate::content::ResourceNodeDef) -> Option<f64> {
+        self.resource_amounts.get(id).map(|d| d.average).or(node.amount)
+    }
+
     pub fn validate_content(&self, content: &crate::content::ContentPack) -> Result<()> {
         self.validate()?;
         let mut ids: Vec<&str> = self.exposure.sources.keys().map(String::as_str).collect();
@@ -466,11 +472,23 @@ impl SpawnConfig {
         for id in ids {
             anyhow::ensure!(content.get(id).is_some(), "unknown spawn entity {id}");
         }
+        for id in self.resource_amounts.keys() {
+            anyhow::ensure!(content.get(id).and_then(|d| d.resource_node.as_ref()).is_some(),
+                "resource amount distribution requires a resource node: {id}");
+        }
+        for (id, def) in &content.entity_types {
+            if let Some(node) = def.resource_node.as_ref().filter(|n| n.regeneration.is_some()) {
+                let minimum = self.resource_amounts.get(id)
+                    .map(|d| if d.sd == 0.0 { d.average } else { d.min }).or(node.amount);
+                anyhow::ensure!(minimum.is_some_and(|a| a > 0.0),
+                    "renewable resource {id} requires positive finite stock in resource_amounts");
+            }
+        }
         let node = content
             .get(&self.player_starts.planet_type)
             .and_then(|d| d.resource_node.as_ref());
         anyhow::ensure!(
-            node.is_some_and(|n| n.resource_type == "food" && n.amount.is_some_and(|a| a > 0.0)),
+            node.is_some_and(|n| n.resource_type == "food" && self.initial_resource_amount(&self.player_starts.planet_type, n).is_some_and(|a| a > 0.0)),
             "starting planet requires finite food"
         );
         for resource in self.starting_resources.keys() {
@@ -510,7 +528,7 @@ impl SpawnConfig {
                 .get("minerals")
                 .and_then(|d| d.resource_node.as_ref());
             anyhow::ensure!(
-                node.is_some_and(|n| n.resource_type == "minerals" && n.amount.is_some()),
+                node.is_some_and(|n| n.resource_type == "minerals" && self.initial_resource_amount("minerals", n).is_some()),
                 "minerals requires finite mineral stock"
             );
             let max = self
@@ -595,6 +613,29 @@ impl SpawnConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resource_stock_comes_from_spawn_config_with_legacy_fallback() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut content = crate::content::ContentPack::load(&root.join("../../packages/content/entities.yaml")).unwrap();
+        let mut config = SpawnConfig::load(&root.join("config/spawn.yaml")).unwrap();
+        config.validate_content(&content).unwrap();
+        for (id, expected) in [("minerals", 10000.0), ("planet_blue", 10000.0), ("dead_planet_blue", 1000.0)] {
+            let node = content.get(id).unwrap().resource_node.as_ref().unwrap();
+            assert_eq!(node.amount, None);
+            assert_eq!(config.initial_resource_amount(id, node), Some(expected));
+        }
+        config.resource_amounts.get_mut("planet_blue").unwrap().min = 0.0;
+        assert!(config.validate_content(&content).is_err());
+        config.resource_amounts.remove("planet_blue");
+        assert!(config.validate_content(&content).is_err());
+        let node = content.entity_types.get_mut("planet_blue").unwrap().resource_node.as_mut().unwrap();
+        node.amount = Some(2000.0);
+        assert_eq!(config.initial_resource_amount("planet_blue", node), Some(2000.0));
+        config.validate_content(&content).unwrap();
+        config.resource_amounts.insert("worker".into(), config.resource_amounts["minerals"].clone());
+        assert!(config.validate_content(&content).is_err());
+    }
 
     #[test]
     fn resource_amount_distribution_validates_and_clamps_samples() {

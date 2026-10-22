@@ -79,7 +79,7 @@ runtime radiation or collection rules.
 3. Process system anchors in stable entity-ID order. Generate planets, then each
    configured local population in configuration order.
 4. Initialize finite deposits using `resource_amounts`, falling back to the
-   entity content definition, exactly once per newly created deposit.
+   deprecated entity content amount for legacy packs, exactly once per newly created deposit.
 5. Identify eligible starts as players join. Run fallback only if ordinary
    candidates cannot produce a valid complete start.
 

@@ -84,6 +84,7 @@ impl Scenario {
     fn materialize(
         &self,
         content: &ContentPack,
+        spawn_config: &crate::spawn_config::SpawnConfig,
         bindings: &BTreeMap<String, String>,
     ) -> Result<GameState> {
         if self.version != 1 || self.id.is_empty() || self.name.is_empty() {
@@ -140,8 +141,7 @@ impl Scenario {
                 vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 supply: None,
-                resource_deposit: def.resource_node.as_ref().and_then(|node| node.amount)
-                    .map(|amount| pb::ResourceDeposit { amount, remaining: amount }),
+                resource_deposit: super::state::fixed_resource_deposit(&source.entity_type, content, Some(spawn_config)),
                 resources: None,
             };
             // Saved legacy stock may exceed capacity; only inflows enforce capacity.
@@ -247,7 +247,7 @@ impl Engine {
             .content
             .as_ref()
             .ok_or_else(|| anyhow!("content unavailable"))?;
-        let state = scenario.materialize(content, &bindings)?;
+        let state = scenario.materialize(content, &self.spawn_config, &bindings)?;
         let intents = IntentManager::new(
             content.entity_types.clone(),
             self.cfg.default_stop_radius,
@@ -441,6 +441,7 @@ impl Engine {
                     self.content
                         .as_ref()
                         .ok_or_else(|| anyhow!("content unavailable"))?,
+                    &self.spawn_config,
                     &bindings,
                 )?;
                 if cmd.action == "load" {
@@ -535,6 +536,36 @@ impl Engine {
 mod inventory_tests {
     use super::*;
 
+    fn spawn_config() -> crate::spawn_config::SpawnConfig {
+        crate::spawn_config::SpawnConfig::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/spawn.yaml")).unwrap()
+    }
+
+    #[test]
+    fn scenario_resource_stock_uses_configured_average_without_randomness() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let scenario: Scenario = serde_yaml::from_str(r#"
+version: 1
+id: deposits
+name: Deposits
+players: []
+entities:
+  - {id: 1, entity_type: minerals, owner: universe, position: {x: 0, y: 0}}
+  - {id: 2, entity_type: planet_blue, owner: universe, position: {x: 500, y: 0}}
+  - {id: 3, entity_type: dead_planet_blue, owner: universe, position: {x: 1000, y: 0}}
+  - {id: 4, entity_type: star_yellow, owner: universe, position: {x: 2000, y: 0}}
+"#).unwrap();
+        let mut config = spawn_config();
+        config.resource_amounts.get_mut("minerals").unwrap().average = 12345.0;
+        for _ in 0..2 {
+            let state = scenario.materialize(&content, &config, &BTreeMap::new()).unwrap();
+            for (entity, amount) in state.entities.iter().zip([Some(12345.0), Some(10000.0), Some(1000.0), None]) {
+                assert_eq!(entity.resource_deposit.map(|d| d.amount), amount);
+                assert_eq!(entity.resource_deposit.map(|d| d.remaining), amount);
+            }
+        }
+    }
+
     #[test]
     fn legacy_scenario_cargo_merges_and_over_capacity_inventory_can_reload() {
         let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -553,14 +584,14 @@ entities:
     cargo: {resource: food, amount: 50}
 "#).unwrap();
         let bindings = BTreeMap::from([("player1".into(), Uuid::now_v7().to_string())]);
-        let state = scenario.materialize(&content, &bindings).unwrap();
+        let state = scenario.materialize(&content, &spawn_config(), &bindings).unwrap();
         assert_eq!(resource_amount(&state.entities[0], "food"), 98.0);
         scenario.entities[0].cargo = None;
         scenario.entities[0].resources.insert("food".into(), 98.0);
-        let state = scenario.materialize(&content, &bindings).unwrap();
+        let state = scenario.materialize(&content, &spawn_config(), &bindings).unwrap();
         assert_eq!(resource_amount(&state.entities[0], "food"), 98.0);
         scenario.entities[0].resources.insert("food".into(), f64::NAN);
-        assert!(scenario.materialize(&content, &bindings).is_err());
+        assert!(scenario.materialize(&content, &spawn_config(), &bindings).is_err());
     }
 
     #[test]
@@ -573,7 +604,7 @@ entities:
             if path.extension().and_then(|extension| extension.to_str()) != Some("yaml") { continue; }
             let scenario: Scenario = serde_yaml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
             let bindings = scenario.players.iter().map(|slot| (slot.clone(), Uuid::now_v7().to_string())).collect();
-            scenario.materialize(&content, &bindings).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            scenario.materialize(&content, &spawn_config(), &bindings).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
         }
     }
 }
