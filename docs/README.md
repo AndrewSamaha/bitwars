@@ -15,6 +15,8 @@ This directory contains specifications, designs, and decision records for the pr
   - [Resource field deprecations](./requirements/resource-field-deprecations.md)
 - Architecture Decision Records (ADRs)
   - See [docs/adr/](./adr/)
+- Production
+  - [Hosting Options and Cost Estimates](./production/hosting.md)
 - Glossary
   - See [Glossary](./glossary.md)
 - Milestones
