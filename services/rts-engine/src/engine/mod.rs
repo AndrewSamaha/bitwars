@@ -41,7 +41,7 @@ use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_
 use prost::Message;
 use state::{take_from_deposit, init_world, log_sample, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 20;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 21;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;

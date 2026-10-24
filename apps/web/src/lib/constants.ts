@@ -1,7 +1,7 @@
 import { PLAYER_PALETTES } from "@/lib/playerPalettes";
 
 export const PLAYER_NAMESPACE = '20f3bcf2-e4c3-4589-a7b5-9697afe1b1a8';
-export const ENGINE_PROTOCOL_MAJOR = 20;
+export const ENGINE_PROTOCOL_MAJOR = 21;
 export const PLAYER_COLORS = PLAYER_PALETTES.map((palette) => palette.id);
 export const PLAYER_NAME_PARTS = [
     "Grimm",
