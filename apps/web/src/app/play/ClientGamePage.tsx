@@ -52,7 +52,7 @@ function GameClientShell() {
       >
         <GameStreamGate>
           <GameStateStreamBridge />
-          <GameConnectionOverlay />
+          {status === "active" && <GameConnectionOverlay />}
           <div inert={connection !== "live" || fading}>
             <AudioEventBridge />
             <ResourceHUD />
@@ -63,7 +63,8 @@ function GameClientShell() {
           </div>
         </GameStreamGate>
       </div>
-      <div inert={connection !== "live"}><TerminalPanel /></div>
+      {/* Login must remain usable before an authenticated stream can connect. */}
+      <div inert={status === "active" && connection !== "live"}><TerminalPanel /></div>
     </div>
   );
 }
