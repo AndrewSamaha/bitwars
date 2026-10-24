@@ -621,7 +621,7 @@ mod tests {
         assert_eq!(outcome.started.as_ref().unwrap().0, entity_id);
 
         // Entity is already at (0,0), target is (0,0) -> should finish immediately
-        let mut state = GameState { generation: Default::default(),
+        let mut state = GameState { discovered_entities: Default::default(), generation: Default::default(),
             tick: 0,
             entities: vec![pb::Entity {
                 supply: None,
@@ -659,7 +659,7 @@ mod tests {
         assert!(outcome.started.is_some());
         assert!(!outcome.rejected_busy);
 
-        let mut state = GameState { generation: Default::default(),
+        let mut state = GameState { discovered_entities: Default::default(), generation: Default::default(),
             tick: 0,
             entities: vec![pb::Entity {
                 supply: None,

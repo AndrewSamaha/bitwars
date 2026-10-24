@@ -311,7 +311,7 @@ mod tests {
         );
         (
             manager,
-            GameState { generation: Default::default(),
+            GameState { discovered_entities: Default::default(), generation: Default::default(),
                 tick: 5,
                 entities: vec![pb::Entity {
                     id: 1,

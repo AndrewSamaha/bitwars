@@ -475,6 +475,7 @@ impl RedisClient {
         player_technologies.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
         let snap = Snapshot {
+            discovered_entities_json: serde_json::to_string(&state.discovered_entities)?,
             generation_state_json: serde_json::to_string(&state.generation)?,
             economy_version: 1,
             convoys,
@@ -1322,7 +1323,13 @@ fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<Co
     } else {
         serde_json::from_str(&snapshot.generation_state_json)?
     };
+    let discovered_entities = if snapshot.discovered_entities_json.is_empty() {
+        Default::default()
+    } else {
+        serde_json::from_str(&snapshot.discovered_entities_json)?
+    };
     Ok((GameState {
+        discovered_entities,
         generation,
         tick: snapshot.tick as u64,
         entities: snapshot.entities,
@@ -1380,6 +1387,16 @@ mod inventory_restore_tests {
         assert_eq!(state.generation.pending["bob"].last_revision,Some(123));
         assert_eq!(restore_snapshot(Snapshot::default()).unwrap().0.generation.version,0);
         assert!(restore_snapshot(Snapshot { generation_state_json: "invalid".into(), ..Default::default() }).is_err());
+    }
+
+    #[test]
+    fn discovery_checkpoint_survives_restore_and_defaults_empty_for_legacy_saves() {
+        let discoveries: std::collections::BTreeMap<String, std::collections::BTreeSet<u64>> = [("alice".into(), [42, u64::MAX].into())].into();
+        let snapshot = Snapshot { discovered_entities_json: serde_json::to_string(&discoveries).unwrap(), ..Default::default() };
+        let (state, _) = restore_snapshot(Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(state.discovered_entities, discoveries);
+        assert!(restore_snapshot(Snapshot::default()).unwrap().0.discovered_entities.is_empty());
+        assert!(restore_snapshot(Snapshot { discovered_entities_json: "invalid".into(), ..Default::default() }).is_err());
     }
 
     #[test]

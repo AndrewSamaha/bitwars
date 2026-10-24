@@ -126,6 +126,7 @@ pub type PlayerTechnologies = HashMap<String, std::collections::HashSet<String>>
 
 #[derive(Clone)]
 pub struct GameState {
+    pub discovered_entities: super::discovery::Discoveries,
     pub generation: super::generation::GenerationState,
     pub tick: u64,
     pub entities: Vec<Entity>,
@@ -141,6 +142,7 @@ pub fn init_world(spawn_config: &SpawnConfig) -> GameState {
         "init_world requires valid spawn config (at least one loadout)"
     );
     GameState {
+        discovered_entities: Default::default(),
         generation: super::generation::GenerationState { version: 1, ..Default::default() },
         tick: 0,
         entities: Vec::new(),

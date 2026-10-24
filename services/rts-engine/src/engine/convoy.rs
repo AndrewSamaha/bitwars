@@ -354,7 +354,7 @@ mod tests {
             types.insert(name.to_string(), def);
         }
         let mut manager = IntentManager::new(types, 5.0, 1.0);
-        let mut state = GameState { generation: Default::default(),
+        let mut state = GameState { discovered_entities: Default::default(), generation: Default::default(),
             tick: 0,
             entities: Vec::new(),
             technologies: HashMap::new(),

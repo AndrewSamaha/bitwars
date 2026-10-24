@@ -678,6 +678,10 @@ impl ContentPack {
         self.entity_types.get(entity_type_id)
     }
 
+    pub fn technology(&self, id: &str) -> Option<&TechnologyDef> {
+        self.technologies.get(id)
+    }
+
     /// M7: Look up a resource type definition, returning `None` for unknown types.
     pub fn get_resource_type(&self, resource_type_id: &str) -> Option<&ResourceTypeDef> {
         self.resource_types.get(resource_type_id)

@@ -998,6 +998,9 @@ pub struct PlayerTechnologyState {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
+    /// Server-only persistent player discovery history; omitted from player streams.
+    #[prost(string, tag = "14")]
+    pub discovered_entities_json: ::prost::alloc::string::String,
     /// Server checkpoint: versioned reservations and pending procedural starts.
     /// Clients may ignore this JSON; it is persisted atomically with entities.
     #[prost(string, tag = "13")]

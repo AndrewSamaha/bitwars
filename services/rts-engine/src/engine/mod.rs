@@ -1,3 +1,4 @@
+mod discovery;
 mod resupply;
 pub mod intent;
 mod logistics;
@@ -691,6 +692,23 @@ mod transport_capacity_tests {
     }
 
     #[test]
+    fn undiscovered_sources_are_ineligible_even_when_nearest_or_previously_bound() {
+        let collector = CollectorSnapshot { id: 1, entity_type_id: "worker".into(), owner_player_id: "alice".into(), x: 0.0, y: 0.0 };
+        let node = ResourceNodeSnapshot { id: 10, x: 100.0, y: 0.0, resource_type: "minerals".into(), mode: CollectionMode::Transport,
+            max_simultaneous_collectors: Some(1), min_effective_distance: 20.0, max_effective_distance: 50.0 };
+        let world = [node.clone(), ResourceNodeSnapshot { id: 11, x: 10.0, ..node }];
+        let collects = vec!["minerals".into()];
+        let (known, indexes) = discovered_resource_nodes(&world, &[10].into());
+        assert_eq!(Engine::pick_transport_node(&collector, &known, Some(11), &indexes, None, "minerals", false, &collects).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &known, None, &indexes, None, "", true, &collects).unwrap().id, 10);
+        let (empty, indexes) = discovered_resource_nodes(&world, &Default::default());
+        assert!(Engine::pick_transport_node(&collector, &empty, Some(11), &indexes, None, "minerals", false, &collects).is_none());
+        let proximity: Vec<_> = world.iter().cloned().map(|node| ResourceNodeSnapshot { mode: CollectionMode::Proximity, ..node }).collect();
+        let (known, _) = discovered_resource_nodes(&proximity, &[10].into());
+        assert_eq!(Engine::pick_best_node(&collector, &known, CollectionMode::Proximity, &collects).unwrap().id, 10);
+    }
+
+    #[test]
     fn collector_stays_bound_to_its_node_across_trips() {
         let collector = CollectorSnapshot {
             id: 1,
@@ -1026,7 +1044,7 @@ mod radiation_tests {
             owner_player_id: "p1".to_string(),
             health: 100.0,
         };
-        let state = GameState { generation: Default::default(),
+        let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
             tick: 0,
             entities: vec![
                 star,
@@ -1046,7 +1064,7 @@ mod radiation_tests {
     #[test]
     fn overlapping_sources_stack_damage() {
         let content = make_content();
-        let state = GameState { generation: Default::default(),
+        let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
             tick: 0,
             entities: vec![
                 pb::Entity {
@@ -1100,7 +1118,7 @@ mod radiation_tests {
     #[test]
     fn radiation_grid_finds_sources_across_cell_boundaries() {
         let content = make_content();
-        let state = GameState { generation: Default::default(),
+        let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
             tick: 0,
             entities: vec![
                 pb::Entity {
@@ -1128,7 +1146,7 @@ mod radiation_tests {
     fn self_destruct_requires_ownership_and_publishes_removal() {
         let entity = pb::Entity { id: 42, owner_player_id: "me".into(), health: 100.0, ..Default::default() };
         let mut entities = vec![entity];
-        let previous = GameState { entities: entities.clone(), generation: Default::default(), tick: 0, technologies: HashMap::new() };
+        let previous = GameState { discovered_entities: Default::default(), entities: entities.clone(), generation: Default::default(), tick: 0, technologies: HashMap::new() };
         assert_eq!(self_destruct_entity(&mut entities, "other", 42), Err(pb::LifecycleReason::NotOwned));
         assert_eq!(self_destruct_entity(&mut entities, "me", 99), Err(pb::LifecycleReason::InvalidTarget));
         assert_eq!(entities.len(), 1);
@@ -1214,6 +1232,14 @@ fn load_spawn_config_or_exit(cfg: &GameConfig) -> SpawnConfig {
             std::process::exit(1);
         }
     }
+}
+
+fn discovered_resource_nodes(
+    nodes: &[ResourceNodeSnapshot], known: &std::collections::BTreeSet<u64>,
+) -> (Vec<ResourceNodeSnapshot>, HashMap<u64, usize>) {
+    let nodes: Vec<_> = nodes.iter().filter(|node| known.contains(&node.id)).cloned().collect();
+    let indexes = nodes.iter().enumerate().map(|(i, node)| (node.id, i)).collect();
+    (nodes, indexes)
 }
 
 pub struct Engine {
@@ -3879,6 +3905,7 @@ impl Engine {
         }
         // Collection only changes entity fields, so vector indexes remain valid
         // until this call returns.
+        discovery::update(&mut self.state, self.content.as_ref().unwrap());
         let entity_by_id = collection_entity_index(&self.state.entities);
         state::initialize_fixed_resource_deposits(
             &mut self.state.entities, self.content.as_ref().unwrap(), &self.spawn_config);
@@ -3920,9 +3947,9 @@ impl Engine {
         let mut operating_collectors = HashSet::new();
         let mut gathering_by_node = HashMap::new();
         let nodes = self.build_resource_node_snapshots();
-        let node_by_id = nodes.iter().enumerate()
-            .map(|(index, node)| (node.id, index))
-            .collect::<HashMap<_, _>>();
+        // Share each player's discovered source list across all of their workers.
+        let nodes_by_owner: HashMap<_, _> = self.state.discovered_entities.iter()
+            .map(|(owner, known)| (owner.clone(), discovered_resource_nodes(&nodes, known))).collect();
         let refineries = self.build_depot_snapshots();
         let collector_ids: HashSet<u64> = collectors.iter().map(|c| c.id).collect();
         self.transport_node_by_entity.retain(|id, _| collector_ids.contains(id));
@@ -3950,6 +3977,7 @@ impl Engine {
             let Some(collector_def) = def.collector.as_ref() else {
                 continue;
             };
+            let (nodes, node_by_id) = &nodes_by_owner[&collector.owner_player_id];
             let speed = def.speed.max(0.0);
             let previous_resource = self.collector_ui_state_by_entity.get(&collector.id)
                 .map(|view| view.resource_type.as_str()).unwrap_or("");

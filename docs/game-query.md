@@ -97,3 +97,11 @@ owner, `target_entity_id`, and member slots containing offsets, stable slot
 indices, and status (`forming`, `in_formation`, `catching_up`, `engaging`, or
 `returning`). Escort follows entity positions rather than a fixed route. Player
 streams filter orders to their owner; this administrative snapshot exposes all.
+
+Collection discovery is now recorded authoritatively per player in the server-only
+`discovered_entities_json` snapshot checkpoint, exposed by the authoritative snapshot endpoint. Both transport and proximity
+collection select only discovered sources, including sources no longer visible.
+Discovery uses operational sensors, technology effects and target visibility ranges,
+and continues while players are disconnected. Player streams omit this checkpoint.
+Older snapshots without discovery history start empty and discover currently visible
+entities on the next collection update; earlier exploration cannot be reconstructed.
