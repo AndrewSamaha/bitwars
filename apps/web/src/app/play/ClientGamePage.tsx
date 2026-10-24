@@ -1,5 +1,8 @@
 "use client";
 
+import GameConnectionOverlay from "@/features/gamestate/components/GameConnectionOverlay";
+import { useSyncExternalStore } from "react";
+import { gameConnection } from "@/features/gamestate/connection";
 import dynamic from "next/dynamic";
 import AudioEventBridge from "@/features/audio/components/AudioEventBridge";
 import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge";
@@ -38,6 +41,7 @@ export default function ClientGamePage({ initialPlayer }: ClientGamePageProps) {
 
 function GameClientShell() {
   const { status } = useSession();
+  const connection = useSyncExternalStore(gameConnection.subscribe, gameConnection.getSnapshot, () => "connecting");
   const fading = status !== "active";
 
   return (
@@ -47,16 +51,19 @@ function GameClientShell() {
         aria-hidden={fading}
       >
         <GameStreamGate>
-          <AudioEventBridge />
           <GameStateStreamBridge />
-          <ResourceHUD />
-          <LifecycleToasts />
-          <EntityDetailPanel />
-          <IntentQueuePanel />
-          <GameStage />
+          <GameConnectionOverlay />
+          <div inert={connection !== "live" || fading}>
+            <AudioEventBridge />
+            <ResourceHUD />
+            <LifecycleToasts />
+            <EntityDetailPanel />
+            <IntentQueuePanel />
+            <GameStage />
+          </div>
         </GameStreamGate>
       </div>
-      <TerminalPanel />
+      <div inert={connection !== "live"}><TerminalPanel /></div>
     </div>
   );
 }

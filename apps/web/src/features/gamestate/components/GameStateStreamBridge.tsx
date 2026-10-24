@@ -1,5 +1,6 @@
 "use client";
 
+import { gameConnection } from "../connection";
 import React, { useEffect, useRef, useState } from "react";
 import { useLogger } from "@/lib/axiom/client";
 import { game, RADIATION_DAMAGE_VISUAL_LINGER_MS, type Entity } from "../world";
@@ -153,6 +154,8 @@ export default function GameStateStreamBridge() {
     const streamParams = new URLSearchParams({ sid: streamIdRef.current });
     if (actingAsId) streamParams.set("as", actingAsId);
     const streamUrl = `/api/v2/gamestate/stream?${streamParams}`;
+    gameConnection.begin();
+    const watchdog = setInterval(() => gameConnection.check(), 250);
     const es = new EventSource(streamUrl);
     log.info("GameStateStreamBridge:es:create", { streamId: streamIdRef.current, url: streamUrl });
 
@@ -479,6 +482,7 @@ export default function GameStateStreamBridge() {
         if (payload && payload.type === "snapshot") {
           log.info("GameStateStreamBridge:snapshot", { streamId: streamIdRef.current, tick: payload.tick, count: payload.entities.length });
           applySnapshot(payload);
+          gameConnection.receivedSnapshot();
         }
       } catch (err) {
         console.error("[GameStateStreamBridge] snapshot parse error", err);
@@ -629,7 +633,19 @@ export default function GameStateStreamBridge() {
     // Track whether we've connected before (to distinguish initial vs reconnect)
     let hasConnectedBefore = false;
 
+    let lastHealthAt = -Infinity;
+    let reconciliationRetry: ReturnType<typeof setTimeout> | undefined;
+    const retryBootstrap = () => {
+      clearTimeout(reconciliationRetry);
+      reconciliationRetry = setTimeout(() => {
+        if (es.readyState !== EventSource.OPEN) return;
+        es.close();
+        setWorldGeneration(generation => generation + 1);
+      }, 1000);
+    };
     const onOpen = () => {
+      lastHealthAt = -Infinity;
+      gameConnection.begin();
       buildProgressStore.streamConnected();
       const msSinceMount = Date.now() - mountedAtRef.current;
       log.info("GameStateStreamBridge:es:open", { streamId: streamIdRef.current, msSinceMount, isReconnect: hasConnectedBefore });
@@ -683,18 +699,24 @@ export default function GameStateStreamBridge() {
               });
             } else {
               log.warn("GameStateStreamBridge:content:sync-failed", { streamId: streamIdRef.current });
+              retryBootstrap();
+              return;
             }
           }
+          if (es.readyState === EventSource.OPEN) gameConnection.reconciledIntents();
         } else {
+          retryBootstrap();
           log.warn("GameStateStreamBridge:reconnect:failed", { streamId: streamIdRef.current, isReconnect: hasConnectedBefore });
         }
       }).catch((err) => {
+        retryBootstrap();
         log.warn("GameStateStreamBridge:reconnect:error", { streamId: streamIdRef.current, error: (err as any)?.message || String(err) });
       });
 
       hasConnectedBefore = true;
     };
     const onError = (evt: Event) => {
+      gameConnection.disconnect();
       buildProgressStore.streamDisconnected();
       // EventSource suppresses details; log readyState to detect disconnects.
       // @ts-ignore
@@ -718,6 +740,22 @@ export default function GameStateStreamBridge() {
       if (payload.run_id && payload.run_id !== game.runId) { onWorldReset(event); return; }
       game.paused = !!payload.paused;
     };
+    const onHealth = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data);
+        const healthy = payload.healthy === true && payload.run_id === game.runId;
+        // A silent stall may recover without EventSource reopening. Bootstrap
+        // again rather than treating the pre-stall snapshot as current.
+        if (healthy && Number.isFinite(lastHealthAt) && performance.now() - lastHealthAt >= 2500) {
+          es.close();
+          setWorldGeneration(generation => generation + 1);
+          return;
+        }
+        lastHealthAt = healthy ? performance.now() : -Infinity;
+        gameConnection.health(healthy);
+      } catch { gameConnection.health(false); }
+    };
+    es.addEventListener("health", onHealth as EventListener);
     es.addEventListener("world-reset", onWorldReset as EventListener);
     es.addEventListener("runtime", onRuntime as EventListener);
     es.addEventListener("snapshot", onSnapshot as EventListener);
@@ -729,6 +767,10 @@ export default function GameStateStreamBridge() {
     es.addEventListener("error", onError as EventListener);
 
     return () => {
+      clearInterval(watchdog);
+      clearTimeout(reconciliationRetry);
+      gameConnection.disconnect();
+      es.removeEventListener("health", onHealth as EventListener);
       log.info("GameStateStreamBridge:cleanup", { streamId: streamIdRef.current });
       es.removeEventListener("snapshot", onSnapshot as EventListener);
       es.removeEventListener("delta", onDelta as EventListener);

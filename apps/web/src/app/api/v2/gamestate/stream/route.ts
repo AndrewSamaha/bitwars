@@ -171,6 +171,14 @@ export const GET = withAxiom(async (req: Request) => {
             await channel.write(`event: runtime\ndata: ${runtime}\n\n`);
             previousRuntime = runtime;
           }
+          // This lease is refreshed by Rust, including while intentionally paused.
+          const aliveRunId = await redis.get(`rts:match:${GAME_ID}:engine_alive`);
+          const runtimeState = runtime ? JSON.parse(runtime) : null;
+          await channel.write(`event: health\ndata: ${JSON.stringify({
+            healthy: !!aliveRunId && aliveRunId === runtimeState?.run_id,
+            run_id: runtimeState?.run_id,
+          })}\n\n`);
+          if (!aliveRunId || aliveRunId !== runtimeState?.run_id) break;
           if (!entries || entries.length === 0) {
             // timeout, emit heartbeat has already been doing pings
             continue;

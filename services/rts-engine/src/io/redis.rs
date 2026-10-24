@@ -600,6 +600,13 @@ impl RedisClient {
         let _: () = self.conn.set(format!("rts:match:{}:runtime", self.game_id), value).await?;
         Ok(())
     }
+    /// Expires even if the process exits without a graceful shutdown.
+    pub async fn publish_engine_heartbeat(&mut self) -> anyhow::Result<()> {
+        let _: () = self.conn.set_ex(
+            format!("rts:match:{}:engine_alive", self.game_id), &self.run_id, 3,
+        ).await?;
+        Ok(())
+    }
     pub async fn read_runtime(&mut self) -> anyhow::Result<Option<String>> {
         Ok(self.conn.get(format!("rts:match:{}:runtime", self.game_id)).await?)
     }

@@ -494,6 +494,7 @@ impl Engine {
         Ok(serde_json::json!({ "runtime": self.scenario_runtime }))
     }
     pub(super) async fn process_scenario_controls(&mut self) -> Result<bool> {
+        self.redis.publish_engine_heartbeat().await?;
         // ponytail: one global world, at most eight controls per tick; isolate worlds if concurrent scenarios become necessary.
         for _ in 0..8 {
             let Some(raw) = self.redis.pop_scenario_command().await? else {

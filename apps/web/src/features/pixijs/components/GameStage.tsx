@@ -1,4 +1,5 @@
 "use client";
+import { gameConnection } from "@/features/gamestate/connection";
 import { Application, Container, Graphics, RenderTexture, Sprite, Text } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { game, type Entity } from "@/features/gamestate/world";
@@ -109,6 +110,7 @@ export default function GameStage() {
 
     // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
+      if (!gameConnection.check()) throw new Error("Game connection is unavailable");
       const payload =
         params.kind === "SelfDestruct"
           ? { type: "SelfDestruct", entity_id: params.entityId,
@@ -1632,7 +1634,11 @@ export default function GameStage() {
 
         app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
-            if (!game.ready) return;
+            if (!game.ready || !gameConnection.check()) {
+              game.last = performance.now();
+              panKeysRef.current.clear();
+              return;
+            }
             if (recenterRequestedRef.current) {
               const centered = centerCameraOnOwnedEntities();
               if (centered) recenterRequestedRef.current = false;
