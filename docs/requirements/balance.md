@@ -121,6 +121,22 @@ syntax is a configuration error and should be reported as such, rather than
 appearing only as a list of omitted entities. A valid plot with no eligible
 entities should show an empty state and omission details.
 
+## Entity inspection and editing
+
+The right sidebar has Visualization and Entity tabs. Visualization contains the
+visualization picker, save controls, and Balance YAML editor. Entity contains an
+entity ID search input with autocomplete and the selected entity's YAML editor.
+Clicking a sprite or bar (or activating it with Enter/Space) selects that entity,
+opens the Entity tab, and fills the search input and YAML editor. All entities
+are searchable, including those omitted from the current plot.
+
+Reuse `YamlEditor` with `kind="entity"` so schema validation, completion, hover
+help, and semantic diagnostics match `/content/entities`. Entity saves use the
+existing entity content API; successful saves refresh the chart from authored
+entity definitions. Keep entity drafts when switching entities or sidebar tabs,
+provide Save entity/Cancel controls, and retain drafts after save failures.
+Visualization YAML and entity YAML have independent drafts and saves.
+
 ## Examples, editing, and persistence
 
 Provide example configurations in the shared visualization dropdown, including maintenance versus
@@ -239,7 +255,6 @@ Do not copy scenario authentication or its production flag into Balance.
 
 ## Deferred work
 
-- Editing entity field values from this screen and saving to `entities.yaml`.
 - Entity filtering.
 - Resolving sprite overlap.
 - Additional expression functions or chart types, image export, and frozen

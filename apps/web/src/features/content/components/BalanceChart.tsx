@@ -37,9 +37,13 @@ const fraction = (value: number, [min, max]: [number, number]) => {
 export default function BalanceChart({
   config,
   points,
+  selectedId,
+  onSelectEntity,
 }: {
   config: BalanceConfig;
   points: Point[];
+  selectedId?: string;
+  onSelectEntity?: (id: string) => void;
 }) {
   if (!points.length)
     return (
@@ -67,7 +71,7 @@ export default function BalanceChart({
   return (
     <div className="overflow-auto rounded-lg border border-slate-700 bg-slate-950/50">
       <svg
-        role="img"
+        role={onSelectEntity ? "group" : "img"}
         aria-label={config.name ?? config.id}
         viewBox={`0 0 ${width} ${height}`}
         className="w-full"
@@ -138,13 +142,41 @@ export default function BalanceChart({
                 point.data as { visual?: { rotate_deg?: unknown } }
               )?.visual?.rotate_deg;
               return (
+                // biome-ignore lint/a11y/useSemanticElements: HTML buttons cannot wrap SVG graphics; use an accessible SVG group.
                 <g
                   key={point.id}
                   transform={`translate(${x(point.values.x)} ${y(point.values.y)})`}
                   tabIndex={0}
+                  role="button"
+                  aria-pressed={
+                    onSelectEntity ? selectedId === point.id : undefined
+                  }
+                  className={
+                    onSelectEntity
+                      ? "cursor-pointer outline-none focus:stroke-cyan-300"
+                      : undefined
+                  }
+                  onClick={() => onSelectEntity?.(point.id)}
+                  onKeyDown={(event) => {
+                    if (
+                      onSelectEntity &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
+                      event.preventDefault();
+                      onSelectEntity(point.id);
+                    }
+                  }}
                   aria-label={`${point.id}: x ${point.values.x}, y ${point.values.y}`}
                 >
                   <title>{`${point.id}: x=${point.values.x}, y=${point.values.y}`}</title>
+                  {selectedId === point.id && (
+                    <circle
+                      r={config.dot_size / 2 + 3}
+                      fill="none"
+                      stroke="#67e8f9"
+                      strokeWidth="2"
+                    />
+                  )}
                   <circle r={config.dot_size / 8} fill="#22d3ee" />
                   <image
                     href={`/assets/${encodeURIComponent(point.id)}/idle.png`}
@@ -166,9 +198,29 @@ export default function BalanceChart({
               const px = left + (index + 0.5) * step;
               const py = y(point.values.value);
               return (
+                // biome-ignore lint/a11y/useSemanticElements: HTML buttons cannot wrap SVG graphics; use an accessible SVG group.
                 <g
                   key={point.id}
                   tabIndex={0}
+                  role="button"
+                  aria-pressed={
+                    onSelectEntity ? selectedId === point.id : undefined
+                  }
+                  className={
+                    onSelectEntity
+                      ? "cursor-pointer outline-none focus:stroke-cyan-300"
+                      : undefined
+                  }
+                  onClick={() => onSelectEntity?.(point.id)}
+                  onKeyDown={(event) => {
+                    if (
+                      onSelectEntity &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
+                      event.preventDefault();
+                      onSelectEntity(point.id);
+                    }
+                  }}
                   aria-label={`${point.id}: ${point.values.value}`}
                 >
                   <title>{`${point.id}: ${point.values.value}`}</title>
@@ -178,6 +230,8 @@ export default function BalanceChart({
                     width={step * 0.7}
                     height={Math.max(1, Math.abs(py - y(0)))}
                     fill="#22d3ee"
+                    stroke={selectedId === point.id ? "#e0f2fe" : undefined}
+                    strokeWidth={selectedId === point.id ? 3 : undefined}
                   />
                   <text
                     x={px}

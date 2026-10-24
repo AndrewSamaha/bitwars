@@ -2,13 +2,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseDocument } from "yaml";
 import {
-  type BalanceEntity,
   balanceExamples,
   evaluateBalance,
   parseBalance,
 } from "@/lib/content/balance";
 import { balanceFieldPaths } from "@/lib/content/balanceHelp";
 import BalanceChart from "./BalanceChart";
+import BalanceEntityEditor, {
+  type EditableBalanceEntity,
+} from "./BalanceEntityEditor";
 import ContentNavigation from "./ContentNavigation";
 import YamlEditor from "./YamlEditor";
 
@@ -20,7 +22,9 @@ async function jsonResponse(response: Response) {
   if (!response.ok) throw new Error(data.error ?? "Request failed");
   return data;
 }
-async function loadEntities(signal?: AbortSignal): Promise<BalanceEntity[]> {
+async function loadEntities(
+  signal?: AbortSignal,
+): Promise<EditableBalanceEntity[]> {
   const data = await jsonResponse(
     await fetch("/api/content/entities", { cache: "no-store", signal }),
   );
@@ -29,7 +33,11 @@ async function loadEntities(signal?: AbortSignal): Promise<BalanceEntity[]> {
     const document = parseDocument(entity.definition);
     if (document.errors.length)
       throw new Error(`Invalid entity YAML: ${entity.id}`);
-    return { id: entity.id, data: document.toJS({ maxAliasCount: 0 }) };
+    return {
+      id: entity.id,
+      definition: entity.definition,
+      data: document.toJS({ maxAliasCount: 0 }),
+    };
   });
 }
 export default function BalanceEditor() {
@@ -37,7 +45,15 @@ export default function BalanceEditor() {
   const [baseline, setBaseline] = useState(balanceExamples[0].yaml);
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [selection, setSelection] = useState("example:0");
-  const [entities, setEntities] = useState<BalanceEntity[] | null>(null);
+  const [entities, setEntities] = useState<EditableBalanceEntity[] | null>(
+    null,
+  );
+  const [sidebarTab, setSidebarTab] = useState<"visualization" | "entity">(
+    "visualization",
+  );
+  const [selectedEntityId, setSelectedEntityId] = useState("");
+  const [entitySearch, setEntitySearch] = useState("");
+  const [entityDirty, setEntityDirty] = useState(false);
   const [saved, setSaved] = useState<Saved[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -84,14 +100,14 @@ export default function BalanceEditor() {
   }, []);
   // Protect reload/closing a tab as well as explicit draft replacements.
   useEffect(() => {
-    if (!dirty) return;
+    if (!dirty && !entityDirty) return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  }, [dirty, entityDirty]);
   const canReplace = () =>
     yamlRef.current === baselineRef.current ||
     window.confirm("Discard unsaved visualization changes?");
@@ -167,6 +183,11 @@ export default function BalanceEditor() {
       setBusy(false);
     }
   }
+  function selectEntity(id: string) {
+    setSelectedEntityId(id);
+    setEntitySearch(id);
+    setSidebarTab("entity");
+  }
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="px-6 pt-6 lg:px-10">
@@ -213,6 +234,8 @@ export default function BalanceEditor() {
                   <BalanceChart
                     config={result.config}
                     points={result.plot.points}
+                    selectedId={selectedEntityId}
+                    onSelectEntity={selectEntity}
                   />
                 </>
               )
@@ -246,76 +269,144 @@ export default function BalanceEditor() {
           aria-label="Balance settings"
           className="min-w-0 shrink-0 border-t border-slate-700 bg-slate-900 p-6 lg:w-[42rem] lg:border-t-0 lg:border-l"
         >
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <label className="text-sm">
-              Visualization{" "}
-              <select
-                className={control}
-                disabled={busy}
-                value={selection}
-                onChange={(event) => {
-                  const source = event.target.value;
-                  if (source.startsWith("saved:")) {
-                    void selectSaved(source.slice("saved:".length));
-                  } else if (source.startsWith("example:")) {
-                    const example =
-                      balanceExamples[Number(source.slice("example:".length))];
-                    if (example && canReplace())
-                      replace(example.yaml, null, source);
+          <div
+            role="tablist"
+            aria-label="Balance settings panels"
+            className="mb-4 flex border-b border-slate-700"
+          >
+            {(["visualization", "entity"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                id={`balance-${tab}-tab`}
+                aria-selected={sidebarTab === tab}
+                aria-controls={`balance-${tab}-panel`}
+                tabIndex={sidebarTab === tab ? 0 : -1}
+                className={`border-b-2 px-4 py-2 text-sm font-medium ${sidebarTab === tab ? "border-cyan-400 text-cyan-300" : "border-transparent text-slate-400 hover:text-cyan-300"}`}
+                onClick={() => setSidebarTab(tab)}
+                onKeyDown={(event) => {
+                  if (
+                    ["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                      event.key,
+                    )
+                  ) {
+                    event.preventDefault();
+                    const next =
+                      event.key === "Home"
+                        ? "visualization"
+                        : event.key === "End"
+                          ? "entity"
+                          : tab === "visualization"
+                            ? "entity"
+                            : "visualization";
+                    setSidebarTab(next);
+                    document.getElementById(`balance-${next}-tab`)?.focus();
                   }
                 }}
               >
-                <optgroup label="Examples">
-                  {balanceExamples.map((example, index) => (
-                    <option key={example.name} value={`example:${index}`}>
-                      {example.name}
-                    </option>
-                  ))}
-                </optgroup>
-                {saved.length > 0 && (
-                  <optgroup label="Saved visualizations">
-                    {saved.map((item) => (
-                      <option key={item.id} value={`saved:${item.id}`}>
-                        {item.name}
-                        {item.error ? " (invalid)" : ""}
+                {tab === "visualization" ? "Visualization" : "Entity"}
+              </button>
+            ))}
+          </div>
+          <div
+            role="tabpanel"
+            id="balance-visualization-panel"
+            aria-labelledby="balance-visualization-tab"
+            hidden={sidebarTab !== "visualization"}
+          >
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <label className="text-sm">
+                Visualization{" "}
+                <select
+                  className={control}
+                  disabled={busy}
+                  value={selection}
+                  onChange={(event) => {
+                    const source = event.target.value;
+                    if (source.startsWith("saved:")) {
+                      void selectSaved(source.slice("saved:".length));
+                    } else if (source.startsWith("example:")) {
+                      const example =
+                        balanceExamples[
+                          Number(source.slice("example:".length))
+                        ];
+                      if (example && canReplace())
+                        replace(example.yaml, null, source);
+                    }
+                  }}
+                >
+                  <optgroup label="Examples">
+                    {balanceExamples.map((example, index) => (
+                      <option key={example.name} value={`example:${index}`}>
+                        {example.name}
                       </option>
                     ))}
                   </optgroup>
-                )}
-              </select>
-            </label>
-            <button
-              type="button"
-              className={control}
-              disabled={busy || !result.config}
-              onClick={() => void save()}
+                  {saved.length > 0 && (
+                    <optgroup label="Saved visualizations">
+                      {saved.map((item) => (
+                        <option key={item.id} value={`saved:${item.id}`}>
+                          {item.name}
+                          {item.error ? " (invalid)" : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
+              <button
+                type="button"
+                className={control}
+                disabled={busy || !result.config}
+                onClick={() => void save()}
+              >
+                {busy ? "Working…" : "Save"}
+              </button>
+              <output className="text-sm text-slate-400">
+                {dirty ? "Unsaved changes" : message || "No unsaved changes"}
+              </output>
+            </div>
+            {error && (
+              <p className="mb-3 text-red-400" role="alert">
+                {error}
+              </p>
+            )}
+            <section
+              aria-label="Balance configuration YAML"
+              className="min-w-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-900"
             >
-              {busy ? "Working…" : "Save"}
-            </button>
-            <output className="text-sm text-slate-400">
-              {dirty ? "Unsaved changes" : message || "No unsaved changes"}
-            </output>
+              <YamlEditor
+                kind="balance"
+                id="balance-editor"
+                value={yaml}
+                fieldPaths={paths}
+                onChange={(next) => {
+                  setYaml(next);
+                  setMessage("");
+                }}
+              />
+            </section>
           </div>
-          {error && (
-            <p className="mb-3 text-red-400" role="alert">
-              {error}
-            </p>
-          )}
-          <section
-            aria-label="Balance configuration YAML"
-            className="min-w-0 overflow-hidden rounded-lg border border-slate-700 bg-slate-900"
+          <div
+            role="tabpanel"
+            id="balance-entity-panel"
+            aria-labelledby="balance-entity-tab"
+            hidden={sidebarTab !== "entity"}
           >
-            <YamlEditor
-              kind="balance"
-              id="balance-editor"
-              value={yaml}
-              fieldPaths={paths}
-              onChange={(next) => {
-                setYaml(next);
-                setMessage("");
+            <BalanceEntityEditor
+              entities={entities ?? []}
+              selectedId={selectedEntityId}
+              search={entitySearch}
+              onSearchChange={setEntitySearch}
+              onSelect={selectEntity}
+              onDirtyChange={setEntityDirty}
+              onSaved={async () => {
+                setEntities(await loadEntities());
+                setDataError("");
               }}
             />
-          </section>
+          </div>
         </aside>
       </div>
     </main>
