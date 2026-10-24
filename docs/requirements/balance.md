@@ -111,6 +111,11 @@ Omit an entity when any required expression cannot resolve to a finite number.
 For scatter plots, both coordinates must succeed. Missing fields must not
 silently become zero, including a missing maintenance map inside `sum`.
 
+Above the omission text list, show sprites for all omitted entities as labeled,
+clickable buttons. Selecting one opens its definition in the Entity tab, using
+the same selection behavior as clicking a plotted entity. Keep the full text
+list below the sprites.
+
 At the bottom of the screen, list every omitted entity by ID and explain the
 reason, identifying the affected axis/value and field or expression. Reasons
 include missing fields, empty wildcard selections, nonnumeric values, and

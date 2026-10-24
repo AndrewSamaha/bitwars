@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseDocument } from "yaml";
 import {
@@ -250,13 +251,55 @@ export default function BalanceEditor() {
                 Omitted entities ({result.plot.omissions.length})
               </h2>
               {result.plot.omissions.length ? (
-                <ul className="mt-2 space-y-2 text-sm text-slate-300">
-                  {result.plot.omissions.map((item) => (
-                    <li key={item.id}>
-                      <strong>{item.id}</strong>: {item.reasons.join("; ")}
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <section
+                    aria-label="Select an omitted entity"
+                    className="mt-3 mb-4 flex flex-wrap gap-2"
+                  >
+                    {result.plot.omissions.map((item) => {
+                      const entity = entities.find(
+                        (entity) => entity.id === item.id,
+                      );
+                      const rotation = (
+                        entity?.data as { visual?: { rotate_deg?: unknown } }
+                      )?.visual?.rotate_deg;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => selectEntity(item.id)}
+                          aria-label={`Edit ${item.id}`}
+                          aria-pressed={selectedEntityId === item.id}
+                          title={`${item.id}: ${item.reasons.join("; ")}`}
+                          className={`flex w-24 flex-col items-center gap-2 rounded-lg border p-2 text-center text-xs focus-visible:outline-2 focus-visible:outline-cyan-300 ${selectedEntityId === item.id ? "border-cyan-300 bg-cyan-400/10" : "border-slate-700 hover:border-cyan-500"}`}
+                        >
+                          <Image
+                            unoptimized
+                            alt=""
+                            src={`/assets/${encodeURIComponent(item.id)}/idle.png`}
+                            width={40}
+                            height={40}
+                            className="size-10 object-contain"
+                            style={{
+                              transform: `rotate(${typeof rotation === "number" && Number.isFinite(rotation) ? rotation : 0}deg)`,
+                            }}
+                            onError={(event) => {
+                              event.currentTarget.style.visibility = "hidden";
+                            }}
+                          />
+                          <span className="w-full break-words">{item.id}</span>
+                        </button>
+                      );
+                    })}
+                  </section>
+                  <ul className="mt-2 space-y-2 text-sm text-slate-300">
+                    {result.plot.omissions.map((item) => (
+                      <li key={item.id}>
+                        <strong>{item.id}</strong>: {item.reasons.join("; ")}
+                      </li>
+                    ))}
+                  </ul>
+                </>
               ) : (
                 <p className="mt-2 text-sm text-slate-400">
                   All entities are included.
