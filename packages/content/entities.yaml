@@ -82,7 +82,7 @@ entity_types:
       resource_type: food
       regeneration:
         model: hill
-        max_rate_per_second: 3.529411764705882
+        max_rate_per_second: 2
         half_saturation_fraction: 0.5
         exponent: 4
       depleted_entity_type_id: dead_planet_blue
