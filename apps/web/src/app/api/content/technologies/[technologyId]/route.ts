@@ -1,8 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { parseDocument, stringify } from "yaml";
+import { Document, parseDocument } from "yaml";
 import { technologyRequirementErrors, unknownTechnologyFieldErrors } from "@/lib/content/schemaValidation";
+
+import { sortEntityDefinitions } from "@/lib/content/entityYaml";
 
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
@@ -29,6 +31,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ tech
   const knownIds = new Set(Object.keys(content.technologies));
   const requirementErrors = Object.values(content.technologies).flatMap((item: any) => technologyRequirementErrors(item.requires, knownIds));
   if (requirementErrors.length) return NextResponse.json({ error: requirementErrors.join("; ") }, { status: 400 });
-  await writeFile(contentPath, stringify(content));
+  await writeFile(contentPath, String(sortEntityDefinitions(new Document(content))));
   return NextResponse.json({ ok: true, id: newId });
 }

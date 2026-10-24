@@ -1,8 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { parseDocument, stringify } from "yaml";
+import { parseDocument } from "yaml";
 import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, depotErrors } from "@/lib/content/schemaValidation";
+
+import { sortEntityDefinitions, stringifyEntityDefinition } from "@/lib/content/entityYaml";
 
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
@@ -21,7 +23,7 @@ export async function GET() {
     builds: definition.builds?.map((build: { entity_type_id: string }) => build.entity_type_id) ?? [],
     upgrades: definition.upgrades?.map((upgrade: { entity_type_id: string }) => upgrade.entity_type_id) ?? [],
     visual: definition.visual ?? {},
-    definition: stringify(definition).trim(),
+    definition: stringifyEntityDefinition(definition),
   })) });
 }
 
@@ -40,6 +42,6 @@ export async function POST(request: Request) {
   const builds: any = parent.get("builds", true);
   if (builds) builds.add({ entity_type_id: childId }); else parent.set("builds", [{ entity_type_id: childId }]);
   types.set(childId, normalizedDefinition);
-  await writeFile(contentPath, String(doc));
+  await writeFile(contentPath, String(sortEntityDefinitions(doc)));
   return NextResponse.json({ ok: true });
 }

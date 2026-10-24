@@ -142,6 +142,12 @@ entity definitions. Keep entity drafts when switching entities or sidebar tabs,
 provide Save entity/Cancel controls, and retain drafts after save failures.
 Visualization YAML and entity YAML have independent drafts and saves.
 
+Entity API reads and writes alphabetize mapping keys recursively within each
+entity definition. Preserve sequence order, entity ID ordering, and other content
+sections. Return the sorted saved definition to the editor as its clean baseline;
+retain newer draft edits made while saving. Ordering is enforced by shared YAML
+serialization helpers rather than Monaco key-order diagnostics.
+
 ## Examples, editing, and persistence
 
 Provide example configurations in the shared visualization dropdown, including maintenance versus

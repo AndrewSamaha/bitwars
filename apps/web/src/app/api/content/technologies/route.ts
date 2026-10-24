@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { parseDocument, stringify } from "yaml";
 import { technologyRequirementErrors, unknownTechnologyFieldErrors } from "@/lib/content/schemaValidation";
 
+import { sortEntityDefinitions } from "@/lib/content/entityYaml";
+
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
 const validId = (id: unknown) => typeof id === "string" && /^[a-z][a-z0-9_]*$/.test(id);
@@ -31,6 +33,6 @@ export async function POST(request: Request) {
   const requirementErrors = technologyRequirementErrors(value.requires, new Set([...Object.keys(doc.toJS().technologies ?? {}), childId]));
   if (requirementErrors.length) return NextResponse.json({ error: requirementErrors.join("; ") }, { status: 400 });
   technologies.set(childId, { ...value, requires: parentId });
-  await writeFile(contentPath, String(doc));
+  await writeFile(contentPath, String(sortEntityDefinitions(doc)));
   return NextResponse.json({ ok: true });
 }

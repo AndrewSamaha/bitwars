@@ -1,9 +1,11 @@
 import { access, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { parseDocument, stringify } from "yaml";
+import { Document, parseDocument, stringify } from "yaml";
 import { parseSpawnConfig, renameSpawnEntity } from "@/lib/content/spawnConfig";
 import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, depotErrors } from "@/lib/content/schemaValidation";
+
+import { sortEntityDefinitions, stringifyEntityDefinition } from "@/lib/content/entityYaml";
 
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
@@ -49,6 +51,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ enti
       }
     }
   }
-  await Promise.all([writeFile(contentPath, stringify(content)), writeFile(spawnPath, stringify(renameSpawnEntity(parseSpawnConfig(String(spawn)), entityId, newId)))]);
-  return NextResponse.json({ ok: true, id: newId });
+  await Promise.all([writeFile(contentPath, String(sortEntityDefinitions(new Document(content)))), writeFile(spawnPath, stringify(renameSpawnEntity(parseSpawnConfig(String(spawn)), entityId, newId)))]);
+  return NextResponse.json({ ok: true, id: newId, definition: stringifyEntityDefinition(normalizedDefinition) });
 }

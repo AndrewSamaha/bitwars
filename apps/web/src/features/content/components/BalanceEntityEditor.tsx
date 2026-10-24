@@ -72,9 +72,16 @@ export default function BalanceEntityEditor({
       const body = await response.json();
       if (!response.ok)
         throw new Error(body.error ?? "Unable to save entity definition");
+      const savedDefinition = body.definition ?? submitted;
       setDrafts((current) => ({
         ...current,
-        [id]: { yaml: current[id]?.yaml ?? submitted, baseline: submitted },
+        [id]: {
+          yaml:
+            !current[id] || current[id].yaml === submitted
+              ? savedDefinition
+              : current[id].yaml,
+          baseline: savedDefinition,
+        },
       }));
       try {
         await onSaved();

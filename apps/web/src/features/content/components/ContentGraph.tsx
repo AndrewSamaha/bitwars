@@ -332,13 +332,15 @@ export default function ContentGraph() {
       setSaveError(body?.error ?? "Unable to save this entity definition.");
       return;
     }
+    const saved = await response.json();
+    const savedDefinition = saved.definition ?? definition;
     setSaveError(null);
     setEntities((current) => current.map((entity) => ({
       ...entity,
       id: entity.id === selected.id ? newId : entity.id,
       builds: entity.builds.map((id) => id === selected.id ? newId : id),
       upgrades: entity.upgrades.map((id) => id === selected.id ? newId : id),
-      definition: entity.id === selected.id ? definition : entity.definition,
+      definition: entity.id === selected.id ? savedDefinition : entity.definition,
     })));
     if (newId !== selected.id) {
       setSpriteSizes((current) => ({ ...current, [newId]: current[selected.id] ?? null }));
