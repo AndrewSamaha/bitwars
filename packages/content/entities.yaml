@@ -41,878 +41,911 @@ technologies:
       energy: 1
 entity_types:
   theta:
-    hull_radius: 50
-    max_capacity: {}
     fog_memory: retain_last_known
-    speed: 0
-    z_index: -10
-    suppress_hover: true
-    stop_radius: 0.75
-    mass: 500
     health: 100
+    hull_radius: 50
+    mass: 500
+    max_capacity: {}
+    radiation_sources:
+      - damage_per_second: 20
+        full_damage_distance: 700
+        full_damage_distance_fill_color: "#a753ef"
+        max_effective_distance: 1200
+        max_effective_distance_fill_color: "#c384f8"
+        min_effective_distance: 0
+        min_effective_distance_fill_color: "#882cd6"
+        radiation_type: theta
+    resource_node:
+      collection_mode: proximity
+      max_effective_distance: 1600
+      min_effective_distance: 350
+      resource_type: energy
+    speed: 0
+    stop_radius: 0.75
+    suppress_hover: true
     visibility_range: 4000
     visual:
       scale: 2
-    radiation_sources:
-      - radiation_type: theta
-        min_effective_distance_fill_color: "#882cd6"
-        full_damage_distance_fill_color: "#a753ef"
-        max_effective_distance_fill_color: "#c384f8"
-        min_effective_distance: 0
-        full_damage_distance: 700
-        max_effective_distance: 1200
-        damage_per_second: 20
-    resource_node:
-      resource_type: energy
-      collection_mode: proximity
-      min_effective_distance: 350
-      max_effective_distance: 1600
+    z_index: -10
   planet_blue:
-    hull_radius: 50
-    max_capacity: {}
+    builds:
+      - duration_seconds: 1
+        entity_type_id: dead_planet_blue
+      - entity_type_id: planet_ice
     fog_memory: retain_last_known
-    speed: 0
-    z_index: -2
-    stop_radius: 1
-    mass: 500
     health: 100
-    visual:
-      scale: 4
+    hull_radius: 50
+    mass: 500
+    max_capacity: {}
     resource_node:
-      resource_type: food
-      regeneration:
-        model: hill
-        max_rate_per_second: 2
-        half_saturation_fraction: 0.5
-        exponent: 4
-      depleted_entity_type_id: dead_planet_blue
       collection_mode: transport
+      depleted_entity_type_id: dead_planet_blue
+      max_effective_distance: 50
       max_simultaneous_collectors: 1
       min_effective_distance: 20
-      max_effective_distance: 50
-    builds:
-      - entity_type_id: dead_planet_blue
-        duration_seconds: 1
-      - entity_type_id: planet_ice
-  star_yellow:
-    hull_radius: 50
-    max_capacity: {}
-    fog_memory: retain_last_known
+      regeneration:
+        exponent: 4
+        half_saturation_fraction: 0.5
+        max_rate_per_second: 2
+        model: hill
+      resource_type: food
     speed: 0
-    visibility_range: 40000
-    z_index: -10
-    suppress_hover: true
     stop_radius: 1
-    mass: 500
-    health: 100
     visual:
-      scale: 15
+      scale: 4
+    z_index: -2
+  star_yellow:
+    fog_memory: retain_last_known
+    health: 100
+    hull_radius: 50
+    mass: 500
+    max_capacity: {}
     radiation_sources:
-      - radiation_type: stellar_heat
-        min_effective_distance_fill_color: "#ef4444"
+      - damage_per_second: 10
+        full_damage_distance: 900
         full_damage_distance_fill_color: "#f97316"
+        max_effective_distance: 1200
         max_effective_distance_fill_color: "#facc15"
         min_effective_distance: 0
-        full_damage_distance: 900
-        max_effective_distance: 1200
-        damage_per_second: 10
+        min_effective_distance_fill_color: "#ef4444"
+        radiation_type: stellar_heat
     resource_node:
-      resource_type: energy
       collection_mode: proximity
-      min_effective_distance: 10
       max_effective_distance: 1500
-  minerals:
-    hull_radius: 50
-    max_capacity: {}
-    fog_memory: retain_last_known
+      min_effective_distance: 10
+      resource_type: energy
     speed: 0
-    z_index: -1
     stop_radius: 1
-    mass: 500
+    suppress_hover: true
+    visibility_range: 40000
+    visual:
+      scale: 15
+    z_index: -10
+  minerals:
+    builds:
+      - duration_seconds: 1
+        entity_type_id: asteroid
+    fog_memory: retain_last_known
     health: 100
+    hull_radius: 50
+    mass: 500
+    max_capacity: {}
+    resource_node:
+      collection_mode: transport
+      max_effective_distance: 50
+      max_simultaneous_collectors: 1
+      min_effective_distance: 20
+      resource_type: minerals
+    speed: 0
+    stop_radius: 1
     visibility_range: 1000
     visual:
       scale: 3
-    resource_node:
-      resource_type: minerals
-      collection_mode: transport
-      max_simultaneous_collectors: 1
-      min_effective_distance: 20
-      max_effective_distance: 50
-    builds:
-      - entity_type_id: asteroid
-        duration_seconds: 1
+    z_index: -1
   collector_solar:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    speed: 20
-    stop_radius: 1
-    mass: 500
-    health: 100
-    hull_radius: 50
-    visual:
-      scale: 1.4
-    combat_targetable: true
-    sensor:
-      range: 400
-      cost_per_minute:
-        energy: 0.1
     build_cost:
-      minerals: 100
       energy: 50
-    radiation_shielding:
-      stellar_heat:
-        distance_offset: 90
-        damage_multiplier: 0.1
+      minerals: 100
     collector:
-      vfx: solar_proximity
       collects:
         - energy
       minimum_distance:
-        value: 800
-        retry_after_ms: 1000
         entity_types:
           - collector_solar
           - collector_solar_v2
           - habitat
+        retry_after_ms: 1000
+        value: 800
       proximity_rate_per_second: 3
       transport_rate_per_second: 0
+      vfx: solar_proximity
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 100
+    hull_radius: 50
+    mass: 500
+    max_capacity: {}
+    radiation_shielding:
+      stellar_heat:
+        damage_multiplier: 0.1
+        distance_offset: 90
+    sensor:
+      cost_per_minute:
+        energy: 0.1
+      range: 400
+    speed: 20
+    stop_radius: 1
     upgrades:
-      - entity_type_id: collector_solar_v2
-        duration_seconds: 100
+      - duration_seconds: 100
+        entity_type_id: collector_solar_v2
+    visual:
+      scale: 1.4
   worker:
+    build_cost:
+      energy: 30
+      minerals: 30
+    builds:
+      - duration_seconds: 83.33333333333334
+        entity_type_id: collector_solar
+      - duration_seconds: 25
+        entity_type_id: waypoint
+      - duration_seconds: 833.3333333333334
+        entity_type_id: habitat
+      - duration_seconds: 83.33333333333334
+        entity_type_id: defense_pylon
+      - duration_seconds: 166.66666666666669
+        entity_type_id: factory
+      - duration_seconds: 166.66666666666669
+        entity_type_id: military_factory
+      - duration_seconds: 100
+        entity_type_id: food_storage_container
+      - duration_seconds: 100
+        entity_type_id: mineral_storage_container
+    collector:
+      collects:
+        - minerals
+        - food
+      transport_rate_per_second: 8
+      vfx: mineral_transport
+    combat:
+      acquisition_range: 250
+      attacks:
+        - contact_tolerance: 2
+          cooldown_ticks: 20
+          damage: 4
+          id: dismantle
+          priority: 100
+          type: dismantle
+      on_near_enemy_strategy: approach
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 200
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 1
+      food: 1
+    mass: 1
     max_capacity:
       energy: 50
       food: 50
       minerals: 50
-    fog_memory: forget_when_hidden
-    speed: 90
-    stop_radius: 0.75
-    mass: 1
-    health: 200
-    hull_radius: 50
-    combat_targetable: true
-    sensor:
-      range: 400
-    combat:
-      acquisition_range: 250
-      on_near_enemy_strategy: approach
-      attacks:
-        - id: dismantle
-          type: dismantle
-          damage: 4
-          cooldown_ticks: 20
-          priority: 100
-          contact_tolerance: 2
-    build_cost:
-      minerals: 30
-      energy: 30
-    collector:
-      vfx: mineral_transport
-      collects:
-        - minerals
-        - food
-      transport_rate_per_second: 8
     repair:
-      range: 150
       cost_per_min:
         energy: 60
         minerals: 60
       efficiency: 0.5
-    builds:
-      - entity_type_id: collector_solar
-        duration_seconds: 83.33333333333334
-      - entity_type_id: waypoint
-        duration_seconds: 25
-      - entity_type_id: habitat
-        duration_seconds: 833.3333333333334
-      - entity_type_id: defense_pylon
-        duration_seconds: 83.33333333333334
-      - entity_type_id: factory
-        duration_seconds: 166.66666666666669
-      - entity_type_id: military_factory
-        duration_seconds: 166.66666666666669
-      - entity_type_id: food_storage_container
-        duration_seconds: 100
-      - entity_type_id: mineral_storage_container
-        duration_seconds: 100
+      range: 150
+    sensor:
+      range: 400
+    speed: 90
+    stop_radius: 0.75
   habitat:
+    build_cost:
+      energy: 600
+      minerals: 600
+    builds:
+      - duration_seconds: 37.5
+        entity_type_id: worker
+      - duration_seconds: 93.75
+        entity_type_id: scout
+    collector:
+      collects:
+        - energy
+      minimum_distance:
+        entity_types:
+          - collector_solar
+          - collector_solar_v2
+          - habitat
+        retry_after_ms: 1000
+        value: 800
+      proximity_rate_per_second: 5
+      transport_rate_per_second: 0
+      vfx: solar_proximity
+    combat:
+      acquisition_range: 500
+      attacks:
+        - cooldown_ticks: 33
+          damage: 4
+          id: laser
+          priority: 0
+          range: 500
+          type: laser
+      on_near_enemy_strategy: stay
+    combat_targetable: true
+    depot: true
+    depot_range: 4000
+    fog_memory: forget_when_hidden
+    health: 400
+    hull_radius: 90
+    maintenance_cost_per_minute:
+      energy: 10
+      food: 60
+      minerals: 5
+    mass: 4
     max_capacity:
       energy: 1000
       food: 3000
       minerals: 1000
-    fog_memory: forget_when_hidden
-    speed: 60
-    stop_radius: 0.5
-    mass: 4
-    health: 400
-    hull_radius: 90
-    visual:
-      scale: 2
-    combat_targetable: true
-    build_cost:
-      minerals: 600
-      energy: 600
-    combat:
-      acquisition_range: 500
-      on_near_enemy_strategy: stay
-      attacks:
-        - id: laser
-          type: laser
-          range: 500
-          damage: 4
-          cooldown_ticks: 33
-          priority: 0
-    maintenance_cost_per_minute:
-      food: 60
-      energy: 10
-      minerals: 5
-    sensor:
-      range: 4000
-      cost_per_minute:
-        energy: 5
-    builds:
-      - entity_type_id: worker
-        duration_seconds: 37.5
-      - entity_type_id: scout
-        duration_seconds: 93.75
-    collector:
-      vfx: solar_proximity
-      collects:
-        - energy
-      proximity_rate_per_second: 5
-      transport_rate_per_second: 0
-      minimum_distance:
-        value: 800
-        retry_after_ms: 1000
-        entity_types:
-          - collector_solar
-          - collector_solar_v2
-          - habitat
     researches:
       - neutrino_sensors
-    depot: true
-    depot_range: 4000
+    sensor:
+      cost_per_minute:
+        energy: 5
+      range: 4000
+    speed: 60
+    stop_radius: 0.5
+    visual:
+      scale: 2
   processor:
+    build_cost:
+      energy: 100
+      minerals: 100
+    combat_targetable: true
+    depot: true
+    depot_range: 2000
+    fog_memory: forget_when_hidden
+    health: 150
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 5
+      food: 5
+    mass: 7
     max_capacity:
       energy: 500
       food: 500
       minerals: 10000
-    fog_memory: forget_when_hidden
+    sensor:
+      cost_per_minute:
+        energy: 0.1
+      range: 400
     speed: 60
     stop_radius: 0.5
-    mass: 7
-    health: 150
-    hull_radius: 50
     visual:
       scale: 1.5
-    build_cost:
-      minerals: 100
-      energy: 100
-    sensor:
-      range: 400
-      cost_per_minute:
-        energy: 0.1
-    combat_targetable: true
-    maintenance_cost_per_minute:
-      energy: 5
-      food: 5
-    depot: true
-    depot_range: 2000
   factory:
+    build_cost:
+      energy: 200
+      minerals: 200
+    builds:
+      - duration_seconds: 75
+        entity_type_id: scout
+      - duration_seconds: 100
+        entity_type_id: processor
+      - duration_seconds: 454.5454545454545
+        entity_type_id: habitat
+      - duration_seconds: 75
+        entity_type_id: science_vessel
+      - duration_seconds: 15
+        entity_type_id: worker
+      - duration_seconds: 50
+        entity_type_id: resource_transport
+    combat_targetable: true
     fog_memory: forget_when_hidden
-    speed: 60
-    stop_radius: 0.5
-    mass: 7
     health: 150
     hull_radius: 50
-    combat_targetable: true
+    maintenance_cost_per_minute:
+      energy: 4
+      food: 1
+    mass: 7
+    max_capacity: {}
+    sensor:
+      cost_per_minute:
+        energy: 0.1
+      range: 400
+    speed: 60
+    stop_radius: 0.5
     visual:
       scale: 1.6
-    build_cost:
-      minerals: 200
-      energy: 200
-    sensor:
-      range: 400
-      cost_per_minute:
-        energy: 0.1
-    max_capacity: {}
-    builds:
-      - entity_type_id: scout
-        duration_seconds: 75
-      - entity_type_id: processor
-        duration_seconds: 100
-      - entity_type_id: habitat
-        duration_seconds: 454.5454545454545
-      - entity_type_id: science_vessel
-        duration_seconds: 75
-      - entity_type_id: worker
-        duration_seconds: 15
-      - entity_type_id: resource_transport
-        duration_seconds: 50
   scout:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    speed: 500
-    stop_radius: 0.5
-    mass: 0.6
-    health: 60
-    hull_radius: 50
-    combat_targetable: true
     build_cost:
-      minerals: 75
       energy: 50
+      minerals: 75
+    builds:
+      - duration_seconds: 75
+        entity_type_id: scout_long_range
     combat:
       acquisition_range: 450
-      on_near_enemy_strategy: approach
       attacks:
-        - id: laser
-          type: laser
-          range: 120
+        - cooldown_ticks: 25
           damage: 2
-          cooldown_ticks: 25
+          id: laser
           priority: 0
+          range: 120
+          type: laser
+      on_near_enemy_strategy: approach
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 60
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 1
+      food: 1
+    mass: 0.6
+    max_capacity: {}
     sensor:
       range: 5000
-    builds:
-      - entity_type_id: scout_long_range
-        duration_seconds: 75
-  raider:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    speed: 110
+    speed: 500
     stop_radius: 0.5
-    mass: 0.8
-    health: 40
-    hull_radius: 50
-    combat_targetable: true
-    visual:
-      scale: 0.75
-      rotate_deg: 0
+  raider:
     combat:
       acquisition_range: 1200
-      on_near_enemy_strategy: approach
       attacks:
-        - id: laser
-          type: laser
-          range: 180
+        - cooldown_ticks: 33
           damage: 8
-          cooldown_ticks: 33
+          id: laser
           priority: 0
+          range: 180
+          type: laser
+      on_near_enemy_strategy: approach
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 40
+    hull_radius: 50
+    mass: 0.8
+    max_capacity: {}
     sensor:
-      range: 1200
       cost_per_minute:
         energy: 0
+      range: 1200
+    speed: 110
+    stop_radius: 0.5
+    visual:
+      rotate_deg: 0
+      scale: 0.75
   defense_pylon_v2:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
     build_cost:
-      minerals: 100
       energy: 50
+      minerals: 100
+    combat:
+      acquisition_range: 500
+      attacks:
+        - cooldown_ticks: 22
+          damage: 3
+          id: laser
+          priority: 0
+          range: 500
+          type: laser
+      on_near_enemy_strategy: stay
+    fog_memory: forget_when_hidden
+    health: 500
+    hull_radius: 50
     maintenance_cost_per_minute:
       energy: 200
-    speed: 5
-    stop_radius: 0.5
     mass: 1
-    health: 500
-    hull_radius: 50
-    combat:
-      acquisition_range: 500
-      on_near_enemy_strategy: stay
-      attacks:
-        - id: laser
-          type: laser
-          range: 500
-          damage: 3
-          cooldown_ticks: 22
-          priority: 0
+    max_capacity: {}
     sensor:
-      range: 500
       cost_per_minute:
         energy: 2.5
-    visual:
-      scale: 0.8
-    upgrades:
-      - entity_type_id: defense_pylon_v3
-        duration_seconds: 100
-  defense_pylon:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    build_cost:
-      minerals: 100
-      energy: 50
-    maintenance_cost_per_minute:
-      energy: 30
+      range: 500
     speed: 5
     stop_radius: 0.5
-    mass: 1
+    upgrades:
+      - duration_seconds: 100
+        entity_type_id: defense_pylon_v3
+    visual:
+      scale: 0.8
+  defense_pylon:
+    build_cost:
+      energy: 50
+      minerals: 100
+    builds:
+      - duration_seconds: 25
+        entity_type_id: waypoint
+    combat:
+      acquisition_range: 500
+      attacks:
+        - cooldown_ticks: 17
+          damage: 2
+          id: laser
+          priority: 0
+          range: 500
+          type: laser
+      on_near_enemy_strategy: stay
+    fog_memory: forget_when_hidden
     health: 500
     hull_radius: 150
-    combat:
-      acquisition_range: 500
-      on_near_enemy_strategy: stay
-      attacks:
-        - id: laser
-          type: laser
-          range: 500
-          damage: 2
-          cooldown_ticks: 17
-          priority: 0
+    maintenance_cost_per_minute:
+      energy: 30
+    mass: 1
+    max_capacity: {}
     sensor:
-      range: 500
       cost_per_minute:
         energy: 2.5
+      range: 500
+    speed: 5
+    stop_radius: 0.5
+    upgrades:
+      - duration_seconds: 100
+        entity_type_id: defense_pylon_v2
     visual:
       scale: 0.8
-    upgrades:
-      - entity_type_id: defense_pylon_v2
-        duration_seconds: 100
-    builds:
-      - entity_type_id: waypoint
-        duration_seconds: 25
   collector_solar_v2:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    speed: 20
-    stop_radius: 1
-    mass: 500
-    health: 100
-    hull_radius: 50
-    combat_targetable: true
-    visual:
-      scale: 1.25
-    sensor:
-      range: 400
-      cost_per_minute:
-        energy: 0.1
     build_cost:
-      minerals: 100
       energy: 50
-    radiation_shielding:
-      stellar_heat:
-        distance_offset: 90
-        damage_multiplier: 0.1
-    requires_technologies:
-      all:
-        - solar_efficiency_1
+      minerals: 100
     collector:
-      vfx: solar_proximity
       collects:
         - energy
       minimum_distance:
-        value: 800
-        retry_after_ms: 1000
         entity_types:
           - collector_solar
           - collector_solar_v2
           - habitat
+        retry_after_ms: 1000
+        value: 800
       proximity_rate_per_second: 15
       transport_rate_per_second: 0
-  defense_pylon_v3:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    build_cost:
-      minerals: 100
-      energy: 50
-    maintenance_cost_per_minute:
-      energy: 200
-    speed: 5
-    stop_radius: 0.5
-    mass: 1
-    health: 500
-    hull_radius: 50
-    visual:
-      scale: 0.8
-    combat:
-      acquisition_range: 700
-      on_near_enemy_strategy: stay
-      attacks:
-        - id: laser
-          type: laser
-          range: 400
-          damage: 10
-          cooldown_ticks: 40
-          priority: 0
-    sensor:
-      range: 700
-      cost_per_minute:
-        energy: 2.5
-  fighter_v1:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    speed: 400
-    stop_radius: 0.5
-    mass: 0.6
-    health: 60
-    hull_radius: 100
+      vfx: solar_proximity
     combat_targetable: true
-    build_cost:
-      minerals: 75
-      energy: 50
-    combat:
-      acquisition_range: 2000
-      on_near_enemy_strategy: approach
-      attacks:
-        - id: laser
-          type: laser
-          range: 300
-          damage: 4
-          cooldown_ticks: 25
-          priority: 0
-    sensor:
-      range: 2000
-    visual:
-      scale: 1
-      rotate_deg: 0
-  heavy_fighter:
-    max_capacity: {}
     fog_memory: forget_when_hidden
-    speed: 400
-    stop_radius: 0.5
-    mass: 0.6
     health: 100
     hull_radius: 50
-    combat_targetable: true
+    mass: 500
+    max_capacity: {}
+    radiation_shielding:
+      stellar_heat:
+        damage_multiplier: 0.1
+        distance_offset: 90
+    requires_technologies:
+      all:
+        - solar_efficiency_1
+    sensor:
+      cost_per_minute:
+        energy: 0.1
+      range: 400
+    speed: 20
+    stop_radius: 1
+    visual:
+      scale: 1.25
+  defense_pylon_v3:
     build_cost:
-      minerals: 75
       energy: 50
+      minerals: 100
+    combat:
+      acquisition_range: 700
+      attacks:
+        - cooldown_ticks: 40
+          damage: 10
+          id: laser
+          priority: 0
+          range: 400
+          type: laser
+      on_near_enemy_strategy: stay
+    fog_memory: forget_when_hidden
+    health: 500
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 220
+    mass: 1
+    max_capacity: {}
+    sensor:
+      cost_per_minute:
+        energy: 2.5
+      range: 700
+    speed: 5
+    stop_radius: 0.5
+    visual:
+      scale: 0.8
+  fighter_v1:
+    build_cost:
+      energy: 50
+      minerals: 75
     combat:
       acquisition_range: 2000
-      on_near_enemy_strategy: approach
       attacks:
-        - id: laser
-          type: laser
-          range: 600
-          damage: 10
-          cooldown_ticks: 40
+        - cooldown_ticks: 25
+          damage: 4
+          id: laser
           priority: 0
+          range: 300
+          type: laser
+      on_near_enemy_strategy: approach
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 60
+    hull_radius: 100
+    maintenance_cost_per_minute:
+      energy: 2
+      food: 1
+    mass: 0.6
+    max_capacity: {}
     sensor:
       range: 2000
-    visual:
-      scale: 1
-      rotate_deg: 0
-  battleship:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
     speed: 400
     stop_radius: 0.5
-    mass: 0.6
-    health: 2000
-    hull_radius: 50
-    combat_targetable: true
+    visual:
+      rotate_deg: 0
+      scale: 1
+  heavy_fighter:
     build_cost:
-      minerals: 2005
+      energy: 50
+      minerals: 75
+    combat:
+      acquisition_range: 2000
+      attacks:
+        - cooldown_ticks: 40
+          damage: 10
+          id: laser
+          priority: 0
+          range: 600
+          type: laser
+      on_near_enemy_strategy: approach
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 100
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 3
+      food: 1
+    mass: 0.6
+    max_capacity: {}
+    sensor:
+      range: 2000
+    speed: 400
+    stop_radius: 0.5
+    visual:
+      rotate_deg: 0
+      scale: 1
+  battleship:
+    build_cost:
       energy: 2000
+      minerals: 2005
     combat:
       acquisition_range: 5000
-      on_near_enemy_strategy: approach
       attacks:
-        - id: laser
-          type: laser
-          range: 2500
+        - cooldown_ticks: 33
           damage: 25
-          cooldown_ticks: 33
+          id: laser
           priority: 0
-    sensor:
-      range: 5000
-    visual:
-      scale: 2.3
+          range: 2500
+          type: laser
+      on_near_enemy_strategy: approach
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 2000
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 25
+      food: 15
+    mass: 0.6
+    max_capacity: {}
     requires_technologies:
       all:
         - space_age
         - neutrino_sensors
-  science_vessel:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    speed: 500
-    stop_radius: 0.5
-    mass: 0.6
-    health: 400
-    hull_radius: 50
-    combat_targetable: true
-    build_cost:
-      minerals: 75
-      energy: 50
-    combat:
-      acquisition_range: 500
-      on_near_enemy_strategy: stay
-      attacks:
-        - id: laser
-          type: laser
-          range: 500
-          damage: 4
-          cooldown_ticks: 33
-          priority: 0
     sensor:
       range: 5000
+    speed: 400
+    stop_radius: 0.5
     visual:
       scale: 2.3
+  science_vessel:
+    build_cost:
+      energy: 50
+      minerals: 75
+    combat:
+      acquisition_range: 500
+      attacks:
+        - cooldown_ticks: 33
+          damage: 4
+          id: laser
+          priority: 0
+          range: 500
+          type: laser
+      on_near_enemy_strategy: stay
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 400
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 10
+      food: 10
+    mass: 0.6
+    max_capacity: {}
     researches:
       - neutrino_sensors
       - solar_efficiency_1
-  scout_long_range:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    speed: 500
-    stop_radius: 0.5
-    mass: 0.6
-    health: 60
-    hull_radius: 50
-    combat_targetable: true
-    build_cost:
-      minerals: 75
-      energy: 50
-    combat:
-      acquisition_range: 450
-      on_near_enemy_strategy: approach
-      attacks:
-        - id: laser
-          type: laser
-          range: 120
-          damage: 2
-          cooldown_ticks: 25
-          priority: 0
-    visual:
-      scale: 0.2
     sensor:
       range: 5000
+    speed: 500
+    stop_radius: 0.5
+    visual:
+      scale: 2.3
+  scout_long_range:
+    build_cost:
+      energy: 50
+      minerals: 75
+    combat:
+      acquisition_range: 450
+      attacks:
+        - cooldown_ticks: 25
+          damage: 2
+          id: laser
+          priority: 0
+          range: 120
+          type: laser
+      on_near_enemy_strategy: approach
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 60
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 1.2
+      food: 1
+    mass: 0.6
+    max_capacity: {}
+    sensor:
+      range: 5000
+    speed: 500
+    stop_radius: 0.5
+    visual:
+      scale: 0.2
   resource_transport:
+    build_cost:
+      energy: 100
+      minerals: 100
+    collector:
+      collects:
+        - minerals
+        - food
+      transport_rate_per_second: 8
+      vfx: mineral_transport
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 300
+    hull_radius: 75
+    maintenance_cost_per_minute:
+      energy: 3
+      food: 1
+    mass: 2
     max_capacity:
       energy: 90
       food: 500
       minerals: 500
-    fog_memory: forget_when_hidden
-    speed: 80
-    stop_radius: 2
-    mass: 2
-    health: 300
-    hull_radius: 75
-    combat_targetable: true
-    visual:
-      scale: 1.2
     sensor:
       range: 400
+    speed: 80
+    stop_radius: 2
+    visual:
+      scale: 1.2
+  military_factory:
     build_cost:
-      minerals: 100
-      energy: 100
+      energy: 200
+      minerals: 200
+    builds:
+      - duration_seconds: 75
+        entity_type_id: scout
+      - duration_seconds: 34.090909090909086
+        entity_type_id: fighter_v1
+      - duration_seconds: 75
+        entity_type_id: heavy_fighter
+      - duration_seconds: 2005
+        entity_type_id: battleship
+      - duration_seconds: 50
+        entity_type_id: defense_pylon
+      - duration_seconds: 25
+        entity_type_id: marine_worker
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 150
+    hull_radius: 150
+    maintenance_cost_per_minute:
+      energy: 5
+      food: 1
+    mass: 7
+    max_capacity: {}
+    sensor:
+      cost_per_minute:
+        energy: 0.1
+      range: 400
+    speed: 60
+    stop_radius: 0.5
+    visual:
+      scale: 2
+  marine_worker:
+    build_cost:
+      energy: 50
+      minerals: 50
+    builds:
+      - duration_seconds: 83.33333333333334
+        entity_type_id: collector_solar
+      - duration_seconds: 25
+        entity_type_id: waypoint
+      - duration_seconds: 833.3333333333334
+        entity_type_id: habitat
+      - duration_seconds: 83.33333333333334
+        entity_type_id: defense_pylon
+      - duration_seconds: 166.66666666666669
+        entity_type_id: factory
+      - duration_seconds: 166.66666666666669
+        entity_type_id: military_factory
     collector:
-      vfx: mineral_transport
       collects:
         - minerals
         - food
       transport_rate_per_second: 8
-  military_factory:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
-    speed: 60
-    stop_radius: 0.5
-    mass: 7
-    health: 150
-    hull_radius: 150
+      vfx: mineral_transport
+    combat:
+      acquisition_range: 250
+      attacks:
+        - contact_tolerance: 2
+          cooldown_ticks: 20
+          damage: 8
+          id: dismantle
+          priority: 100
+          type: dismantle
+      on_near_enemy_strategy: approach
     combat_targetable: true
-    visual:
-      scale: 2
-    build_cost:
-      minerals: 200
-      energy: 200
-    sensor:
-      range: 400
-      cost_per_minute:
-        energy: 0.1
-    builds:
-      - entity_type_id: scout
-        duration_seconds: 75
-      - entity_type_id: fighter_v1
-        duration_seconds: 34.090909090909086
-      - entity_type_id: heavy_fighter
-        duration_seconds: 75
-      - entity_type_id: battleship
-        duration_seconds: 2005
-      - entity_type_id: defense_pylon
-        duration_seconds: 50
-      - entity_type_id: marine_worker
-        duration_seconds: 25
-  marine_worker:
+    fog_memory: forget_when_hidden
+    health: 300
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 3
+      food: 1
+    mass: 1
     max_capacity:
       energy: 40
       food: 40
       minerals: 40
-    fog_memory: forget_when_hidden
-    speed: 90
-    stop_radius: 0.75
-    mass: 1
-    health: 300
-    hull_radius: 50
-    combat_targetable: true
-    sensor:
-      range: 400
-    combat:
-      acquisition_range: 250
-      on_near_enemy_strategy: approach
-      attacks:
-        - id: dismantle
-          type: dismantle
-          damage: 8
-          cooldown_ticks: 20
-          priority: 100
-          contact_tolerance: 2
-    build_cost:
-      minerals: 50
-      energy: 50
-    collector:
-      vfx: mineral_transport
-      collects:
-        - minerals
-        - food
-      transport_rate_per_second: 8
     repair:
-      range: 150
       cost_per_min:
         energy: 80
         minerals: 80
       efficiency: 1
-    builds:
-      - entity_type_id: collector_solar
-        duration_seconds: 83.33333333333334
-      - entity_type_id: waypoint
-        duration_seconds: 25
-      - entity_type_id: habitat
-        duration_seconds: 833.3333333333334
-      - entity_type_id: defense_pylon
-        duration_seconds: 83.33333333333334
-      - entity_type_id: factory
-        duration_seconds: 166.66666666666669
-      - entity_type_id: military_factory
-        duration_seconds: 166.66666666666669
+      range: 150
+    sensor:
+      range: 400
+    speed: 90
+    stop_radius: 0.75
   waypoint:
-    max_capacity: {}
-    fog_memory: forget_when_hidden
     build_cost:
-      minerals: 20
       energy: 25
-    maintenance_cost_per_minute:
-      energy: 0
-    speed: 5
-    stop_radius: 0.5
-    mass: 1
+      minerals: 20
+    fog_memory: forget_when_hidden
     health: 500
     hull_radius: 150
+    maintenance_cost_per_minute:
+      energy: 0
+    mass: 1
+    max_capacity: {}
     sensor:
       range: 1
+    speed: 5
+    stop_radius: 0.5
+    visibility_range: 10000
     visual:
       scale: 0.8
-    visibility_range: 10000
   asteroid:
-    hull_radius: 50
-    max_capacity: {}
     fog_memory: retain_last_known
-    speed: 0
-    z_index: -1
-    stop_radius: 1
-    mass: 500
     health: 100
+    hull_radius: 50
+    mass: 500
+    max_capacity: {}
+    speed: 0
+    stop_radius: 1
     visibility_range: 1000
     visual:
       scale: 2.5
+    z_index: -1
   food_storage_container:
+    build_cost:
+      energy: 100
+      minerals: 100
+    combat_targetable: true
+    depot: true
+    depot_range: 2000
+    fog_memory: forget_when_hidden
+    health: 50
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 1
+      minerals: 1
+    mass: 7
     max_capacity:
+      energy: 100
       food: 1000
       minerals: 100
-      energy: 100
-    fog_memory: forget_when_hidden
-    speed: 60
-    stop_radius: 0.5
-    mass: 7
-    health: 50
-    hull_radius: 50
-    visual:
-      scale: 1.5
-    build_cost:
-      minerals: 100
-      energy: 100
     sensor:
-      range: 400
       cost_per_minute:
         energy: 0.1
-    combat_targetable: true
-    maintenance_cost_per_minute:
-      energy: 1
-      minerals: 1
-    depot: true
-    depot_range: 2000
-  dead_planet_blue:
-    hull_radius: 50
-    max_capacity: {}
-    fog_memory: retain_last_known
-    speed: 0
-    z_index: -2
-    stop_radius: 1
-    mass: 500
-    health: 100
+      range: 400
+    speed: 60
+    stop_radius: 0.5
     visual:
-      scale: 4
+      scale: 1.5
+  dead_planet_blue:
+    fog_memory: retain_last_known
+    health: 100
+    hull_radius: 50
+    mass: 500
+    max_capacity: {}
     resource_node:
-      resource_type: minerals
       collection_mode: transport
+      max_effective_distance: 50
       max_simultaneous_collectors: 1
       min_effective_distance: 20
-      max_effective_distance: 50
+      resource_type: minerals
+    speed: 0
+    stop_radius: 1
+    visual:
+      scale: 4
+    z_index: -2
   mineral_storage_container:
-    max_capacity:
-      food: 100
-      minerals: 1000
+    build_cost:
       energy: 100
+      minerals: 100
+    combat_targetable: true
+    depot: true
+    depot_range: 2000
     fog_memory: forget_when_hidden
-    speed: 60
-    stop_radius: 0.5
-    mass: 7
     health: 50
     hull_radius: 50
-    visual:
-      scale: 1.5
-    build_cost:
-      minerals: 100
-      energy: 100
-    sensor:
-      range: 400
-      cost_per_minute:
-        energy: 0.1
-    combat_targetable: true
     maintenance_cost_per_minute:
       energy: 1
       minerals: 1
-    depot: true
-    depot_range: 2000
-  planet_ice:
-    hull_radius: 50
-    max_capacity: {}
-    fog_memory: retain_last_known
-    speed: 0
-    z_index: -2
-    stop_radius: 1
-    mass: 500
-    health: 100
+    mass: 7
+    max_capacity:
+      energy: 100
+      food: 100
+      minerals: 1000
+    sensor:
+      cost_per_minute:
+        energy: 0.1
+      range: 400
+    speed: 60
+    stop_radius: 0.5
     visual:
-      scale: 4
+      scale: 1.5
+  planet_ice:
     builds:
-      - entity_type_id: dead_planet_blue
-        duration_seconds: 1
+      - duration_seconds: 1
+        entity_type_id: dead_planet_blue
       - entity_type_id: planet_inhospitable
     depot: false
     depot_range: 0
-  planet_inhospitable:
-    hull_radius: 50
-    max_capacity: {}
     fog_memory: retain_last_known
-    speed: 0
-    z_index: -2
-    stop_radius: 1
-    mass: 500
     health: 100
+    hull_radius: 50
+    mass: 500
+    max_capacity: {}
+    speed: 0
+    stop_radius: 1
     visual:
       scale: 4
+    z_index: -2
+  planet_inhospitable:
     builds:
-      - entity_type_id: dead_planet_blue
-        duration_seconds: 1
+      - duration_seconds: 1
+        entity_type_id: dead_planet_blue
     depot: false
     depot_range: 0
+    fog_memory: retain_last_known
+    health: 100
+    hull_radius: 50
+    mass: 500
+    max_capacity: {}
+    speed: 0
+    stop_radius: 1
+    visual:
+      scale: 4
+    z_index: -2
