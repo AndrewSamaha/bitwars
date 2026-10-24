@@ -1,0 +1,98 @@
+{
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "id", "visualization_type", "x", "y"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "visualization_type": {
+          "const": "scatter_plot"
+        },
+        "x": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["expression"],
+          "properties": {
+            "expression": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        "y": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["expression"],
+          "properties": {
+            "expression": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        "dot_size": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 40,
+          "description": "Scatter sprite size in pixels. Smaller values reduce overlap without changing coordinates."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "id", "visualization_type", "value"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "visualization_type": {
+          "const": "bar_chart"
+        },
+        "value": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["expression"],
+          "properties": {
+            "expression": {
+              "type": "string",
+              "minLength": 1
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        },
+        "order": {
+          "enum": ["descending", "ascending"],
+          "default": "descending"
+        }
+      }
+    }
+  ]
+}

@@ -1,14 +1,14 @@
 # Balance visualization editor
 
-Status: agreed v1 scope; implementation pending. YAML field names below define
-the proposed configuration contract.
+Status: v1 implemented. YAML field names below define the configuration contract.
 
 ## Purpose and layout
 
 Add a **Balance** tab to the navigation at `/content/`, served at
 `/content/balance`. Follow the Entities tab's split layout: a visualization on
-the left and a Monaco YAML configuration editor on the right. Include an
-examples dropdown, saved-visualization selection, and save controls.
+the left and a Monaco YAML configuration editor on the right. Include one
+visualization dropdown grouping examples and saved visualizations, plus save
+controls.
 
 Scatter plots represent each entity type with its sprite. Sprite positions are
 determined by the configured numeric expressions. Overlapping sprites are
@@ -36,6 +36,7 @@ version: 1
 id: maintenance-vs-speed
 name: Maintenance vs speed
 visualization_type: scatter_plot
+dot_size: 40
 x:
   expression: sum(maintenance_cost_per_minute.*)
   label: Maintenance per minute
@@ -62,6 +63,9 @@ order: descending
 - `name` is an optional display name, defaulting to `id`.
 - `visualization_type` is required: `scatter_plot` or `bar_chart`.
 - Scatter plots require `x.expression` and `y.expression`.
+- Scatter plots accept `dot_size`, a positive finite number giving the sprite
+  width and height in chart pixels (default `40`). Smaller values reduce visual
+  overlap without changing coordinates; the fallback dot scales proportionally.
 - Bar charts require `value.expression`. `order` accepts `descending` or
   `ascending`, defaulting to `descending`: largest to smallest, left to right.
   Use entity ID as a deterministic tie-breaker.
@@ -119,7 +123,7 @@ entities should show an empty state and omission details.
 
 ## Examples, editing, and persistence
 
-Provide example configurations in a dropdown, including maintenance versus
+Provide example configurations in the shared visualization dropdown, including maintenance versus
 speed and a maintenance bar chart. Selecting one replaces both the editor
 configuration and its visualization. If the current YAML has unsaved changes,
 warn before replacement and allow the user to cancel without losing the draft.
@@ -193,24 +197,23 @@ the new tab consistently.
   completion, and persistence tests. Existing editor-help and spawn configuration
   tests provide useful examples.
 
-### Recommended behavior and remaining decisions
+### Implementation decisions
 
-The following defaults were identified during code review. Items explicitly
-marked open still need a decision before implementing the affected behavior.
+The following defaults were identified during code review and selected for v1.
 
 - **Save identity:** Save updates the configuration with the YAML's current ID.
   Changing the ID creates another saved visualization and leaves the original.
   Confirm before overwriting a different existing configuration.
 - **Draft replacement:** Warn before either an example or a saved selection
-  replaces a dirty draft; cancellation preserves the draft. Whether to protect
-  navigation away and browser reload is still open for v1. Existing editors do
-  not provide a complete precedent for this protection.
-- **Expression grammar:** Define indexed array path syntax, such as
-  `combat.attacks.0.damage`, wildcard traversal such as
-  `combat.attacks.*.damage`, and whether reductions accept only one argument.
-  These grammar details remain open. For wildcard branches with missing or
-  nonnumeric values, prefer failing evaluation for that entity rather than
-  silently skipping branches; document the final semantics in the parser tests.
+  replaces a dirty draft; cancellation preserves the draft. Protect browser reload
+  and tab closing with `beforeunload`. Client-side route navigation protection
+  remains deferred.
+- **Expression grammar:** Use dot notation for indexed array paths, such as
+  `combat.attacks.0.damage`, and wildcard traversal such as
+  `combat.attacks.*.damage`. Reductions accept exactly one argument (a numeric
+  scalar or wildcard selection). A wildcard branch with a missing or nonnumeric
+  value fails evaluation for that entity rather than silently skipping branches.
+  These semantics are covered by parser/evaluator tests.
 - **Chart presentation:** Prefer linear axes, scatter domains fitted to eligible
   values with padding, and bars anchored at zero with support for negative
   values. Prefer consistent sprite sizes with authored rotation and hover details
@@ -221,9 +224,11 @@ marked open still need a decision before implementing the affected behavior.
 - **Entity refresh:** Fetch definitions on entry and when loading a saved
   visualization so it evaluates against current `entities.yaml`, including
   changes made in another tab. Live polling is outside v1.
-- **Storage:** Use `packages/content/balance/`. Safe filename encoding or a
-  manifest mapping is an implementation choice, provided IDs retain their public
-  no-whitespace contract and are never interpreted as unchecked paths.
+- **Storage:** Use `packages/content/balance/` with SHA-256 digest filenames.
+  Preserve the public ID inside the YAML and verify it when reading. New saves
+  use an exclusive atomic link to avoid unconfirmed overwrites; confirmed updates
+  use atomic rename. IDs retain their public no-whitespace contract and are never
+  interpreted as unchecked paths.
 
 ### Authentication explicitly deferred
 

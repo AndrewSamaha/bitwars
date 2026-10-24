@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import ContentNavigation from "./ContentNavigation";
+
 import { useEffect, useState } from "react";
 import { audioUrl, type SfxAttribution, type SfxDefinition, type SfxEntry, validSfxId } from "@/features/audio/sfxCatalog";
 
@@ -108,14 +109,7 @@ export default function SfxCatalogEditor() {
   return <main className="flex min-h-screen bg-slate-950 text-slate-100">
     <section className="min-w-0 flex-1 p-6 lg:px-10 lg:pb-10 lg:pt-6">
       <header className="mb-[18px]"><p className="text-sm font-medium uppercase tracking-[0.24em] text-cyan-400">BitWars Content Editor</p></header>
-      <nav aria-label="Content type" className="mb-5 flex gap-1 border-b border-slate-700">
-        <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/entities">Entities</Link>
-        <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/techtree">Techtree</Link>
-        <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprite-library">Sprites</Link>
-        <Link className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" href="/content/sfx">SFX</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/scenarios">Scenarios</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/spawn">Spawn</Link>
-      </nav>
+      <ContentNavigation active="sfx" />
       <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-5">
         <h1 className="text-xl font-semibold">Sound effects</h1>
         <p className="mt-1 text-sm text-slate-400">Stable keys map gameplay events to one or more audio files.</p>

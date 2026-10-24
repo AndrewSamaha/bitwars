@@ -1,5 +1,7 @@
 "use client";
 
+import ContentNavigation from "./ContentNavigation";
+
 import { ENTITY_CONTENT } from "@bitwars/content";
 import YamlEditor from "@/features/content/components/YamlEditor";
 import { entityCombatRangeWarnings, unknownEntityFieldErrors } from "@/lib/content/schemaValidation";
@@ -356,14 +358,7 @@ export default function ContentGraph() {
           <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars Content Editor</p>
         </header>
 
-        <nav aria-label="Content type" className="mb-3 flex gap-1 border-b border-slate-700">
-          <Link className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" href="/content/entities">Entities</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/techtree">Techtree</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sprite-library">Sprites</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sfx">SFX</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/scenarios">Scenarios</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/spawn">Spawn</Link>
-        </nav>
+        <ContentNavigation active="entities" />
         <div className="overflow-auto rounded-xl border border-slate-700 bg-slate-900/60 p-6 shadow-2xl shadow-black/20">
           <div ref={graphRef} className="graph-scrollport relative h-[calc(100vh-16.625rem-1px)] min-w-[52rem] overflow-auto rounded-lg bg-slate-950/50">
             {loading ? <div aria-label="Loading entities" className="grid h-full grid-cols-4 gap-12 p-12" role="status">
