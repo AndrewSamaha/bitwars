@@ -2,6 +2,7 @@ import { access, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { parseDocument, stringify } from "yaml";
+import { parseSpawnConfig, renameSpawnEntity } from "@/lib/content/spawnConfig";
 import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, depotErrors } from "@/lib/content/schemaValidation";
 
 export const runtime = "nodejs";
@@ -26,11 +27,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ enti
   const entity = parseDocument(definition);
   const types: any = doc.get("entity_types", true);
   if (doc.errors.length || entity.errors.length || !types?.has(entityId) || (newId !== entityId && types.has(newId))) return NextResponse.json({ error: "Invalid YAML or duplicate id" }, { status: 400 });
-  const validationErrors = [...depotErrors(entity.toJS()), ...unknownEntityFieldErrors(entity.toJS()), ...resourceSharingPolicyErrors(entity.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(entity.toJS(), new Set(Object.keys(doc.toJS().resource_types ?? {})))];
+  const normalizedDefinition = omitNulls(entity.toJS());
+  const validationErrors = [...depotErrors(normalizedDefinition), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {})))];
   if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
   const replace = (value: any): any => Array.isArray(value) ? value.map(replace) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replace(item)])) : value === entityId ? newId : value;
   const content = replace(doc.toJS());
-  content.entity_types[newId] = omitNulls(entity.toJS());
+  content.entity_types[newId] = normalizedDefinition;
   if (newId !== entityId) delete content.entity_types[entityId];
   const spawn = parseDocument(await readFile(spawnPath, "utf8"));
   if (newId !== entityId) {
@@ -47,6 +49,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ enti
       }
     }
   }
-  await Promise.all([writeFile(contentPath, stringify(content)), writeFile(spawnPath, stringify(replace(spawn.toJS())))]);
+  await Promise.all([writeFile(contentPath, stringify(content)), writeFile(spawnPath, stringify(renameSpawnEntity(parseSpawnConfig(String(spawn)), entityId, newId)))]);
   return NextResponse.json({ ok: true, id: newId });
 }

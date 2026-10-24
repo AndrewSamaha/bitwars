@@ -55,7 +55,14 @@ curl 'http://localhost:3000/api/v2/game-query/script-debug?owner=raiders'
 Snapshots and entities are JSON-safe API representations: protobuf integer IDs
 and ticks are returned as numbers when safe and strings otherwise. Snapshots
 include `sentry_orders` with route cursor/direction, formation anchor and slots,
-and phase, alongside `move_orders` and `convoys`.
+and phase, alongside `move_orders` and `convoys`. The authoritative snapshot query also
+includes `generation_state_json`, a versioned server checkpoint containing
+historical player-start reservations and pending join diagnostics. It remains a
+JSON string so 64-bit IDs/revision hashes retain their exact representation.
+Pending entries retain their selected loadout and last failure reason. An empty
+checkpoint denotes an older world; procedural joins require a reservation
+backfill or a fresh world. Normal player snapshot mapping does not expose this
+operator checkpoint.
 
 ## Write endpoint
 
@@ -90,3 +97,11 @@ owner, `target_entity_id`, and member slots containing offsets, stable slot
 indices, and status (`forming`, `in_formation`, `catching_up`, `engaging`, or
 `returning`). Escort follows entity positions rather than a fixed route. Player
 streams filter orders to their owner; this administrative snapshot exposes all.
+
+Collection discovery is now recorded authoritatively per player in the server-only
+`discovered_entities_json` snapshot checkpoint, exposed by the authoritative snapshot endpoint. Both transport and proximity
+collection select only discovered sources, including sources no longer visible.
+Discovery uses operational sensors, technology effects and target visibility ranges,
+and continues while players are disconnected. Player streams omit this checkpoint.
+Older snapshots without discovery history start empty and discover currently visible
+entities on the next collection update; earlier exploration cannot be reconstructed.

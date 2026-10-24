@@ -121,6 +121,7 @@ export type EntityTypeDef = {
   resource_node?: {
     resource_type: string;
     collection_mode: "transport" | "proximity";
+    /** @deprecated Legacy fallback; configure resource_amounts in spawn.yaml. */
     amount?: number;
   };
   radiation_sources?: Array<{

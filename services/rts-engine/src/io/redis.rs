@@ -475,6 +475,8 @@ impl RedisClient {
         player_technologies.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
         let snap = Snapshot {
+            discovered_entities_json: serde_json::to_string(&state.discovered_entities)?,
+            generation_state_json: serde_json::to_string(&state.generation)?,
             economy_version: 1,
             convoys,
             move_orders,
@@ -596,6 +598,13 @@ impl RedisClient {
     }
     pub async fn publish_runtime(&mut self, value: &str) -> anyhow::Result<()> {
         let _: () = self.conn.set(format!("rts:match:{}:runtime", self.game_id), value).await?;
+        Ok(())
+    }
+    /// Expires even if the process exits without a graceful shutdown.
+    pub async fn publish_engine_heartbeat(&mut self) -> anyhow::Result<()> {
+        let _: () = self.conn.set_ex(
+            format!("rts:match:{}:engine_alive", self.game_id), &self.run_id, 3,
+        ).await?;
         Ok(())
     }
     pub async fn read_runtime(&mut self) -> anyhow::Result<Option<String>> {
@@ -1316,7 +1325,19 @@ fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<Co
         collector.carry_amount = 0.0;
         collector.carry_capacity = 0.0;
     }
+    let generation = if snapshot.generation_state_json.is_empty() {
+        Default::default()
+    } else {
+        serde_json::from_str(&snapshot.generation_state_json)?
+    };
+    let discovered_entities = if snapshot.discovered_entities_json.is_empty() {
+        Default::default()
+    } else {
+        serde_json::from_str(&snapshot.discovered_entities_json)?
+    };
     Ok((GameState {
+        discovered_entities,
+        generation,
         tick: snapshot.tick as u64,
         entities: snapshot.entities,
         technologies: snapshot.player_technologies.into_iter()
@@ -1357,6 +1378,32 @@ mod inventory_restore_tests {
         let next_snapshot = Snapshot { entities: state.entities, collector_states: collectors, ..Default::default() };
         let (restored, _) = restore_snapshot(Snapshot::decode(next_snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
         assert_eq!(resource_amount(&restored.entities[0], "food"), 98.0);
+    }
+
+    #[test]
+    fn procedural_start_checkpoints_preserve_reservations_and_pending_failures() {
+        use crate::engine::generation::{GenerationState, PendingStart, StartReservation};
+        let mut generation = GenerationState { version: 1, ..Default::default() };
+        generation.starts.insert("alice".into(), StartReservation { planet_id: 42, origin: [3000.0,400.0], planet_position: [3500.0,0.0] });
+        generation.pending.insert("bob".into(), PendingStart { loadout_index: 0,last_revision: Some(123),error: Some("no safe start".into()) });
+        let json = serde_json::to_string(&generation).unwrap();
+        let snapshot = Snapshot { generation_state_json: json.clone(), ..Default::default() };
+        let (state,_) = restore_snapshot(Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(serde_json::to_string(&state.generation).unwrap(),json);
+        assert_eq!(state.generation.starts["alice"].planet_id,42);
+        assert_eq!(state.generation.pending["bob"].last_revision,Some(123));
+        assert_eq!(restore_snapshot(Snapshot::default()).unwrap().0.generation.version,0);
+        assert!(restore_snapshot(Snapshot { generation_state_json: "invalid".into(), ..Default::default() }).is_err());
+    }
+
+    #[test]
+    fn discovery_checkpoint_survives_restore_and_defaults_empty_for_legacy_saves() {
+        let discoveries: std::collections::BTreeMap<String, std::collections::BTreeSet<u64>> = [("alice".into(), [42, u64::MAX].into())].into();
+        let snapshot = Snapshot { discovered_entities_json: serde_json::to_string(&discoveries).unwrap(), ..Default::default() };
+        let (state, _) = restore_snapshot(Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(state.discovered_entities, discoveries);
+        assert!(restore_snapshot(Snapshot::default()).unwrap().0.discovered_entities.is_empty());
+        assert!(restore_snapshot(Snapshot { discovered_entities_json: "invalid".into(), ..Default::default() }).is_err());
     }
 
     #[test]

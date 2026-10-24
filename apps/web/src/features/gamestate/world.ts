@@ -1,4 +1,5 @@
 // Singleton miniplex world
+import { gameConnection } from "./connection";
 import { World } from "miniplex";
 import * as PIXI from "pixi.js";
 
@@ -79,7 +80,7 @@ class GameWorld {
   tick(now: number) {
     const dt = (now - this.last) / 1000; // seconds
     this.last = now;
-    if (this.paused) return;
+    if (this.paused || !gameConnection.check(now)) return;
 
     // Proto-shaped movement (pos: {x,y}, vel: {x,y})
     for (const e of this.world.with("pos", "vel").without("remembered")) {

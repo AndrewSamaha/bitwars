@@ -31,6 +31,11 @@ message PlayerTechnologyState {
 }
 
 message Snapshot {
+  // Server-only persistent player discovery history; omitted from player streams.
+  string discovered_entities_json = 14;
+  // Server checkpoint: versioned reservations and pending procedural starts.
+  // Clients may ignore this JSON; it is persisted atomically with entities.
+  string generation_state_json = 13;
   uint32 economy_version = 12; // 1 = depot logistics; earlier matches require reset
   int64 tick = 2;
   repeated Entity entities = 3;

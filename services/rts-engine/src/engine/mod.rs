@@ -1,3 +1,4 @@
+mod discovery;
 mod resupply;
 pub mod intent;
 mod logistics;
@@ -7,12 +8,13 @@ mod formation;
 mod sentry;
 mod navigation;
 pub mod state;
+pub mod generation;
 mod scenario;
 
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{anyhow, bail, Context, Result};
-use rand::{seq::SliceRandom, Rng};
+use rand::Rng;
 use tokio::time::{interval, Duration, Instant};
 use tracing::{error, info, warn};
 use uuid::{Uuid, Version};
@@ -37,9 +39,9 @@ use crate::physics::integrate;
 use crate::spatial::SpatialIndex;
 use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_OWNER};
 use prost::Message;
-use state::{initialize_resource_deposits, take_from_deposit, ensure_minerals_near_spawn, init_world, log_sample, on_player_spawn, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
+use state::{take_from_deposit, init_world, log_sample, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 20;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 21;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -632,7 +634,9 @@ mod transport_capacity_tests {
         ];
         let index = collection_entity_index(&entities);
         assert_eq!(gather_transport_inventory(&mut entities, 1, 2, worker_def, "food", 8.0, &index), 3.0);
-        assert_eq!(state::transform_depleted_resource_nodes(&mut entities, &content), vec![2]);
+        let config = SpawnConfig::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config/spawn.yaml")).unwrap();
+        assert_eq!(state::transform_depleted_resource_nodes(&mut entities, &content, Some(&config)), vec![2]);
         assert_eq!(entities[1].entity_type_id, "dead_planet_blue");
         assert_eq!(resource_amount(&entities[0], "food"), 3.0);
         assert_eq!(resource_amount(&entities[0], "minerals"), 0.0);
@@ -685,6 +689,23 @@ mod transport_capacity_tests {
         ];
         workers.sort_by_key(|(id, activity, since)| collection_order_key(*activity, *since, *id));
         assert_eq!(workers.map(|(id, _, _)| id), [9, 4, 7, 2, 1]);
+    }
+
+    #[test]
+    fn undiscovered_sources_are_ineligible_even_when_nearest_or_previously_bound() {
+        let collector = CollectorSnapshot { id: 1, entity_type_id: "worker".into(), owner_player_id: "alice".into(), x: 0.0, y: 0.0 };
+        let node = ResourceNodeSnapshot { id: 10, x: 100.0, y: 0.0, resource_type: "minerals".into(), mode: CollectionMode::Transport,
+            max_simultaneous_collectors: Some(1), min_effective_distance: 20.0, max_effective_distance: 50.0 };
+        let world = [node.clone(), ResourceNodeSnapshot { id: 11, x: 10.0, ..node }];
+        let collects = vec!["minerals".into()];
+        let (known, indexes) = discovered_resource_nodes(&world, &[10].into());
+        assert_eq!(Engine::pick_transport_node(&collector, &known, Some(11), &indexes, None, "minerals", false, &collects).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &known, None, &indexes, None, "", true, &collects).unwrap().id, 10);
+        let (empty, indexes) = discovered_resource_nodes(&world, &Default::default());
+        assert!(Engine::pick_transport_node(&collector, &empty, Some(11), &indexes, None, "minerals", false, &collects).is_none());
+        let proximity: Vec<_> = world.iter().cloned().map(|node| ResourceNodeSnapshot { mode: CollectionMode::Proximity, ..node }).collect();
+        let (known, _) = discovered_resource_nodes(&proximity, &[10].into());
+        assert_eq!(Engine::pick_best_node(&collector, &known, CollectionMode::Proximity, &collects).unwrap().id, 10);
     }
 
     #[test]
@@ -1023,7 +1044,7 @@ mod radiation_tests {
             owner_player_id: "p1".to_string(),
             health: 100.0,
         };
-        let state = GameState {
+        let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
             tick: 0,
             entities: vec![
                 star,
@@ -1043,7 +1064,7 @@ mod radiation_tests {
     #[test]
     fn overlapping_sources_stack_damage() {
         let content = make_content();
-        let state = GameState {
+        let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
             tick: 0,
             entities: vec![
                 pb::Entity {
@@ -1097,7 +1118,7 @@ mod radiation_tests {
     #[test]
     fn radiation_grid_finds_sources_across_cell_boundaries() {
         let content = make_content();
-        let state = GameState {
+        let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
             tick: 0,
             entities: vec![
                 pb::Entity {
@@ -1119,6 +1140,25 @@ mod radiation_tests {
         };
 
         assert!(Engine::compute_radiation_damage(&state, &content)[&2] > 0.0);
+    }
+
+    #[test]
+    fn self_destruct_requires_ownership_and_publishes_removal() {
+        let entity = pb::Entity { id: 42, owner_player_id: "me".into(), health: 100.0, ..Default::default() };
+        let mut entities = vec![entity];
+        let previous = GameState { discovered_entities: Default::default(), entities: entities.clone(), generation: Default::default(), tick: 0, technologies: HashMap::new() };
+        assert_eq!(self_destruct_entity(&mut entities, "other", 42), Err(pb::LifecycleReason::NotOwned));
+        assert_eq!(self_destruct_entity(&mut entities, "me", 99), Err(pb::LifecycleReason::InvalidTarget));
+        assert_eq!(entities.len(), 1);
+        assert_eq!(self_destruct_entity(&mut entities, "me", 42), Ok(()));
+        let current = GameState { entities, ..previous.clone() };
+        let delta = compute_delta(&previous, &current,
+            &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(),
+            0.0, 0.0, &HashMap::new(), &HashSet::new());
+        assert_eq!(delta.removed_entity_ids, vec![42]);
+        assert!(should_publish_delta(&delta));
+        let mut entities = current.entities;
+        assert_eq!(self_destruct_entity(&mut entities, "me", 42), Err(pb::LifecycleReason::InvalidTarget));
     }
 
     #[test]
@@ -1192,6 +1232,14 @@ fn load_spawn_config_or_exit(cfg: &GameConfig) -> SpawnConfig {
             std::process::exit(1);
         }
     }
+}
+
+fn discovered_resource_nodes(
+    nodes: &[ResourceNodeSnapshot], known: &std::collections::BTreeSet<u64>,
+) -> (Vec<ResourceNodeSnapshot>, HashMap<u64, usize>) {
+    let nodes: Vec<_> = nodes.iter().filter(|node| known.contains(&node.id)).cloned().collect();
+    let indexes = nodes.iter().enumerate().map(|(i, node)| (node.id, i)).collect();
+    (nodes, indexes)
 }
 
 pub struct Engine {
@@ -1417,6 +1465,20 @@ fn remove_zero_health_entities(entities: &mut Vec<pb::Entity>) -> Vec<u64> {
     let dead_ids: HashSet<u64> = dead_entity_ids.iter().copied().collect();
     entities.retain(|entity| !dead_ids.contains(&entity.id));
     dead_entity_ids
+}
+
+fn self_destruct_entity(entities: &mut Vec<pb::Entity>, player_id: &str, entity_id: u64) -> std::result::Result<(), pb::LifecycleReason> {
+    let index = entities.iter().position(|entity| entity.id == entity_id)
+        .ok_or(pb::LifecycleReason::InvalidTarget)?;
+    let entity = &entities[index];
+    if player_id.is_empty() || entity.owner_player_id != player_id {
+        return Err(pb::LifecycleReason::NotOwned);
+    }
+    if entity.health <= 0.0 {
+        return Err(pb::LifecycleReason::InvalidTarget);
+    }
+    entities.remove(index);
+    Ok(())
 }
 
 /// A removal-only delta is still an authoritative state change. Keep all
@@ -1755,8 +1817,12 @@ impl Engine {
                         let o = e.owner_player_id.as_str();
                         is_player_owner(o).then(|| o.to_string())
                     })
+                    .chain(state.generation.starts.keys().cloned())
                     .collect();
                 let spawn_config_restore = load_spawn_config_or_exit(&cfg);
+                if let Some(content) = content.as_ref() {
+                    spawn_config_restore.validate_content(content)?;
+                }
 
                 let mut engine = Self {
                     prev_state: state.clone(),
@@ -1986,6 +2052,9 @@ impl Engine {
             "loaded spawn config"
         );
 
+        if let Some(content) = content.as_ref() {
+            spawn_config.validate_content(content)?;
+        }
         let mut state = init_world(&spawn_config);
         if let Some(content) = content.as_ref() {
             spawn_celestial_field(
@@ -2055,159 +2124,89 @@ impl Engine {
 
     /// M6: Spawn for one player on join (idempotent), near a random planet.
     fn ensure_spawned(&mut self, player_id: &str) -> Result<()> {
-        if self.scenario_runtime.scenario_id.is_some() { return Ok(()); }
-        if self.joined_players.contains(player_id) {
+        if self.scenario_runtime.scenario_id.is_some() {
             return Ok(());
         }
-        let sc = &self.spawn_config;
-        let _content = match &self.content {
-            Some(c) => c,
-            None => {
-                warn!(
-                    player_id = %player_id,
-                    "skip spawn: no content pack loaded (set CONTENT_PACK_PATH)"
-                );
-                return Ok(());
-            }
-        };
-
-        let mut rng = rand::thread_rng();
-        let loadout_idx = rng.gen_range(0..sc.loadouts.len());
-        let loadout = &sc.loadouts[loadout_idx];
-        // Spawned units can chain away from the habitat. Reserve enough room
-        // for every member of the loadout, including the last sampled unit.
-        let spawn_spread = sc.max_entity_spawn_distance
-            .max(sc.min_entity_spawn_distance)
-            .max(0.0)
-            * loadout.values().copied().sum::<usize>().saturating_sub(1) as f32;
-        let radiation_sources: Vec<(f32, f32, f32)> = self.state.entities.iter()
-            .filter_map(|entity| {
-                let pos = entity.pos.as_ref()?;
-                let definition = _content.get(&entity.entity_type_id)?;
-                let radius = definition.radiation_sources.iter()
-                    .filter(|source| source.damage_per_second > 0.0)
-                    .map(|source| source.max_effective_distance.max(0.0))
-                    .fold(0.0_f32, f32::max);
-                (radius > 0.0).then_some((pos.x, pos.y, radius + spawn_spread + 50.0))
-            })
-            .collect();
-        let mut planets: Vec<_> = self
-            .state
-            .entities
-            .iter()
-            .filter_map(|entity| {
-                (entity.entity_type_id == "planet_blue")
-                    .then_some(entity.pos.as_ref())
-                    .flatten()
-                    .map(|pos| (pos.x, pos.y))
-            })
-            .collect();
-        if planets.is_empty() {
-            anyhow::bail!("cannot spawn player: celestial field has no planet_blue");
+        if self.joined_players.contains(player_id)
+            || self.state.generation.starts.contains_key(player_id)
+        {
+            self.state.generation.pending.remove(player_id);
+            return Ok(());
         }
-        planets.shuffle(&mut rng);
-        let spawn_position = planets.iter().find_map(|(planet_x, planet_y)| {
-            (0..64).find_map(|_| {
-                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-                let dist = rng.gen_range(200.0..=800.0);
-                let x = planet_x + angle.cos() * dist;
-                let y = planet_y + angle.sin() * dist;
-                radiation_sources.iter().all(|(source_x, source_y, clearance)| {
-                    let dx = x - source_x;
-                    let dy = y - source_y;
-                    dx * dx + dy * dy >= clearance * clearance
-                }).then_some((x, y))
-            })
-        });
-        let Some((spawn_x, spawn_y)) = spawn_position else {
-            anyhow::bail!("cannot spawn player: no radiation-safe position near a planet");
-        };
-
-        if !sc.starting_resources.is_empty() {
-            let recipient_type = &sc.starting_resources_recipient_type;
-            if loadout.get(recipient_type).copied().unwrap_or(0) != 1 {
-                anyhow::bail!("starting resource recipient {recipient_type} must appear exactly once in the selected loadout");
-            }
-            let definition = _content
-                .get(recipient_type)
-                .ok_or_else(|| anyhow!("unknown starting resource recipient type {recipient_type}"))?;
-            for (resource_type, amount) in &sc.starting_resources {
-                let capacity = definition.max_capacity.get(resource_type).copied().unwrap_or(0.0);
-                if *amount < 0 || *amount as f32 > capacity {
-                    anyhow::bail!("starting {resource_type} amount exceeds {recipient_type} capacity");
-                }
-            }
-        }
-
-        let mut next_id = self.state.entities.iter().map(|e| e.id).max().unwrap_or(0) + 1;
-
-        let mut rng = rand::thread_rng();
-        next_id = ensure_minerals_near_spawn(
-            &mut self.state.entities,
-            next_id,
-            spawn_x,
-            spawn_y,
-            _content,
-            &mut rng,
-        )?;
-
-        let entity_count_before = self.state.entities.len();
-
-        on_player_spawn(
-            &mut self.state.entities,
-            next_id,
-            player_id,
-            spawn_x,
-            spawn_y,
-            loadout,
-            sc.min_entity_spawn_distance,
-            sc.max_entity_spawn_distance,
-            &sc.neutrals_near_spawn,
-            _content,
-            &mut rng,
-        );
-
-        initialize_resource_deposits(&mut self.state.entities, _content, Some(sc), &mut rng);
-
-        let spawned: Vec<(u64, String)> = self.state.entities[entity_count_before..]
-            .iter()
-            .map(|e| (e.id, e.entity_type_id.clone()))
-            .collect();
-        info!(
-            player_id = %player_id,
-            spawn_x = %spawn_x,
-            spawn_y = %spawn_y,
-            entity_count = spawned.len(),
-            entities = ?spawned,
-            "spawned on join"
-        );
-
-        // Grant starting stock to the configured player-owned entity.
-        if !sc.starting_resources.is_empty() {
-            let recipient_type = &sc.starting_resources_recipient_type;
-            let recipient = self.state.entities[entity_count_before..]
-                .iter_mut()
-                .find(|entity| entity.entity_type_id == *recipient_type && entity.owner_player_id == player_id)
-                .expect("validated starting resource recipient is spawned");
-            for (resource_type, amount) in &sc.starting_resources {
-                set_resource_amount(recipient, resource_type, *amount as f64);
-            }
-        }
-        if let Some(content) = self.content.as_ref() {
-            let technologies = self
-                .state
-                .technologies
-                .entry(player_id.to_string())
-                .or_default();
-            technologies.extend(
-                content.technologies.iter().filter_map(|(id, definition)| {
-                    definition.granted_on_spawn.then_some(id.clone())
-                }),
+        let content = self
+            .content
+            .as_ref()
+            .ok_or_else(|| anyhow!("no content pack loaded"))?;
+        if !self.state.generation.pending.contains_key(player_id) {
+            let loadout_index = rand::thread_rng().gen_range(0..self.spawn_config.loadouts.len());
+            self.state.generation.pending.insert(
+                player_id.to_string(),
+                generation::PendingStart {
+                    loadout_index,
+                    ..Default::default()
+                },
             );
         }
+        let revision = generation::start_revision(&self.state, &self.spawn_config);
+        let pending = &self.state.generation.pending[player_id];
+        if pending.last_revision == Some(revision) {
+            return Ok(());
+        }
+        let index = pending.loadout_index;
+        self.state
+            .generation
+            .pending
+            .get_mut(player_id)
+            .unwrap()
+            .last_revision = Some(revision);
+        match generation::spawn_player(
+            &mut self.state,
+            content,
+            &self.spawn_config,
+            player_id,
+            index,
+            &mut rand::thread_rng(),
+        ) {
+            Ok(()) => {
+                self.joined_players.insert(player_id.to_string());
+                info!(player_id, "committed player start");
+                Ok(())
+            }
+            Err(error) => {
+                self.state
+                    .generation
+                    .pending
+                    .get_mut(player_id)
+                    .unwrap()
+                    .error = Some(error.to_string());
+                Err(error)
+            }
+        }
+    }
 
-        self.joined_players.insert(player_id.to_string());
-        Ok(())
+    async fn process_pending_starts(&mut self) {
+        while let Ok(Some(player_id)) = self.redis.pop_next_pending_join().await {
+            if self.scenario_runtime.scenario_id.is_none()
+                && !self.joined_players.contains(&player_id)
+                && !self.state.generation.pending.contains_key(&player_id)
+            {
+                let loadout_index =
+                    rand::thread_rng().gen_range(0..self.spawn_config.loadouts.len());
+                self.state.generation.pending.insert(
+                    player_id,
+                    generation::PendingStart {
+                        loadout_index,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        let players: Vec<_> = self.state.generation.pending.keys().cloned().collect();
+        for player_id in players {
+            if let Err(error) = self.ensure_spawned(&player_id) {
+                warn!(player_id, %error, "player join remains pending");
+            }
+        }
     }
 
     fn spawn_raiders_at_random_map_locations(&mut self, requested: usize) -> usize {
@@ -3906,8 +3905,10 @@ impl Engine {
         }
         // Collection only changes entity fields, so vector indexes remain valid
         // until this call returns.
+        discovery::update(&mut self.state, self.content.as_ref().unwrap());
         let entity_by_id = collection_entity_index(&self.state.entities);
-        initialize_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), None, &mut rand::thread_rng());
+        state::initialize_fixed_resource_deposits(
+            &mut self.state.entities, self.content.as_ref().unwrap(), &self.spawn_config);
         state::regenerate_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), dt as f64);
         let collect_active_entities: HashSet<u64> = self
             .intents
@@ -3946,9 +3947,9 @@ impl Engine {
         let mut operating_collectors = HashSet::new();
         let mut gathering_by_node = HashMap::new();
         let nodes = self.build_resource_node_snapshots();
-        let node_by_id = nodes.iter().enumerate()
-            .map(|(index, node)| (node.id, index))
-            .collect::<HashMap<_, _>>();
+        // Share each player's discovered source list across all of their workers.
+        let nodes_by_owner: HashMap<_, _> = self.state.discovered_entities.iter()
+            .map(|(owner, known)| (owner.clone(), discovered_resource_nodes(&nodes, known))).collect();
         let refineries = self.build_depot_snapshots();
         let collector_ids: HashSet<u64> = collectors.iter().map(|c| c.id).collect();
         self.transport_node_by_entity.retain(|id, _| collector_ids.contains(id));
@@ -3976,6 +3977,7 @@ impl Engine {
             let Some(collector_def) = def.collector.as_ref() else {
                 continue;
             };
+            let (nodes, node_by_id) = &nodes_by_owner[&collector.owner_player_id];
             let speed = def.speed.max(0.0);
             let previous_resource = self.collector_ui_state_by_entity.get(&collector.id)
                 .map(|view| view.resource_type.as_str()).unwrap_or("");
@@ -4241,7 +4243,7 @@ impl Engine {
             }
         }
         let transformed: HashSet<_> = state::transform_depleted_resource_nodes(
-            &mut self.state.entities, self.content.as_ref().unwrap(),
+            &mut self.state.entities, self.content.as_ref().unwrap(), Some(&self.spawn_config),
         ).into_iter().collect();
         // Preserve partially loaded workers' delivery cycle when a food source
         // changes type but keeps its entity ID.
@@ -4377,12 +4379,7 @@ impl Engine {
         let snapshot_interval = (self.cfg.tps as u64) * self.cfg.snapshot_every_secs;
 
         // M6: Process pending joins (spawn on join)
-        while let Ok(Some(player_id)) = self.redis.pop_next_pending_join().await {
-            info!(player_id = %player_id, "processing join from pending_joins");
-            if let Err(e) = self.ensure_spawned(&player_id) {
-                warn!(player_id = %player_id, error = ?e, "ensure_spawned failed");
-            }
-        }
+        self.process_pending_starts().await;
         self.process_pending_raider_spawns().await;
 
         let batch_start = Instant::now();
@@ -4585,12 +4582,7 @@ impl Engine {
             let mut phase_started = tick_started;
 
             // M6: Process pending joins (spawn on join)
-            while let Ok(Some(player_id)) = self.redis.pop_next_pending_join().await {
-                info!(player_id = %player_id, "processing join from pending_joins");
-                if let Err(e) = self.ensure_spawned(&player_id) {
-                    warn!(player_id = %player_id, error = ?e, "ensure_spawned failed");
-                }
-            }
+            self.process_pending_starts().await;
             self.process_pending_raider_spawns().await;
             record_tick_phase(
                 phase_durations.as_mut(),
@@ -5121,6 +5113,18 @@ impl Engine {
             .await?;
 
         let mut payload_intent = match envelope.payload {
+            Some(intent_envelope::Payload::SelfDestruct(order)) => {
+                let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
+                if let Err(reason) = self_destruct_entity(&mut self.state.entities, &player_id, order.entity_id) {
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
+                    return Err(anyhow!("invalid self-destruct target"));
+                }
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Accepted, pb::LifecycleReason::None, accept_tick).await?;
+                self.clear_fractional_for_entity(order.entity_id);
+                self.cancel_destroyed_intents(&[order.entity_id]).await;
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished, pb::LifecycleReason::None, accept_tick).await?;
+                return Ok(());
+            }
             Some(intent_envelope::Payload::AssignDepot(order)) => {
                 let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
                 let result = self.content.as_ref().ok_or(pb::LifecycleReason::InvalidTarget)

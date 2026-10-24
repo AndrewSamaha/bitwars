@@ -1,7 +1,6 @@
 [mcp_servers.bitwars_player]
-command = "node"
-args = ["--import", "tsx", "src/server.ts"]
-cwd = "/Users/andrew/Development/bitwars/packages/player-mcp"
+command = "sh"
+args = ["-c", 'cd "$HOME/Development/bitwars/packages/player-mcp" && exec node --import tsx src/server.ts']
 startup_timeout_sec = 30
 tool_timeout_sec = 120
 default_tools_approval_mode = "approve"
@@ -25,9 +24,8 @@ BITWARS_PLAYER_MCP_BASE_URL = "http://127.0.0.1:3000"
 BITWARS_PLAYER_MCP_ALLOW_WRITES = "1"
 
 [mcp_servers.bitwars_game_query]
-command = "node"
-args = ["--import", "tsx", "src/gameQueryServer.ts"]
-cwd = "/Users/andrew/Development/bitwars/packages/player-mcp"
+command = "sh"
+args = ["-c", 'cd "$HOME/Development/bitwars/packages/player-mcp" && exec node --import tsx src/gameQueryServer.ts']
 startup_timeout_sec = 30
 tool_timeout_sec = 30
 default_tools_approval_mode = "approve"

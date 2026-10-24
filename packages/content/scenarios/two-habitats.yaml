@@ -1,0 +1,9376 @@
+version: 1
+id: two-habitats
+name: two-habitats
+tags: []
+players:
+- player1
+technologies:
+  player1:
+  - space_age
+entities:
+- id: 1
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 30811.518
+    y: -31421.459
+  health: 100.0
+  resources: {}
+- id: 2
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 20145.174
+    y: -17762.123
+  health: 100.0
+  resources: {}
+- id: 3
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 28848.082
+    y: -48474.848
+  health: 100.0
+  resources: {}
+- id: 4
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 45842.29
+    y: -44178.883
+  health: 100.0
+  resources: {}
+- id: 5
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 23197.676
+    y: 14061.8
+  health: 100.0
+  resources: {}
+- id: 6
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 71778.71
+    y: -48441.33
+  health: 100.0
+  resources: {}
+- id: 7
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -57724.707
+    y: -58440.566
+  health: 100.0
+  resources: {}
+- id: 8
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -2503.2983
+    y: 97130.234
+  health: 100.0
+  resources: {}
+- id: 9
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 95557.99
+    y: 19902.166
+  health: 100.0
+  resources: {}
+- id: 10
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -17737.736
+    y: 13922.251
+  health: 100.0
+  resources: {}
+- id: 11
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -13232.237
+    y: 4194.013
+  health: 100.0
+  resources: {}
+- id: 12
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -229.09183
+    y: 76138.19
+  health: 100.0
+  resources: {}
+- id: 13
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 23765.88
+    y: 46883.793
+  health: 100.0
+  resources: {}
+- id: 14
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 11810.334
+    y: -47205.41
+  health: 100.0
+  resources: {}
+- id: 15
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 31081.348
+    y: 30563.463
+  health: 100.0
+  resources: {}
+- id: 16
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 56006.973
+    y: 34221.07
+  health: 100.0
+  resources: {}
+- id: 17
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -21269.125
+    y: 28103.281
+  health: 100.0
+  resources: {}
+- id: 18
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 26403.81
+    y: -43738.855
+  health: 100.0
+  resources: {}
+- id: 19
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 15516.912
+    y: -10436.169
+  health: 100.0
+  resources: {}
+- id: 20
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 28240.158
+    y: 76586.14
+  health: 100.0
+  resources: {}
+- id: 21
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 29450.83
+    y: -34948.086
+  health: 100.0
+  resources: {}
+- id: 22
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -60307.46
+    y: 30311.96
+  health: 100.0
+  resources: {}
+- id: 23
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 14517.267
+    y: 143730.23
+  health: 100.0
+  resources: {}
+- id: 24
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -51187.41
+    y: -69102.16
+  health: 100.0
+  resources: {}
+- id: 25
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 19521.072
+    y: -3704.898
+  health: 100.0
+  resources: {}
+- id: 26
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -37150.65
+    y: -63486.863
+  health: 100.0
+  resources: {}
+- id: 27
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -54561.56
+    y: -108794.23
+  health: 100.0
+  resources: {}
+- id: 28
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 10790.859
+    y: -65520.15
+  health: 100.0
+  resources: {}
+- id: 29
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 69964.984
+    y: -1613.7223
+  health: 100.0
+  resources: {}
+- id: 30
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -15508.928
+    y: 110214.87
+  health: 100.0
+  resources: {}
+- id: 31
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 27526.197
+    y: 8688.689
+  health: 100.0
+  resources: {}
+- id: 32
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -22283.584
+    y: -40745.812
+  health: 100.0
+  resources: {}
+- id: 33
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 13379.763
+    y: 27519.049
+  health: 100.0
+  resources: {}
+- id: 34
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -19598.734
+    y: -28338.557
+  health: 100.0
+  resources: {}
+- id: 35
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -111310.45
+    y: 34969.445
+  health: 100.0
+  resources: {}
+- id: 36
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 58102.355
+    y: 53549.508
+  health: 100.0
+  resources: {}
+- id: 37
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -4203.224
+    y: 32631.959
+  health: 100.0
+  resources: {}
+- id: 39
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -15963.675
+    y: 53201.61
+  health: 100.0
+  resources: {}
+- id: 40
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -62046.543
+    y: -25803.01
+  health: 100.0
+  resources: {}
+- id: 41
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 43588.89
+    y: -45485.133
+  health: 100.0
+  resources: {}
+- id: 42
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -32084.03
+    y: 44848.836
+  health: 100.0
+  resources: {}
+- id: 43
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -32369.52
+    y: 101411.086
+  health: 100.0
+  resources: {}
+- id: 44
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -14504.816
+    y: 8594.678
+  health: 100.0
+  resources: {}
+- id: 45
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 67690.39
+    y: 63037.844
+  health: 100.0
+  resources: {}
+- id: 46
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -23232.832
+    y: 42722.227
+  health: 100.0
+  resources: {}
+- id: 47
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -74946.55
+    y: -578.05096
+  health: 100.0
+  resources: {}
+- id: 48
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -73082.52
+    y: 9207.26
+  health: 100.0
+  resources: {}
+- id: 49
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 92155.4
+    y: -872.50055
+  health: 100.0
+  resources: {}
+- id: 50
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -27240.244
+    y: 28050.97
+  health: 100.0
+  resources: {}
+- id: 51
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -37318.45
+    y: -6762.528
+  health: 100.0
+  resources: {}
+- id: 52
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -3474.9849
+    y: -67804.02
+  health: 100.0
+  resources: {}
+- id: 53
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 38662.117
+    y: -34293.76
+  health: 100.0
+  resources: {}
+- id: 54
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -1167.225
+    y: -92133.836
+  health: 100.0
+  resources: {}
+- id: 55
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 10198.696
+    y: -80407.78
+  health: 100.0
+  resources: {}
+- id: 56
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 23992.42
+    y: 49062.316
+  health: 100.0
+  resources: {}
+- id: 57
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 38352.32
+    y: -55719.27
+  health: 100.0
+  resources: {}
+- id: 58
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -20856.326
+    y: -56695.812
+  health: 100.0
+  resources: {}
+- id: 59
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -16515.852
+    y: 12453.104
+  health: 100.0
+  resources: {}
+- id: 60
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 16345.517
+    y: -28984.666
+  health: 100.0
+  resources: {}
+- id: 61
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -37733.2
+    y: 93583.62
+  health: 100.0
+  resources: {}
+- id: 62
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -25948.578
+    y: -34906.25
+  health: 100.0
+  resources: {}
+- id: 63
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 85075.375
+    y: 4074.2869
+  health: 100.0
+  resources: {}
+- id: 64
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 50852.562
+    y: -44243.363
+  health: 100.0
+  resources: {}
+- id: 65
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -9423.376
+    y: -99721.87
+  health: 100.0
+  resources: {}
+- id: 66
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 75824.445
+    y: 4057.9065
+  health: 100.0
+  resources: {}
+- id: 67
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -61607.67
+    y: 15521.685
+  health: 100.0
+  resources: {}
+- id: 68
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 1432.1
+    y: -7558.0083
+  health: 100.0
+  resources: {}
+- id: 69
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 29481.879
+    y: 70723.1
+  health: 100.0
+  resources: {}
+- id: 70
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -1884.2468
+    y: 7914.8022
+  health: 100.0
+  resources: {}
+- id: 71
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -1913.0164
+    y: -85812.59
+  health: 100.0
+  resources: {}
+- id: 72
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 55903.39
+    y: -105700.79
+  health: 100.0
+  resources: {}
+- id: 73
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 5272.5933
+    y: -6592.103
+  health: 100.0
+  resources: {}
+- id: 74
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 8364.388
+    y: 23427.398
+  health: 100.0
+  resources: {}
+- id: 75
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 108724.96
+    y: 7327.975
+  health: 100.0
+  resources: {}
+- id: 76
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 64712.043
+    y: 39926.973
+  health: 100.0
+  resources: {}
+- id: 77
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -1752.0331
+    y: 49318.254
+  health: 100.0
+  resources: {}
+- id: 78
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 41662.312
+    y: 37913.586
+  health: 100.0
+  resources: {}
+- id: 79
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 142477.97
+    y: -81561.8
+  health: 100.0
+  resources: {}
+- id: 80
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -64250.566
+    y: 63769.957
+  health: 100.0
+  resources: {}
+- id: 81
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -53570.613
+    y: -51586.473
+  health: 100.0
+  resources: {}
+- id: 82
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -55193.883
+    y: -19950.896
+  health: 100.0
+  resources: {}
+- id: 83
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 26543.598
+    y: 25680.566
+  health: 100.0
+  resources: {}
+- id: 84
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 549.1748
+    y: -35717.742
+  health: 100.0
+  resources: {}
+- id: 85
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -47380.387
+    y: -10829.534
+  health: 100.0
+  resources: {}
+- id: 86
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -34398.08
+    y: 31298.928
+  health: 100.0
+  resources: {}
+- id: 87
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 3879.7776
+    y: 8826.129
+  health: 100.0
+  resources: {}
+- id: 88
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 26088.676
+    y: 40203.87
+  health: 100.0
+  resources: {}
+- id: 89
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -93812.64
+    y: -68781.5
+  health: 100.0
+  resources: {}
+- id: 90
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 719.6048
+    y: 49887.04
+  health: 100.0
+  resources: {}
+- id: 91
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 945.1638
+    y: -5753.629
+  health: 100.0
+  resources: {}
+- id: 92
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -82827.914
+    y: -52169.65
+  health: 100.0
+  resources: {}
+- id: 93
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 496.22894
+    y: -68621.67
+  health: 100.0
+  resources: {}
+- id: 94
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -15813.677
+    y: -3619.0156
+  health: 100.0
+  resources: {}
+- id: 95
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: 56997.273
+    y: -45182.027
+  health: 100.0
+  resources: {}
+- id: 96
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -34196.99
+    y: -19644.707
+  health: 100.0
+  resources: {}
+- id: 97
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -3827.1606
+    y: -51708.316
+  health: 100.0
+  resources: {}
+- id: 99
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -69087.14
+    y: 53818.945
+  health: 100.0
+  resources: {}
+- id: 100
+  entity_type: star_yellow
+  owner: universe
+  position:
+    x: -46472.668
+    y: -32379.283
+  health: 100.0
+  resources: {}
+- id: 101
+  entity_type: theta
+  owner: universe
+  position:
+    x: -85489.22
+    y: 20315.266
+  health: 100.0
+  resources: {}
+- id: 102
+  entity_type: theta
+  owner: universe
+  position:
+    x: -83601.89
+    y: 48487.773
+  health: 100.0
+  resources: {}
+- id: 103
+  entity_type: theta
+  owner: universe
+  position:
+    x: 20861.11
+    y: -83675.266
+  health: 100.0
+  resources: {}
+- id: 104
+  entity_type: theta
+  owner: universe
+  position:
+    x: 30679.43
+    y: -25241.57
+  health: 100.0
+  resources: {}
+- id: 105
+  entity_type: theta
+  owner: universe
+  position:
+    x: -14813.298
+    y: 71087.28
+  health: 100.0
+  resources: {}
+- id: 106
+  entity_type: theta
+  owner: universe
+  position:
+    x: -19956.13
+    y: 88078.01
+  health: 100.0
+  resources: {}
+- id: 107
+  entity_type: theta
+  owner: universe
+  position:
+    x: -46934.91
+    y: -52416.336
+  health: 100.0
+  resources: {}
+- id: 108
+  entity_type: theta
+  owner: universe
+  position:
+    x: -37345.973
+    y: 112065.695
+  health: 100.0
+  resources: {}
+- id: 109
+  entity_type: theta
+  owner: universe
+  position:
+    x: 45336.336
+    y: -92945.09
+  health: 100.0
+  resources: {}
+- id: 110
+  entity_type: theta
+  owner: universe
+  position:
+    x: -60973.426
+    y: -24625.838
+  health: 16.635231
+  resources: {}
+- id: 111
+  entity_type: theta
+  owner: universe
+  position:
+    x: -26707.176
+    y: 18163.812
+  health: 100.0
+  resources: {}
+- id: 112
+  entity_type: theta
+  owner: universe
+  position:
+    x: 9721.841
+    y: 100602.12
+  health: 100.0
+  resources: {}
+- id: 113
+  entity_type: theta
+  owner: universe
+  position:
+    x: -42925.33
+    y: 28359.814
+  health: 100.0
+  resources: {}
+- id: 114
+  entity_type: theta
+  owner: universe
+  position:
+    x: -47300.61
+    y: 11486.618
+  health: 100.0
+  resources: {}
+- id: 115
+  entity_type: theta
+  owner: universe
+  position:
+    x: -40876.703
+    y: 8880.883
+  health: 100.0
+  resources: {}
+- id: 116
+  entity_type: theta
+  owner: universe
+  position:
+    x: -27299.656
+    y: 31715.492
+  health: 100.0
+  resources: {}
+- id: 117
+  entity_type: theta
+  owner: universe
+  position:
+    x: 94140.84
+    y: 10180.563
+  health: 100.0
+  resources: {}
+- id: 118
+  entity_type: theta
+  owner: universe
+  position:
+    x: 36392.055
+    y: -16157.639
+  health: 100.0
+  resources: {}
+- id: 119
+  entity_type: theta
+  owner: universe
+  position:
+    x: -9621.007
+    y: 52468.457
+  health: 100.0
+  resources: {}
+- id: 120
+  entity_type: theta
+  owner: universe
+  position:
+    x: -20943.87
+    y: 42177.383
+  health: 100.0
+  resources: {}
+- id: 121
+  entity_type: theta
+  owner: universe
+  position:
+    x: -8377.808
+    y: 74524.95
+  health: 100.0
+  resources: {}
+- id: 122
+  entity_type: theta
+  owner: universe
+  position:
+    x: 31454.707
+    y: 2585.3853
+  health: 100.0
+  resources: {}
+- id: 123
+  entity_type: theta
+  owner: universe
+  position:
+    x: -27872.463
+    y: -62458.164
+  health: 100.0
+  resources: {}
+- id: 124
+  entity_type: theta
+  owner: universe
+  position:
+    x: 51634.39
+    y: 2655.3958
+  health: 100.0
+  resources: {}
+- id: 125
+  entity_type: theta
+  owner: universe
+  position:
+    x: -106776.48
+    y: 40636.707
+  health: 100.0
+  resources: {}
+- id: 126
+  entity_type: theta
+  owner: universe
+  position:
+    x: -15345.979
+    y: 29255.63
+  health: 100.0
+  resources: {}
+- id: 127
+  entity_type: theta
+  owner: universe
+  position:
+    x: -43230.195
+    y: 34138.902
+  health: 100.0
+  resources: {}
+- id: 128
+  entity_type: theta
+  owner: universe
+  position:
+    x: 74802.32
+    y: 6859.4204
+  health: 100.0
+  resources: {}
+- id: 129
+  entity_type: theta
+  owner: universe
+  position:
+    x: 14279.564
+    y: -22278.916
+  health: 100.0
+  resources: {}
+- id: 130
+  entity_type: theta
+  owner: universe
+  position:
+    x: -6058.8657
+    y: -54372.47
+  health: 100.0
+  resources: {}
+- id: 131
+  entity_type: theta
+  owner: universe
+  position:
+    x: -96808.086
+    y: 52502.11
+  health: 100.0
+  resources: {}
+- id: 132
+  entity_type: theta
+  owner: universe
+  position:
+    x: -34652.465
+    y: -59144.312
+  health: 100.0
+  resources: {}
+- id: 133
+  entity_type: theta
+  owner: universe
+  position:
+    x: 11342.475
+    y: 78451.14
+  health: 100.0
+  resources: {}
+- id: 134
+  entity_type: theta
+  owner: universe
+  position:
+    x: 17614.646
+    y: 50755.695
+  health: 100.0
+  resources: {}
+- id: 135
+  entity_type: theta
+  owner: universe
+  position:
+    x: 27901.816
+    y: 72318.22
+  health: 100.0
+  resources: {}
+- id: 136
+  entity_type: theta
+  owner: universe
+  position:
+    x: -24077.488
+    y: 46818.652
+  health: 100.0
+  resources: {}
+- id: 137
+  entity_type: theta
+  owner: universe
+  position:
+    x: 13675.774
+    y: 16270.207
+  health: 50.0
+  resources: {}
+- id: 138
+  entity_type: theta
+  owner: universe
+  position:
+    x: -36734.33
+    y: 57487.004
+  health: 100.0
+  resources: {}
+- id: 139
+  entity_type: theta
+  owner: universe
+  position:
+    x: 25853.557
+    y: -18133.598
+  health: 100.0
+  resources: {}
+- id: 140
+  entity_type: theta
+  owner: universe
+  position:
+    x: -22869.848
+    y: 3481.9146
+  health: 100.0
+  resources: {}
+- id: 141
+  entity_type: theta
+  owner: universe
+  position:
+    x: -27270.215
+    y: -5746.1367
+  health: 100.0
+  resources: {}
+- id: 142
+  entity_type: theta
+  owner: universe
+  position:
+    x: -21441.307
+    y: 52933.098
+  health: 100.0
+  resources: {}
+- id: 143
+  entity_type: theta
+  owner: universe
+  position:
+    x: -49070.527
+    y: -10461.575
+  health: 100.0
+  resources: {}
+- id: 144
+  entity_type: theta
+  owner: universe
+  position:
+    x: -102466.2
+    y: -35112.24
+  health: 100.0
+  resources: {}
+- id: 145
+  entity_type: theta
+  owner: universe
+  position:
+    x: -7137.3994
+    y: -69925.055
+  health: 100.0
+  resources: {}
+- id: 146
+  entity_type: theta
+  owner: universe
+  position:
+    x: 70859.055
+    y: -17861.492
+  health: 100.0
+  resources: {}
+- id: 147
+  entity_type: theta
+  owner: universe
+  position:
+    x: 43430.938
+    y: 50893.72
+  health: 100.0
+  resources: {}
+- id: 148
+  entity_type: theta
+  owner: universe
+  position:
+    x: 25184.234
+    y: 63040.496
+  health: 100.0
+  resources: {}
+- id: 149
+  entity_type: theta
+  owner: universe
+  position:
+    x: -14307.816
+    y: -18616.326
+  health: 100.0
+  resources: {}
+- id: 150
+  entity_type: theta
+  owner: universe
+  position:
+    x: -66405.51
+    y: 15578.233
+  health: 100.0
+  resources: {}
+- id: 151
+  entity_type: theta
+  owner: universe
+  position:
+    x: -90376.71
+    y: 65828.69
+  health: 100.0
+  resources: {}
+- id: 152
+  entity_type: theta
+  owner: universe
+  position:
+    x: -35887.09
+    y: -11144.769
+  health: 100.0
+  resources: {}
+- id: 153
+  entity_type: theta
+  owner: universe
+  position:
+    x: 62497.734
+    y: -10406.879
+  health: 100.0
+  resources: {}
+- id: 154
+  entity_type: theta
+  owner: universe
+  position:
+    x: -47114.074
+    y: 6140.308
+  health: 100.0
+  resources: {}
+- id: 155
+  entity_type: theta
+  owner: universe
+  position:
+    x: -27693.156
+    y: 37910.242
+  health: 100.0
+  resources: {}
+- id: 156
+  entity_type: theta
+  owner: universe
+  position:
+    x: -81984.51
+    y: 4738.3765
+  health: 100.0
+  resources: {}
+- id: 157
+  entity_type: theta
+  owner: universe
+  position:
+    x: -117420.1
+    y: -7.484966
+  health: 100.0
+  resources: {}
+- id: 158
+  entity_type: theta
+  owner: universe
+  position:
+    x: -54146.61
+    y: 3055.7627
+  health: 100.0
+  resources: {}
+- id: 159
+  entity_type: theta
+  owner: universe
+  position:
+    x: -61888.684
+    y: -48056.53
+  health: 100.0
+  resources: {}
+- id: 160
+  entity_type: theta
+  owner: universe
+  position:
+    x: 119623.82
+    y: 7996.036
+  health: 100.0
+  resources: {}
+- id: 161
+  entity_type: theta
+  owner: universe
+  position:
+    x: -41892.777
+    y: 26727.473
+  health: 100.0
+  resources: {}
+- id: 162
+  entity_type: theta
+  owner: universe
+  position:
+    x: -33926.2
+    y: 41577.53
+  health: 100.0
+  resources: {}
+- id: 163
+  entity_type: theta
+  owner: universe
+  position:
+    x: -10303.45
+    y: 25023.242
+  health: 100.0
+  resources: {}
+- id: 164
+  entity_type: theta
+  owner: universe
+  position:
+    x: 15056.8
+    y: 40006.63
+  health: 100.0
+  resources: {}
+- id: 165
+  entity_type: theta
+  owner: universe
+  position:
+    x: -84475.81
+    y: 112207.77
+  health: 100.0
+  resources: {}
+- id: 166
+  entity_type: theta
+  owner: universe
+  position:
+    x: 11373.215
+    y: 39928.92
+  health: 100.0
+  resources: {}
+- id: 167
+  entity_type: theta
+  owner: universe
+  position:
+    x: -9508.487
+    y: 43642.336
+  health: 100.0
+  resources: {}
+- id: 168
+  entity_type: theta
+  owner: universe
+  position:
+    x: 26019.896
+    y: 10816.952
+  health: 100.0
+  resources: {}
+- id: 169
+  entity_type: theta
+  owner: universe
+  position:
+    x: 73494.5
+    y: -1567.3279
+  health: 100.0
+  resources: {}
+- id: 170
+  entity_type: theta
+  owner: universe
+  position:
+    x: -50897.58
+    y: 21511.484
+  health: 100.0
+  resources: {}
+- id: 171
+  entity_type: theta
+  owner: universe
+  position:
+    x: -17790.967
+    y: 9206.778
+  health: 100.0
+  resources: {}
+- id: 172
+  entity_type: theta
+  owner: universe
+  position:
+    x: -35846.05
+    y: 22010.225
+  health: 100.0
+  resources: {}
+- id: 173
+  entity_type: theta
+  owner: universe
+  position:
+    x: 11871.376
+    y: -30778.479
+  health: 100.0
+  resources: {}
+- id: 174
+  entity_type: theta
+  owner: universe
+  position:
+    x: -57886.004
+    y: 38154.023
+  health: 100.0
+  resources: {}
+- id: 175
+  entity_type: theta
+  owner: universe
+  position:
+    x: -17222.31
+    y: -9913.703
+  health: 100.0
+  resources: {}
+- id: 176
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -32922.02
+    y: 39129.8
+  health: 100.0
+  resources: {}
+- id: 177
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -64076.992
+    y: 34820.6
+  health: 100.0
+  resources: {}
+- id: 178
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 33430.863
+    y: 39447.51
+  health: 100.0
+  resources: {}
+- id: 179
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 21005.744
+    y: -87087.3
+  health: 100.0
+  resources: {}
+- id: 180
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 30689.762
+    y: -7043.9604
+  health: 100.0
+  resources: {}
+- id: 181
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 7944.051
+    y: 21633.998
+  health: 100.0
+  resources: {}
+- id: 182
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -36423.707
+    y: 41827.926
+  health: 100.0
+  resources: {}
+- id: 183
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -5977.2397
+    y: -26731.523
+  health: 100.0
+  resources: {}
+- id: 184
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -17846.861
+    y: 62482.35
+  health: 100.0
+  resources: {}
+- id: 185
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -14816.3
+    y: -7565.931
+  health: 100.0
+  resources: {}
+- id: 186
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 42536.473
+    y: 29598.893
+  health: 100.0
+  resources: {}
+- id: 187
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -64128.4
+    y: -66427.445
+  health: 100.0
+  resources: {}
+- id: 188
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -67286.305
+    y: 95468.41
+  health: 100.0
+  resources: {}
+- id: 189
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 55054.477
+    y: -80405.766
+  health: 100.0
+  resources: {}
+- id: 190
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -65933.45
+    y: 137321.75
+  health: 100.0
+  resources: {}
+- id: 191
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 21962.184
+    y: 22580.035
+  health: 100.0
+  resources: {}
+- id: 192
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 7027.3037
+    y: 49476.734
+  health: 100.0
+  resources: {}
+- id: 193
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 19315.797
+    y: -51954.688
+  health: 100.0
+  resources: {}
+- id: 194
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -30755.283
+    y: 17483.684
+  health: 100.0
+  resources: {}
+- id: 195
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -12851.978
+    y: 14474.092
+  health: 100.0
+  resources: {}
+- id: 196
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -7451.304
+    y: -17116.732
+  health: 100.0
+  resources: {}
+- id: 197
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 55678.92
+    y: 70369.85
+  health: 100.0
+  resources: {}
+- id: 198
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -32231.445
+    y: -6214.849
+  health: 100.0
+  resources: {}
+- id: 199
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 51046.2
+    y: 58685.816
+  health: 100.0
+  resources: {}
+- id: 200
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3471.11
+    y: 27907.445
+  health: 100.0
+  resources: {}
+- id: 201
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -8934.016
+    y: 44954.797
+  health: 100.0
+  resources: {}
+- id: 202
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -14937.954
+    y: -42005.93
+  health: 100.0
+  resources: {}
+- id: 203
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 47920.484
+    y: 101136.44
+  health: 100.0
+  resources: {}
+- id: 204
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -74183.055
+    y: -9607.733
+  health: 100.0
+  resources: {}
+- id: 205
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -72916.8
+    y: -23665.465
+  health: 100.0
+  resources: {}
+- id: 206
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 36253.8
+    y: 19360.469
+  health: 100.0
+  resources: {}
+- id: 207
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -870.6244
+    y: 86327.5
+  health: 100.0
+  resources: {}
+- id: 208
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -327.75034
+    y: 81393.94
+  health: 100.0
+  resources: {}
+- id: 209
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -12880.155
+    y: -94457.914
+  health: 100.0
+  resources: {}
+- id: 210
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -13168.671
+    y: 67135.83
+  health: 100.0
+  resources: {}
+- id: 211
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 12585.122
+    y: -12449.027
+  health: 100.0
+  resources: {}
+- id: 212
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 13086.642
+    y: 22259.18
+  health: 100.0
+  resources: {}
+- id: 213
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -56642.64
+    y: 59766.074
+  health: 100.0
+  resources: {}
+- id: 214
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 32204.986
+    y: -22196.14
+  health: 100.0
+  resources: {}
+- id: 215
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -30612.828
+    y: 109899.35
+  health: 100.0
+  resources: {}
+- id: 216
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -13626.529
+    y: -85574.9
+  health: 100.0
+  resources: {}
+- id: 217
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -22267.674
+    y: -65420.527
+  health: 100.0
+  resources: {}
+- id: 218
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -83579.81
+    y: 43075.566
+  health: 100.0
+  resources: {}
+- id: 219
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 77767.52
+    y: -40703.754
+  health: 100.0
+  resources: {}
+- id: 220
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -65151.285
+    y: -26492.363
+  health: 100.0
+  resources: {}
+- id: 221
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -44971.22
+    y: 100504.25
+  health: 100.0
+  resources: {}
+- id: 222
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 63218.098
+    y: 40525.996
+  health: 100.0
+  resources: {}
+- id: 223
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 54799.543
+    y: -99967.35
+  health: 100.0
+  resources: {}
+- id: 224
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 51725.766
+    y: -59712.836
+  health: 100.0
+  resources: {}
+- id: 225
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 54239.12
+    y: 62360.184
+  health: 100.0
+  resources: {}
+- id: 226
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 7911.5396
+    y: -23984.816
+  health: 100.0
+  resources: {}
+- id: 227
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -38832.92
+    y: -22032.56
+  health: 100.0
+  resources: {}
+- id: 228
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 32218.545
+    y: -23110.393
+  health: 100.0
+  resources: {}
+- id: 229
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 7241.767
+    y: -6177.379
+  health: 100.0
+  resources: {}
+- id: 230
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 61677.883
+    y: 31383.312
+  health: 100.0
+  resources: {}
+- id: 231
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -55263.727
+    y: 33660.95
+  health: 100.0
+  resources: {}
+- id: 232
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -26143.955
+    y: -18817.232
+  health: 100.0
+  resources: {}
+- id: 233
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -9916.548
+    y: -63883.6
+  health: 100.0
+  resources: {}
+- id: 234
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -61245.16
+    y: 33806.46
+  health: 100.0
+  resources: {}
+- id: 235
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 18370.672
+    y: 17481.47
+  health: 100.0
+  resources: {}
+- id: 236
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -53216.99
+    y: -44545.42
+  health: 100.0
+  resources: {}
+- id: 237
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -84950.71
+    y: 52463.48
+  health: 100.0
+  resources: {}
+- id: 238
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 29773.494
+    y: 46971.09
+  health: 100.0
+  resources: {}
+- id: 239
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 19484.771
+    y: -30187.71
+  health: 100.0
+  resources: {}
+- id: 240
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -77050.37
+    y: -8964.633
+  health: 100.0
+  resources: {}
+- id: 241
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 54738.785
+    y: -4091.1868
+  health: 100.0
+  resources: {}
+- id: 242
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -94463.85
+    y: -32659.926
+  health: 100.0
+  resources: {}
+- id: 243
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -41929.47
+    y: -9114.849
+  health: 100.0
+  resources: {}
+- id: 244
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -19285.646
+    y: 40764.684
+  health: 100.0
+  resources: {}
+- id: 245
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 39634.145
+    y: 6657.874
+  health: 100.0
+  resources: {}
+- id: 246
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 24239.32
+    y: 57213.598
+  health: 100.0
+  resources: {}
+- id: 247
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 26883.256
+    y: -10174.071
+  health: 100.0
+  resources: {}
+- id: 248
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -109668.84
+    y: -33309.51
+  health: 100.0
+  resources: {}
+- id: 249
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 26425.615
+    y: 35797.43
+  health: 100.0
+  resources: {}
+- id: 250
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -32521.152
+    y: 141448.31
+  health: 100.0
+  resources: {}
+- id: 251
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 36464.477
+    y: -31120.406
+  health: 100.0
+  resources: {}
+- id: 252
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -76988.27
+    y: -9977.262
+  health: 100.0
+  resources: {}
+- id: 253
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -18263.443
+    y: 45917.793
+  health: 100.0
+  resources: {}
+- id: 254
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 63459.684
+    y: -18157.72
+  health: 100.0
+  resources: {}
+- id: 255
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 4170.309
+    y: 14284.796
+  health: 100.0
+  resources: {}
+- id: 256
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 47254.836
+    y: -13046.571
+  health: 100.0
+  resources: {}
+- id: 257
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 69046.25
+    y: 34348.918
+  health: 100.0
+  resources: {}
+- id: 258
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 34336.293
+    y: -43333.07
+  health: 100.0
+  resources: {}
+- id: 259
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 20487.984
+    y: 74252.336
+  health: 100.0
+  resources: {}
+- id: 260
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 2808.126
+    y: 52234.047
+  health: 100.0
+  resources: {}
+- id: 261
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -82869.445
+    y: -104720.25
+  health: 100.0
+  resources: {}
+- id: 262
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 41604.63
+    y: 46415.8
+  health: 100.0
+  resources: {}
+- id: 263
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 60835.88
+    y: 87276.53
+  health: 100.0
+  resources: {}
+- id: 264
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 8782.836
+    y: -40380.8
+  health: 100.0
+  resources: {}
+- id: 265
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 71688.51
+    y: -28619.94
+  health: 100.0
+  resources: {}
+- id: 266
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 66719.65
+    y: 51896.27
+  health: 100.0
+  resources: {}
+- id: 267
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 38458.152
+    y: -61125.246
+  health: 100.0
+  resources: {}
+- id: 268
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -94577.0
+    y: -19735.77
+  health: 100.0
+  resources: {}
+- id: 269
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -12713.137
+    y: 98759.805
+  health: 100.0
+  resources: {}
+- id: 270
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -18217.473
+    y: 26702.666
+  health: 100.0
+  resources: {}
+- id: 271
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 11204.15
+    y: 48231.582
+  health: 100.0
+  resources: {}
+- id: 272
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 54151.594
+    y: -12877.758
+  health: 100.0
+  resources: {}
+- id: 273
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 44983.016
+    y: 39104.844
+  health: 100.0
+  resources: {}
+- id: 274
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 31665.002
+    y: -90863.15
+  health: 100.0
+  resources: {}
+- id: 275
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -48511.266
+    y: -59111.95
+  health: 100.0
+  resources: {}
+- id: 276
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 36416.656
+    y: 34926.77
+  health: 100.0
+  resources: {}
+- id: 277
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 49713.055
+    y: -26470.277
+  health: 100.0
+  resources: {}
+- id: 278
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 3053.8965
+    y: -38951.582
+  health: 100.0
+  resources: {}
+- id: 279
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 59290.97
+    y: -1024.2214
+  health: 100.0
+  resources: {}
+- id: 280
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 18587.951
+    y: 84496.98
+  health: 100.0
+  resources: {}
+- id: 281
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 14641.952
+    y: 34437.96
+  health: 100.0
+  resources: {}
+- id: 282
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 26475.639
+    y: -11529.395
+  health: 100.0
+  resources: {}
+- id: 283
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 14893.999
+    y: 34743.992
+  health: 100.0
+  resources: {}
+- id: 284
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -46101.176
+    y: 50201.086
+  health: 100.0
+  resources: {}
+- id: 285
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -623.16614
+    y: 93985.59
+  health: 100.0
+  resources: {}
+- id: 286
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -21861.998
+    y: -87653.41
+  health: 100.0
+  resources: {}
+- id: 287
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 70972.29
+    y: 65132.7
+  health: 100.0
+  resources: {}
+- id: 288
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 69200.664
+    y: 31181.73
+  health: 100.0
+  resources: {}
+- id: 289
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 31641.701
+    y: -7458.1704
+  health: 100.0
+  resources: {}
+- id: 290
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -43923.15
+    y: 31307.295
+  health: 100.0
+  resources: {}
+- id: 291
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32870.27
+    y: 104744.92
+  health: 100.0
+  resources: {}
+- id: 292
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -56787.42
+    y: -9187.368
+  health: 100.0
+  resources: {}
+- id: 293
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -81368.555
+    y: -28713.273
+  health: 100.0
+  resources: {}
+- id: 294
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -47009.863
+    y: 42075.496
+  health: 100.0
+  resources: {}
+- id: 295
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 54929.08
+    y: -34778.207
+  health: 100.0
+  resources: {}
+- id: 296
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -54455.652
+    y: 5590.1357
+  health: 100.0
+  resources: {}
+- id: 297
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -84795.11
+    y: -10592.689
+  health: 100.0
+  resources: {}
+- id: 298
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 42338.504
+    y: 99270.914
+  health: 100.0
+  resources: {}
+- id: 299
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4904.718
+    y: 10240.621
+  health: 100.0
+  resources: {}
+- id: 300
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 77208.625
+    y: 8927.708
+  health: 100.0
+  resources: {}
+- id: 301
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 19350.744
+    y: -128654.016
+  health: 100.0
+  resources: {}
+- id: 302
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 45330.176
+    y: 10587.32
+  health: 100.0
+  resources: {}
+- id: 303
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 15579.974
+    y: 38326.29
+  health: 100.0
+  resources: {}
+- id: 304
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 33742.707
+    y: 25596.824
+  health: 100.0
+  resources: {}
+- id: 305
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 26157.838
+    y: 94388.89
+  health: 100.0
+  resources: {}
+- id: 306
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 87755.234
+    y: -61094.664
+  health: 100.0
+  resources: {}
+- id: 307
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 36419.51
+    y: -28356.838
+  health: 100.0
+  resources: {}
+- id: 308
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -45167.184
+    y: 76025.27
+  health: 100.0
+  resources: {}
+- id: 309
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 7832.9224
+    y: 3964.0588
+  health: 100.0
+  resources: {}
+- id: 310
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 55787.31
+    y: 1014.287
+  health: 100.0
+  resources: {}
+- id: 311
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -64951.582
+    y: 53586.84
+  health: 100.0
+  resources: {}
+- id: 312
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -81069.15
+    y: 20647.564
+  health: 100.0
+  resources: {}
+- id: 313
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 27241.713
+    y: -91333.99
+  health: 100.0
+  resources: {}
+- id: 314
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 31861.623
+    y: -11576.151
+  health: 100.0
+  resources: {}
+- id: 315
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 7123.0312
+    y: 114256.695
+  health: 100.0
+  resources: {}
+- id: 316
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 35232.99
+    y: -71454.78
+  health: 100.0
+  resources: {}
+- id: 317
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -16662.309
+    y: -6251.121
+  health: 100.0
+  resources: {}
+- id: 318
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -32433.117
+    y: 57806.75
+  health: 100.0
+  resources: {}
+- id: 319
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 63166.594
+    y: -105949.62
+  health: 100.0
+  resources: {}
+- id: 320
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -74189.48
+    y: -58636.953
+  health: 100.0
+  resources: {}
+- id: 321
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 5993.692
+    y: 1953.3102
+  health: 100.0
+  resources: {}
+- id: 322
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -84699.234
+    y: 42331.887
+  health: 100.0
+  resources: {}
+- id: 323
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -18943.262
+    y: 42274.656
+  health: 100.0
+  resources: {}
+- id: 324
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -38064.07
+    y: -12032.264
+  health: 100.0
+  resources: {}
+- id: 325
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -65906.3
+    y: 29827.916
+  health: 100.0
+  resources: {}
+- id: 326
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32570.93
+    y: -23303.02
+  health: 100.0
+  resources: {}
+- id: 327
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -17881.818
+    y: 26805.695
+  health: 100.0
+  resources: {}
+- id: 328
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 60246.246
+    y: -4903.611
+  health: 100.0
+  resources: {}
+- id: 329
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -126355.86
+    y: -6854.177
+  health: 100.0
+  resources: {}
+- id: 330
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -76585.516
+    y: 2775.4873
+  health: 100.0
+  resources: {}
+- id: 331
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 58756.62
+    y: 11964.188
+  health: 100.0
+  resources: {}
+- id: 332
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2344.334
+    y: -9147.775
+  health: 100.0
+  resources: {}
+- id: 333
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 8583.928
+    y: -54272.633
+  health: 100.0
+  resources: {}
+- id: 334
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 10656.503
+    y: -83438.0
+  health: 100.0
+  resources: {}
+- id: 335
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -11483.73
+    y: -40285.887
+  health: 100.0
+  resources: {}
+- id: 336
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 48288.84
+    y: -40873.348
+  health: 100.0
+  resources: {}
+- id: 337
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -28418.357
+    y: -34155.74
+  health: 100.0
+  resources: {}
+- id: 338
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -43725.49
+    y: -48218.76
+  health: 100.0
+  resources: {}
+- id: 339
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 21744.293
+    y: 106703.34
+  health: 100.0
+  resources: {}
+- id: 340
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 8022.8027
+    y: 37843.742
+  health: 100.0
+  resources: {}
+- id: 341
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 26539.42
+    y: 3822.3423
+  health: 100.0
+  resources: {}
+- id: 342
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -93945.81
+    y: 144737.81
+  health: 100.0
+  resources: {}
+- id: 343
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -14348.925
+    y: 16399.229
+  health: 100.0
+  resources: {}
+- id: 344
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32065.28
+    y: -31889.51
+  health: 100.0
+  resources: {}
+- id: 345
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -11302.628
+    y: -7726.5044
+  health: 100.0
+  resources: {}
+- id: 346
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 24068.818
+    y: 59521.227
+  health: 100.0
+  resources: {}
+- id: 347
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 41560.13
+    y: -23230.166
+  health: 100.0
+  resources: {}
+- id: 348
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -14978.177
+    y: 40730.48
+  health: 100.0
+  resources: {}
+- id: 349
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 14730.338
+    y: -28552.709
+  health: 100.0
+  resources: {}
+- id: 350
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -88253.445
+    y: -16584.633
+  health: 100.0
+  resources: {}
+- id: 351
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 30142.553
+    y: -39044.285
+  health: 100.0
+  resources: {}
+- id: 352
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 23624.719
+    y: -30523.291
+  health: 100.0
+  resources: {}
+- id: 353
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 29159.537
+    y: -28293.19
+  health: 100.0
+  resources: {}
+- id: 354
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 31185.062
+    y: -37304.29
+  health: 100.0
+  resources: {}
+- id: 355
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 33486.703
+    y: -25671.982
+  health: 100.0
+  resources: {}
+- id: 356
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 20100.203
+    y: -14262.723
+  health: 100.0
+  resources: {}
+- id: 357
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 16477.934
+    y: -18232.936
+  health: 100.0
+  resources: {}
+- id: 358
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 18053.924
+    y: -25442.436
+  health: 100.0
+  resources: {}
+- id: 359
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 21907.762
+    y: -14746.412
+  health: 100.0
+  resources: {}
+- id: 360
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 27208.758
+    y: -14300.778
+  health: 100.0
+  resources: {}
+- id: 361
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 28879.396
+    y: -51778.168
+  health: 100.0
+  resources: {}
+- id: 362
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 24491.348
+    y: -42556.73
+  health: 100.0
+  resources: {}
+- id: 363
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 27486.297
+    y: -55757.37
+  health: 100.0
+  resources: {}
+- id: 364
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 30557.566
+    y: -42606.105
+  health: 100.0
+  resources: {}
+- id: 365
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 24824.514
+    y: -55817.242
+  health: 100.0
+  resources: {}
+- id: 366
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 25372.217
+    y: -44744.984
+  health: 100.0
+  resources: {}
+- id: 367
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 27863.215
+    y: -54304.29
+  health: 100.0
+  resources: {}
+- id: 368
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 23350.527
+    y: -48379.918
+  health: 100.0
+  resources: {}
+- id: 369
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 24259.71
+    y: -53798.203
+  health: 100.0
+  resources: {}
+- id: 370
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 27103.648
+    y: -39937.43
+  health: 100.0
+  resources: {}
+- id: 371
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 35463.28
+    y: -50004.996
+  health: 100.0
+  resources: {}
+- id: 372
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 42113.805
+    y: -40629.094
+  health: 100.0
+  resources: {}
+- id: 373
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 47047.54
+    y: -38365.137
+  health: 100.0
+  resources: {}
+- id: 374
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 46535.72
+    y: -47452.273
+  health: 100.0
+  resources: {}
+- id: 375
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 52048.766
+    y: -38444.29
+  health: 100.0
+  resources: {}
+- id: 376
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 41358.703
+    y: -39890.926
+  health: 100.0
+  resources: {}
+- id: 377
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 40401.047
+    y: -38799.39
+  health: 100.0
+  resources: {}
+- id: 378
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 47454.44
+    y: -42455.766
+  health: 100.0
+  resources: {}
+- id: 379
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 16662.258
+    y: 11585.705
+  health: 100.0
+  resources: {}
+- id: 380
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 18524.799
+    y: 11945.375
+  health: 100.0
+  resources: {}
+- id: 381
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 30901.395
+    y: 12121.047
+  health: 100.0
+  resources: {}
+- id: 382
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 22929.37
+    y: 18981.209
+  health: 100.0
+  resources: {}
+- id: 383
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 19049.352
+    y: 11707.121
+  health: 100.0
+  resources: {}
+- id: 384
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 31148.566
+    y: 16678.693
+  health: 100.0
+  resources: {}
+- id: 385
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 25220.871
+    y: 18879.512
+  health: 100.0
+  resources: {}
+- id: 386
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 16595.133
+    y: 10384.346
+  health: 100.0
+  resources: {}
+- id: 387
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 22911.107
+    y: 11833.428
+  health: 100.0
+  resources: {}
+- id: 388
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 17753.783
+    y: 19161.4
+  health: 100.0
+  resources: {}
+- id: 389
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 20471.016
+    y: 17268.117
+  health: 100.0
+  resources: {}
+- id: 390
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 29648.541
+    y: 10637.68
+  health: 100.0
+  resources: {}
+- id: 391
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 24668.312
+    y: 19948.209
+  health: 100.0
+  resources: {}
+- id: 392
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 66316.19
+    y: -44897.086
+  health: 100.0
+  resources: {}
+- id: 393
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -63559.027
+    y: -61943.305
+  health: 100.0
+  resources: {}
+- id: 394
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -61997.945
+    y: -64005.254
+  health: 100.0
+  resources: {}
+- id: 395
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -49736.305
+    y: -60337.57
+  health: 100.0
+  resources: {}
+- id: 396
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53500.2
+    y: -56557.33
+  health: 100.0
+  resources: {}
+- id: 397
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -55280.27
+    y: -51221.785
+  health: 100.0
+  resources: {}
+- id: 398
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -65676.35
+    y: -56268.508
+  health: 100.0
+  resources: {}
+- id: 399
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -49512.6
+    y: -55757.83
+  health: 100.0
+  resources: {}
+- id: 400
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -55346.67
+    y: -52760.676
+  health: 100.0
+  resources: {}
+- id: 401
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -61375.246
+    y: -54394.36
+  health: 100.0
+  resources: {}
+- id: 402
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -62425.39
+    y: -61178.242
+  health: 100.0
+  resources: {}
+- id: 403
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -57543.69
+    y: -61006.844
+  health: 100.0
+  resources: {}
+- id: 404
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 5018.9243
+    y: 98733.336
+  health: 100.0
+  resources: {}
+- id: 405
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -7307.1914
+    y: 102298.055
+  health: 100.0
+  resources: {}
+- id: 406
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -8539.28
+    y: 93666.88
+  health: 100.0
+  resources: {}
+- id: 407
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -5975.592
+    y: 95055.73
+  health: 100.0
+  resources: {}
+- id: 408
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -6730.643
+    y: 92291.695
+  health: 100.0
+  resources: {}
+- id: 409
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -10309.873
+    y: 94406.266
+  health: 100.0
+  resources: {}
+- id: 410
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 2233.688
+    y: 101716.766
+  health: 100.0
+  resources: {}
+- id: 411
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2703.8145
+    y: 94540.96
+  health: 100.0
+  resources: {}
+- id: 412
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -3615.8782
+    y: 104707.3
+  health: 100.0
+  resources: {}
+- id: 413
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 847.65967
+    y: 95997.0
+  health: 100.0
+  resources: {}
+- id: 414
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -1100.7539
+    y: 94536.28
+  health: 100.0
+  resources: {}
+- id: 415
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -7226.1294
+    y: 92514.3
+  health: 100.0
+  resources: {}
+- id: 416
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -1686.0947
+    y: 99511.31
+  health: 100.0
+  resources: {}
+- id: 417
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 93727.305
+    y: 24008.68
+  health: 100.0
+  resources: {}
+- id: 418
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 88755.07
+    y: 20996.629
+  health: 100.0
+  resources: {}
+- id: 419
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 91726.72
+    y: 23690.55
+  health: 100.0
+  resources: {}
+- id: 420
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 91569.31
+    y: 22590.203
+  health: 100.0
+  resources: {}
+- id: 421
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 101508.17
+    y: 17505.723
+  health: 100.0
+  resources: {}
+- id: 422
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 88634.7
+    y: 23501.988
+  health: 100.0
+  resources: {}
+- id: 423
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 95690.1
+    y: 28551.324
+  health: 100.0
+  resources: {}
+- id: 424
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 91023.65
+    y: 20191.902
+  health: 100.0
+  resources: {}
+- id: 425
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 91506.25
+    y: 21445.29
+  health: 100.0
+  resources: {}
+- id: 426
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 91747.39
+    y: 23146.273
+  health: 100.0
+  resources: {}
+- id: 427
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 87936.97
+    y: 21807.662
+  health: 100.0
+  resources: {}
+- id: 428
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 96358.18
+    y: 12342.971
+  health: 100.0
+  resources: {}
+- id: 429
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -12016.459
+    y: 14325.165
+  health: 100.0
+  resources: {}
+- id: 430
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -21078.57
+    y: 18893.03
+  health: 100.0
+  resources: {}
+- id: 431
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -10356.641
+    y: 11459.63
+  health: 100.0
+  resources: {}
+- id: 432
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -25012.23
+    y: 13915.936
+  health: 100.0
+  resources: {}
+- id: 433
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -15535.26
+    y: 14911.068
+  health: 100.0
+  resources: {}
+- id: 434
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -20041.941
+    y: 534.07837
+  health: 100.0
+  resources: {}
+- id: 435
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -9677.321
+    y: 5268.903
+  health: 100.0
+  resources: {}
+- id: 436
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -10222.375
+    y: 3861.954
+  health: 100.0
+  resources: {}
+- id: 437
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -21145.896
+    y: 7138.7124
+  health: 100.0
+  resources: {}
+- id: 438
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -20911.83
+    y: 7182.8213
+  health: 100.0
+  resources: {}
+- id: 439
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -3793.2908
+    y: 73302.414
+  health: 100.0
+  resources: {}
+- id: 440
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 23400.049
+    y: 39424.637
+  health: 100.0
+  resources: {}
+- id: 441
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 7024.3384
+    y: -45575.586
+  health: 100.0
+  resources: {}
+- id: 442
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 19389.697
+    y: -48221.66
+  health: 100.0
+  resources: {}
+- id: 443
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 10298.444
+    y: -45307.973
+  health: 100.0
+  resources: {}
+- id: 444
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 9433.752
+    y: -46773.043
+  health: 100.0
+  resources: {}
+- id: 445
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 18153.863
+    y: -42090.08
+  health: 100.0
+  resources: {}
+- id: 446
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 17713.824
+    y: -51498.668
+  health: 100.0
+  resources: {}
+- id: 447
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 17414.043
+    y: -50089.246
+  health: 100.0
+  resources: {}
+- id: 448
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 17974.04
+    y: -44939.27
+  health: 100.0
+  resources: {}
+- id: 449
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 8343.68
+    y: -51175.883
+  health: 100.0
+  resources: {}
+- id: 450
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 9101.678
+    y: -52676.137
+  health: 100.0
+  resources: {}
+- id: 451
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 18497.947
+    y: -52925.14
+  health: 100.0
+  resources: {}
+- id: 452
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 17992.2
+    y: -49078.168
+  health: 100.0
+  resources: {}
+- id: 453
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 5799.83
+    y: -50468.992
+  health: 100.0
+  resources: {}
+- id: 454
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 19350.324
+    y: -43468.293
+  health: 100.0
+  resources: {}
+- id: 455
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 34181.316
+    y: 31375.705
+  health: 100.0
+  resources: {}
+- id: 456
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 30308.88
+    y: 28052.148
+  health: 100.0
+  resources: {}
+- id: 457
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 25852.857
+    y: 33352.07
+  health: 100.0
+  resources: {}
+- id: 458
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 32989.79
+    y: 33335.49
+  health: 100.0
+  resources: {}
+- id: 459
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 31810.11
+    y: 24163.258
+  health: 100.0
+  resources: {}
+- id: 460
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 50526.152
+    y: 28763.066
+  health: 100.0
+  resources: {}
+- id: 461
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 47602.715
+    y: 33239.574
+  health: 100.0
+  resources: {}
+- id: 462
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 49252.066
+    y: 38325.465
+  health: 100.0
+  resources: {}
+- id: 463
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 58035.73
+    y: 38164.016
+  health: 100.0
+  resources: {}
+- id: 464
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -15779.942
+    y: 27635.398
+  health: 100.0
+  resources: {}
+- id: 465
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -19129.701
+    y: 26982.344
+  health: 100.0
+  resources: {}
+- id: 466
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -23020.227
+    y: 25756.18
+  health: 100.0
+  resources: {}
+- id: 467
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -24103.28
+    y: 28283.23
+  health: 100.0
+  resources: {}
+- id: 468
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -16074.627
+    y: 32547.295
+  health: 100.0
+  resources: {}
+- id: 469
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -14189.631
+    y: 32676.758
+  health: 100.0
+  resources: {}
+- id: 470
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -20609.473
+    y: 23622.848
+  health: 100.0
+  resources: {}
+- id: 471
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -13233.16
+    y: 25962.988
+  health: 100.0
+  resources: {}
+- id: 472
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 23492.285
+    y: -49494.94
+  health: 100.0
+  resources: {}
+- id: 473
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 20752.66
+    y: -44636.32
+  health: 100.0
+  resources: {}
+- id: 474
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 9454.824
+    y: -12542.721
+  health: 100.0
+  resources: {}
+- id: 475
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 18240.988
+    y: -4474.598
+  health: 100.0
+  resources: {}
+- id: 476
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 19859.697
+    y: -5331.3584
+  health: 100.0
+  resources: {}
+- id: 477
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 9068.838
+    y: -14104.541
+  health: 100.0
+  resources: {}
+- id: 478
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 18531.684
+    y: -7971.932
+  health: 100.0
+  resources: {}
+- id: 479
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 16272.019
+    y: -3373.246
+  health: 100.0
+  resources: {}
+- id: 480
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 22413.607
+    y: -4791.128
+  health: 100.0
+  resources: {}
+- id: 481
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 18956.953
+    y: -9825.565
+  health: 100.0
+  resources: {}
+- id: 482
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 23268.5
+    y: 82608.48
+  health: 100.0
+  resources: {}
+- id: 483
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 35184.582
+    y: 74539.67
+  health: 100.0
+  resources: {}
+- id: 484
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 32095.715
+    y: -33047.133
+  health: 100.0
+  resources: {}
+- id: 485
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 33403.17
+    y: -34217.734
+  health: 100.0
+  resources: {}
+- id: 486
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 26738.531
+    y: -31765.021
+  health: 100.0
+  resources: {}
+- id: 487
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 25121.02
+    y: -37876.207
+  health: 100.0
+  resources: {}
+- id: 488
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 22740.07
+    y: -39672.83
+  health: 100.0
+  resources: {}
+- id: 489
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 37760.508
+    y: -38356.63
+  health: 100.0
+  resources: {}
+- id: 490
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -61836.457
+    y: 37804.156
+  health: 100.0
+  resources: {}
+- id: 491
+  entity_type: planet_ice
+  owner: universe
+  position:
+    x: -67652.805
+    y: 32254.379
+  health: 100.0
+  resources: {}
+- id: 492
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -58647.13
+    y: 32403.598
+  health: 100.0
+  resources: {}
+- id: 493
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -60790.594
+    y: 37272.32
+  health: 100.0
+  resources: {}
+- id: 494
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -62714.617
+    y: 32938.77
+  health: 100.0
+  resources: {}
+- id: 495
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -59161.242
+    y: 37363.375
+  health: 100.0
+  resources: {}
+- id: 496
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -64891.64
+    y: 36884.55
+  health: 100.0
+  resources: {}
+- id: 497
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -66553.96
+    y: 26446.98
+  health: 100.0
+  resources: {}
+- id: 498
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -64114.84
+    y: 22727.113
+  health: 100.0
+  resources: {}
+- id: 499
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -57870.75
+    y: 33065.023
+  health: 100.0
+  resources: {}
+- id: 500
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -61865.445
+    y: 25798.396
+  health: 100.0
+  resources: {}
+- id: 501
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -59022.305
+    y: 25618.66
+  health: 100.0
+  resources: {}
+- id: 502
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -54243.375
+    y: 25142.16
+  health: 100.0
+  resources: {}
+- id: 503
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -56331.5
+    y: 33611.29
+  health: 100.0
+  resources: {}
+- id: 504
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -63012.633
+    y: 36319.21
+  health: 100.0
+  resources: {}
+- id: 505
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 11091.572
+    y: 141736.73
+  health: 100.0
+  resources: {}
+- id: 506
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 12190.54
+    y: 148413.97
+  health: 100.0
+  resources: {}
+- id: 507
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 21365.453
+    y: 145818.97
+  health: 100.0
+  resources: {}
+- id: 508
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 16720.652
+    y: 149840.36
+  health: 100.0
+  resources: {}
+- id: 509
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 19436.055
+    y: 147314.45
+  health: 100.0
+  resources: {}
+- id: 510
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -49268.887
+    y: -65735.11
+  health: 100.0
+  resources: {}
+- id: 511
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53249.33
+    y: -60689.266
+  health: 100.0
+  resources: {}
+- id: 512
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -57232.984
+    y: -64265.28
+  health: 100.0
+  resources: {}
+- id: 513
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -51560.402
+    y: -74555.02
+  health: 100.0
+  resources: {}
+- id: 514
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -58851.84
+    y: -69410.29
+  health: 100.0
+  resources: {}
+- id: 515
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -51630.605
+    y: -71536.055
+  health: 100.0
+  resources: {}
+- id: 516
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -58575.656
+    y: -72631.37
+  health: 100.0
+  resources: {}
+- id: 517
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -54911.07
+    y: -67074.36
+  health: 100.0
+  resources: {}
+- id: 518
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 18739.926
+    y: 283.49634
+  health: 100.0
+  resources: {}
+- id: 519
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 19932.418
+    y: -6508.8135
+  health: 100.0
+  resources: {}
+- id: 520
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 24297.148
+    y: -3153.7266
+  health: 100.0
+  resources: {}
+- id: 521
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 23272.91
+    y: -4031.877
+  health: 100.0
+  resources: {}
+- id: 522
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 13768.213
+    y: -6405.9785
+  health: 100.0
+  resources: {}
+- id: 523
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 20790.258
+    y: 2577.7432
+  health: 100.0
+  resources: {}
+- id: 524
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -44692.918
+    y: -59723.977
+  health: 100.0
+  resources: {}
+- id: 525
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -41059.457
+    y: -66143.445
+  health: 100.0
+  resources: {}
+- id: 526
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -33006.605
+    y: -63555.473
+  health: 100.0
+  resources: {}
+- id: 527
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -35554.695
+    y: -66649.83
+  health: 100.0
+  resources: {}
+- id: 528
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -36198.977
+    y: -72362.3
+  health: 100.0
+  resources: {}
+- id: 529
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -57029.74
+    y: -111720.4
+  health: 100.0
+  resources: {}
+- id: 530
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -60830.37
+    y: -104424.06
+  health: 100.0
+  resources: {}
+- id: 531
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -52815.703
+    y: -116251.72
+  health: 100.0
+  resources: {}
+- id: 532
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -54294.906
+    y: -110925.36
+  health: 100.0
+  resources: {}
+- id: 533
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -47114.84
+    y: -111667.14
+  health: 100.0
+  resources: {}
+- id: 534
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -61471.273
+    y: -108749.54
+  health: 100.0
+  resources: {}
+- id: 535
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -55076.676
+    y: -111559.74
+  health: 100.0
+  resources: {}
+- id: 536
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -51975.938
+    y: -103479.62
+  health: 100.0
+  resources: {}
+- id: 537
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -50435.152
+    y: -105606.09
+  health: 100.0
+  resources: {}
+- id: 538
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -52545.324
+    y: -102346.39
+  health: 100.0
+  resources: {}
+- id: 539
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 6334.575
+    y: -66947.75
+  health: 100.0
+  resources: {}
+- id: 540
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 6511.994
+    y: -68569.086
+  health: 100.0
+  resources: {}
+- id: 541
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 8006.1074
+    y: -62287.836
+  health: 100.0
+  resources: {}
+- id: 542
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 18241.115
+    y: -61693.69
+  health: 100.0
+  resources: {}
+- id: 543
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4021.4614
+    y: -65040.363
+  health: 100.0
+  resources: {}
+- id: 544
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 6811.238
+    y: -68464.92
+  health: 100.0
+  resources: {}
+- id: 545
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 18588.133
+    y: -64016.992
+  health: 100.0
+  resources: {}
+- id: 546
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 5249.3965
+    y: -71350.33
+  health: 100.0
+  resources: {}
+- id: 547
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 13069.241
+    y: -58786.508
+  health: 100.0
+  resources: {}
+- id: 548
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3678.65
+    y: -61579.375
+  health: 100.0
+  resources: {}
+- id: 549
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 5214.1685
+    y: -65612.4
+  health: 100.0
+  resources: {}
+- id: 550
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 70292.61
+    y: 427.75903
+  health: 100.0
+  resources: {}
+- id: 551
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 73532.914
+    y: -7386.079
+  health: 100.0
+  resources: {}
+- id: 552
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 68958.97
+    y: -4885.8896
+  health: 100.0
+  resources: {}
+- id: 553
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 76877.23
+    y: -2484.978
+  health: 100.0
+  resources: {}
+- id: 554
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 69505.98
+    y: 6909.4663
+  health: 100.0
+  resources: {}
+- id: 555
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 66375.516
+    y: -540.4702
+  health: 100.0
+  resources: {}
+- id: 556
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 73117.81
+    y: -4277.5
+  health: 100.0
+  resources: {}
+- id: 557
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 67824.85
+    y: 6312.0835
+  health: 100.0
+  resources: {}
+- id: 558
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 78166.766
+    y: 880.5021
+  health: 100.0
+  resources: {}
+- id: 559
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 71624.56
+    y: 5537.3066
+  health: 100.0
+  resources: {}
+- id: 560
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 72316.63
+    y: -3513.0894
+  health: 100.0
+  resources: {}
+- id: 561
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 78574.93
+    y: -4069.9062
+  health: 100.0
+  resources: {}
+- id: 562
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -18374.76
+    y: 106577.234
+  health: 100.0
+  resources: {}
+- id: 563
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -21854.934
+    y: 108432.484
+  health: 100.0
+  resources: {}
+- id: 564
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -10667.761
+    y: 108017.18
+  health: 100.0
+  resources: {}
+- id: 565
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -11526.179
+    y: 109507.45
+  health: 100.0
+  resources: {}
+- id: 566
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -19735.188
+    y: 103609.64
+  health: 100.0
+  resources: {}
+- id: 567
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -16490.084
+    y: 102687.88
+  health: 100.0
+  resources: {}
+- id: 568
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -14682.426
+    y: 106950.445
+  health: 100.0
+  resources: {}
+- id: 569
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -18223.258
+    y: 112219.02
+  health: 100.0
+  resources: {}
+- id: 570
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -18904.234
+    y: 109995.23
+  health: 100.0
+  resources: {}
+- id: 571
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -14148.215
+    y: 103360.336
+  health: 100.0
+  resources: {}
+- id: 572
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -10030.383
+    y: 106822.47
+  health: 100.0
+  resources: {}
+- id: 573
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -8977.06
+    y: 113486.45
+  health: 100.0
+  resources: {}
+- id: 574
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -15846.629
+    y: 106603.945
+  health: 100.0
+  resources: {}
+- id: 575
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -19502.62
+    y: 116031.74
+  health: 100.0
+  resources: {}
+- id: 576
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -14247.655
+    y: 107881.31
+  health: 100.0
+  resources: {}
+- id: 577
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 34409.094
+    y: 6316.255
+  health: 100.0
+  resources: {}
+- id: 578
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 25319.99
+    y: 9152.713
+  health: 100.0
+  resources: {}
+- id: 579
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32022.98
+    y: 10535.652
+  health: 100.0
+  resources: {}
+- id: 580
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 35914.23
+    y: 10297.479
+  health: 100.0
+  resources: {}
+- id: 581
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 29322.295
+    y: 10264.46
+  health: 100.0
+  resources: {}
+- id: 582
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 21885.754
+    y: 14472.209
+  health: 100.0
+  resources: {}
+- id: 583
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 33365.844
+    y: 2310.276
+  health: 100.0
+  resources: {}
+- id: 584
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 31956.098
+    y: 9624.243
+  health: 100.0
+  resources: {}
+- id: 585
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 24452.102
+    y: 11119.125
+  health: 100.0
+  resources: {}
+- id: 586
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 33248.266
+    y: 8365.369
+  health: 100.0
+  resources: {}
+- id: 587
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 31745.547
+    y: 9398.955
+  health: 100.0
+  resources: {}
+- id: 588
+  entity_type: planet_ice
+  owner: universe
+  position:
+    x: -24527.771
+    y: -47887.51
+  health: 100.0
+  resources: {}
+- id: 589
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -16126.623
+    y: -36901.91
+  health: 100.0
+  resources: {}
+- id: 590
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -23835.502
+    y: -44571.402
+  health: 100.0
+  resources: {}
+- id: 591
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -18802.676
+    y: -42769.66
+  health: 100.0
+  resources: {}
+- id: 592
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -25960.984
+    y: -43188.195
+  health: 100.0
+  resources: {}
+- id: 593
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -21033.178
+    y: -35810.53
+  health: 100.0
+  resources: {}
+- id: 594
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 16167.554
+    y: 26518.096
+  health: 100.0
+  resources: {}
+- id: 595
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 11124.43
+    y: 22128.867
+  health: 100.0
+  resources: {}
+- id: 596
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 16659.494
+    y: 22160.17
+  health: 100.0
+  resources: {}
+- id: 597
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 7482.516
+    y: 30403.89
+  health: 100.0
+  resources: {}
+- id: 598
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 16812.596
+    y: 34351.973
+  health: 100.0
+  resources: {}
+- id: 599
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 11620.606
+    y: 35363.29
+  health: 100.0
+  resources: {}
+- id: 600
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -20935.875
+    y: -22784.492
+  health: 100.0
+  resources: {}
+- id: 601
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -11674.026
+    y: -24651.484
+  health: 100.0
+  resources: {}
+- id: 602
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -22789.258
+    y: -24708.365
+  health: 100.0
+  resources: {}
+- id: 603
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -18911.568
+    y: -23909.06
+  health: 100.0
+  resources: {}
+- id: 604
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -10754.148
+    y: -27564.71
+  health: 100.0
+  resources: {}
+- id: 605
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -20715.506
+    y: -20952.703
+  health: 100.0
+  resources: {}
+- id: 606
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -24320.625
+    y: -26563.121
+  health: 100.0
+  resources: {}
+- id: 607
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -24958.34
+    y: -30101.824
+  health: 100.0
+  resources: {}
+- id: 608
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -15942.193
+    y: -23878.828
+  health: 100.0
+  resources: {}
+- id: 609
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -23463.83
+    y: -32499.318
+  health: 100.0
+  resources: {}
+- id: 610
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -14157.498
+    y: -30048.148
+  health: 100.0
+  resources: {}
+- id: 611
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -111872.91
+    y: 33130.95
+  health: 100.0
+  resources: {}
+- id: 612
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -115389.27
+    y: 37302.293
+  health: 100.0
+  resources: {}
+- id: 613
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -109242.76
+    y: 30549.04
+  health: 100.0
+  resources: {}
+- id: 614
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -108573.58
+    y: 40955.3
+  health: 100.0
+  resources: {}
+- id: 615
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -107458.01
+    y: 42626.36
+  health: 100.0
+  resources: {}
+- id: 616
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -108055.94
+    y: 39124.848
+  health: 100.0
+  resources: {}
+- id: 617
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -111883.7
+    y: 29195.588
+  health: 100.0
+  resources: {}
+- id: 618
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -110818.25
+    y: 38545.688
+  health: 100.0
+  resources: {}
+- id: 619
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -103014.28
+    y: 37376.47
+  health: 100.0
+  resources: {}
+- id: 620
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -116073.74
+    y: 41960.87
+  health: 100.0
+  resources: {}
+- id: 621
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -105446.73
+    y: 40775.367
+  health: 100.0
+  resources: {}
+- id: 622
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -103749.32
+    y: 35736.305
+  health: 100.0
+  resources: {}
+- id: 623
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 57248.61
+    y: 59288.47
+  health: 100.0
+  resources: {}
+- id: 624
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 61440.938
+    y: 53970.84
+  health: 100.0
+  resources: {}
+- id: 625
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 64885.51
+    y: 59052.855
+  health: 100.0
+  resources: {}
+- id: 626
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 56503.54
+    y: 61952.31
+  health: 100.0
+  resources: {}
+- id: 627
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 65872.74
+    y: 50758.152
+  health: 100.0
+  resources: {}
+- id: 628
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 56088.348
+    y: 56027.645
+  health: 100.0
+  resources: {}
+- id: 629
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 65144.844
+    y: 49486.023
+  health: 100.0
+  resources: {}
+- id: 630
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 56058.42
+    y: 49717.31
+  health: 100.0
+  resources: {}
+- id: 631
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 56338.473
+    y: 54388.184
+  health: 100.0
+  resources: {}
+- id: 632
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 55436.332
+    y: 52481.395
+  health: 100.0
+  resources: {}
+- id: 633
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -2023.1096
+    y: 32386.525
+  health: 100.0
+  resources: {}
+- id: 634
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -3580.2988
+    y: 29522.164
+  health: 100.0
+  resources: {}
+- id: 635
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -11795.575
+    y: 32547.66
+  health: 100.0
+  resources: {}
+- id: 636
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 1497.4038
+    y: 34059.457
+  health: 100.0
+  resources: {}
+- id: 637
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -9334.096
+    y: 32622.312
+  health: 100.0
+  resources: {}
+- id: 638
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -227.31274
+    y: 36566.86
+  health: 100.0
+  resources: {}
+- id: 639
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -6021.471
+    y: 29317.805
+  health: 100.0
+  resources: {}
+- id: 640
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -7210.467
+    y: 27896.455
+  health: 100.0
+  resources: {}
+- id: 641
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2628.498
+    y: 36845.07
+  health: 100.0
+  resources: {}
+- id: 642
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -12414.055
+    y: 28965.36
+  health: 100.0
+  resources: {}
+- id: 643
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -4551.506
+    y: 25381.854
+  health: 100.0
+  resources: {}
+- id: 644
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -59923.39
+    y: -28554.422
+  health: 100.0
+  resources: {}
+- id: 645
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -8781.915
+    y: 50058.42
+  health: 100.0
+  resources: {}
+- id: 646
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -23277.35
+    y: 53492.367
+  health: 100.0
+  resources: {}
+- id: 647
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -24755.63
+    y: 54254.645
+  health: 100.0
+  resources: {}
+- id: 648
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -12211.644
+    y: 52691.395
+  health: 100.0
+  resources: {}
+- id: 649
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -20718.45
+    y: 46620.94
+  health: 100.0
+  resources: {}
+- id: 650
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -15528.738
+    y: 59036.418
+  health: 100.0
+  resources: {}
+- id: 651
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -68513.38
+    y: -26927.049
+  health: 100.0
+  resources: {}
+- id: 652
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -69613.98
+    y: -28876.213
+  health: 100.0
+  resources: {}
+- id: 653
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53473.727
+    y: -24378.496
+  health: 100.0
+  resources: {}
+- id: 654
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -62249.402
+    y: -18099.84
+  health: 100.0
+  resources: {}
+- id: 655
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -56980.55
+    y: -22591.332
+  health: 100.0
+  resources: {}
+- id: 656
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -55334.324
+    y: -25994.045
+  health: 100.0
+  resources: {}
+- id: 657
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -54364.58
+    y: -27197.084
+  health: 100.0
+  resources: {}
+- id: 658
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 41187.164
+    y: -43069.71
+  health: 100.0
+  resources: {}
+- id: 659
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 48529.617
+    y: -51770.684
+  health: 100.0
+  resources: {}
+- id: 660
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 46315.664
+    y: -45775.418
+  health: 100.0
+  resources: {}
+- id: 661
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 45073.84
+    y: -42456.703
+  health: 100.0
+  resources: {}
+- id: 662
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 43678.83
+    y: -37292.63
+  health: 100.0
+  resources: {}
+- id: 663
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 46498.82
+    y: -46933.445
+  health: 100.0
+  resources: {}
+- id: 664
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 45475.703
+    y: -50483.68
+  health: 100.0
+  resources: {}
+- id: 665
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -25209.21
+    y: 45470.996
+  health: 100.0
+  resources: {}
+- id: 666
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -32187.088
+    y: 41300.977
+  health: 100.0
+  resources: {}
+- id: 667
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -28061.695
+    y: 50785.855
+  health: 100.0
+  resources: {}
+- id: 668
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -32498.266
+    y: 42320.9
+  health: 100.0
+  resources: {}
+- id: 669
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -38803.855
+    y: 103736.01
+  health: 100.0
+  resources: {}
+- id: 670
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -38599.535
+    y: 101767.21
+  health: 100.0
+  resources: {}
+- id: 671
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -34748.156
+    y: 103185.086
+  health: 100.0
+  resources: {}
+- id: 672
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -31146.193
+    y: 108044.08
+  health: 100.0
+  resources: {}
+- id: 673
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -29187.207
+    y: 99917.79
+  health: 100.0
+  resources: {}
+- id: 674
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -35556.766
+    y: 95742.336
+  health: 100.0
+  resources: {}
+- id: 675
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -27808.834
+    y: 105661.47
+  health: 100.0
+  resources: {}
+- id: 676
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -35595.46
+    y: 102301.445
+  health: 100.0
+  resources: {}
+- id: 677
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -26399.002
+    y: 97137.06
+  health: 100.0
+  resources: {}
+- id: 678
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -39567.98
+    y: 97412.72
+  health: 100.0
+  resources: {}
+- id: 679
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -32903.03
+    y: 94801.18
+  health: 100.0
+  resources: {}
+- id: 680
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -30421.008
+    y: 109123.07
+  health: 100.0
+  resources: {}
+- id: 681
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -27179.977
+    y: 104288.14
+  health: 100.0
+  resources: {}
+- id: 682
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -25928.29
+    y: 107316.92
+  health: 100.0
+  resources: {}
+- id: 683
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -20015.77
+    y: 15464.508
+  health: 100.0
+  resources: {}
+- id: 684
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -19072.578
+    y: 9743.29
+  health: 100.0
+  resources: {}
+- id: 685
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -7302.9937
+    y: 3534.6792
+  health: 100.0
+  resources: {}
+- id: 686
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -10748.586
+    y: 15311.601
+  health: 100.0
+  resources: {}
+- id: 687
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -16494.357
+    y: 15151.297
+  health: 100.0
+  resources: {}
+- id: 688
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -5691.415
+    y: 8287.432
+  health: 100.0
+  resources: {}
+- id: 689
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -12022.447
+    y: 7992.8755
+  health: 100.0
+  resources: {}
+- id: 690
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -15599.289
+    y: 1182.5186
+  health: 100.0
+  resources: {}
+- id: 691
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -14579.758
+    y: 87.62793
+  health: 100.0
+  resources: {}
+- id: 692
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -19235.33
+    y: 16202.398
+  health: 100.0
+  resources: {}
+- id: 693
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -11758.963
+    y: 10971.213
+  health: 100.0
+  resources: {}
+- id: 694
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 62120.71
+    y: 66679.234
+  health: 100.0
+  resources: {}
+- id: 695
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 63907.25
+    y: 61352.84
+  health: 100.0
+  resources: {}
+- id: 696
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 73550.22
+    y: 58638.453
+  health: 100.0
+  resources: {}
+- id: 697
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 75975.016
+    y: 63181.32
+  health: 100.0
+  resources: {}
+- id: 698
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 67144.45
+    y: 68890.87
+  health: 100.0
+  resources: {}
+- id: 699
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 67519.57
+    y: 55581.34
+  health: 100.0
+  resources: {}
+- id: 700
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 62139.508
+    y: 68066.0
+  health: 100.0
+  resources: {}
+- id: 701
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 62396.086
+    y: 57156.145
+  health: 100.0
+  resources: {}
+- id: 702
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 65485.426
+    y: 67672.586
+  health: 100.0
+  resources: {}
+- id: 703
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 71004.42
+    y: 69357.77
+  health: 100.0
+  resources: {}
+- id: 704
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 70244.12
+    y: 67546.02
+  health: 100.0
+  resources: {}
+- id: 705
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -20529.29
+    y: 39483.46
+  health: 100.0
+  resources: {}
+- id: 706
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -25957.115
+    y: 37713.32
+  health: 100.0
+  resources: {}
+- id: 707
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -26109.47
+    y: 44283.1
+  health: 100.0
+  resources: {}
+- id: 708
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -17847.34
+    y: 36276.953
+  health: 100.0
+  resources: {}
+- id: 709
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -14745.717
+    y: 45128.49
+  health: 100.0
+  resources: {}
+- id: 710
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -16078.2
+    y: 37869.902
+  health: 100.0
+  resources: {}
+- id: 711
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -76427.53
+    y: -1887.5793
+  health: 100.0
+  resources: {}
+- id: 712
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -71889.914
+    y: -1935.6902
+  health: 100.0
+  resources: {}
+- id: 713
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -76499.06
+    y: -3088.4202
+  health: 100.0
+  resources: {}
+- id: 714
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -68094.89
+    y: 1734.0593
+  health: 100.0
+  resources: {}
+- id: 715
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -72949.68
+    y: 477.60895
+  health: 100.0
+  resources: {}
+- id: 716
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -76370.914
+    y: 1056.397
+  health: 100.0
+  resources: {}
+- id: 717
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -75132.05
+    y: -7514.152
+  health: 100.0
+  resources: {}
+- id: 718
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -72072.66
+    y: 6595.7065
+  health: 100.0
+  resources: {}
+- id: 719
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -69634.27
+    y: -5942.7866
+  health: 100.0
+  resources: {}
+- id: 720
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -73653.266
+    y: 1542.1655
+  health: 100.0
+  resources: {}
+- id: 721
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -78569.92
+    y: 4071.2134
+  health: 100.0
+  resources: {}
+- id: 722
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -72248.14
+    y: 12297.654
+  health: 100.0
+  resources: {}
+- id: 723
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 90665.89
+    y: 324.9135
+  health: 100.0
+  resources: {}
+- id: 724
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 90540.44
+    y: 3372.3115
+  health: 100.0
+  resources: {}
+- id: 725
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 96384.06
+    y: -3156.9238
+  health: 100.0
+  resources: {}
+- id: 726
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 97374.086
+    y: -4701.075
+  health: 100.0
+  resources: {}
+- id: 727
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -28466.076
+    y: 35668.293
+  health: 100.0
+  resources: {}
+- id: 728
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -31397.342
+    y: 24843.719
+  health: 100.0
+  resources: {}
+- id: 729
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -41007.18
+    y: -1435.9985
+  health: 100.0
+  resources: {}
+- id: 730
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -29357.63
+    y: -7321.754
+  health: 100.0
+  resources: {}
+- id: 731
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -38069.86
+    y: -3371.377
+  health: 100.0
+  resources: {}
+- id: 732
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -34790.375
+    y: -9928.662
+  health: 100.0
+  resources: {}
+- id: 733
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -37120.285
+    y: -9354.724
+  health: 100.0
+  resources: {}
+- id: 734
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -31983.104
+    y: -1247.061
+  health: 100.0
+  resources: {}
+- id: 735
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -432.81982
+    y: -67288.016
+  health: 100.0
+  resources: {}
+- id: 736
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -2125.4932
+    y: -69271.086
+  health: 100.0
+  resources: {}
+- id: 737
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2441.4995
+    y: -63952.965
+  health: 100.0
+  resources: {}
+- id: 738
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -8140.3574
+    y: -62270.184
+  health: 100.0
+  resources: {}
+- id: 739
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 1405.7241
+    y: -72301.9
+  health: 100.0
+  resources: {}
+- id: 740
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4255.3
+    y: -65864.73
+  health: 100.0
+  resources: {}
+- id: 741
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 3648.8154
+    y: -62824.08
+  health: 100.0
+  resources: {}
+- id: 742
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2986.5676
+    y: -63284.023
+  health: 100.0
+  resources: {}
+- id: 743
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -11478.44
+    y: -71833.02
+  health: 100.0
+  resources: {}
+- id: 744
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -10423.537
+    y: -63327.273
+  health: 100.0
+  resources: {}
+- id: 745
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -7582.718
+    y: -65758.24
+  health: 100.0
+  resources: {}
+- id: 746
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 1802.3955
+    y: -69974.13
+  health: 100.0
+  resources: {}
+- id: 747
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3439.9126
+    y: -70686.805
+  health: 100.0
+  resources: {}
+- id: 748
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -8314.945
+    y: -64695.88
+  health: 100.0
+  resources: {}
+- id: 749
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 32554.918
+    y: -30748.676
+  health: 100.0
+  resources: {}
+- id: 750
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 2436.6172
+    y: -91600.2
+  health: 100.0
+  resources: {}
+- id: 751
+  entity_type: planet_ice
+  owner: universe
+  position:
+    x: 4475.94
+    y: -94220.336
+  health: 100.0
+  resources: {}
+- id: 752
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 1034.1888
+    y: -98634.06
+  health: 100.0
+  resources: {}
+- id: 753
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -5098.7603
+    y: -94897.62
+  health: 100.0
+  resources: {}
+- id: 754
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 758.98413
+    y: -85904.62
+  health: 100.0
+  resources: {}
+- id: 755
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -6558.2363
+    y: -98558.9
+  health: 100.0
+  resources: {}
+- id: 756
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 8289.026
+    y: -74280.9
+  health: 100.0
+  resources: {}
+- id: 757
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 29377.613
+    y: 52747.508
+  health: 100.0
+  resources: {}
+- id: 758
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 21813.633
+    y: 47500.824
+  health: 100.0
+  resources: {}
+- id: 759
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32260.523
+    y: 51730.83
+  health: 100.0
+  resources: {}
+- id: 760
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 20371.78
+    y: 41762.613
+  health: 100.0
+  resources: {}
+- id: 761
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32210.22
+    y: 52347.098
+  health: 100.0
+  resources: {}
+- id: 762
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 26780.494
+    y: 47918.12
+  health: 100.0
+  resources: {}
+- id: 763
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 26912.23
+    y: 43815.945
+  health: 100.0
+  resources: {}
+- id: 764
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 43554.133
+    y: -52384.723
+  health: 100.0
+  resources: {}
+- id: 765
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32084.898
+    y: -53335.254
+  health: 100.0
+  resources: {}
+- id: 766
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32135.865
+    y: -59559.027
+  health: 100.0
+  resources: {}
+- id: 767
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 33956.023
+    y: -50912.246
+  health: 100.0
+  resources: {}
+- id: 768
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 41681.29
+    y: -63188.168
+  health: 100.0
+  resources: {}
+- id: 769
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 33603.227
+    y: -55053.566
+  health: 100.0
+  resources: {}
+- id: 770
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -19169.492
+    y: -55972.277
+  health: 100.0
+  resources: {}
+- id: 771
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -28469.334
+    y: -57291.07
+  health: 100.0
+  resources: {}
+- id: 772
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -26764.678
+    y: -59054.348
+  health: 100.0
+  resources: {}
+- id: 773
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -17413.05
+    y: -50125.156
+  health: 100.0
+  resources: {}
+- id: 774
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -12383.907
+    y: -55796.797
+  health: 100.0
+  resources: {}
+- id: 775
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -18857.615
+    y: -59995.523
+  health: 100.0
+  resources: {}
+- id: 776
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -27506.582
+    y: -59999.105
+  health: 100.0
+  resources: {}
+- id: 777
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -14817.186
+    y: -56510.84
+  health: 100.0
+  resources: {}
+- id: 778
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -17499.418
+    y: -63849.02
+  health: 100.0
+  resources: {}
+- id: 779
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -26823.531
+    y: -56131.832
+  health: 100.0
+  resources: {}
+- id: 780
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -25161.365
+    y: -51003.11
+  health: 100.0
+  resources: {}
+- id: 781
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -14086.493
+    y: -56951.71
+  health: 100.0
+  resources: {}
+- id: 782
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -25297.871
+    y: -52318.766
+  health: 100.0
+  resources: {}
+- id: 783
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -23109.945
+    y: -63901.83
+  health: 100.0
+  resources: {}
+- id: 784
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -18743.277
+    y: 18978.264
+  health: 100.0
+  resources: {}
+- id: 785
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -8483.492
+    y: 10429.807
+  health: 100.0
+  resources: {}
+- id: 786
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -19970.033
+    y: 12455.108
+  health: 100.0
+  resources: {}
+- id: 787
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -21729.115
+    y: 12796.84
+  health: 100.0
+  resources: {}
+- id: 788
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -16374.005
+    y: 17547.664
+  health: 100.0
+  resources: {}
+- id: 789
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -12814.301
+    y: 8428.375
+  health: 100.0
+  resources: {}
+- id: 790
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -18260.969
+    y: 19151.672
+  health: 100.0
+  resources: {}
+- id: 791
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 23364.455
+    y: -31420.701
+  health: 100.0
+  resources: {}
+- id: 792
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 11954.035
+    y: -25952.893
+  health: 100.0
+  resources: {}
+- id: 793
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 14022.891
+    y: -36007.777
+  health: 100.0
+  resources: {}
+- id: 794
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 20031.727
+    y: -21829.188
+  health: 100.0
+  resources: {}
+- id: 795
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 19103.236
+    y: -24730.084
+  health: 100.0
+  resources: {}
+- id: 796
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 15834.993
+    y: -21138.646
+  health: 100.0
+  resources: {}
+- id: 797
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 13158.632
+    y: -33988.227
+  health: 100.0
+  resources: {}
+- id: 798
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 22780.41
+    y: -33304.81
+  health: 100.0
+  resources: {}
+- id: 799
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 10785.454
+    y: -25076.637
+  health: 100.0
+  resources: {}
+- id: 800
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 14790.989
+    y: -30401.58
+  health: 100.0
+  resources: {}
+- id: 801
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 20044.723
+    y: -26812.422
+  health: 100.0
+  resources: {}
+- id: 802
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 15459.705
+    y: -36932.625
+  health: 100.0
+  resources: {}
+- id: 803
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -37352.355
+    y: 91795.84
+  health: 100.0
+  resources: {}
+- id: 804
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -44522.043
+    y: 96279.35
+  health: 100.0
+  resources: {}
+- id: 805
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -36655.574
+    y: 89128.47
+  health: 100.0
+  resources: {}
+- id: 806
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -19211.1
+    y: -35134.2
+  health: 100.0
+  resources: {}
+- id: 807
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 87733.76
+    y: 5186.743
+  health: 100.0
+  resources: {}
+- id: 808
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 88443.49
+    y: 9749.063
+  health: 100.0
+  resources: {}
+- id: 809
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 91276.51
+    y: 3197.4246
+  health: 100.0
+  resources: {}
+- id: 810
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 93473.24
+    y: 3112.4844
+  health: 100.0
+  resources: {}
+- id: 811
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 80395.516
+    y: 8414.286
+  health: 100.0
+  resources: {}
+- id: 812
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 93202.78
+    y: 7655.453
+  health: 100.0
+  resources: {}
+- id: 813
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 81130.734
+    y: -2579.5798
+  health: 100.0
+  resources: {}
+- id: 814
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 85829.68
+    y: 1671.521
+  health: 100.0
+  resources: {}
+- id: 815
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 90231.78
+    y: 8394.733
+  health: 100.0
+  resources: {}
+- id: 816
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 84920.77
+    y: -419.78394
+  health: 100.0
+  resources: {}
+- id: 817
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 82470.125
+    y: 10878.058
+  health: 100.0
+  resources: {}
+- id: 818
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 78153.836
+    y: 3088.0027
+  health: 100.0
+  resources: {}
+- id: 819
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 80391.21
+    y: -3015.1765
+  health: 100.0
+  resources: {}
+- id: 820
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 92225.93
+    y: 7970.616
+  health: 100.0
+  resources: {}
+- id: 821
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 81299.64
+    y: 5788.1064
+  health: 100.0
+  resources: {}
+- id: 822
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 90163.33
+    y: 1050.1655
+  health: 100.0
+  resources: {}
+- id: 823
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 50599.52
+    y: -52078.74
+  health: 100.0
+  resources: {}
+- id: 824
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 48538.78
+    y: -48520.527
+  health: 100.0
+  resources: {}
+- id: 825
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 53792.43
+    y: -45181.438
+  health: 100.0
+  resources: {}
+- id: 826
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 46927.414
+    y: -45261.01
+  health: 100.0
+  resources: {}
+- id: 827
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 44403.24
+    y: -38785.883
+  health: 100.0
+  resources: {}
+- id: 828
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 58677.875
+    y: -39864.645
+  health: 100.0
+  resources: {}
+- id: 829
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 59295.586
+    y: -46896.74
+  health: 100.0
+  resources: {}
+- id: 830
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 58128.977
+    y: -46452.816
+  health: 100.0
+  resources: {}
+- id: 831
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 46475.57
+    y: -51370.875
+  health: 100.0
+  resources: {}
+- id: 832
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 54909.848
+    y: -50389.7
+  health: 100.0
+  resources: {}
+- id: 833
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -12192.433
+    y: -100368.61
+  health: 100.0
+  resources: {}
+- id: 834
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -11012.853
+    y: -102429.45
+  health: 100.0
+  resources: {}
+- id: 835
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -7907.7383
+    y: -96188.3
+  health: 100.0
+  resources: {}
+- id: 836
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -12998.278
+    y: -98466.6
+  health: 100.0
+  resources: {}
+- id: 837
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -9087.863
+    y: -105409.24
+  health: 100.0
+  resources: {}
+- id: 838
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -11391.164
+    y: -102997.22
+  health: 100.0
+  resources: {}
+- id: 839
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -11247.424
+    y: -107941.82
+  health: 100.0
+  resources: {}
+- id: 840
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -13589.646
+    y: -95353.32
+  health: 100.0
+  resources: {}
+- id: 841
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -10944.918
+    y: -95737.61
+  health: 100.0
+  resources: {}
+- id: 842
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -13122.098
+    y: -95254.9
+  health: 100.0
+  resources: {}
+- id: 843
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -6302.7334
+    y: -93928.91
+  health: 100.0
+  resources: {}
+- id: 844
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -15619.46
+    y: -97483.35
+  health: 100.0
+  resources: {}
+- id: 845
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 73537.39
+    y: 3386.6199
+  health: 100.0
+  resources: {}
+- id: 846
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 72136.72
+    y: -3222.6335
+  health: 100.0
+  resources: {}
+- id: 847
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 72608.86
+    y: 997.5322
+  health: 100.0
+  resources: {}
+- id: 848
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 68447.75
+    y: 3301.601
+  health: 100.0
+  resources: {}
+- id: 849
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 76059.31
+    y: 10109.444
+  health: 100.0
+  resources: {}
+- id: 850
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 77616.516
+    y: 7478.4697
+  health: 100.0
+  resources: {}
+- id: 851
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 75893.836
+    y: 6106.5986
+  health: 100.0
+  resources: {}
+- id: 852
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 72400.76
+    y: 11940.504
+  health: 100.0
+  resources: {}
+- id: 853
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 67410.586
+    y: 3033.0454
+  health: 100.0
+  resources: {}
+- id: 854
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 82470.516
+    y: 1740.4434
+  health: 100.0
+  resources: {}
+- id: 855
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -57819.82
+    y: 16799.645
+  health: 100.0
+  resources: {}
+- id: 856
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -57990.625
+    y: 10087.113
+  health: 100.0
+  resources: {}
+- id: 857
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -67407.17
+    y: 11713.382
+  health: 100.0
+  resources: {}
+- id: 858
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -54393.348
+    y: 18733.273
+  health: 100.0
+  resources: {}
+- id: 859
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -64890.902
+    y: 14249.982
+  health: 100.0
+  resources: {}
+- id: 860
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -1863.4764
+    y: -13742.086
+  health: 100.0
+  resources: {}
+- id: 861
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 6632.367
+    y: -2484.5708
+  health: 100.0
+  resources: {}
+- id: 862
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4490.0312
+    y: -7670.129
+  health: 100.0
+  resources: {}
+- id: 863
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -1507.8732
+    y: -2203.1533
+  health: 100.0
+  resources: {}
+- id: 864
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 7277.218
+    y: -8467.154
+  health: 100.0
+  resources: {}
+- id: 865
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -602.94226
+    y: -3354.9307
+  health: 100.0
+  resources: {}
+- id: 866
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 7151.7446
+    y: -5842.9067
+  health: 100.0
+  resources: {}
+- id: 867
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -6155.1694
+    y: -10928.596
+  health: 100.0
+  resources: {}
+- id: 868
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -5666.0737
+    y: -9538.168
+  health: 100.0
+  resources: {}
+- id: 869
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 33418.812
+    y: 64828.0
+  health: 100.0
+  resources: {}
+- id: 870
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 32285.572
+    y: 70938.766
+  health: 100.0
+  resources: {}
+- id: 871
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 32646.727
+    y: 69080.27
+  health: 100.0
+  resources: {}
+- id: 872
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 32246.582
+    y: 71646.125
+  health: 100.0
+  resources: {}
+- id: 873
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 28171.555
+    y: 73575.38
+  health: 100.0
+  resources: {}
+- id: 874
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 33639.746
+    y: 68384.75
+  health: 100.0
+  resources: {}
+- id: 875
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 30209.562
+    y: 79277.59
+  health: 100.0
+  resources: {}
+- id: 876
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 27268.965
+    y: 63846.957
+  health: 100.0
+  resources: {}
+- id: 877
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 23200.512
+    y: 73413.52
+  health: 100.0
+  resources: {}
+- id: 878
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 31325.824
+    y: 67089.62
+  health: 100.0
+  resources: {}
+- id: 879
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 21075.496
+    y: 72413.7
+  health: 100.0
+  resources: {}
+- id: 880
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 33999.184
+    y: 66890.12
+  health: 100.0
+  resources: {}
+- id: 881
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 28023.65
+    y: 78432.984
+  health: 100.0
+  resources: {}
+- id: 882
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 1760.4741
+    y: 11584.522
+  health: 100.0
+  resources: {}
+- id: 883
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 1979.8491
+    y: 6544.4395
+  health: 100.0
+  resources: {}
+- id: 884
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -2603.8052
+    y: 1522.52
+  health: 100.0
+  resources: {}
+- id: 885
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -459.57434
+    y: 3786.088
+  health: 100.0
+  resources: {}
+- id: 886
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -3787.67
+    y: 12822.477
+  health: 100.0
+  resources: {}
+- id: 887
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -4993.516
+    y: 13977.948
+  health: 100.0
+  resources: {}
+- id: 888
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 2132.9058
+    y: 4848.044
+  health: 100.0
+  resources: {}
+- id: 889
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -4849.0366
+    y: 10101.773
+  health: 100.0
+  resources: {}
+- id: 890
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -5356.842
+    y: 15631.56
+  health: 100.0
+  resources: {}
+- id: 891
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -1228.864
+    y: 3238.8662
+  health: 100.0
+  resources: {}
+- id: 892
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -9386.67
+    y: 7328.512
+  health: 100.0
+  resources: {}
+- id: 893
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 2278.9934
+    y: 5179.1914
+  health: 100.0
+  resources: {}
+- id: 894
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -4140.161
+    y: -83809.96
+  health: 100.0
+  resources: {}
+- id: 895
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -4855.0806
+    y: -81432.07
+  health: 100.0
+  resources: {}
+- id: 896
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -7356.787
+    y: -85814.76
+  health: 100.0
+  resources: {}
+- id: 897
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3356.0413
+    y: -79124.55
+  health: 100.0
+  resources: {}
+- id: 898
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -9359.716
+    y: -87278.67
+  health: 100.0
+  resources: {}
+- id: 899
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 58110.562
+    y: -104901.0
+  health: 100.0
+  resources: {}
+- id: 900
+  entity_type: planet_ice
+  owner: universe
+  position:
+    x: 61463.92
+    y: -109665.45
+  health: 100.0
+  resources: {}
+- id: 901
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 56621.074
+    y: -97967.914
+  health: 100.0
+  resources: {}
+- id: 902
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 52335.973
+    y: -109847.95
+  health: 100.0
+  resources: {}
+- id: 903
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 57323.297
+    y: -108554.46
+  health: 100.0
+  resources: {}
+- id: 904
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 47552.348
+    y: -103308.21
+  health: 100.0
+  resources: {}
+- id: 905
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 63722.824
+    y: -102385.81
+  health: 100.0
+  resources: {}
+- id: 906
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 60733.53
+    y: -100855.68
+  health: 100.0
+  resources: {}
+- id: 907
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 54610.04
+    y: -112190.47
+  health: 100.0
+  resources: {}
+- id: 908
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 55159.785
+    y: -114458.48
+  health: 100.0
+  resources: {}
+- id: 909
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 61104.535
+    y: -103931.25
+  health: 100.0
+  resources: {}
+- id: 910
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 51744.11
+    y: -103298.375
+  health: 100.0
+  resources: {}
+- id: 911
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 51696.19
+    y: -99060.82
+  health: 100.0
+  resources: {}
+- id: 912
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 48340.617
+    y: -106304.93
+  health: 100.0
+  resources: {}
+- id: 913
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 3346.5308
+    y: -6882.6523
+  health: 100.0
+  resources: {}
+- id: 914
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 3747.2002
+    y: -13013.442
+  health: 100.0
+  resources: {}
+- id: 915
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 2722.631
+    y: -8647.077
+  health: 100.0
+  resources: {}
+- id: 916
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 9556.834
+    y: 21763.893
+  health: 100.0
+  resources: {}
+- id: 917
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 5804.8403
+    y: 24298.516
+  health: 100.0
+  resources: {}
+- id: 918
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 6920.1396
+    y: 26659.273
+  health: 100.0
+  resources: {}
+- id: 919
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 10439.23
+    y: 30264.955
+  health: 100.0
+  resources: {}
+- id: 920
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 1668.0742
+    y: 20940.688
+  health: 100.0
+  resources: {}
+- id: 921
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 5723.494
+    y: 30613.158
+  health: 100.0
+  resources: {}
+- id: 922
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 7572.7676
+    y: 26168.273
+  health: 100.0
+  resources: {}
+- id: 923
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 1190.71
+    y: 24527.523
+  health: 100.0
+  resources: {}
+- id: 924
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 6998.169
+    y: 25810.969
+  health: 100.0
+  resources: {}
+- id: 925
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3346.9731
+    y: 21187.787
+  health: 100.0
+  resources: {}
+- id: 926
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 10847.082
+    y: 27582.36
+  health: 100.0
+  resources: {}
+- id: 927
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 14806.883
+    y: 17608.932
+  health: 100.0
+  resources: {}
+- id: 928
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 113038.61
+    y: 4162.7715
+  health: 100.0
+  resources: {}
+- id: 929
+  entity_type: planet_ice
+  owner: universe
+  position:
+    x: 106240.1
+    y: 13541.284
+  health: 100.0
+  resources: {}
+- id: 930
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: 112005.31
+    y: 4552.038
+  health: 100.0
+  resources: {}
+- id: 931
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 109673.3
+    y: 10532.541
+  health: 100.0
+  resources: {}
+- id: 932
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 117583.195
+    y: 6824.229
+  health: 100.0
+  resources: {}
+- id: 933
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 68479.125
+    y: 33919.184
+  health: 100.0
+  resources: {}
+- id: 934
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 71222.875
+    y: 37483.13
+  health: 100.0
+  resources: {}
+- id: 935
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 63819.87
+    y: 45522.562
+  health: 100.0
+  resources: {}
+- id: 936
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 60032.973
+    y: 45983.49
+  health: 100.0
+  resources: {}
+- id: 937
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 57223.895
+    y: 35570.85
+  health: 100.0
+  resources: {}
+- id: 938
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 63795.082
+    y: 34914.945
+  health: 100.0
+  resources: {}
+- id: 939
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 61517.414
+    y: 35264.547
+  health: 100.0
+  resources: {}
+- id: 940
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 59557.457
+    y: 46279.562
+  health: 100.0
+  resources: {}
+- id: 941
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 63624.57
+    y: 44691.76
+  health: 100.0
+  resources: {}
+- id: 942
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 68019.46
+    y: 45776.07
+  health: 100.0
+  resources: {}
+- id: 943
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 68901.9
+    y: 36296.414
+  health: 100.0
+  resources: {}
+- id: 944
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 58076.027
+    y: 40268.72
+  health: 100.0
+  resources: {}
+- id: 945
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 68936.695
+    y: 44100.773
+  health: 100.0
+  resources: {}
+- id: 946
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 3758.0352
+    y: 52380.777
+  health: 100.0
+  resources: {}
+- id: 947
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -7668.6367
+    y: 46943.27
+  health: 100.0
+  resources: {}
+- id: 948
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -5615.646
+    y: 43451.36
+  health: 100.0
+  resources: {}
+- id: 949
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 2142.2754
+    y: 46861.945
+  health: 100.0
+  resources: {}
+- id: 950
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -7642.435
+    y: 44311.95
+  health: 100.0
+  resources: {}
+- id: 951
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -1331.2212
+    y: 55915.945
+  health: 100.0
+  resources: {}
+- id: 952
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 5128.158
+    y: 45329.97
+  health: 100.0
+  resources: {}
+- id: 953
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4140.8564
+    y: 52200.844
+  health: 100.0
+  resources: {}
+- id: 954
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4268.248
+    y: 45801.133
+  health: 100.0
+  resources: {}
+- id: 955
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2659.0261
+    y: 55339.758
+  health: 100.0
+  resources: {}
+- id: 956
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 44098.945
+    y: 37920.6
+  health: 100.0
+  resources: {}
+- id: 957
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 50061.094
+    y: 38087.21
+  health: 100.0
+  resources: {}
+- id: 958
+  entity_type: planet_ice
+  owner: universe
+  position:
+    x: 136512.36
+    y: -81492.06
+  health: 100.0
+  resources: {}
+- id: 959
+  entity_type: planet_ice
+  owner: universe
+  position:
+    x: 148755.39
+    y: -85473.37
+  health: 100.0
+  resources: {}
+- id: 960
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 142399.9
+    y: -78341.75
+  health: 100.0
+  resources: {}
+- id: 961
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 139729.28
+    y: -87777.805
+  health: 100.0
+  resources: {}
+- id: 962
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 149777.19
+    y: -82726.0
+  health: 100.0
+  resources: {}
+- id: 963
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 141437.47
+    y: -88327.81
+  health: 100.0
+  resources: {}
+- id: 964
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 150635.03
+    y: -78628.43
+  health: 100.0
+  resources: {}
+- id: 965
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 143975.08
+    y: -85474.055
+  health: 100.0
+  resources: {}
+- id: 966
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 134037.69
+    y: -79646.05
+  health: 100.0
+  resources: {}
+- id: 967
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 137706.75
+    y: -75732.46
+  health: 100.0
+  resources: {}
+- id: 968
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 147922.73
+    y: -83643.6
+  health: 100.0
+  resources: {}
+- id: 969
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 135884.9
+    y: -80347.32
+  health: 100.0
+  resources: {}
+- id: 970
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 141516.4
+    y: -89284.34
+  health: 100.0
+  resources: {}
+- id: 971
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 140887.5
+    y: -87285.21
+  health: 100.0
+  resources: {}
+- id: 972
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 147657.73
+    y: -79976.62
+  health: 100.0
+  resources: {}
+- id: 973
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -68587.04
+    y: 62820.72
+  health: 100.0
+  resources: {}
+- id: 974
+  entity_type: planet_blue
+  owner: universe
+  position:
+    x: -59758.8
+    y: 58956.125
+  health: 100.0
+  resources: {}
+- id: 975
+  entity_type: planet_ice
+  owner: universe
+  position:
+    x: -56999.516
+    y: 61171.73
+  health: 100.0
+  resources: {}
+- id: 976
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -67456.14
+    y: 66253.06
+  health: 100.0
+  resources: {}
+- id: 977
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -51028.91
+    y: -47967.0
+  health: 100.0
+  resources: {}
+- id: 978
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -57511.043
+    y: -49271.17
+  health: 100.0
+  resources: {}
+- id: 979
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -57552.06
+    y: -46577.484
+  health: 100.0
+  resources: {}
+- id: 980
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -56028.414
+    y: -51353.105
+  health: 100.0
+  resources: {}
+- id: 981
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -61174.785
+    y: -55771.016
+  health: 100.0
+  resources: {}
+- id: 982
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53463.035
+    y: -57278.43
+  health: 100.0
+  resources: {}
+- id: 983
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53360.434
+    y: -46276.84
+  health: 100.0
+  resources: {}
+- id: 984
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -56572.836
+    y: -55699.277
+  health: 100.0
+  resources: {}
+- id: 985
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -52203.78
+    y: -59984.348
+  health: 100.0
+  resources: {}
+- id: 986
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -48258.71
+    y: -47583.445
+  health: 100.0
+  resources: {}
+- id: 987
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -62172.82
+    y: -16989.252
+  health: 100.0
+  resources: {}
+- id: 988
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -54158.523
+    y: -21908.133
+  health: 100.0
+  resources: {}
+- id: 989
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53001.19
+    y: -14127.205
+  health: 100.0
+  resources: {}
+- id: 990
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -61368.23
+    y: -16438.926
+  health: 100.0
+  resources: {}
+- id: 991
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -54723.09
+    y: -11298.733
+  health: 100.0
+  resources: {}
+- id: 992
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -51173.64
+    y: -21667.016
+  health: 100.0
+  resources: {}
+- id: 993
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -58541.277
+    y: -18901.496
+  health: 100.0
+  resources: {}
+- id: 994
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 26272.072
+    y: 17898.457
+  health: 100.0
+  resources: {}
+- id: 995
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 19582.137
+    y: 29021.133
+  health: 100.0
+  resources: {}
+- id: 996
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 17795.043
+    y: 25134.916
+  health: 100.0
+  resources: {}
+- id: 997
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 20520.355
+    y: 29524.871
+  health: 100.0
+  resources: {}
+- id: 998
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 19566.352
+    y: 21698.41
+  health: 100.0
+  resources: {}
+- id: 999
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 25758.695
+    y: 19756.469
+  health: 100.0
+  resources: {}
+- id: 1000
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 25557.225
+    y: 27425.04
+  health: 100.0
+  resources: {}
+- id: 1001
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 7525.4507
+    y: -34989.746
+  health: 100.0
+  resources: {}
+- id: 1002
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 2682.5105
+    y: -27034.057
+  health: 100.0
+  resources: {}
+- id: 1003
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 306.58398
+    y: -27303.451
+  health: 100.0
+  resources: {}
+- id: 1004
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 6148.6924
+    y: -33755.332
+  health: 100.0
+  resources: {}
+- id: 1005
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -4514.0425
+    y: -39925.836
+  health: 100.0
+  resources: {}
+- id: 1006
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -1044.0933
+    y: -44190.344
+  health: 100.0
+  resources: {}
+- id: 1007
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 2425.0474
+    y: -27671.834
+  health: 100.0
+  resources: {}
+- id: 1008
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -1006.43225
+    y: -43247.977
+  health: 100.0
+  resources: {}
+- id: 1009
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 4940.7144
+    y: -34740.773
+  health: 100.0
+  resources: {}
+- id: 1010
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -51324.277
+    y: -8460.373
+  health: 100.0
+  resources: {}
+- id: 1011
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -39662.99
+    y: -12281.712
+  health: 100.0
+  resources: {}
+- id: 1012
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -46761.137
+    y: -5479.784
+  health: 100.0
+  resources: {}
+- id: 1013
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -48128.11
+    y: -13648.177
+  health: 100.0
+  resources: {}
+- id: 1014
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -45923.95
+    y: -15126.792
+  health: 100.0
+  resources: {}
+- id: 1015
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53832.742
+    y: -12350.84
+  health: 100.0
+  resources: {}
+- id: 1016
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -56169.77
+    y: -10823.894
+  health: 100.0
+  resources: {}
+- id: 1017
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -41099.754
+    y: -15866.219
+  health: 100.0
+  resources: {}
+- id: 1018
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -52929.67
+    y: -8379.805
+  health: 100.0
+  resources: {}
+- id: 1019
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -54833.156
+    y: -8931.965
+  health: 100.0
+  resources: {}
+- id: 1020
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -53128.062
+    y: -11789.068
+  health: 100.0
+  resources: {}
+- id: 1021
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -37749.54
+    y: 30116.57
+  health: 100.0
+  resources: {}
+- id: 1022
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -36017.742
+    y: 36408.375
+  health: 100.0
+  resources: {}
+- id: 1023
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 2739.456
+    y: 5810.8706
+  health: 100.0
+  resources: {}
+- id: 1024
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 6946.8936
+    y: 7357.7026
+  health: 100.0
+  resources: {}
+- id: 1025
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 5706.6753
+    y: 9730.012
+  health: 100.0
+  resources: {}
+- id: 1026
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 1299.4675
+    y: 7836.209
+  health: 100.0
+  resources: {}
+- id: 1027
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 1902.3958
+    y: 8724.537
+  health: 100.0
+  resources: {}
+- id: 1028
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2767.3674
+    y: 13046.842
+  health: 100.0
+  resources: {}
+- id: 1029
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -880.34204
+    y: 14071.467
+  health: 100.0
+  resources: {}
+- id: 1030
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 6915.7266
+    y: 3829.849
+  health: 100.0
+  resources: {}
+- id: 1031
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 1099.0974
+    y: 14128.639
+  health: 100.0
+  resources: {}
+- id: 1032
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 10386.228
+    y: 9977.83
+  health: 100.0
+  resources: {}
+- id: 1033
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 26918.31
+    y: 38284.09
+  health: 100.0
+  resources: {}
+- id: 1034
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 26296.047
+    y: 34776.984
+  health: 100.0
+  resources: {}
+- id: 1035
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 24246.234
+    y: 38116.02
+  health: 100.0
+  resources: {}
+- id: 1036
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 30012.42
+    y: 42015.273
+  health: 100.0
+  resources: {}
+- id: 1037
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 24157.97
+    y: 41199.15
+  health: 100.0
+  resources: {}
+- id: 1038
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 18434.355
+    y: 43046.055
+  health: 100.0
+  resources: {}
+- id: 1039
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 31140.941
+    y: 41333.74
+  health: 100.0
+  resources: {}
+- id: 1040
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 20892.033
+    y: 46848.383
+  health: 100.0
+  resources: {}
+- id: 1041
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 32167.701
+    y: 33657.613
+  health: 100.0
+  resources: {}
+- id: 1042
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 28265.23
+    y: 44138.69
+  health: 100.0
+  resources: {}
+- id: 1043
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 19854.727
+    y: 38230.977
+  health: 100.0
+  resources: {}
+- id: 1044
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 30838.963
+    y: 47841.824
+  health: 100.0
+  resources: {}
+- id: 1045
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 19412.562
+    y: 42334.164
+  health: 100.0
+  resources: {}
+- id: 1046
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -87082.15
+    y: -66045.84
+  health: 100.0
+  resources: {}
+- id: 1047
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -100025.93
+    y: -70829.59
+  health: 100.0
+  resources: {}
+- id: 1048
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -97714.125
+    y: -71775.89
+  health: 100.0
+  resources: {}
+- id: 1049
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -90872.26
+    y: -68907.09
+  health: 100.0
+  resources: {}
+- id: 1050
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -100371.016
+    y: -70187.72
+  health: 100.0
+  resources: {}
+- id: 1051
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -89625.03
+    y: -65847.88
+  health: 100.0
+  resources: {}
+- id: 1052
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -1760.2551
+    y: 47219.727
+  health: 100.0
+  resources: {}
+- id: 1053
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -4898.8477
+    y: 45012.207
+  health: 100.0
+  resources: {}
+- id: 1054
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 298.0588
+    y: 43034.414
+  health: 100.0
+  resources: {}
+- id: 1055
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 641.4742
+    y: 55563.44
+  health: 100.0
+  resources: {}
+- id: 1056
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 6397.1475
+    y: -8494.381
+  health: 100.0
+  resources: {}
+- id: 1057
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 1438.6248
+    y: -3828.353
+  health: 100.0
+  resources: {}
+- id: 1058
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 118.92377
+    y: -11903.321
+  health: 100.0
+  resources: {}
+- id: 1059
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -7353.9385
+    y: -5875.898
+  health: 100.0
+  resources: {}
+- id: 1060
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 9039.006
+    y: -8165.3438
+  health: 100.0
+  resources: {}
+- id: 1061
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -85371.31
+    y: -47731.69
+  health: 100.0
+  resources: {}
+- id: 1062
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -86459.72
+    y: -49045.15
+  health: 100.0
+  resources: {}
+- id: 1063
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -78971.125
+    y: -45637.2
+  health: 100.0
+  resources: {}
+- id: 1064
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -77303.5
+    y: -56896.75
+  health: 100.0
+  resources: {}
+- id: 1065
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -80156.38
+    y: -47143.58
+  health: 100.0
+  resources: {}
+- id: 1066
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 2570.3347
+    y: -63096.27
+  health: 100.0
+  resources: {}
+- id: 1067
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4185.2983
+    y: -73257.39
+  health: 100.0
+  resources: {}
+- id: 1068
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 4911.753
+    y: -70843.22
+  health: 100.0
+  resources: {}
+- id: 1069
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -7846.2554
+    y: -67524.22
+  health: 100.0
+  resources: {}
+- id: 1070
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -1325.0981
+    y: -67433.08
+  health: 100.0
+  resources: {}
+- id: 1071
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 515.66296
+    y: -72043.055
+  health: 100.0
+  resources: {}
+- id: 1072
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 6967.5522
+    y: -67594.67
+  health: 100.0
+  resources: {}
+- id: 1073
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3557.03
+    y: -60983.516
+  health: 100.0
+  resources: {}
+- id: 1074
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 7704.7886
+    y: -70747.73
+  health: 100.0
+  resources: {}
+- id: 1075
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -3265.171
+    y: -70789.28
+  health: 100.0
+  resources: {}
+- id: 1076
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -11494.752
+    y: -3598.959
+  health: 100.0
+  resources: {}
+- id: 1077
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -14718.038
+    y: -1100.52
+  health: 100.0
+  resources: {}
+- id: 1078
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -9468.672
+    y: -7296.7188
+  health: 100.0
+  resources: {}
+- id: 1079
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -20868.398
+    y: 2156.645
+  health: 100.0
+  resources: {}
+- id: 1080
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -8925.979
+    y: 1299.6406
+  health: 100.0
+  resources: {}
+- id: 1081
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -12195.037
+    y: 1430.8843
+  health: 100.0
+  resources: {}
+- id: 1082
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -15286.612
+    y: 4453.973
+  health: 100.0
+  resources: {}
+- id: 1083
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -21572.66
+    y: 1257.4775
+  health: 100.0
+  resources: {}
+- id: 1084
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -18974.691
+    y: 1908.2905
+  health: 100.0
+  resources: {}
+- id: 1085
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -13575.516
+    y: -8063.057
+  health: 100.0
+  resources: {}
+- id: 1086
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 54656.727
+    y: -41278.746
+  health: 100.0
+  resources: {}
+- id: 1087
+  entity_type: planet_ice
+  owner: universe
+  position:
+    x: 55552.81
+    y: -52911.52
+  health: 100.0
+  resources: {}
+- id: 1088
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 54150.57
+    y: -45996.637
+  health: 100.0
+  resources: {}
+- id: 1089
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 52613.4
+    y: -41264.33
+  health: 100.0
+  resources: {}
+- id: 1090
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 59680.97
+    y: -48129.684
+  health: 100.0
+  resources: {}
+- id: 1091
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 57744.047
+    y: -52023.19
+  health: 100.0
+  resources: {}
+- id: 1092
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 53792.023
+    y: -38978.105
+  health: 100.0
+  resources: {}
+- id: 1093
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 61487.56
+    y: -39342.29
+  health: 100.0
+  resources: {}
+- id: 1094
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -34906.05
+    y: -24600.695
+  health: 100.0
+  resources: {}
+- id: 1095
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -39751.46
+    y: -21543.744
+  health: 100.0
+  resources: {}
+- id: 1096
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -37452.785
+    y: -13858.206
+  health: 100.0
+  resources: {}
+- id: 1097
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -31493.107
+    y: -16696.326
+  health: 100.0
+  resources: {}
+- id: 1098
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -30812.238
+    y: -20127.297
+  health: 100.0
+  resources: {}
+- id: 1099
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -38785.0
+    y: -22531.584
+  health: 100.0
+  resources: {}
+- id: 1100
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -33672.938
+    y: -22206.082
+  health: 100.0
+  resources: {}
+- id: 1101
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -33740.043
+    y: -13573.66
+  health: 100.0
+  resources: {}
+- id: 1102
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -38937.305
+    y: -26259.934
+  health: 100.0
+  resources: {}
+- id: 1103
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -30007.342
+    y: -12402.619
+  health: 100.0
+  resources: {}
+- id: 1104
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -26325.29
+    y: -19674.344
+  health: 100.0
+  resources: {}
+- id: 1105
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -1611.2588
+    y: -50271.43
+  health: 100.0
+  resources: {}
+- id: 1106
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 693.4922
+    y: -54431.664
+  health: 100.0
+  resources: {}
+- id: 1107
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2632.4595
+    y: -43591.938
+  health: 100.0
+  resources: {}
+- id: 1108
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 992.6797
+    y: -48272.81
+  health: 100.0
+  resources: {}
+- id: 1109
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -5179.3975
+    y: -58097.0
+  health: 100.0
+  resources: {}
+- id: 1110
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -2825.6123
+    y: -46568.977
+  health: 100.0
+  resources: {}
+- id: 1111
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -4117.6484
+    y: -48334.203
+  health: 100.0
+  resources: {}
+- id: 1112
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -6049.214
+    y: -43537.867
+  health: 100.0
+  resources: {}
+- id: 1113
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 3747.06
+    y: -52747.453
+  health: 100.0
+  resources: {}
+- id: 1114
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -511.56714
+    y: -50863.402
+  health: 100.0
+  resources: {}
+- id: 1115
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -9545.066
+    y: -57168.58
+  health: 100.0
+  resources: {}
+- id: 1116
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -4056.68
+    y: -58427.727
+  health: 100.0
+  resources: {}
+- id: 1117
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 19544.072
+    y: 14778.756
+  health: 100.0
+  resources: {}
+- id: 1118
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: 14487.243
+    y: 21415.963
+  health: 100.0
+  resources: {}
+- id: 1119
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 7104.722
+    y: 10837.231
+  health: 100.0
+  resources: {}
+- id: 1120
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 13987.806
+    y: 10611.73
+  health: 100.0
+  resources: {}
+- id: 1121
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: 13402.0205
+    y: 9941.243
+  health: 100.0
+  resources: {}
+- id: 1122
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 6605.1685
+    y: 19337.094
+  health: 100.0
+  resources: {}
+- id: 1123
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 8716.055
+    y: 15175.539
+  health: 100.0
+  resources: {}
+- id: 1124
+  entity_type: minerals
+  owner: universe
+  position:
+    x: 17261.912
+    y: 23912.402
+  health: 100.0
+  resources: {}
+- id: 1125
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -67747.07
+    y: 55169.406
+  health: 100.0
+  resources: {}
+- id: 1126
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -72461.64
+    y: 54757.945
+  health: 100.0
+  resources: {}
+- id: 1127
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -69777.24
+    y: 58948.074
+  health: 100.0
+  resources: {}
+- id: 1128
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -70482.29
+    y: 48278.125
+  health: 100.0
+  resources: {}
+- id: 1129
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -70703.31
+    y: 60690.26
+  health: 100.0
+  resources: {}
+- id: 1130
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -63107.574
+    y: 55420.555
+  health: 100.0
+  resources: {}
+- id: 1131
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -72019.75
+    y: 47033.504
+  health: 100.0
+  resources: {}
+- id: 1132
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -72678.22
+    y: 47649.61
+  health: 100.0
+  resources: {}
+- id: 1133
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -66415.125
+    y: 48870.234
+  health: 100.0
+  resources: {}
+- id: 1134
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -72925.53
+    y: 55797.92
+  health: 100.0
+  resources: {}
+- id: 1135
+  entity_type: planet_inhospitable
+  owner: universe
+  position:
+    x: -45382.35
+    y: -26645.082
+  health: 100.0
+  resources: {}
+- id: 1136
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -46324.902
+    y: -40266.22
+  health: 100.0
+  resources: {}
+- id: 1137
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -42546.58
+    y: -28684.135
+  health: 100.0
+  resources: {}
+- id: 1138
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -39757.75
+    y: -34962.773
+  health: 100.0
+  resources: {}
+- id: 1139
+  entity_type: asteroid
+  owner: universe
+  position:
+    x: -46345.9
+    y: -37744.465
+  health: 100.0
+  resources: {}
+- id: 1140
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -48793.367
+    y: -34842.703
+  health: 100.0
+  resources: {}
+- id: 1141
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -41466.996
+    y: -30490.137
+  health: 100.0
+  resources: {}
+- id: 1142
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -40491.332
+    y: -30190.47
+  health: 100.0
+  resources: {}
+- id: 1143
+  entity_type: minerals
+  owner: universe
+  position:
+    x: -66459.57
+    y: 60350.34
+  health: 100.0
+  resources: {}
+- id: 1144
+  entity_type: habitat
+  owner: player1
+  position:
+    x: -65651.28
+    y: 61924.633
+  health: 400.0
+  resources:
+    energy: 968.191418514325
+    food: 2936.1499796770513
+    minerals: 999.995833333116
+- id: 1145
+  entity_type: scout
+  owner: player1
+  position:
+    x: -67927.17
+    y: 62502.125
+  health: 60.0
+  resources: {}
+- id: 1146
+  entity_type: worker
+  owner: player1
+  position:
+    x: -65847.01
+    y: 61532.68
+  health: 200.0
+  resources:
+    minerals: 50.0
+- id: 1147
+  entity_type: worker
+  owner: player1
+  position:
+    x: -65688.74
+    y: 61854.215
+  health: 200.0
+  resources:
+    minerals: 49.12083328748122
+- id: 1148
+  entity_type: worker
+  owner: player1
+  position:
+    x: -68431.72
+    y: 62883.297
+  health: 200.0
+  resources:
+    food: 50.0
+- id: 1149
+  entity_type: worker
+  owner: player1
+  position:
+    x: -66403.945
+    y: 63564.152
+  health: 200.0
+  resources:
+    food: 50.0
+- id: 1150
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 30311.082
+    y: -26865.756
+  health: 40.0
+  resources: {}
+- id: 1151
+  entity_type: worker
+  owner: player1
+  position:
+    x: -65950.16
+    y: 62811.586
+  health: 200.0
+  resources:
+    minerals: 47.72083321446553
+- id: 1152
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -65116.3
+    y: 62874.82
+  health: 100.0
+  resources: {}
+- id: 1153
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 9771.097
+    y: 39489.08
+  health: 40.0
+  resources: {}
+- id: 1154
+  entity_type: worker
+  owner: player1
+  position:
+    x: -66330.37
+    y: 62004.28
+  health: 200.0
+  resources: {}
+- id: 1155
+  entity_type: worker
+  owner: player1
+  position:
+    x: -68545.72
+    y: 62840.33
+  health: 200.0
+  resources:
+    food: 10.800000160932541
+- id: 1156
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -65626.445
+    y: 63950.465
+  health: 100.0
+  resources: {}
+- id: 1157
+  entity_type: worker
+  owner: player1
+  position:
+    x: -67637.66
+    y: 63155.707
+  health: 200.0
+  resources: {}
+- id: 1158
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -25686.318
+    y: 28640.363
+  health: 40.0
+  resources: {}
+- id: 1159
+  entity_type: worker
+  owner: player1
+  position:
+    x: -66919.52
+    y: 63384.285
+  health: 200.0
+  resources:
+    food: 50.0
+- id: 1160
+  entity_type: factory
+  owner: player1
+  position:
+    x: -65854.766
+    y: 63351.332
+  health: 150.0
+  resources: {}
+- id: 1161
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -17875.096
+    y: 10654.912
+  health: 40.0
+  resources: {}
+- id: 1162
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -38889.44
+    y: -7307.7485
+  health: 40.0
+  resources: {}
+- id: 1163
+  entity_type: defense_pylon_v3
+  owner: player1
+  position:
+    x: -65889.836
+    y: 63526.39
+  health: 500.0
+  resources: {}
+- id: 1164
+  entity_type: defense_pylon_v3
+  owner: player1
+  position:
+    x: -66657.62
+    y: 62946.082
+  health: 500.0
+  resources: {}
+- id: 1165
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -25958.816
+    y: -6683.212
+  health: 40.0
+  resources: {}
+- id: 1166
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -15421.595
+    y: -17687.547
+  health: 40.0
+  resources: {}
+- id: 1167
+  entity_type: raider
+  owner: raiders
+  position:
+    x: 10164.998
+    y: -16221.755
+  health: 40.0
+  resources: {}
+- id: 1168
+  entity_type: collector_solar
+  owner: player1
+  position:
+    x: -63995.688
+    y: 62481.098
+  health: 100.0
+  resources: {}
+- id: 1169
+  entity_type: habitat
+  owner: player1
+  position:
+    x: -66155.27
+    y: 63647.46
+  health: 400.0
+  resources:
+    energy: 237.16250907443464
+    food: 71.84999958053231
+    minerals: 57.16249411506578
+- id: 1170
+  entity_type: defense_pylon
+  owner: player1
+  position:
+    x: -66499.81
+    y: 62631.605
+  health: 500.0
+  resources: {}
+- id: 1171
+  entity_type: raider
+  owner: raiders
+  position:
+    x: -158.89326
+    y: 2910.54
+  health: 40.0
+  resources: {}
+captured_tick: 27538

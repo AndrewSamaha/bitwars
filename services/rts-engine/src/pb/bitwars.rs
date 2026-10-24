@@ -501,6 +501,12 @@ pub struct AssignDepotIntent {
     #[prost(uint64, tag = "2")]
     pub target_id: u64,
 }
+/// Immediately destroy an owned entity without a resource refund.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct SelfDestructIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+}
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntentEnvelope {
@@ -526,7 +532,7 @@ pub struct IntentEnvelope {
     pub policy: i32,
     #[prost(
         oneof = "intent_envelope::Payload",
-        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23"
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24"
     )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
@@ -560,6 +566,8 @@ pub mod intent_envelope {
         AssignDepot(super::AssignDepotIntent),
         #[prost(message, tag = "23")]
         Resupply(super::ResupplyIntent),
+        #[prost(message, tag = "24")]
+        SelfDestruct(super::SelfDestructIntent),
     }
 }
 /// Extensible Intent envelope.
@@ -990,6 +998,13 @@ pub struct PlayerTechnologyState {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
+    /// Server-only persistent player discovery history; omitted from player streams.
+    #[prost(string, tag = "14")]
+    pub discovered_entities_json: ::prost::alloc::string::String,
+    /// Server checkpoint: versioned reservations and pending procedural starts.
+    /// Clients may ignore this JSON; it is persisted atomically with entities.
+    #[prost(string, tag = "13")]
+    pub generation_state_json: ::prost::alloc::string::String,
     /// 1 = depot logistics; earlier matches require reset
     #[prost(uint32, tag = "12")]
     pub economy_version: u32,

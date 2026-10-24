@@ -20,7 +20,8 @@
     "test:read-redis": "tsx test/read_redis.ts",
     "test:write-and-read-redis": "tsx test/write_and_read_redis.ts",
     "test:write-and-read-ioredis": "tsx test/write_and_read_ioredis.ts",
-    "ioredis-version": "ioredis --version"
+    "ioredis-version": "ioredis --version",
+    "generate:spawn-schema": "tsx scripts/generate-spawn-schema.ts"
   },
   "dependencies": {
     "@axiomhq/js": "^1.3.1",
@@ -45,7 +46,7 @@
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.542.0",
     "miniplex": "^2.0.0",
-    "monaco-editor": "^0.56.0",
+    "monaco-editor": "0.54.0",
     "monaco-yaml": "^5.5.1",
     "next": "15.5.2",
     "pixi.js": "8.20.1",

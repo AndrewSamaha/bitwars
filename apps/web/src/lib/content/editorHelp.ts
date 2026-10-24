@@ -1,8 +1,9 @@
 import { isMap, isScalar, isSeq, parseDocument } from "yaml";
 import entitySchema from "@bitwars/content/entity.schema.json";
+import spawnSchema from "./spawn.schema.json";
 import technologySchema from "@bitwars/content/technology.schema.json";
 
-export type ContentKind = "entity" | "technology";
+export type ContentKind = "entity" | "technology" | "spawn";
 type Schema = {
   $ref?: string;
   $defs?: Record<string, Schema>;
@@ -18,7 +19,7 @@ type Schema = {
   const?: unknown;
 };
 type Path = (string | number)[];
-export const contentSchemas: Record<ContentKind, Schema> = { entity: entitySchema as Schema, technology: technologySchema as Schema };
+export const contentSchemas: Record<ContentKind, Schema> = { entity: entitySchema as Schema, technology: technologySchema as Schema, spawn: spawnSchema as Schema };
 
 // Expand only the current level: requirement schemas can refer to themselves.
 function variants(schema: Schema, root: Schema): Schema[] {
@@ -135,7 +136,11 @@ export function completionHelp(text: string, start: number, end: number, kind: C
   }
   const names = at.path.filter((key): key is string => typeof key === "string");
   const field = names.at(-1);
-  const references = at.key ? undefined
+  const spawnReference = kind === "spawn" && (
+    (!at.key && ["type", "anchor_type", "planet_type", "starting_resources_recipient_type"].includes(field ?? ""))
+    || (at.key && ["sources", "weights", "resource_amounts", "loadouts"].includes(names.at(-2) ?? ""))
+  );
+  const references = spawnReference ? "entities" : at.key ? undefined
     : field === "entity_type_id" || field === "deposit_entity_types" ? "entities"
     : names.some((name) => ["requires", "requires_technologies", "researches"].includes(name)) ? "technologies"
     : undefined;

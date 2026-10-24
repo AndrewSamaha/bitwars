@@ -1,4 +1,5 @@
 "use client";
+import { gameConnection } from "@/features/gamestate/connection";
 import { Application, Container, Graphics, RenderTexture, Sprite, Text } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { game, type Entity } from "@/features/gamestate/world";
@@ -28,6 +29,7 @@ import {
 import { PLAYER_PALETTES, paletteForOwner } from "@/lib/playerPalettes";
 import { gameEntityScale } from "@/features/pixijs/renderer/entityScale";
 import { drawRadiationRanges } from "@/features/pixijs/renderer/radiationRanges";
+import { minimapMemory } from "@/features/gamestate/minimapMemory";
 import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog";
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
 import { selectEntitiesOfTypeInView } from "@/features/pixijs/utils/typeSelection";
@@ -57,6 +59,7 @@ const MINIMAP_MY_COLOR = 0x44_aa_ff;
 const MINIMAP_HOSTILE_COLOR = 0xef_44_44;
 const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
 const MINIMAP_STAR_YELLOW_COLOR = 0xff_dd_22;
+const MINIMAP_PLANET_BLUE_COLOR = 0x44_cc_66;
 const BUILD_PROGRESS_SCAN_MS = 500;
 const FOG_COLOR = 0x67_6b_73;
 const FOG_ALPHA = 0.20;
@@ -107,8 +110,12 @@ export default function GameStage() {
 
     // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
+      if (!gameConnection.check()) throw new Error("Game connection is unavailable");
       const payload =
-        params.kind === "Resupply"
+        params.kind === "SelfDestruct"
+          ? { type: "SelfDestruct", entity_id: params.entityId,
+              client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "Resupply"
           ? { type: "Resupply", entity_id: params.entityId, depot_id: params.depotId, target_amounts: params.targetAmounts,
               client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
           : params.kind === "Assign"
@@ -478,6 +485,7 @@ export default function GameStage() {
         const MINIMAP_DISTANCE_SCALE = 45_000;
         const MINIMAP_MARGIN = 10;
         const MINIMAP_UNIT_DOT_RADIUS = 2;
+        const MINIMAP_PLANET_BLUE_DOT_RADIUS = 4;
         const minimapGraphics = new Graphics();
         (minimapGraphics as any).label = "minimap";
         minimapGraphics.eventMode = "none";
@@ -508,6 +516,11 @@ export default function GameStage() {
         const minimapMemoryGraphics = new Graphics();
         minimapMemoryGraphics.eventMode = "none";
         minimapContainer.addChild(minimapMemoryGraphics);
+        // Adversary dots stay above both visible and remembered entity dots.
+        const minimapAdversaryGraphics = new Graphics();
+        minimapAdversaryGraphics.label = "minimapAdversaries";
+        minimapAdversaryGraphics.eventMode = "none";
+        minimapContainer.addChild(minimapAdversaryGraphics);
         const minimapViewportGraphics = new Graphics();
         minimapViewportGraphics.eventMode = "none";
         const minimapNotificationGraphics = new Graphics();
@@ -629,6 +642,7 @@ export default function GameStage() {
           );
           minimapGraphics.clear();
           minimapMemoryGraphics.clear();
+          minimapAdversaryGraphics.clear();
           minimapViewportGraphics.clear();
           minimapNotificationGraphics.clear();
           // Background
@@ -663,9 +677,20 @@ export default function GameStage() {
             }
           }
           // Unit dots: own units are blue; all non-owned combat targets are
-          // red, while planets and other non-targetable entities stay gray.
+          // red; yellow stars and blue planets use yellow and green respectively.
+          // Other non-targetable entities stay gray.
           const myId = myPlayerIdRef.current;
-          for (const e of game.world.with("pos", "id")) {
+          // Keep habitable planets visible when nearby units overlap their dots.
+          const liveMinimapEntities = [...game.world.with("pos", "id")];
+          const liveMinimapIds = new Set(liveMinimapEntities.map(entity => String(entity.id)));
+          const minimapEntities = [
+            ...[...minimapMemory.entries()].filter(entity => !liveMinimapIds.has(String(entity.id))),
+            ...liveMinimapEntities,
+          ].sort(
+            (a, b) => Number(a.entity_type_id?.trim() === "planet_blue")
+              - Number(b.entity_type_id?.trim() === "planet_blue"),
+          );
+          for (const e of minimapEntities) {
             const pos = (e as { pos: { x: number; y: number } }).pos;
             const ownerId = (e as { owner_player_id?: string }).owner_player_id;
             const isOwned = myId != null && ownerId === myId;
@@ -674,16 +699,22 @@ export default function GameStage() {
             const isCombatTarget = contentManager.getEntityType(entityTypeId)?.combat_targetable === true;
             const color = entityTypeId === "star_yellow"
               ? MINIMAP_STAR_YELLOW_COLOR
-              : isOwned
-                ? MINIMAP_MY_COLOR
-                : isCombatTarget
-                  ? MINIMAP_HOSTILE_COLOR
-                  : MINIMAP_NEUTRAL_COLOR;
+              : entityTypeId === "planet_blue"
+                ? MINIMAP_PLANET_BLUE_COLOR
+                : isOwned
+                  ? MINIMAP_MY_COLOR
+                  : isCombatTarget
+                    ? MINIMAP_HOSTILE_COLOR
+                    : MINIMAP_NEUTRAL_COLOR;
             const { px, py } = worldToMinimapPx(pos.x, pos.y, centerWorld.x, centerWorld.y);
             if (Math.hypot(px - MINIMAP_RADIUS_PX, py - MINIMAP_RADIUS_PX) < MINIMAP_RADIUS_PX) {
-              (remembered ? minimapMemoryGraphics : minimapGraphics)
-                .circle(px, py, MINIMAP_UNIT_DOT_RADIUS)
-                .fill({ color });
+              (color === MINIMAP_HOSTILE_COLOR
+                ? minimapAdversaryGraphics
+                : remembered ? minimapMemoryGraphics : minimapGraphics)
+                .circle(px, py, entityTypeId === "planet_blue"
+                  ? MINIMAP_PLANET_BLUE_DOT_RADIUS
+                  : MINIMAP_UNIT_DOT_RADIUS)
+                .fill({ color, alpha: remembered ? 0.45 : 1 });
             }
           }
           if (updateFog) {
@@ -1063,6 +1094,37 @@ export default function GameStage() {
               const scale = Math.abs(container.scale.x) || 1;
               depotCoverage.clear().circle(0, 0, depotDef.depot_range / scale).stroke({ width: 2 / scale, color: 0x55ccaa, alpha: 0.5 });
             } else if (depotCoverage) { depotCoverage.destroy(); }
+
+            let attackCoverage = container.children.find(c => c.label === "attackCoverage") as Graphics | undefined;
+            const attackRanges = isOwned && !remembered && isSelected
+              ? [...new Set((depotDef?.combat?.attacks ?? []).map(attack =>
+                // Contact reach is measured from our hull to the target's hull.
+                attack.type === "dismantle"
+                  ? (depotDef?.hull_radius ?? 0) + Math.max(0, attack.contact_tolerance ?? 0)
+                  : attack.range ?? 0,
+              ))].filter(range => Number.isFinite(range) && range > 0)
+              : [];
+            if (attackRanges.length) {
+              if (!attackCoverage) {
+                attackCoverage = new Graphics();
+                attackCoverage.label = "attackCoverage";
+                attackCoverage.eventMode = "none";
+                container.addChild(attackCoverage);
+              }
+              const scale = Math.abs(container.scale.x) || 1;
+              attackCoverage.clear();
+              for (const range of attackRanges) {
+                const radius = range / scale;
+                const dashCount = Math.max(12, Math.ceil(2 * Math.PI * range / 24));
+                const step = 2 * Math.PI / dashCount;
+                for (let dash = 0; dash < dashCount; dash++) {
+                  const start = dash * step;
+                  attackCoverage.moveTo(Math.cos(start) * radius, Math.sin(start) * radius);
+                  attackCoverage.arc(0, 0, radius, start, start + step * 0.6);
+                }
+              }
+              attackCoverage.stroke({ width: 2 / scale, color: 0xff4444, alpha: 0.7 });
+            } else if (attackCoverage) { attackCoverage.destroy(); }
 
             const shouldShowHealthArc = !remembered && hasHealth && ((e as any).hover || isSelected || (isOwned && health < maxHealth));
             const buildState = buildProgressStore.getSnapshot()[id];
@@ -1572,7 +1634,11 @@ export default function GameStage() {
 
         app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
-            if (!game.ready) return;
+            if (!game.ready || !gameConnection.check()) {
+              game.last = performance.now();
+              panKeysRef.current.clear();
+              return;
+            }
             if (recenterRequestedRef.current) {
               const centered = centerCameraOnOwnedEntities();
               if (centered) recenterRequestedRef.current = false;

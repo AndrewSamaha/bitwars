@@ -64,6 +64,13 @@ entities:
     resources: {energy: 500, food: 500, minerals: 500}
 ```
 
+Resource nodes may also specify `resource_deposit: {amount: 7774.05, remaining: 5597.21}`.
+Both values must be finite and nonnegative, with `remaining <= amount`; deposits
+are only accepted on resource nodes. `amount` is the deposit's maximum used for
+regeneration thresholds. An explicit zero remaining amount is preserved, allowing
+depletion behavior on the next tick. If omitted (including older bookmarks), the
+deposit starts full at the configured initial average.
+
 Entity IDs are explicit positive, unique JavaScript-safe integers. Entities load
 in ID order. Position and resources must be finite, health must be positive and
 at most the type's maximum, and inventory cannot exceed the content definition's
@@ -93,6 +100,8 @@ Bookmarks are ordinary editable scenario YAML files with a name, tags and a
 cargo, health, ownership, positions and player technologies at a tick boundary.
 Account UUIDs become portable player slots; the requesting player's slot comes
 first. Capture all entities, specific entity IDs, or a circular area in the editor.
+Finite resource deposits retain both their sampled maximum (`amount`) and current
+stock (`remaining`), so loading preserves depletion and regeneration thresholds.
 Entities excluded from a capture are not pulled in automatically, so include
 nearby resource sources and donors when the scenario needs them. Multiple
 captured players need bindings on load.

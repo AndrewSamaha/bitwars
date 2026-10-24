@@ -30,6 +30,8 @@ pub struct ScenarioEntity {
     #[serde(default)]
     pub resources: BTreeMap<String, f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_deposit: Option<ScenarioResourceDeposit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cargo: Option<Cargo>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -43,6 +45,19 @@ pub struct Point {
 pub struct Cargo {
     pub resource: String,
     pub amount: f32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScenarioResourceDeposit {
+    pub amount: f64,
+    pub remaining: f64,
+}
+
+impl From<&pb::ResourceDeposit> for ScenarioResourceDeposit {
+    fn from(deposit: &pb::ResourceDeposit) -> Self {
+        Self { amount: deposit.amount, remaining: deposit.remaining }
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -84,6 +99,7 @@ impl Scenario {
     fn materialize(
         &self,
         content: &ContentPack,
+        spawn_config: &crate::spawn_config::SpawnConfig,
         bindings: &BTreeMap<String, String>,
     ) -> Result<GameState> {
         if self.version != 1 || self.id.is_empty() || self.name.is_empty() {
@@ -128,6 +144,21 @@ impl Scenario {
             if !health.is_finite() || health <= 0.0 || health > def.health {
                 bail!("invalid health on entity {}", source.id);
             }
+            let resource_deposit = match &source.resource_deposit {
+                Some(deposit) => {
+                    if def.resource_node.is_none()
+                        || !deposit.amount.is_finite()
+                        || !deposit.remaining.is_finite()
+                        || deposit.amount < 0.0
+                        || deposit.remaining < 0.0
+                        || deposit.remaining > deposit.amount
+                    {
+                        bail!("invalid resource deposit on entity {}", source.id);
+                    }
+                    Some(pb::ResourceDeposit { amount: deposit.amount, remaining: deposit.remaining })
+                }
+                None => super::state::fixed_resource_deposit(&source.entity_type, content, Some(spawn_config)),
+            };
             let mut entity = pb::Entity {
                 id: source.id,
                 entity_type_id: source.entity_type.clone(),
@@ -140,8 +171,7 @@ impl Scenario {
                 vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 supply: None,
-                resource_deposit: def.resource_node.as_ref().and_then(|node| node.amount)
-                    .map(|amount| pb::ResourceDeposit { amount, remaining: amount }),
+                resource_deposit,
                 resources: None,
             };
             // Saved legacy stock may exceed capacity; only inflows enforce capacity.
@@ -186,7 +216,7 @@ impl Scenario {
             }
             technologies.insert(owner.clone(), techs.iter().cloned().collect());
         }
-        Ok(GameState { tick: 0, entities, technologies })
+        Ok(GameState { discovered_entities: Default::default(), generation: super::generation::GenerationState { version: 1, ..Default::default() }, tick: 0, entities, technologies })
     }
 }
 
@@ -247,7 +277,7 @@ impl Engine {
             .content
             .as_ref()
             .ok_or_else(|| anyhow!("content unavailable"))?;
-        let state = scenario.materialize(content, &bindings)?;
+        let state = scenario.materialize(content, &self.spawn_config, &bindings)?;
         let intents = IntentManager::new(
             content.entity_types.clone(),
             self.cfg.default_stop_radius,
@@ -378,6 +408,7 @@ impl Engine {
                     y: entity.pos.as_ref().map_or(0.0, |p| p.y),
                 },
                 health: Some(entity.health),
+                resource_deposit: entity.resource_deposit.as_ref().map(Into::into),
                 resources: entity
                     .resources
                     .as_ref()
@@ -441,6 +472,7 @@ impl Engine {
                     self.content
                         .as_ref()
                         .ok_or_else(|| anyhow!("content unavailable"))?,
+                    &self.spawn_config,
                     &bindings,
                 )?;
                 if cmd.action == "load" {
@@ -493,6 +525,7 @@ impl Engine {
         Ok(serde_json::json!({ "runtime": self.scenario_runtime }))
     }
     pub(super) async fn process_scenario_controls(&mut self) -> Result<bool> {
+        self.redis.publish_engine_heartbeat().await?;
         // ponytail: one global world, at most eight controls per tick; isolate worlds if concurrent scenarios become necessary.
         for _ in 0..8 {
             let Some(raw) = self.redis.pop_scenario_command().await? else {
@@ -535,6 +568,67 @@ impl Engine {
 mod inventory_tests {
     use super::*;
 
+    fn spawn_config() -> crate::spawn_config::SpawnConfig {
+        crate::spawn_config::SpawnConfig::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/spawn.yaml")).unwrap()
+    }
+
+    #[test]
+    fn scenario_resource_stock_uses_configured_average_without_randomness() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let scenario: Scenario = serde_yaml::from_str(r#"
+version: 1
+id: deposits
+name: Deposits
+players: []
+entities:
+  - {id: 1, entity_type: minerals, owner: universe, position: {x: 0, y: 0}}
+  - {id: 2, entity_type: planet_blue, owner: universe, position: {x: 500, y: 0}}
+  - {id: 3, entity_type: dead_planet_blue, owner: universe, position: {x: 1000, y: 0}}
+  - {id: 4, entity_type: star_yellow, owner: universe, position: {x: 2000, y: 0}}
+"#).unwrap();
+        let mut config = spawn_config();
+        config.resource_amounts.get_mut("minerals").unwrap().average = 12345.0;
+        for _ in 0..2 {
+            let state = scenario.materialize(&content, &config, &BTreeMap::new()).unwrap();
+            for (entity, amount) in state.entities.iter().zip([Some(12345.0), Some(10000.0), Some(1000.0), None]) {
+                assert_eq!(entity.resource_deposit.map(|d| d.amount), amount);
+                assert_eq!(entity.resource_deposit.map(|d| d.remaining), amount);
+            }
+        }
+    }
+
+    #[test]
+    fn scenario_deposit_round_trip_preserves_sampled_maximum_and_depletion() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut scenario: Scenario = serde_yaml::from_str(r#"
+version: 1
+id: depleted-planet
+name: Depleted planet
+players: []
+entities:
+  - {id: 973, entity_type: planet_blue, owner: universe, position: {x: 0, y: 0}}
+"#).unwrap();
+        for remaining in [5597.209548398094, 1.0, 0.0] {
+            let original = pb::ResourceDeposit { amount: 7774.054089483202, remaining };
+            // Use the same conversion as bookmark capture, then persist and reload YAML.
+            scenario.entities[0].resource_deposit = Some((&original).into());
+            let yaml = serde_yaml::to_string(&scenario).unwrap();
+            let restored: Scenario = serde_yaml::from_str(&yaml).unwrap();
+            let state = restored.materialize(&content, &spawn_config(), &BTreeMap::new()).unwrap();
+            assert_eq!(state.entities[0].resource_deposit.as_ref(), Some(&original));
+        }
+        for (amount, remaining) in [(-1.0, 0.0), (10.0, -1.0), (10.0, 11.0),
+            (f64::NAN, 0.0), (10.0, f64::INFINITY)] {
+            scenario.entities[0].resource_deposit = Some(ScenarioResourceDeposit { amount, remaining });
+            assert!(scenario.materialize(&content, &spawn_config(), &BTreeMap::new()).is_err());
+        }
+        scenario.entities[0].entity_type = "worker".into();
+        scenario.entities[0].resource_deposit = Some(ScenarioResourceDeposit { amount: 10.0, remaining: 5.0 });
+        assert!(scenario.materialize(&content, &spawn_config(), &BTreeMap::new()).is_err());
+    }
+
     #[test]
     fn legacy_scenario_cargo_merges_and_over_capacity_inventory_can_reload() {
         let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -553,14 +647,14 @@ entities:
     cargo: {resource: food, amount: 50}
 "#).unwrap();
         let bindings = BTreeMap::from([("player1".into(), Uuid::now_v7().to_string())]);
-        let state = scenario.materialize(&content, &bindings).unwrap();
+        let state = scenario.materialize(&content, &spawn_config(), &bindings).unwrap();
         assert_eq!(resource_amount(&state.entities[0], "food"), 98.0);
         scenario.entities[0].cargo = None;
         scenario.entities[0].resources.insert("food".into(), 98.0);
-        let state = scenario.materialize(&content, &bindings).unwrap();
+        let state = scenario.materialize(&content, &spawn_config(), &bindings).unwrap();
         assert_eq!(resource_amount(&state.entities[0], "food"), 98.0);
         scenario.entities[0].resources.insert("food".into(), f64::NAN);
-        assert!(scenario.materialize(&content, &bindings).is_err());
+        assert!(scenario.materialize(&content, &spawn_config(), &bindings).is_err());
     }
 
     #[test]
@@ -573,7 +667,7 @@ entities:
             if path.extension().and_then(|extension| extension.to_str()) != Some("yaml") { continue; }
             let scenario: Scenario = serde_yaml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
             let bindings = scenario.players.iter().map(|slot| (slot.clone(), Uuid::now_v7().to_string())).collect();
-            scenario.materialize(&content, &bindings).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            scenario.materialize(&content, &spawn_config(), &bindings).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
         }
     }
 }

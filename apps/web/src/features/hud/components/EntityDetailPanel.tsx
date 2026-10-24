@@ -12,11 +12,33 @@ import { transferableResourceAmount } from "@/features/hud/resourceInventory";
 import { canAffordAction } from "@/features/hud/actionResources";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 import { buildProgressMetrics } from "@/features/build-state/buildProgressMetrics";
+import { useSession } from "@/features/users/components/identity/SessionContext";
 
 const GAMESTATE_UI_REFRESH_INTERVAL_MS = 100;
 
+function MaintenanceCosts({ entityTypeId }: { entityTypeId: string }) {
+  const definition = contentManager.getEntityType(entityTypeId);
+  const costs = new Map<string, number>();
+  for (const [resource, amount] of [
+    ...Object.entries(definition?.maintenance_cost_per_minute ?? {}),
+    ...Object.entries(definition?.sensor?.cost_per_minute ?? {}),
+  ]) {
+    if (Number.isFinite(amount) && amount > 0) costs.set(resource, (costs.get(resource) ?? 0) + amount);
+  }
+  const entries = [...costs].sort(([a], [b]) =>
+    (contentManager.getResourceType(a)?.order ?? 0) - (contentManager.getResourceType(b)?.order ?? 0)
+    || a.localeCompare(b));
+  return (
+    <span className="font-mono text-muted-foreground" title="Maintenance and sensor operating costs per minute">
+      maintenance: {entries.length ? entries.map(([resource, amount]) =>
+        `${resource} ${amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}/min`).join(", ") : "none"}
+    </span>
+  );
+}
+
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
+  const { effectivePlayerId } = useSession();
   const { selectedEntities, selectedAction, isMeasuring } = selectors;
   const selectedIdsKey = selectedEntities.join(",");
   const donorId = typeof selectedAction === "object" && selectedAction?.kind === "Transport" ? selectedAction.donorId : undefined;
@@ -207,17 +229,22 @@ export default function EntityDetailPanel() {
       { key: "c", name: "collect", enabled: canCollect, value: "Collect" },
       ...(canResupply ? [{ key: "h", name: "resupply", value: "Resupply" as const }] : []),
       ...(canDeliver ? [{ key: "l", name: "deliver", value: "Deliver" as const }] : []),
-      ...(canTransport ? [{ key: "s", name: "transport resources", value: "Transport" as const }] : []),
+      ...(canTransport ? [{ key: "o", name: "transport resources", value: "Transport" as const }] : []),
       { key: "b", name: "build", enabled: canBuild, value: "Build" },
       { key: "u", name: "upgrade", enabled: canUpgrade, value: "Upgrade" },
       { key: "t", name: "research", enabled: canResearch, value: "Research" },
       { key: "r", name: "repair", enabled: canRepair, value: "Repair" },
+      { key: "s", name: "self destruct", enabled: canSelfDestruct, value: "SelfDestruct" },
     ];
   };
   // Shared build options are intersected above; other action gates retain their existing behavior.
   const resupplySelection = typeof selectedAction === "object" && selectedAction?.kind === "Resupply" ? selectedAction : null;
   const deliverySelection = typeof selectedAction === "object" && selectedAction?.kind !== "Resupply" ? selectedAction : null;
   const entities = Array.from(game.world.with("id"));
+  const canSelfDestruct = !!effectivePlayerId && selectedEntities.length > 0 && selectedEntities.every(id => {
+    const entity = entities.find(e => String(e.id) === id);
+    return entity?.owner_player_id === effectivePlayerId && entity.remembered === undefined && (entity.health ?? 0) > 0;
+  });
   const carrierEntity = entities.find((e) => String(e.id) === firstId);
   const carrierDef = contentManager.getEntityType(idToType.get(firstId) ?? "");
   const canResupply = selectedEntities.length > 0 && selectedEntities.every(id => {
@@ -277,6 +304,13 @@ export default function EntityDetailPanel() {
   }, [buildStateById, firstId, isSelectedEntityBuilding]);
 
   const onClickAction = (val: ActionDef["value"]) => {
+    if (val === "SelfDestruct") {
+      if (!canSelfDestruct) return;
+      actions.setSelectedAction(null);
+      actions.setMeasuring(false);
+      for (const id of selectedEntities) intentQueue.handleSelfDestructCommand(Number(id));
+      return;
+    }
     if (val === "Measure") {
       actions.setMeasuring(!isMeasuring);
       return;
@@ -491,6 +525,12 @@ export default function EntityDetailPanel() {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable=true]")) return;
       const key = event.key.toLowerCase();
+      if (key === "s" && canSelfDestruct && !event.ctrlKey && !event.metaKey && !event.altKey
+        && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen && !deliverySelection && !resupplySelection) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!event.repeat) onClickAction("SelfDestruct");
+        return;
+      }
       if (key === "h" && canResupply && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
         event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
         if (!event.repeat) onClickAction("Resupply");
@@ -507,10 +547,10 @@ export default function EntityDetailPanel() {
         if (!event.repeat) onClickAction("Assign");
         return;
       }
-      if (((key === "l" && canDeliver) || (key === "s" && canTransport)) && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
+      if (((key === "l" && canDeliver) || (key === "o" && canTransport)) && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (!event.repeat) onClickAction(key === "s" ? "Transport" : "Deliver");
+        if (!event.repeat) onClickAction(key === "o" ? "Transport" : "Deliver");
       } else if (deliverySelection && (key === "a" || key === "escape" || /^[1-9]$/.test(key))) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -540,8 +580,16 @@ export default function EntityDetailPanel() {
               {selectedEntities.length > 1
                 ? selectedEntities.map((id) => (
                     <li key={id} className="flex items-center gap-3">
-                      <span className="font-mono">{idToType.get(id) ?? "—"}</span>
+                      <button
+                        type="button"
+                        className="cursor-pointer font-mono hover:underline focus-visible:underline"
+                        onClick={() => actions.setSelection([id])}
+                        aria-label={`Select only ${idToType.get(id) ?? "entity"} (id: ${id})`}
+                      >
+                        {idToType.get(id) ?? "—"}
+                      </button>
                       <span className="font-mono text-muted-foreground">id: {id}</span>
+                      <MaintenanceCosts entityTypeId={idToType.get(id) ?? ""} />
                       {entities.find(e => String(e.id) === id) && <CollectionAssignment entity={entities.find(e => String(e.id) === id)!} />}
                     </li>
                   ))
@@ -570,6 +618,7 @@ export default function EntityDetailPanel() {
                   <li key={id} className="flex items-center justify-between gap-4">
                     <span className="font-mono">{entityTypeId}</span>
                     <span className="font-mono">id: {id}</span>
+                    <MaintenanceCosts entityTypeId={entityTypeId} />
                     <span className="font-mono text-muted-foreground">
                       {entityDef?.depot ? `depot · service radius ${entityDef.depot_range}` : `depot: ${supply?.depot_id || "none"}`}
                       {source ? ` · stock: ${(source.resources ?? []).map(r => `${r.resource_type} ${r.amount.toFixed(1)}`).join(", ")}` : ""}

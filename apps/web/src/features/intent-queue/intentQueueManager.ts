@@ -90,6 +90,8 @@ type PersistedState = {
 };
 
 export type SendIntentParams =
+  | { kind: "SelfDestruct"; entityId: number;
+      clientCmdId: string; clientSeq: number; policy: IntentPolicyName }
   | { kind: "Resupply"; entityId: number; depotId: number; targetAmounts: Record<string, number>;
       clientCmdId: string; clientSeq: number; policy: IntentPolicyName }
   | { kind: "Assign"; entityId: number; targetId: number;
@@ -438,6 +440,17 @@ export class IntentQueueManager {
     this.cmdToEntity.set(clientCmdId, entityId);
     this.persist();
     void this.submit({ kind: "Assign", entityId, targetId, clientCmdId,
+      clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
+  }
+
+  handleSelfDestructCommand(entityId: number) {
+    const clientCmdId = uuidv7();
+    const state = this.getOrCreate(entityId);
+    state.queuedOrders = []; state.queuedAfter = undefined;
+    this.clientSeq++;
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.persist(); this.notify();
+    void this.submit({ kind: "SelfDestruct", entityId, clientCmdId,
       clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 

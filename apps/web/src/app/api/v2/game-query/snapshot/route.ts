@@ -9,5 +9,5 @@ export async function GET() {
   assertGameQueryAccess();
   const snapshot = await getCurrentSnapshot();
   if (!snapshot) return NextResponse.json({ error: "snapshot unavailable" }, { status: 404 });
-  return NextResponse.json(mapSnapshotToJson(snapshot));
+  return NextResponse.json({ ...mapSnapshotToJson(snapshot), generation_state_json: snapshot.generationStateJson, discovered_entities_json: snapshot.discoveredEntitiesJson });
 }
