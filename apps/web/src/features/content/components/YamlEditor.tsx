@@ -254,7 +254,7 @@ export default function YamlEditor({ id, value, onChange, kind = "entity", field
               ? [...expressionCompletions(prefix, pathsRef.current), ...(!prefix.includes(".") ? ["sum", "max"].filter(name => name.startsWith(prefix)).map(name => ({ label: name, insertText: `${name}(` })) : [])]
               : line.includes(":")
                 ? (/visualization_type:/.test(line) ? ["scatter_plot", "bar_chart"] : /order:/.test(line) ? ["descending", "ascending"] : []).map(label => ({ label, insertText: label }))
-                : ["version", "id", "name", "visualization_type", "dot_size", "x", "y", "value", "expression", "label", "order"].map(label => ({ label, insertText: `${label}: ` }));
+                : ["version", "id", "name", "visualization_type", "dot_size", "x", "y", "value", "expression", "label", "min", "max", "order"].map(label => ({ label, insertText: `${label}: ` }));
             return { suggestions: entries.map(entry => ({ ...entry, range, kind: monaco.languages.CompletionItemKind.Property })) };
           },
         });

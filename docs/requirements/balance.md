@@ -70,6 +70,31 @@ order: descending
   `ascending`, defaulting to `descending`: largest to smallest, left to right.
   Use entity ID as a deterministic tie-breaker.
 - Axis/value labels are optional and default to the expression text.
+- Each numeric axis (`x`, `y`, or bar-chart `value`) accepts optional finite
+  numeric `min` and `max` bounds. If both are supplied, require `min < max`.
+  Omitted bounds are automatic. The configured interval is inclusive.
+- Keep out-of-range entities in the visualization. All values below an explicit
+  `min` share a single position below the main scale; all values above an explicit
+  `max` share a single position above it. For example, with bounds 0–100, values
+  130 and 500 occupy the same overflow coordinate (or bar height). Their relative
+  distances beyond the bound are not represented. Other scatter coordinates
+  remain independent, so points only overlap when both plotted positions match.
+- Draw a zigzag axis break and a `< min` or `> max` label for each overflow
+  section that contains entities. Keep the main scale linear and label it with
+  actual in-range numbers. Break overflowing bars as well as their numeric axis.
+  Tooltips and entity selection retain original values and IDs. Outliers are not
+  omissions. If all values lie outside the range, still show their overflow
+  positions and the main configured scale.
+
+Bounded-axis example:
+
+```yaml
+x:
+  expression: speed
+  min: 0
+  max: 100
+```
+
 - Expressions are strings; YAML quoting may be needed for some expressions.
 
 ## Expressions and completion

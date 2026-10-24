@@ -1,39 +1,36 @@
 "use client";
 import type { BalanceConfig, evaluateBalance } from "@/lib/content/balance";
+import { balanceAxis } from "@/lib/content/balanceAxis";
 
 type Point = ReturnType<typeof evaluateBalance>["points"][number];
 const label = (value: number) => {
   const rounded = Number(value.toPrecision(4));
   return Number.isFinite(rounded) ? rounded.toString() : value.toPrecision(4);
 };
-function domain(values: number[], zero = false): [number, number] {
-  let min = zero ? 0 : Infinity;
-  let max = zero ? 0 : -Infinity;
-  for (const value of values) {
-    min = Math.min(min, value);
-    max = Math.max(max, value);
-  }
-  if (min === max) {
-    const padding = Math.abs(min) * 0.1 || 1;
-    return [
-      Number.isFinite(min - padding) ? min - padding : min,
-      Number.isFinite(max + padding) ? max + padding : max,
-    ];
-  }
-  if (zero) return [min, max];
-  const padding = max / 20 - min / 20;
-  return [
-    Number.isFinite(min - padding) ? min - padding : min,
-    Number.isFinite(max + padding) ? max + padding : max,
-  ];
-}
-// Divide before subtraction so opposite, very large finite coordinates still fit.
-const fraction = (value: number, [min, max]: [number, number]) => {
-  const magnitude = Math.max(Math.abs(min), Math.abs(max), 1);
+function AxisBreak({
+  x,
+  y,
+  vertical,
+  description,
+}: {
+  x: number;
+  y: number;
+  vertical?: boolean;
+  description: string;
+}) {
   return (
-    (value / magnitude - min / magnitude) / (max / magnitude - min / magnitude)
+    <g transform={`translate(${x} ${y})${vertical ? " rotate(90)" : ""}`}>
+      <title>{description}</title>
+      <rect x="-9" y="-6" width="18" height="12" fill="#020617" />
+      <path
+        d="M -8 0 L -4 -4 L 4 4 L 8 0"
+        fill="none"
+        stroke="#cbd5e1"
+        strokeWidth="2"
+      />
+    </g>
   );
-};
+}
 export default function BalanceChart({
   config,
   points,
@@ -58,13 +55,20 @@ export default function BalanceChart({
   const right = width - 35;
   const top = 40;
   const bottom = scatter ? 540 : 440;
-  const xd = domain(points.map((point) => point.values.x));
-  const yd = domain(
+  const xAxis = balanceAxis(
+    scatter ? points.map((point) => point.values.x) : [],
+    scatter ? config.x : {},
+  );
+  const yAxis = balanceAxis(
     points.map((point) => (scatter ? point.values.y : point.values.value)),
+    scatter ? config.y : config.value,
     !scatter,
   );
-  const x = (value: number) => left + fraction(value, xd) * (right - left);
-  const y = (value: number) => bottom - fraction(value, yd) * (bottom - top);
+  const screenX = (position: number) => left + position * (right - left);
+  const screenY = (position: number) => bottom - position * (bottom - top);
+  const x = (value: number) => screenX(xAxis.position(value));
+  const y = (value: number) => screenY(yAxis.position(value));
+  const baseline = y(Math.max(yAxis.min, Math.min(yAxis.max, 0)));
   const yLabel = scatter
     ? (config.y.label ?? config.y.expression)
     : (config.value.label ?? config.value.expression);
@@ -78,11 +82,10 @@ export default function BalanceChart({
         style={{ minWidth: scatter ? 640 : width }}
       >
         <title>{config.name ?? config.id}</title>
-        {[0, 0.2, 0.4, 0.6, 0.8, 1].map((ratio) => {
-          const value = yd[0] * (1 - ratio) + yd[1] * ratio;
-          const py = bottom - ratio * (bottom - top);
+        {yAxis.ticks.map(({ value, position }) => {
+          const py = screenY(position);
           return (
-            <g key={ratio}>
+            <g key={position}>
               <line x1={left} x2={right} y1={py} y2={py} stroke="#334155" />
               <text
                 x={left - 10}
@@ -114,17 +117,17 @@ export default function BalanceChart({
               y2={bottom}
               stroke="#94a3b8"
             />
-            {[0, 0.2, 0.4, 0.6, 0.8, 1].map((ratio) => {
+            {xAxis.ticks.map(({ value, position }) => {
               return (
                 <text
-                  key={ratio}
-                  x={left + ratio * (right - left)}
+                  key={position}
+                  x={screenX(position)}
                   y={bottom + 24}
                   fill="#94a3b8"
                   fontSize="12"
                   textAnchor="middle"
                 >
-                  {label(xd[0] * (1 - ratio) + xd[1] * ratio)}
+                  {label(value)}
                 </text>
               );
             })}
@@ -192,7 +195,13 @@ export default function BalanceChart({
           </>
         ) : (
           <>
-            <line x1={left} x2={right} y1={y(0)} y2={y(0)} stroke="#94a3b8" />
+            <line
+              x1={left}
+              x2={right}
+              y1={baseline}
+              y2={baseline}
+              stroke="#94a3b8"
+            />
             {points.map((point, index) => {
               const step = (right - left) / points.length;
               const px = left + (index + 0.5) * step;
@@ -226,16 +235,35 @@ export default function BalanceChart({
                   <title>{`${point.id}: ${point.values.value}`}</title>
                   <rect
                     x={px - step * 0.35}
-                    y={Math.min(py, y(0))}
+                    y={Math.min(py, baseline)}
                     width={step * 0.7}
-                    height={Math.max(1, Math.abs(py - y(0)))}
+                    height={Math.max(1, Math.abs(py - baseline))}
                     fill="#22d3ee"
                     stroke={selectedId === point.id ? "#e0f2fe" : undefined}
                     strokeWidth={selectedId === point.id ? 3 : undefined}
                   />
+                  {yAxis.breaks
+                    .filter((axisBreak) =>
+                      axisBreak.side === "below"
+                        ? point.values.value < axisBreak.bound
+                        : point.values.value > axisBreak.bound,
+                    )
+                    .map((axisBreak) => {
+                      const by = screenY(axisBreak.position);
+                      return (
+                        <path
+                          key={axisBreak.side}
+                          d={`M ${px - step * 0.35} ${by - 3} L ${px - step * 0.12} ${by + 3} L ${px + step * 0.12} ${by - 3} L ${px + step * 0.35} ${by + 3}`}
+                          stroke="#020617"
+                          strokeWidth="6"
+                          fill="none"
+                          pointerEvents="none"
+                        />
+                      );
+                    })}
                   <text
                     x={px}
-                    y={py + (point.values.value < 0 ? 16 : -8)}
+                    y={py + (py > baseline ? 16 : -8)}
                     textAnchor="middle"
                     fill="#cbd5e1"
                     fontSize="11"
@@ -254,6 +282,63 @@ export default function BalanceChart({
             })}
           </>
         )}
+        {yAxis.breaks.map((axisBreak) => (
+          <g key={axisBreak.side} data-axis-break={`y-${axisBreak.side}`}>
+            <line
+              x1={left}
+              x2={right}
+              y1={screenY(axisBreak.position)}
+              y2={screenY(axisBreak.position)}
+              stroke="#475569"
+              strokeDasharray="4 5"
+              pointerEvents="none"
+            />
+            <AxisBreak
+              x={left}
+              y={screenY(axisBreak.position)}
+              vertical
+              description={`Values ${axisBreak.side} ${label(axisBreak.bound)} share one position`}
+            />
+            <text
+              x={left - 10}
+              y={screenY(axisBreak.slot) + 4}
+              textAnchor="end"
+              fill="#fbbf24"
+              fontSize="12"
+            >
+              {axisBreak.side === "below" ? "<" : ">"} {label(axisBreak.bound)}
+            </text>
+          </g>
+        ))}
+        {scatter &&
+          xAxis.breaks.map((axisBreak) => (
+            <g key={axisBreak.side} data-axis-break={`x-${axisBreak.side}`}>
+              <line
+                x1={screenX(axisBreak.position)}
+                x2={screenX(axisBreak.position)}
+                y1={top}
+                y2={bottom}
+                stroke="#475569"
+                strokeDasharray="4 5"
+                pointerEvents="none"
+              />
+              <AxisBreak
+                x={screenX(axisBreak.position)}
+                y={bottom}
+                description={`Values ${axisBreak.side} ${label(axisBreak.bound)} share one position`}
+              />
+              <text
+                x={screenX(axisBreak.slot)}
+                y={bottom + 24}
+                textAnchor="middle"
+                fill="#fbbf24"
+                fontSize="12"
+              >
+                {axisBreak.side === "below" ? "<" : ">"}{" "}
+                {label(axisBreak.bound)}
+              </text>
+            </g>
+          ))}
       </svg>
     </div>
   );

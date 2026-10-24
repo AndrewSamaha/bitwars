@@ -30,6 +30,14 @@
             },
             "label": {
               "type": "string"
+            },
+            "min": {
+              "type": "number",
+              "description": "Lower bound of the main axis. Smaller values share one position beyond a break."
+            },
+            "max": {
+              "type": "number",
+              "description": "Upper bound of the main axis. Larger values share one position beyond a break."
             }
           }
         },
@@ -44,6 +52,14 @@
             },
             "label": {
               "type": "string"
+            },
+            "min": {
+              "type": "number",
+              "description": "Lower bound of the main axis. Smaller values share one position beyond a break."
+            },
+            "max": {
+              "type": "number",
+              "description": "Upper bound of the main axis. Larger values share one position beyond a break."
             }
           }
         },
@@ -85,6 +101,14 @@
             },
             "label": {
               "type": "string"
+            },
+            "min": {
+              "type": "number",
+              "description": "Lower bound of the main axis. Smaller values share one position beyond a break."
+            },
+            "max": {
+              "type": "number",
+              "description": "Upper bound of the main axis. Larger values share one position beyond a break."
             }
           }
         },

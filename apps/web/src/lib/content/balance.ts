@@ -179,8 +179,18 @@ export function evaluateExpression(
 }
 
 const axis = z
-  .object({ expression: z.string().min(1), label: z.string().optional() })
-  .strict();
+  .object({
+    expression: z.string().min(1),
+    label: z.string().optional(),
+    min: z.number().finite().optional(),
+    max: z.number().finite().optional(),
+  })
+  .strict()
+  .refine(
+    (axis) =>
+      axis.min === undefined || axis.max === undefined || axis.min < axis.max,
+    { message: "Axis min must be less than max", path: ["max"] },
+  );
 const common = {
   version: z.literal(1),
   id: z.string().min(1).regex(/^\S+$/u, "ID must not contain whitespace"),
