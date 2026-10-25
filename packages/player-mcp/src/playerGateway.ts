@@ -790,13 +790,14 @@ export class PlayerGateway {
     session.sending = true;
     const clientSeq = ++session.clientSeq;
     const clientCmdId = uuidV7();
+    const submittedIntent = { ...input, policy: input.policy ?? "REPLACE_ACTIVE" };
     try {
       const response = await this.request(session, "/api/v1/intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...input, run_id: session.runId, client_seq: clientSeq,
-          client_cmd_id: clientCmdId, policy: input.policy ?? "REPLACE_ACTIVE",
+          ...submittedIntent, run_id: session.runId, client_seq: clientSeq,
+          client_cmd_id: clientCmdId,
         }),
       });
       const body = await response.text();
@@ -814,7 +815,7 @@ export class PlayerGateway {
         session.pendingLifecycles.delete(clientCmdId);
         for (const lifecycle of pending) this.applyLifecycle(session, lifecycle);
       }
-      return { accepted_http: response.ok, status: response.status, client_seq: clientSeq, client_cmd_id: clientCmdId, result };
+      return { accepted_http: response.ok, status: response.status, client_seq: clientSeq, client_cmd_id: clientCmdId, submitted_intent: submittedIntent, result };
     } finally {
       session.sending = false;
     }

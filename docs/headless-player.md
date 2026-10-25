@@ -39,6 +39,15 @@ direct Redis dependency.
 
 Expose a small, typed MCP tool surface:
 
+For agent play, prefer `move_entity(handle, entity_id, x, y)`,
+`build_entity(handle, entity_id, blueprint_id)`, and
+`collect_resource(handle, entity_id, resource_type_id)`. These flat tools use
+the same gateway as `send_intent` and accept an optional `policy` (default
+`REPLACE_ACTIVE`). Every submission receipt includes `submitted_intent`, the
+normalized intent sent to the game, alongside its command ID and HTTP result.
+HTTP acceptance still requires lifecycle/state verification. Restart the MCP
+server connection after updating to discover the new tools.
+
 | Operation | Responsibility |
 | --- | --- |
 | `connect_player` | Bind a provisioned test identity, open its SSE stream, perform the handshake, and return an opaque handle plus readiness state. |

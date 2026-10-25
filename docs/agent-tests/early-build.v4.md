@@ -70,6 +70,15 @@ Apply these corrections throughout execution:
 
 ## Mandatory payload check and mismatch recovery
 
+Prefer the dedicated flat tools when available: `move_entity` with
+`handle, entity_id, x, y`; `build_entity` with `handle, entity_id, blueprint_id`;
+and `collect_resource` with `handle, entity_id, resource_type_id`. All accept
+optional `policy`, defaulting to `REPLACE_ACTIVE`. They avoid constructing
+the nested union below. Use `send_intent` templates only as a fallback.
+Compare each receipt's `submitted_intent` with the intended action and log
+it with the command ID before proceeding. If these tools are missing after
+an update, reconnect the MCP server to refresh its advertised tool list.
+
 Before each `send_intent`, compare the actual arguments with the current
 role map and desired next state. Verify the nested `intent.type`, entity ID,
 policy, and action-specific fields. For a Move, require a computed numeric

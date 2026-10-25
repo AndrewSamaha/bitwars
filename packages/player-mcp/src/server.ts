@@ -122,6 +122,24 @@ function createServer() {
     description: "Submit an intent for an owned entity using this player's current run and next sequence.",
     inputSchema: handleSchema.extend({ intent: intentSchema }),
   }, ({ handle, intent }) => tool(() => gateway.sendIntent(handle, intent as IntentInput))());
+  server.registerTool("move_entity", {
+    description: "Move an owned entity to world coordinates. Replaces its active order by default, including continuous collection. Prefer this over send_intent for movement.",
+    inputSchema: handleSchema.extend({ entity_id: entityId, x: z.number().finite(), y: z.number().finite(), policy }),
+  }, ({ handle, entity_id, x, y, policy }) => tool(() => gateway.sendIntent(handle, {
+    type: "Move", entity_id, target: { x, y }, policy,
+  }))());
+  server.registerTool("build_entity", {
+    description: "Order an owned builder to construct a blueprint. The product spawns near the builder; no placement coordinate is accepted. Prefer this over send_intent for construction.",
+    inputSchema: handleSchema.extend({ entity_id: entityId, blueprint_id: z.string().min(1), policy }),
+  }, ({ handle, entity_id, blueprint_id, policy }) => tool(() => gateway.sendIntent(handle, {
+    type: "Build", entity_id, blueprint_id, policy,
+  }))());
+  server.registerTool("collect_resource", {
+    description: "Order an owned collector to collect an explicit resource such as food, minerals, or energy. Replaces its active order by default. Prefer this over send_intent for resource collection.",
+    inputSchema: handleSchema.extend({ entity_id: entityId, resource_type_id: z.string().min(1), policy }),
+  }, ({ handle, entity_id, resource_type_id, policy }) => tool(() => gateway.sendIntent(handle, {
+    type: "Collect", entity_id, resource_type_id, policy,
+  }))());
   server.registerTool("disconnect_player", {
     description: "Close the player's game SSE stream, progress timer, and event buffer.",
     inputSchema: handleSchema,

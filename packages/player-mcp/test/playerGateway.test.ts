@@ -60,6 +60,18 @@ describe("PlayerGateway", () => {
       expect(sent).toMatchObject({ accepted_http: true, status: 200, client_seq: 4 });
       expect(sent.client_cmd_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
       expect(postedIntents[0]).toMatchObject({ run_id: "run-1", client_seq: 4, entity_id: 710 });
+      expect(sent.submitted_intent).toEqual({ type: "Move", entity_id: 710, target: { x: 5, y: 6 }, policy: "REPLACE_ACTIVE" });
+      for (const intent of [
+        { type: "Build", entity_id: 710, blueprint_id: "collector_solar", policy: "APPEND" },
+        { type: "Collect", entity_id: 710, resource_type_id: "energy" },
+      ] as const) {
+        const receipt = await gateway.sendIntent(handle, intent);
+        const posted = postedIntents.at(-1)!;
+        expect(receipt.submitted_intent).toEqual({ ...intent, policy: intent.type === "Build" ? "APPEND" : "REPLACE_ACTIVE" });
+        const { run_id, client_seq, client_cmd_id, ...actualIntent } = posted;
+        expect(receipt.submitted_intent).toEqual(actualIntent);
+        expect(receipt.client_cmd_id).toBe(client_cmd_id);
+      }
       expect(calls.filter(call => call.path !== "/api/players/login").every(call => call.cookie === "player_token=test-token")).toBe(true);
 
       expect(gateway.disconnectPlayer(handle)).toEqual({ disconnected: true });
