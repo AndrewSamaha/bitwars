@@ -124,7 +124,7 @@ above over local MCP stdio, uses the existing game HTTP/SSE endpoints, and
 has mocked game-endpoint and MCP protocol tests. A deterministic MCP client is
 also implemented there. The [scripted bot runner](bot-runner.md) launches
 multiple isolated MCP clients; live disposable-match validation remains.
-The current gateway creates/logs in a `loadtest-*` account when
+The current gateway creates/logs in a `loadtest-*` or `agent-*` account when
 `connect_player` is called; a future runner iteration should provision accounts
 before the timed window and establish how to isolate or retire them afterward.
 

@@ -35,7 +35,7 @@ configured tool set includes `connect_player`, `get_observation`,
 `send_intent`, `disconnect_player`, and the legacy `get_player_state` and
 `observe_events` views.
 
-The gateway accepts `loadtest-*` usernames and logs in the player on connect.
+The gateway accepts `loadtest-*` and `agent-*` usernames and logs in the player on connect.
 The requested mission authorizes the player actions listed here and the
 resulting changes to the active world. The active world may be changed
 repeatedly for workflow experiments; do not load or reload a scenario, replace
@@ -46,7 +46,7 @@ part of the explicitly requested experiment.
 
 1. Read [`game-query.md`](game-query.md) and
    [`requirements/scenarios.md`](requirements/scenarios.md). Connect with a
-   unique `loadtest-*` username; wait until `get_player_state` reports the
+   unique `loadtest-*` or `agent-*` username; wait until `get_player_state` reports the
    snapshot and handshake ready. Record the run ID and inspect owned entities,
    positions, resource nodes, and the nearest sun before acting.
 2. Confirm the state has the expected habitat and at least three owned workers;

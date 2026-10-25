@@ -67,8 +67,8 @@ function createServer() {
     ].join(" "),
   });
   server.registerTool("connect_player", {
-    description: "Log in as a loadtest-* player and open its game SSE connection. Only use on a disposable game.",
-    inputSchema: z.object({ username: z.string().regex(/^loadtest-[a-zA-Z0-9_-]{1,48}$/) }),
+    description: "Log in as a loadtest-* or agent-* player and open its game SSE connection. Only use on a disposable game.",
+    inputSchema: z.object({ username: z.string().regex(/^(?:loadtest|agent)-[a-zA-Z0-9_-]{1,48}$/) }),
   }, ({ username }) => tool(() => gateway.connectPlayer(username))());
   server.registerTool("observe_events", {
     description: "Read a bounded batch of this player's game SSE events after a cursor; reports dropped-event gaps.",

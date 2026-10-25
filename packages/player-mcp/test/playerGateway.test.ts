@@ -10,7 +10,7 @@ async function eventually(check: () => boolean, maxAttempts = 100): Promise<void
 }
 
 describe("PlayerGateway", () => {
-  it("uses a separate authenticated SSE session, reconciles, polls, stamps intents, and disconnects", async () => {
+  it.each(["loadtest-one", "agent-one"])("uses a separate authenticated SSE session, reconciles, polls, stamps intents, and disconnects for %s", async (username) => {
     let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
     const encoder = new TextEncoder();
     const postedIntents: Record<string, unknown>[] = [];
@@ -41,14 +41,14 @@ describe("PlayerGateway", () => {
     }) as typeof fetch;
     const gateway = new PlayerGateway({ baseUrl: "http://127.0.0.1:3000", fetchImpl: fakeFetch, progressIntervalMs: 20 });
     try {
-      const { handle } = await gateway.connectPlayer("loadtest-one");
+      const { handle } = await gateway.connectPlayer(username);
       await eventually(() => streamController !== undefined);
       streamController!.enqueue(encoder.encode('event: snapshot\nid: 1-0\ndata: {"run_id":"run-1","tick":8,"entities":[{"id":710,"owner_player_id":"player-1","pos":{"x":1,"y":2}}]}\n\n'));
       await eventually(() => gateway.getPlayerState(handle).ready);
       expect(gateway.getPlayerState(handle).client_seq).toBe(3);
       expect(gateway.getPlayerState(handle).owned_entities).toHaveLength(1);
       await expect(gateway.observeEvents(handle, 0)).resolves.toMatchObject({ gap: false, ready: true });
-      await expect(gateway.connectPlayer("loadtest-one")).rejects.toThrow("already connected");
+      await expect(gateway.connectPlayer(username)).rejects.toThrow("already connected");
       expect(() => gateway.setProgressWatch(handle, [711])).toThrow("not known to be owned");
       await expect(gateway.sendIntent(handle, { type: "Move", entity_id: 711, target: { x: 1, y: 2 } })).rejects.toThrow("not known to be owned");
 
@@ -69,9 +69,9 @@ describe("PlayerGateway", () => {
     }
   });
 
-  it("rejects non-test identities before creating a player", async () => {
+  it.each(["andrew", "agent-", "loadtest-", "agent-bad.name", `agent-${"a".repeat(49)}`])("rejects invalid identity %s before creating a player", async (username) => {
     const gateway = new PlayerGateway({ baseUrl: "http://127.0.0.1:3000", fetchImpl: (() => { throw new Error("should not fetch"); }) as typeof fetch });
-    await expect(gateway.connectPlayer("andrew")).rejects.toThrow("loadtest-");
+    await expect(gateway.connectPlayer(username)).rejects.toThrow("loadtest- or agent-");
   });
 
   it("reopens SSE and reconciles a newer sequence after the stream ends", async () => {

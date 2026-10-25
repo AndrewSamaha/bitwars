@@ -317,8 +317,8 @@ export class PlayerGateway {
 
   async connectPlayer(username: string): Promise<{ handle: string; status: ReturnType<PlayerGateway["getPlayerState"]> }> {
     if (this.sessions.size >= this.maxPlayers) throw new Error("player limit reached");
-    if (!/^loadtest-[a-zA-Z0-9_-]{1,48}$/.test(username)) {
-      throw new Error("test usernames must start with loadtest- and use only letters, digits, _ or -");
+    if (!/^(?:loadtest|agent)-[a-zA-Z0-9_-]{1,48}$/.test(username)) {
+      throw new Error("test usernames must start with loadtest- or agent- and use only letters, digits, _ or -");
     }
     if ([...this.sessions.values()].some(session => session.username === username)) {
       throw new Error("test username is already connected");
