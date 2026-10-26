@@ -1,0 +1,56 @@
+{
+  "models": [
+    {
+      "slug": "glm-5p3-flash",
+      "display_name": "GLM 5.3 Flash",
+      "description": "GLM-5.3-Flash is the natively multimodal 320B-parameter, 18B-active model in the GLM-5 series, designed for long-context coding and agent workflows.",
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "prefer_websockets": false,
+      "support_verbosity": true,
+      "default_verbosity": "low",
+      "supports_reasoning_summaries": true,
+      "default_reasoning_summary": "none",
+      "experimental_supported_tools": [],
+      "base_instructions": "",
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "minimal_client_version": "0.0.1",
+      "supports_search_tool": true,
+      "priority": 99,
+      "auto_review_model_override": "glm-5p3-flash",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "supports_parallel_tool_calls": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "effort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "effort": "max",
+          "description": "Extra high reasoning depth for complex problems"
+        }
+      ],
+      "reasoning_summary_format": "experimental",
+      "web_search_tool_type": "text_and_image",
+      "supports_image_detail_original": true,
+      "context_window": 1048576,
+      "max_context_window": 1048576,
+      "auto_compact_token_limit": 838860
+    }
+  ]
+}

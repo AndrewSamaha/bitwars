@@ -17,6 +17,9 @@ enabled_tools = [
   "set_progress_watch",
   "send_intent",
   "disconnect_player",
+  "move_entity",
+  "build_entity",
+  "collect_resource",
 ]
 
 [mcp_servers.bitwars_player.env]
