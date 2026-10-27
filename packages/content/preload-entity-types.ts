@@ -85,7 +85,7 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {},
-    "definition": "build_cost:\n  energy: 50\n  minerals: 75\nbuilds:\n  - duration_seconds: 75\n    entity_type_id: scout_long_range\ncombat:\n  acquisition_range: 450\n  attacks:\n    - cooldown_ticks: 25\n      damage: 2\n      id: laser\n      priority: 0\n      range: 120\n      type: laser\n  on_near_enemy_strategy: approach\ncombat_targetable: true\nfog_memory: forget_when_hidden\nhealth: 60\nhull_radius: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  food: 1\nmass: 0.6\nmax_capacity: {}\nsensor:\n  range: 5000\nspeed: 500\nstop_radius: 0.5"
+    "definition": "build_cost:\n  energy: 50\n  minerals: 75\nbuilds:\n  - duration_seconds: 75\n    entity_type_id: scout_long_range\ncombat:\n  acquisition_range: 450\n  attacks:\n    - cooldown_ticks: 25\n      damage: 2\n      id: laser\n      priority: 0\n      range: 120\n      type: laser\n  on_near_enemy_strategy: approach\ncombat_targetable: true\nfog_memory: forget_when_hidden\nhealth: 60\nhull_radius: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  food: 1\nmass: 0.6\nmax_capacity:\n  energy: 50\n  food: 50\n  minerals: 50\nsensor:\n  range: 5000\nspeed: 500\nstop_radius: 0.5"
   },
   {
     "id": "raider",

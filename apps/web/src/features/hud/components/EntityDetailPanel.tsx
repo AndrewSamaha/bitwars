@@ -249,8 +249,7 @@ export default function EntityDetailPanel() {
   const carrierDef = contentManager.getEntityType(idToType.get(firstId) ?? "");
   const canResupply = selectedEntities.length > 0 && selectedEntities.every(id => {
     const def = contentManager.getEntityType(idToType.get(id) ?? "");
-    return (def?.speed ?? 0) > 0 && (def?.collector?.transport_rate_per_second ?? 0) > 0
-      && Object.values(def?.max_capacity ?? {}).some(capacity => capacity > 0);
+    return Object.values(def?.max_capacity ?? {}).some(capacity => capacity > 0);
   });
   const canTransport = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0 && (carrierDef?.collector != null && (carrierDef.collector.transport_rate_per_second ?? 8) > 0);
   const transportSelection = deliverySelection?.kind === "Transport" ? deliverySelection : null;

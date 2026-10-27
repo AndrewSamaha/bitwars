@@ -381,7 +381,10 @@ entity_types:
       energy: 1
       food: 1
     mass: 0.6
-    max_capacity: {}
+    max_capacity:
+      energy: 50
+      food: 50
+      minerals: 50
     sensor:
       range: 5000
     speed: 500

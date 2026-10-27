@@ -21,7 +21,7 @@ These legacy fields remain accepted for content decoding and syntax validation. 
 | `collector.deposit_entity_types` | Collectors choose compatible same-owner depots |
 | `builds[].spend_rates`, `upgrades[].spend_rates` | `duration_seconds`; rates are retained only as a duration fallback for legacy content, never as progressive construction debits |
 
-`max_capacity`, `build_cost`, `maintenance_cost_per_minute`, `sensor.cost_per_minute`, and collector gathering rates remain active. Maintenance and sensor costs now debit the associated depot atomically; shortages pause capabilities without causing starvation damage.
+`max_capacity`, `build_cost`, `maintenance_cost_per_minute`, `sensor.cost_per_minute`, and collector gathering rates remain active. Maintenance and sensor costs debit a funded associated depot atomically, preserving onboard reserves. When no eligible depot can cover the bill, the entity pays from its own inventory instead. Neither payment combines partial stocks from different sources. Shortages pause capabilities without causing starvation damage.
 
 The previously deprecated protobuf collector `carry_amount` and `carry_capacity` fields remain compatibility-only. Physical cargo uses entity inventory. Historical starvation event decoding remains for compatibility, but depot logistics does not generate starvation damage.
 

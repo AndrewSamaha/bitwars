@@ -1404,11 +1404,10 @@ export default function GameStage() {
               const actor = findLiveEntityById(id);
               const def = contentManager.getEntityType(actor?.entity_type_id ?? "");
               const amounts = Object.fromEntries(Object.entries(def?.max_capacity ?? {}).filter(([, capacity]) => capacity > 0));
-              return { id, actor, def, amounts };
+              return { id, actor, amounts };
             });
-            if (!orders.every(({ actor, def, amounts }) => actor && !actor.remembered && actor.health > 0
-              && actor.owner_player_id === myPlayerIdRef.current && (def?.speed ?? 0) > 0
-              && (def?.collector?.transport_rate_per_second ?? 0) > 0 && Object.keys(amounts).length > 0
+            if (!orders.every(({ actor, amounts }) => actor && !actor.remembered && actor.health > 0
+              && actor.owner_player_id === myPlayerIdRef.current && Object.keys(amounts).length > 0
               && Object.keys(amounts).every(resource => (depotDef.max_capacity?.[resource] ?? 0) > 0))) return;
             for (const { id, amounts } of orders) {
               intentQueue.handleResupplyCommand(Number(id), Number(targetId), amounts, shift || ctrl, ctrl);
