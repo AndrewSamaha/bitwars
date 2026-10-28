@@ -24,9 +24,19 @@ scenario resume
 scenario pause
 scenario reload
 scenario status
+world respawn
 scenario bookmark energy-shortage energy maintenance
 scenario bookmark habitat-and-worker energy --entities=3,4
 ```
+
+`world respawn` replaces the shared world with a fresh procedural world from the
+engine's current `spawn.yaml`, exits scenario mode, and resumes simulation. The
+requesting authenticated player receives a new start and loadout before the new
+world is published. Other connected players refresh and join through normal
+procedural spawning. Invalid configuration or failure to place the requester
+leaves the current world intact. This uses the same authentication and production
+enablement rules as scenario controls. Restart the engine once after installing
+this command; subsequent respawns reload the spawn configuration without a restart.
 
 Load and reload always start paused at tick zero. Reload reads the saved YAML
 again, or uses the last loaded document if it has not been saved. `step` schedules exactly the

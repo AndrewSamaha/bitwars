@@ -63,6 +63,62 @@ describe("spawn configuration editor", () => {
 
 
 describe("procedural spawn rules", () => {
+  it("saves star and theta fields with distribution-backed food and minerals", async () => {
+    const config = parse(yaml);
+    config.global_neutral_fields = config.global_neutral_fields.filter((field: { type: string }) => ["star_yellow", "theta"].includes(field.type));
+    const entities = parse(content);
+    delete entities.entity_types.planet_blue.resource_node.amount;
+    delete entities.entity_types.minerals.resource_node.amount;
+    mocks.auth.mockResolvedValue({ res: null });
+    mocks.readFile.mockResolvedValue(stringify(entities));
+    const response = await PUT(new Request("http://localhost/api/content/spawn", { method: "PUT", body: JSON.stringify({ yaml: stringify(config) }) }));
+    expect(response.status).toBe(200);
+  });
+
+  it("uses distribution stock before entity stock and falls back when absent", () => {
+    const config = parse(yaml);
+    const entities = parse(content);
+    delete entities.entity_types.planet_blue.resource_node.regeneration;
+    entities.entity_types.planet_blue.resource_node.amount = 2000;
+    delete config.resource_amounts.planet_blue;
+    expect(() => parseSpawnConfig(stringify(config), entities)).not.toThrow();
+    config.resource_amounts.planet_blue = { average: 0, sd: 0, min: 0, max: 0 };
+    expect(() => parseSpawnConfig(stringify(config), entities)).toThrow("Starting planet requires finite food");
+    delete config.resource_amounts.planet_blue;
+    delete entities.entity_types.planet_blue.resource_node.amount;
+    expect(() => parseSpawnConfig(stringify(config), entities)).toThrow("Starting planet requires finite food");
+  });
+
+  it("rejects distributions on entities without resource nodes", () => {
+    const config = parse(yaml);
+    config.resource_amounts.worker = { average: 100, sd: 0, min: 100, max: 100 };
+    expect(() => parseSpawnConfig(stringify(config), parse(content))).toThrow("requires a resource node: worker");
+  });
+
+  it("requires positive minimum stock for every renewable node", () => {
+    const config = parse(yaml);
+    const entities = parse(content);
+    entities.entity_types.minerals.resource_node.regeneration = {};
+    config.resource_amounts.minerals.min = 0;
+    expect(() => parseSpawnConfig(stringify(config), entities)).toThrow("Renewable resource minerals");
+    config.resource_amounts.minerals.sd = 0;
+    expect(() => parseSpawnConfig(stringify(config), entities)).not.toThrow();
+  });
+
+  it("checks attainable mineral stock for fixed and sampled distributions", () => {
+    const config = parse(yaml);
+    config.resource_amounts.minerals = { average: 100, sd: 0, min: 0, max: 2000 };
+    expect(() => parseSpawnConfig(stringify(config), parse(content))).toThrow("Mineral stock cannot meet start minimum");
+    config.resource_amounts.minerals.sd = 1;
+    expect(() => parseSpawnConfig(stringify(config), parse(content))).not.toThrow();
+  });
+
+  it("reports an empty planet table as a schema error", () => {
+    const config = parse(yaml);
+    config.solar_systems.planets.type_weights.points = [];
+    expect(() => parseSpawnConfig(stringify(config))).toThrow("solar_systems.planets.type_weights.points:");
+  });
+
   it("validates the real content and rejects unknown references", () => {
     const config = parseSpawnConfig(yaml, parse(content));
     config.exposure.sources.missing_star = 1;
@@ -87,7 +143,7 @@ describe("procedural spawn rules", () => {
   it("accepts quoted count keys but rejects numeric/string key collisions", () => {
     const quoted = yaml.replace("      0: 15", '      "0": 15');
     expect(parseSpawnConfig(quoted).solar_systems.planets.count_weights["0"]).toBe(15);
-    expect(() => parseSpawnConfig(yaml.replace("      0: 15", '      0: 15\n      "0": 10'))).toThrow("Duplicate spawn key");
+    expect(() => parseSpawnConfig(yaml.replace('      "0": 15', '      0: 15\n      "0": 10'))).toThrow("Duplicate spawn key");
   });
   it("renames entity keys and values without changing resource IDs or count keys", () => {
     const renamed = renameSpawnEntity(parseSpawnConfig(yaml), "planet_blue", "planet_temperate");

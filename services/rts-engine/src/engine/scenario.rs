@@ -3,6 +3,22 @@ use super::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Build and place the requester before replacing any live state.
+fn regenerated_world(
+    config: &SpawnConfig,
+    content: &ContentPack,
+    player_id: &str,
+    rng: &mut impl Rng,
+) -> Result<GameState> {
+    config.validate_content(content)?;
+    let mut state = init_world(config);
+    spawn_celestial_field(&mut state.entities, content, config, rng);
+    let loadout = rng.gen_range(0..config.loadouts.len());
+    generation::spawn_player(&mut state, content, config, player_id, loadout, rng)
+        .context("could not place requesting player in regenerated world")?;
+    Ok(state)
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
@@ -278,6 +294,23 @@ impl Engine {
             .as_ref()
             .ok_or_else(|| anyhow!("content unavailable"))?;
         let state = scenario.materialize(content, &self.spawn_config, &bindings)?;
+        self.replace_world(state, self.spawn_config.clone(), Some((scenario, bindings))).await
+    }
+
+    async fn respawn_world(&mut self, player_id: &str) -> Result<()> {
+        let config = SpawnConfig::load(std::path::Path::new(&self.cfg.spawn_config_path))?;
+        let content = self.content.as_ref().ok_or_else(|| anyhow!("content unavailable"))?;
+        let state = regenerated_world(&config, content, player_id, &mut rand::thread_rng())?;
+        self.replace_world(state, config, None).await
+    }
+
+    async fn replace_world(
+        &mut self,
+        state: GameState,
+        config: SpawnConfig,
+        scenario: Option<(Scenario, BTreeMap<String, String>)>,
+    ) -> Result<()> {
+        let content = self.content.as_ref().ok_or_else(|| anyhow!("content unavailable"))?;
         let intents = IntentManager::new(
             content.entity_types.clone(),
             self.cfg.default_stop_radius,
@@ -287,6 +320,7 @@ impl Engine {
         let run_id = Uuid::now_v7().to_string();
         self.redis.reset_scenario_tracking().await?;
         self.state = state;
+        self.spawn_config = config;
         self.prev_state = self.state.clone();
         self.intents = intents;
         self.raider_script = raider_script;
@@ -297,7 +331,10 @@ impl Engine {
         self.build_progress_stamps.clear();
         self.previous_build_progress_owners.clear();
         self.last_build_progress_publish_at = tokio::time::Instant::now();
-        self.joined_players = bindings.values().cloned().collect();
+        self.joined_players = match &scenario {
+            Some((_, bindings)) => bindings.values().cloned().collect(),
+            None => self.state.generation.starts.keys().cloned().collect(),
+        };
         self.transport_node_by_entity.clear();
         self.transport_wait_since_tick_by_entity.clear();
         self.resource_spend_total.clear();
@@ -309,16 +346,15 @@ impl Engine {
         self.prev_combat_effect_ui_state_by_entity.clear();
         self.scenario_runtime = ScenarioRuntime {
             run_id,
-            scenario_id: Some(scenario.id.clone()),
-            paused: true,
+            scenario_id: scenario.as_ref().map(|(s, _)| s.id.clone()),
+            paused: scenario.is_some(),
             tick: 0,
             steps: 0,
         };
-        self.loaded_scenario = Some((scenario, bindings));
+        self.loaded_scenario = scenario;
+        // Clear the saved template as well when returning to procedural play.
         self.redis
-            .save_scenario_template(&serde_json::to_string(
-                &self.loaded_scenario.as_ref().unwrap(),
-            )?)
+            .save_scenario_template(&serde_json::to_string(&self.loaded_scenario)?)
             .await?;
         self.scenario_snapshot().await?;
         self.last_delta_id = Some(
@@ -458,6 +494,7 @@ impl Engine {
         }
         Uuid::parse_str(&cmd.player_id).context("invalid player id")?;
         match cmd.action.as_str() {
+            "world_respawn" => self.respawn_world(&cmd.player_id).await?,
             "validate" | "load" => {
                 let scenario: Scenario = serde_yaml::from_str(
                     cmd.yaml
@@ -570,6 +607,28 @@ mod inventory_tests {
 
     fn spawn_config() -> crate::spawn_config::SpawnConfig {
         crate::spawn_config::SpawnConfig::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/spawn.yaml")).unwrap()
+    }
+
+    #[test]
+    fn regenerated_world_uses_config_and_commits_requester_start() {
+        use rand::SeedableRng;
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut config = spawn_config();
+        config.global_neutral_fields.retain(|f| f.entity_type_id == "star_yellow" || f.entity_type_id == "theta");
+        let player = Uuid::now_v7().to_string();
+        let state = regenerated_world(&config, &content, &player, &mut rand::rngs::StdRng::seed_from_u64(42)).unwrap();
+        assert_eq!(state.tick, 0);
+        assert!(state.generation.starts.contains_key(&player));
+        assert!(state.generation.pending.is_empty());
+        assert!(state.entities.iter().any(|e| e.owner_player_id == player));
+        for kind in ["star_yellow", "theta"] {
+            let expected: usize = config.global_neutral_fields.iter().filter(|f| f.entity_type_id == kind).map(|f| f.count).sum();
+            let actual = state.entities.iter().filter(|e| e.entity_type_id == kind).count();
+            assert!(actual >= expected); // Start fallback can add an extra star.
+        }
+        config.resource_amounts.get_mut("planet_blue").unwrap().average = 0.0;
+        assert!(regenerated_world(&config, &content, &player, &mut rand::rngs::StdRng::seed_from_u64(42)).is_err());
     }
 
     #[test]

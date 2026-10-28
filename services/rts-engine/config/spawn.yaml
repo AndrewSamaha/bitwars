@@ -15,25 +15,13 @@ global_neutral_fields:
     origin:
       - 0
       - 0
-    standard_deviation: 50000
+    standard_deviation: 200000
   - type: theta
-    count: 75
+    count: 25
     origin:
       - 0
       - 0
-    standard_deviation: 50000
-  - type: minerals
-    count: 100
-    origin:
-      - 0
-      - 0
-    standard_deviation: 50000
-  - type: asteroid
-    count: 75
-    origin:
-      - 0
-      - 0
-    standard_deviation: 50000
+    standard_deviation: 200000
 neutrals_near_spawn: []
 starting_resources:
   food: 500
