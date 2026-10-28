@@ -45,7 +45,7 @@ resource_amounts:
     min: 1000
     max: 1000
 exposure:
-  reference_distance: 3750
+  reference_distance: 7000
   minimum_distance: 300
   sources:
     star_yellow: 1
@@ -61,7 +61,7 @@ solar_systems:
       "4": 10
     placement:
       min_distance: 1800
-      max_distance: 8000
+      max_distance: 16000
       sampling: uniform_radius
       min_separation: 700
       max_attempts_per_object: 64
