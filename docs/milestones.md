@@ -462,6 +462,7 @@ See detailed plan: [docs/milestones/m8-resource-collection.md](./milestones/m8-r
     - Entities outside visibility omitted or reduced to “last-known” (choose and document).
 - Client:
   - Fog rendering:
+    - Main view and minimap share a dark gray overlay (`#40444b`, 20% opacity).
     - Unexplored = hidden
     - Explored but not visible = darkened (optional in v1; OK to do visible-only first)
   - Minimap integrates fog/visibility.

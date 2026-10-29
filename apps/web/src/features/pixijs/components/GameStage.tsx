@@ -34,6 +34,7 @@ import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog"
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
 import { selectEntitiesOfTypeInView } from "@/features/pixijs/utils/typeSelection";
 import { minimapOffsetToWorld, worldToMinimapOffset } from "@/features/pixijs/utils/minimap";
+import { readCameraView, saveCameraView } from "@/features/pixijs/utils/cameraSession";
 import {
   CELL_SIZE,
   SEED,
@@ -59,7 +60,7 @@ const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
 const MINIMAP_STAR_YELLOW_COLOR = 0xff_dd_22;
 const MINIMAP_PLANET_BLUE_COLOR = 0x44_cc_66;
 const BUILD_PROGRESS_SCAN_MS = 500;
-const FOG_COLOR = 0x67_6b_73;
+const FOG_COLOR = 0x40_44_4b;
 const FOG_ALPHA = 0.20;
 const FOG_ZOOM_SETTLE_MS = 150;
 const FOG_ZOOM_UPDATE_INTERVAL_MS = 1000 / 30;
@@ -93,7 +94,6 @@ export default function GameStage() {
   // M6: Current player id for ownership gating and visuals (ref so initWorld closure sees latest)
   const myPlayerIdRef = useRef<string | null>(null);
   myPlayerIdRef.current = effectivePlayerId;
-  const recenterRequestedRef = useRef<boolean>(true);
   // M5.1: Pan keys currently held (KeyW, KeyA, ...); ticker reads this and applies pan
   const panKeysRef = useRef<Set<string>>(new Set());
 
@@ -363,11 +363,23 @@ export default function GameStage() {
           }
         };
 
-        const requestRecenter = () => {
-          recenterRequestedRef.current = true;
+        let cameraRunId = "";
+        let cameraPlayerId: string | null = null;
+        let cameraInitialized = false;
+        const saveCamera = () => {
+          if (!cameraInitialized || !cameraRunId || !cameraPlayerId) return;
+          const zoom = worldContainer.scale.x;
+          saveCameraView(cameraRunId, cameraPlayerId, {
+            x: (app.screen.width / 2 - worldContainer.position.x) / zoom,
+            y: (app.screen.height / 2 - worldContainer.position.y) / zoom,
+            zoom,
+          });
         };
-        window.addEventListener("bitwars:stream-open", requestRecenter as EventListener);
-        window.addEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
+        const onVisibilityChange = () => {
+          if (document.visibilityState === "hidden") saveCamera();
+        };
+        window.addEventListener("pagehide", saveCamera);
+        document.addEventListener("visibilitychange", onVisibilityChange);
         const onCenterCameraOnEntity = (event: Event) => {
           const entity = findLiveEntityById((event as CustomEvent<string>).detail);
           if (!entity?.pos) return;
@@ -1638,9 +1650,24 @@ export default function GameStage() {
               panKeysRef.current.clear();
               return;
             }
-            if (recenterRequestedRef.current) {
-              const centered = centerCameraOnOwnedEntities();
-              if (centered) recenterRequestedRef.current = false;
+            const playerId = myPlayerIdRef.current;
+            if (game.runId && playerId && (cameraRunId !== game.runId || cameraPlayerId !== playerId)) {
+              saveCamera();
+              cameraRunId = game.runId;
+              cameraPlayerId = playerId;
+              const view = readCameraView(cameraRunId, cameraPlayerId, MIN_ZOOM, MAX_ZOOM);
+              worldContainer.scale.set(view?.zoom ?? 1);
+              cameraInitialized = view !== null;
+              if (view) {
+                worldContainer.position.set(
+                  app.screen.width / 2 - view.x * view.zoom,
+                  app.screen.height / 2 - view.y * view.zoom,
+                );
+              }
+              updateZoomText();
+            }
+            if (!cameraInitialized && game.runId && playerId) {
+              cameraInitialized = centerCameraOnOwnedEntities();
             }
             // M5.1: Apply camera pan from WASD/arrows (delta-time so speed is frame-rate independent)
             const keys = panKeysRef.current;
@@ -1695,6 +1722,9 @@ export default function GameStage() {
         return () => {
           if (destroyed) return;
           destroyed = true;
+          saveCamera();
+          window.removeEventListener("pagehide", saveCamera);
+          document.removeEventListener("visibilitychange", onVisibilityChange);
           buildProgressStore.removeSource(buildProgressSource);
           app.canvas.removeEventListener("dblclick", onDoubleClick);
           app.canvas.removeEventListener("wheel", onWheel);
@@ -1702,8 +1732,6 @@ export default function GameStage() {
           for (const id of Array.from(renderById.keys())) {
             destroyRenderRef(id);
           }
-          window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
-          window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           window.removeEventListener(CENTER_CAMERA_ON_ENTITY_EVENT, onCenterCameraOnEntity);
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
           window.removeEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);

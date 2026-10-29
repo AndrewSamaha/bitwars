@@ -20,7 +20,12 @@ M5 is **client-only**: it establishes a stable **world-coordinate space** and **
 **As built:**
 
 - **Camera**  
-  `worldContainer` is the camera: we pan by updating its `position`. `setCamera(worldContainer)` so HUD/overlays can use the same transform. Initial position (800, 500), scale 0.5.
+  `worldContainer` is the camera: we pan by updating its `position`. `setCamera(worldContainer)` so HUD/overlays can use the same transform. Without a saved view, the camera centers on owned entities at scale 1 after the world is ready.
+
+- **Session restoration**
+  - Save the world-space viewport center and zoom in per-tab `sessionStorage` on page hide, document hiding, and renderer cleanup.
+  - Restore after the first ready snapshot using the current viewport dimensions. Saves are scoped to player ID and game run ID; reconnecting to the same run does not recenter the camera.
+  - Closing the tab ends its camera session. Invalid or unavailable storage falls back to normal owned-entity centering; saved zoom is constrained to the current camera limits.
 
 - **WASD / arrow pan**  
   - Keys: W, A, S, D and ArrowUp, ArrowDown, ArrowLeft, ArrowRight.  
@@ -40,6 +45,7 @@ M5 is **client-only**: it establishes a stable **world-coordinate space** and **
 **Files:**  
 - `apps/web/src/features/pixijs/components/GameStage.tsx` (pan keys, ticker, camera).  
 - `apps/web/src/features/hud/components/CoordsOverlay.tsx` (grid coords at center).
+- `apps/web/src/features/pixijs/utils/cameraSession.ts` (scoped session view storage).
 
 ---
 
