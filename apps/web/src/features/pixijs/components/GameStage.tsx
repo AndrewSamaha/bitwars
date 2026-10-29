@@ -520,25 +520,39 @@ export default function GameStage() {
         minimapNotificationGraphics.eventMode = "none";
         minimapContainer.addChild(minimapViewportGraphics, minimapNotificationGraphics);
         app.stage.addChild(minimapContainer);
-        const zoomText = new Text({
-          text: worldContainer.scale.x.toFixed(2),
+        const scaleBarWidth = MINIMAP_SIZE_PX * 0.9;
+        const scaleBar = new Graphics();
+        scaleBar.label = "worldScaleBar";
+        scaleBar.eventMode = "none";
+        const scaleText = new Text({
+          text: "",
           style: { fontSize: 12, fill: 0xffffff },
         });
-        zoomText.label = "zoomLevel";
-        zoomText.anchor.set(0.5, 0);
-        zoomText.eventMode = "none";
-        app.stage.addChild(zoomText);
+        scaleText.label = "worldScaleDistance";
+        scaleText.anchor.set(0.5, 0);
+        scaleText.eventMode = "none";
+        app.stage.addChild(scaleBar, scaleText);
 
-        const updateZoomText = () => {
-          zoomText.text = worldContainer.scale.x.toFixed(2);
-          zoomText.position.set(
-            app.screen.width - MINIMAP_MARGIN - MINIMAP_SIZE_PX / 2,
-            MINIMAP_MARGIN + MINIMAP_SIZE_PX + 4,
-          );
+        const updateScaleBar = () => {
+          const centerX = app.screen.width - MINIMAP_MARGIN - MINIMAP_SIZE_PX / 2;
+          const left = centerX - scaleBarWidth / 2;
+          const top = MINIMAP_MARGIN + MINIMAP_SIZE_PX + 12;
+          // Powers of two keep the moving tick between half and full width.
+          // This measures the linear world view, not the compressed minimap.
+          const distance = 2 ** Math.floor(Math.log2(scaleBarWidth / worldContainer.scale.x));
+          const tickX = distance * worldContainer.scale.x;
+          scaleBar.position.set(left, top);
+          scaleBar.clear()
+            .moveTo(0, 0).lineTo(scaleBarWidth, 0)
+            .moveTo(0, -4).lineTo(0, 4)
+            .moveTo(tickX, -4).lineTo(tickX, 4)
+            .stroke({ width: 1, color: 0xffffff });
+          scaleText.text = `${distance.toLocaleString()} units`;
+          scaleText.position.set(centerX, top + 7);
         };
-        updateZoomText();
+        updateScaleBar();
 
-        app.renderer.on("resize", updateZoomText);
+        app.renderer.on("resize", updateScaleBar);
 
         const selectionBoxGraphics = new Graphics();
         selectionBoxGraphics.label = "selectionBox";
@@ -906,7 +920,7 @@ export default function GameStage() {
             pointer.y - worldPoint.y * nextZoom,
           );
           fogRefreshAfterZoomAt = performance.now() + FOG_ZOOM_SETTLE_MS;
-          updateZoomText();
+          updateScaleBar();
         };
         app.canvas.addEventListener("wheel", onWheel, { passive: false });
 
@@ -1664,7 +1678,7 @@ export default function GameStage() {
                   app.screen.height / 2 - view.y * view.zoom,
                 );
               }
-              updateZoomText();
+              updateScaleBar();
             }
             if (!cameraInitialized && game.runId && playerId) {
               cameraInitialized = centerCameraOnOwnedEntities();

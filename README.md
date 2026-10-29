@@ -105,6 +105,14 @@ Move-command click detection in the web client is handled at the Pixi stage leve
 - Observability:
   - Set `NEXT_PUBLIC_DEBUG_MOVE_INPUT=1` to emit `console.debug` traces and render a tiny top-right "move-input" debug badge showing the latest decision (`ignored:*` or `dispatched`).
 
+### World-view scale
+
+Below the minimap, a centered scale bar spans 90% of the minimap width.
+Its left tick is fixed; the right tick moves between approximately half and full
+width as the camera zoom changes. The centered label below gives the world-view
+distance between ticks in units, stepping through powers of two. This measures
+the main view, not the minimap's nonlinear distance projection.
+
 ## rts-engine
 This is the Rust server that will run the game loop. It integrates with Redis and protobuf-generated types.
 
