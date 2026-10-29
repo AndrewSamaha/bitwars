@@ -80,6 +80,14 @@ Assignments survive stopping/restarting Collect, reconnects, and snapshot restor
 
 When an owned worker enters `waiting_for_dropoff`, show a focusable **Collection blocked** toast and record it in the message log. Do not repeat it on unchanged state updates; leaving and re-entering the wait raises it again. Every explicit Collect command for a different resource also raises **Cargo bay full** when an existing resource is at or above its carrying capacity. Compatible-resource and nearest-compatible orders do not raise that warning. Warnings preserve cargo and still submit the requested order.
 
+### Jettison cargo
+
+Select an owned, living mobile cargo carrier with resources aboard and choose **[J] Jettison cargo**. The action supports multiple selected carriers when every selected entity is eligible; empty carriers, stationary entities, depots, and enemy entities are excluded. Issuing the command immediately discards **all** onboard resources, with no confirmation dialog, refund, or recoverable cargo drop.
+
+Jettison is immediate and does not replace active orders, queued work, or collection/delivery-depot assignments. A worker waiting to unload incompatible cargo can resume its existing collection assignment after the inventory is cleared. Repeating delivery, transport, or resupply orders remain active and may load new resources afterward.
+
+The authenticated intent endpoint accepts `type: "JettisonCargo"` and a positive safe-integer `entity_id`, using the normal command UUID and sequence fields. The engine validates ownership and carrier eligibility before clearing inventory, then emits Accepted/Finished for this command independently of the active order. Player MCP `send_intent` accepts the same type. Deploy the updated engine and web/shared protocol code together; no match reset is required.
+
 ## Spending and shortages
 
 Construction, upgrades, research, and repair use one eligible funding source. Never combine several depots or split a single payment across depot stock and worker cargo.

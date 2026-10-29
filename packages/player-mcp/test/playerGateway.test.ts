@@ -64,6 +64,7 @@ describe("PlayerGateway", () => {
       for (const intent of [
         { type: "Build", entity_id: 710, blueprint_id: "collector_solar", policy: "APPEND" },
         { type: "Collect", entity_id: 710, resource_type_id: "energy" },
+        { type: "JettisonCargo", entity_id: 710 },
       ] as const) {
         const receipt = await gateway.sendIntent(handle, intent);
         const posted = postedIntents.at(-1)!;
@@ -71,6 +72,21 @@ describe("PlayerGateway", () => {
         const { run_id, client_seq, client_cmd_id, ...actualIntent } = posted;
         expect(receipt.submitted_intent).toEqual(actualIntent);
         expect(receipt.client_cmd_id).toBe(client_cmd_id);
+        if (intent.type === "Collect" || intent.type === "JettisonCargo") {
+          const activeBefore = gateway.getPlayerState(handle).active_intents;
+          for (const state of intent.type === "Collect" ? [2] : [2, 5]) {
+            const lifecycle = {
+              playerId: "player-1", clientCmdId: receipt.client_cmd_id,
+              intentId: receipt.client_cmd_id, state, reason: 1, serverTick: "9",
+            };
+            streamController!.enqueue(encoder.encode(`event: lifecycle\ndata: ${JSON.stringify(lifecycle)}\n\n`));
+            await eventually(() => gateway.getCommand(handle, receipt.client_cmd_id)?.lifecycle_state === state);
+            if (intent.type === "JettisonCargo") {
+              expect(gateway.getPlayerState(handle).active_intents).toEqual(activeBefore);
+              expect(activeBefore).toEqual([expect.objectContaining({ intent_kind: "collect" })]);
+            }
+          }
+        }
       }
       expect(calls.filter(call => call.path !== "/api/players/login").every(call => call.cookie === "player_token=test-token")).toBe(true);
 

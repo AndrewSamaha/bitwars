@@ -129,6 +129,12 @@ message SelfDestructIntent {
   uint64 entity_id = 1;
 }
 
+// Immediately discard all cargo from an owned mobile carrier without interrupting orders.
+// No resource refund or dropped entity is created.
+message JettisonCargoIntent {
+  uint64 entity_id = 1;
+}
+
 // Transport envelope that wraps all intent payloads and carries authoritative metadata.
 message IntentEnvelope {
   bytes  client_cmd_id    = 1;  // UUIDv7 (16 bytes), supplied by client
@@ -154,6 +160,7 @@ message IntentEnvelope {
     AssignDepotIntent    assign_depot = 22;
     ResupplyIntent       resupply = 23;
     SelfDestructIntent   self_destruct = 24;
+    JettisonCargoIntent  jettison_cargo = 25;
   }
   reserved 8, 9, 15;
 }

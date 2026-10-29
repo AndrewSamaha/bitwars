@@ -507,6 +507,13 @@ pub struct SelfDestructIntent {
     #[prost(uint64, tag = "1")]
     pub entity_id: u64,
 }
+/// Immediately discard all cargo from an owned mobile carrier without interrupting orders.
+/// No resource refund or dropped entity is created.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct JettisonCargoIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+}
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntentEnvelope {
@@ -532,7 +539,7 @@ pub struct IntentEnvelope {
     pub policy: i32,
     #[prost(
         oneof = "intent_envelope::Payload",
-        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24"
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25"
     )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
@@ -568,6 +575,8 @@ pub mod intent_envelope {
         Resupply(super::ResupplyIntent),
         #[prost(message, tag = "24")]
         SelfDestruct(super::SelfDestructIntent),
+        #[prost(message, tag = "25")]
+        JettisonCargo(super::JettisonCargoIntent),
     }
 }
 /// Extensible Intent envelope.

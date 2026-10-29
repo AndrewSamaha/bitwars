@@ -73,6 +73,7 @@ export type WaitCondition =
   | { type: "resource_at_least"; entity_id: number; resource_type_id: string; amount: number };
 
 export type IntentInput =
+  | { type: "JettisonCargo"; entity_id: number; policy?: string }
   | { type: "Resupply"; entity_id: number; depot_id: number; target_amounts: Record<string, number>; policy?: string }
   | { type: "Move"; entity_id: number; target: { x: number; y: number }; policy?: string }
   | { type: "Build"; entity_id: number; blueprint_id: string; policy?: string }
@@ -279,7 +280,7 @@ export class PlayerGateway {
   }
 
   private setActiveIntent(session: Session, command: CommandStatus): void {
-    if (command.lifecycle_state === 1) return;
+    if (command.intent_type === "JettisonCargo" || command.lifecycle_state === 1) return;
     const active = session.activeIntents.filter(item => {
       const intent = object(item);
       return command.terminal

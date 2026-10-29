@@ -5125,6 +5125,20 @@ impl Engine {
                 self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished, pb::LifecycleReason::None, accept_tick).await?;
                 return Ok(());
             }
+            Some(intent_envelope::Payload::JettisonCargo(order)) => {
+                let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
+                let result = self.content.as_ref().ok_or(pb::LifecycleReason::InvalidTarget)
+                    .and_then(|content| logistics::jettison_cargo(&mut self.state.entities, content,
+                        &player_id, order.entity_id));
+                if let Err(reason) = result {
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
+                    return Err(anyhow!("invalid jettison cargo target"));
+                }
+                // CollectionLoad is derived from inventory on each update; no cargo balance is cached.
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Accepted, pb::LifecycleReason::None, accept_tick).await?;
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished, pb::LifecycleReason::None, accept_tick).await?;
+                return Ok(());
+            }
             Some(intent_envelope::Payload::AssignDepot(order)) => {
                 let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
                 let result = self.content.as_ref().ok_or(pb::LifecycleReason::InvalidTarget)
@@ -5894,6 +5908,61 @@ impl Engine {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod jettison_tests {
+    use super::*;
+
+    #[test]
+    fn jettison_publishes_empty_inventory_and_preserves_collection_assignment() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let def = content.get("worker").unwrap();
+        let mut worker = pb::Entity {
+            id: 1, entity_type_id: "worker".into(), owner_player_id: "me".into(), health: 100.0,
+            pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }), ..Default::default()
+        };
+        set_resource_amount(&mut worker, "food", 50.0);
+        let source = pb::Entity {
+            id: 2, entity_type_id: "planet_blue".into(), health: 100.0,
+            resource_deposit: Some(pb::ResourceDeposit { amount: 100.0, remaining: 100.0 }),
+            ..Default::default()
+        };
+        let previous = GameState {
+            entities: vec![worker, source], tick: 0, discovered_entities: Default::default(),
+            generation: Default::default(), technologies: HashMap::new()
+        };
+        let mut current = previous.clone();
+        let mut intents = IntentManager::new(content.entity_types.clone(), 1.0, 10.0);
+        let metadata = IntentMetadata {
+            entity_id: 1, intent_id: vec![1; 16], client_cmd_id: vec![2; 16], player_id: "me".into(),
+            protocol_version: ENGINE_PROTOCOL_MAJOR, server_tick: 0, policy: pb::IntentPolicy::ReplaceActive
+        };
+        let order = pb::Intent { kind: Some(pb::intent::Kind::Collect(pb::CollectIntent {
+            entity_id: 1, resource_type_id: "food".into(), ..Default::default()
+        })) };
+        assert!(intents.try_activate(order, metadata.clone(), "worker").started.is_some());
+        let assignment = intents.active_collect_assignment(1);
+        assert!(collection_load(&current.entities[0], def, &["food"]).is_some());
+        logistics::jettison_cargo(&mut current.entities, &content, "me", 1).unwrap();
+        assert!(collection_load(&current.entities[0], def, &["food"]).is_none());
+        assert_eq!(intents.active_collect_assignment(1), assignment);
+        assert_eq!(intents.active_intents()[&1].metadata.intent_id, metadata.intent_id);
+        let delta = compute_delta(&previous, &current,
+            &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(),
+            0.0, 0.0, &HashMap::new(), &HashSet::new());
+        let decoded = pb::Delta::decode(delta.encode_to_vec().as_slice()).unwrap();
+        let update = decoded.updates.iter().find(|update| update.id == 1).unwrap();
+        assert!(update.resources.as_ref().unwrap().resources.is_empty());
+        assert!(decoded.removed_entity_ids.is_empty());
+        assert!(should_publish_delta(&delta));
+        let by_id = collection_entity_index(&current.entities);
+        assert_eq!(gather_transport_inventory(&mut current.entities, 1, 2, def, "food", 5.0, &by_id), 5.0);
+        assert_eq!(resource_amount(&current.entities[0], "food"), 5.0);
+        assert_eq!(current.entities[1].resource_deposit.as_ref().unwrap().remaining, 95.0);
+        assert_eq!(intents.active_collect_assignment(1), assignment);
     }
 }
 

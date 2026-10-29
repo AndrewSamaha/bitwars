@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
-import { SelfDestructIntentSchema, ResupplyIntentSchema, AssignDepotIntentSchema, EscortIntentSchema, SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
+import { JettisonCargoIntentSchema, SelfDestructIntentSchema, ResupplyIntentSchema, AssignDepotIntentSchema, EscortIntentSchema, SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
 import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
@@ -122,13 +122,13 @@ export async function POST(req: NextRequest) {
     }
 
     const t = (body?.type ?? "").toString();
-    if (t !== "SelfDestruct" && t !== "Escort" && t !== "Sentry" && t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport" && t !== "Assign" && t !== "Resupply") {
-      return NextResponse.json({ error: "unsupported type; expected Escort, Sentry, Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, Transport, Assign, Resupply, or SelfDestruct" }, { status: 400 });
+    if (t !== "JettisonCargo" && t !== "SelfDestruct" && t !== "Escort" && t !== "Sentry" && t !== "Convoy" && t !== "Move" && t !== "Collect" && t !== "Build" && t !== "Upgrade" && t !== "Repair" && t !== "Research" && t !== "Deliver" && t !== "Transport" && t !== "Assign" && t !== "Resupply") {
+      return NextResponse.json({ error: "unsupported type; expected Escort, Sentry, Convoy, Move, Collect, Build, Upgrade, Repair, Research, Deliver, Transport, Assign, Resupply, SelfDestruct, or JettisonCargo" }, { status: 400 });
     }
 
     const entityIdVal = body?.entity_id;
-    if (t === "SelfDestruct" && (!Number.isSafeInteger(entityIdVal) || entityIdVal <= 0)) {
-      return NextResponse.json({ error: "SelfDestruct requires a positive integer entity_id" }, { status: 400 });
+    if ((t === "SelfDestruct" || t === "JettisonCargo") && (!Number.isSafeInteger(entityIdVal) || entityIdVal <= 0)) {
+      return NextResponse.json({ error: `${t} requires a positive integer entity_id` }, { status: 400 });
     }
     const target = body?.target ?? {};
     const clientCmdId = (body?.client_cmd_id ?? "").toString();
@@ -220,7 +220,12 @@ export async function POST(req: NextRequest) {
     }
 
     let bytes: Uint8Array;
-    if (t === "SelfDestruct") {
+    if (t === "JettisonCargo") {
+      bytes = toBinary(IntentEnvelopeSchema, create(IntentEnvelopeSchema, {
+        clientCmdId: clientCmdBytes, playerId, clientSeq: BigInt(clientSeqVal), protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
+        payload: { case: "jettisonCargo", value: create(JettisonCargoIntentSchema, { entityId }) },
+      }));
+    } else if (t === "SelfDestruct") {
       bytes = toBinary(IntentEnvelopeSchema, create(IntentEnvelopeSchema, {
         clientCmdId: clientCmdBytes, playerId, clientSeq: BigInt(clientSeqVal), protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
         payload: { case: "selfDestruct", value: create(SelfDestructIntentSchema, { entityId }) },

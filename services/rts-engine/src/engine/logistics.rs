@@ -3,6 +3,22 @@ use super::{pb, resource_amount, set_resource_amount, EntityTypeDef};
 use crate::content::ContentPack;
 use std::collections::HashMap;
 
+/// Discard physical inventory without changing orders, motion, or depot assignments.
+pub(super) fn jettison_cargo(
+    entities: &mut [pb::Entity], content: &ContentPack, player: &str, actor_id: u64,
+) -> Result<(), pb::LifecycleReason> {
+    let actor = entities.iter_mut().find(|e| e.id == actor_id && e.health > 0.0)
+        .ok_or(pb::LifecycleReason::InvalidTarget)?;
+    if actor.owner_player_id != player { return Err(pb::LifecycleReason::NotOwned); }
+    let def = content.get(&actor.entity_type_id).ok_or(pb::LifecycleReason::InvalidTarget)?;
+    if def.depot || def.speed <= 0.0 || !def.max_capacity.values().any(|capacity| *capacity > 0.0) {
+        return Err(pb::LifecycleReason::InvalidTarget);
+    }
+    // Preserve presence: an empty inventory must serialize as an explicit delta clear.
+    actor.resources.get_or_insert_with(Default::default).resources.clear();
+    Ok(())
+}
+
 pub(super) fn eligible_depot(
     actor: &pb::Entity,
     depot: &pb::Entity,
@@ -346,6 +362,53 @@ mod tests {
             pos: Some(pb::Vec2 { x, y: 0.0 }),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn jettison_validates_ownership_alive_mobility_capacity_and_non_depot() {
+        let mut c = content();
+        let mut es = vec![entity(1, "worker", 0.0)];
+        set_resource_amount(&mut es[0], "food", 25.0);
+        let original = es.clone();
+        assert_eq!(jettison_cargo(&mut es, &c, "enemy", 1), Err(pb::LifecycleReason::NotOwned));
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 99), Err(pb::LifecycleReason::InvalidTarget));
+        assert_eq!(es, original);
+        es[0].health = 0.0;
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Err(pb::LifecycleReason::InvalidTarget));
+        assert_eq!(resource_amount(&es[0], "food"), 25.0);
+        es[0].health = 100.0;
+        for (speed, depot, capacity) in [(0.0, false, 50.0), (10.0, true, 50.0), (10.0, false, 0.0)] {
+            let def = c.entity_types.get_mut("worker").unwrap();
+            def.speed = speed;
+            def.depot = depot;
+            def.max_capacity = HashMap::from([("food".into(), capacity)]);
+            assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Err(pb::LifecycleReason::InvalidTarget));
+            assert_eq!(resource_amount(&es[0], "food"), 25.0);
+        }
+        es[0].entity_type_id = "unknown".into();
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Err(pb::LifecycleReason::InvalidTarget));
+    }
+
+    #[test]
+    fn jettison_clears_every_resource_without_refund_or_other_state_changes() {
+        let c = content();
+        let mut es = vec![entity(1, "worker", 0.0), entity(2, "habitat", 100.0)];
+        es[0].vel = Some(pb::Vec2 { x: 2.0, y: 3.0 });
+        es[0].supply = Some(pb::DepotSupply {
+            depot_id: 2, delivery_depot_id: 2, paid_intent_id: vec![1; 16],
+            construction_progress: 0.5, ..Default::default()
+        });
+        for resource in ["food", "energy", "minerals", "unknown_cargo"] {
+            set_resource_amount(&mut es[0], resource, 20.0);
+            set_resource_amount(&mut es[1], resource, 30.0);
+        }
+        let mut expected = es.clone();
+        expected[0].resources.as_mut().unwrap().resources.clear();
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Ok(()));
+        assert_eq!(es, expected);
+        assert!(es[0].resources.as_ref().unwrap().resources.is_empty());
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Ok(()));
+        assert_eq!(es, expected);
     }
     #[test]
     fn association_sticks_until_invalid_and_never_hops_for_stock() {

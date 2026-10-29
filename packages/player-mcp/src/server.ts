@@ -18,6 +18,7 @@ const handleSchema = z.object({ handle: z.string().min(1) });
 const entityId = z.number().int().positive().safe();
 const policy = z.enum(["REPLACE_ACTIVE", "APPEND", "CLEAR_THEN_APPEND"]).optional();
 const intentSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("JettisonCargo"), entity_id: entityId, policy }),
   z.object({ type: z.literal("Move"), entity_id: entityId, target: z.object({ x: z.number().finite(), y: z.number().finite() }), policy }),
   z.object({ type: z.literal("Build"), entity_id: entityId, blueprint_id: z.string().min(1), policy }),
   z.object({ type: z.literal("Upgrade"), entity_id: entityId, target_entity_type_id: z.string().min(1), policy }),

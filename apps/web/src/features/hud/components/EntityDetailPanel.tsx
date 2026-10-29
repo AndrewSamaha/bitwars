@@ -234,6 +234,7 @@ export default function EntityDetailPanel() {
       { key: "u", name: "upgrade", enabled: canUpgrade, value: "Upgrade" },
       { key: "t", name: "research", enabled: canResearch, value: "Research" },
       { key: "r", name: "repair", enabled: canRepair, value: "Repair" },
+      ...(canJettisonCargo ? [{ key: "j", name: "jettison cargo", value: "JettisonCargo" as const }] : []),
       { key: "s", name: "self destruct", enabled: canSelfDestruct, value: "SelfDestruct" },
     ];
   };
@@ -244,6 +245,15 @@ export default function EntityDetailPanel() {
   const canSelfDestruct = !!effectivePlayerId && selectedEntities.length > 0 && selectedEntities.every(id => {
     const entity = entities.find(e => String(e.id) === id);
     return entity?.owner_player_id === effectivePlayerId && entity.remembered === undefined && (entity.health ?? 0) > 0;
+  });
+  const canJettisonCargo = !!effectivePlayerId && selectedEntities.length > 0 && selectedEntities.every(id => {
+    const entity = entities.find(e => String(e.id) === id);
+    const def = contentManager.getEntityType(entity?.entity_type_id ?? "");
+    return entity?.owner_player_id === effectivePlayerId
+      && entity.remembered === undefined && (entity.health ?? 0) > 0
+      && (def?.speed ?? 0) > 0 && !def?.depot
+      && Object.values(def?.max_capacity ?? {}).some(capacity => capacity > 0)
+      && (entity.resources ?? []).some(resource => resource.amount > 0);
   });
   const carrierEntity = entities.find((e) => String(e.id) === firstId);
   const carrierDef = contentManager.getEntityType(idToType.get(firstId) ?? "");
@@ -303,6 +313,11 @@ export default function EntityDetailPanel() {
   }, [buildStateById, firstId, isSelectedEntityBuilding]);
 
   const onClickAction = (val: ActionDef["value"]) => {
+    if (val === "JettisonCargo") {
+      if (!canJettisonCargo) return;
+      for (const id of selectedEntities) intentQueue.handleJettisonCargoCommand(Number(id));
+      return;
+    }
     if (val === "SelfDestruct") {
       if (!canSelfDestruct) return;
       actions.setSelectedAction(null);
@@ -524,6 +539,12 @@ export default function EntityDetailPanel() {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable=true]")) return;
       const key = event.key.toLowerCase();
+      if (key === "j" && canJettisonCargo && !event.ctrlKey && !event.metaKey && !event.altKey
+        && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen && !deliverySelection && !resupplySelection) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!event.repeat) onClickAction("JettisonCargo");
+        return;
+      }
       if (key === "s" && canSelfDestruct && !event.ctrlKey && !event.metaKey && !event.altKey
         && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen && !deliverySelection && !resupplySelection) {
         event.preventDefault(); event.stopImmediatePropagation();

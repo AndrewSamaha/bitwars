@@ -93,6 +93,8 @@ type PersistedState = {
 export type SendIntentParams =
   | { kind: "SelfDestruct"; entityId: number;
       clientCmdId: string; clientSeq: number; policy: IntentPolicyName }
+  | { kind: "JettisonCargo"; entityId: number;
+      clientCmdId: string; clientSeq: number; policy: IntentPolicyName }
   | { kind: "Resupply"; entityId: number; depotId: number; targetAmounts: Record<string, number>;
       clientCmdId: string; clientSeq: number; policy: IntentPolicyName }
   | { kind: "Assign"; entityId: number; targetId: number;
@@ -457,6 +459,16 @@ export class IntentQueueManager {
     this.cmdToEntity.set(clientCmdId, entityId);
     this.persist(); this.notify();
     void this.submit({ kind: "SelfDestruct", entityId, clientCmdId,
+      clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
+  }
+
+  /** Discard cargo without changing active work, assignments, or local queues. */
+  handleJettisonCargoCommand(entityId: number) {
+    const clientCmdId = uuidv7();
+    this.clientSeq++;
+    this.cmdToEntity.set(clientCmdId, entityId);
+    this.persist();
+    void this.submit({ kind: "JettisonCargo", entityId, clientCmdId,
       clientSeq: this.clientSeq, policy: "REPLACE_ACTIVE" });
   }
 
