@@ -117,7 +117,7 @@ entity_types:
     speed: 0
     stop_radius: 1
     suppress_hover: true
-    visibility_range: 100000
+    visibility_range: 200000
     visual:
       scale: 15
     z_index: -10
