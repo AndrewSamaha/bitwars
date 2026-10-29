@@ -37,10 +37,8 @@ import { minimapOffsetToWorld, worldToMinimapOffset } from "@/features/pixijs/ut
 import {
   CELL_SIZE,
   SEED,
-  SAMPLE_SPACING,
-  EDGE_THRESHOLD_SQ,
-  BORDER_COLOR,
-  getVoronoiDistancesAt,
+  getStarCountForCell,
+  getStarForCell,
   getViewportWorldAABB,
 } from "@/features/pixijs/utils/proceduralBackground";
 
@@ -403,11 +401,12 @@ export default function GameStage() {
           return true;
         };
 
-        // M5.2: Voronoi border overlay in screen space (sample grid → edge test → draw dots)
+        // World-space starfield follows the camera every frame, behind entities.
         const voronoiBorderGraphics = new Graphics();
-        voronoiBorderGraphics.label = "voronoiBorders";
+        voronoiBorderGraphics.label = "starfield";
         voronoiBorderGraphics.eventMode = "none";
-        app.stage.addChildAt(voronoiBorderGraphics, 0);
+        voronoiBorderGraphics.zIndex = -2_000_000;
+        worldContainer.addChild(voronoiBorderGraphics);
 
         // The fog is rendered to a fixed, viewport-sized texture. This keeps
         // its allocation and origin stable as sensor circles grow/shrink with
@@ -431,51 +430,30 @@ export default function GameStage() {
         app.stage.addChild(fogSprite);
 
         let lastVoronoiUpdate = -1000;
-        let lastCamX = worldContainer.position.x;
-        let lastCamY = worldContainer.position.y;
-        let lastCamScale = worldContainer.scale.x;
         const VORONOI_UPDATE_INTERVAL_MS = 100;
-        const VORONOI_CAMERA_MOVE_THRESHOLD = 25;
-        const VORONOI_ZOOM_REDRAW_THRESHOLD = 0.05;
-        const VORONOI_OVERSCAN_PX = VORONOI_CAMERA_MOVE_THRESHOLD + SAMPLE_SPACING;
-        const BORDER_DOT_SIZE = 2;
 
         function updateVoronoiBorders() {
-          // This redraw samples in the current screen coordinate system. Reset
-          // the inexpensive frame-by-frame camera transform before replacing it.
-          voronoiBorderGraphics.position.set(0, 0);
-          voronoiBorderGraphics.scale.set(1);
           voronoiBorderGraphics.clear();
-          const w = app.screen.width;
-          const h = app.screen.height;
-          for (let sy = -VORONOI_OVERSCAN_PX; sy <= h + VORONOI_OVERSCAN_PX; sy += SAMPLE_SPACING) {
-            for (let sx = -VORONOI_OVERSCAN_PX; sx <= w + VORONOI_OVERSCAN_PX; sx += SAMPLE_SPACING) {
-              const pWorld = worldContainer.toLocal({ x: sx, y: sy });
-              const { d1Sq, d2Sq } = getVoronoiDistancesAt(pWorld.x, pWorld.y, CELL_SIZE, SEED);
-              const edge = d2Sq - d1Sq;
-              if (edge < EDGE_THRESHOLD_SQ) {
-                voronoiBorderGraphics
-                  .rect(sx, sy, BORDER_DOT_SIZE, BORDER_DOT_SIZE)
-                  .fill({ color: BORDER_COLOR });
+          const zoom = worldContainer.scale.x;
+          if (zoom < 0.04) return;
+          const dotSize = 6;
+          const worldBounds = getViewportWorldAABB(worldContainer, app.screen.width, app.screen.height, CELL_SIZE);
+          const minCellX = Math.floor(worldBounds.minX / CELL_SIZE);
+          const maxCellX = Math.floor(worldBounds.maxX / CELL_SIZE);
+          const minCellY = Math.floor(worldBounds.minY / CELL_SIZE);
+          const maxCellY = Math.floor(worldBounds.maxY / CELL_SIZE);
+          for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
+            for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+              const count = getStarCountForCell(cellX, cellY, SEED);
+              for (let index = 0; index < count; index++) {
+                const star = getStarForCell(cellX, cellY, index, CELL_SIZE, SEED);
+                voronoiBorderGraphics.rect(star.x, star.y, dotSize, dotSize).fill({ color: 0xffffff });
               }
             }
           }
-          lastCamX = worldContainer.position.x;
-          lastCamY = worldContainer.position.y;
-          lastCamScale = worldContainer.scale.x;
         }
 
-        function syncVoronoiCameraTransform() {
-          // Move and scale the cached graphics with the camera every frame.
-          // This is much cheaper than re-sampling the Voronoi grid, while the
-          // periodic redraw below keeps the cached result accurate.
-          const scaleRatio = worldContainer.scale.x / lastCamScale;
-          voronoiBorderGraphics.scale.set(scaleRatio);
-          voronoiBorderGraphics.position.set(
-            worldContainer.position.x - lastCamX * scaleRatio,
-            worldContainer.position.y - lastCamY * scaleRatio,
-          );
-        }
+
 
         // Camera-centered Poincaré-style minimap — screen space, top-right.
         // Space is compressed radially, so the map always represents the
@@ -1678,20 +1656,12 @@ export default function GameStage() {
                 worldContainer.position.y += (dy * norm * PAN_SPEED * dt);
               }
             }
-            // M5.2: Transform the cached border every frame, then redraw only
-            // when its sampling basis is old enough or has drifted materially.
+            // Refresh visible star cells periodically; the camera transform moves
+            // cached world-space stars every frame without regenerating them.
             const now = performance.now();
             refreshBuildProgressIds(now);
-            const camX = worldContainer.position.x;
-            const camY = worldContainer.position.y;
-            const camScale = worldContainer.scale.x;
-            syncVoronoiCameraTransform();
-            if (
-              now - lastVoronoiUpdate > VORONOI_UPDATE_INTERVAL_MS ||
-              Math.abs(camX - lastCamX) > VORONOI_CAMERA_MOVE_THRESHOLD ||
-              Math.abs(camY - lastCamY) > VORONOI_CAMERA_MOVE_THRESHOLD ||
-              Math.abs(camScale / lastCamScale - 1) > VORONOI_ZOOM_REDRAW_THRESHOLD
-            ) {
+            voronoiBorderGraphics.visible = worldContainer.scale.x >= 0.04;
+            if (now - lastVoronoiUpdate > VORONOI_UPDATE_INTERVAL_MS) {
               updateVoronoiBorders();
               lastVoronoiUpdate = now;
             }
