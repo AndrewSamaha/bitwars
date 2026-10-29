@@ -26,6 +26,7 @@ M5 is **client-only**: it establishes a stable **world-coordinate space** and **
   - Save the world-space viewport center and zoom in per-tab `sessionStorage` on page hide, document hiding, and renderer cleanup.
   - Restore after the first ready snapshot using the current viewport dimensions. Saves are scoped to player ID and game run ID; reconnecting to the same run does not recenter the camera.
   - Closing the tab ends its camera session. Invalid or unavailable storage falls back to normal owned-entity centering; saved zoom is constrained to the current camera limits.
+  - Terminal visibility and width (hidden, open/narrow, or expanded) are also saved in per-tab `sessionStorage` and restored on refresh. This layout preference is shared across players and runs within the tab; command history, input, and game objects are not persisted. Invalid or unavailable storage leaves the terminal usable with its default open/narrow layout.
 
 - **WASD / arrow pan**  
   - Keys: W, A, S, D and ArrowUp, ArrowDown, ArrowLeft, ArrowRight.  

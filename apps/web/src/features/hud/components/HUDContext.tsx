@@ -6,6 +6,7 @@ import React, {
   useReducer,
   useEffect,
   useRef,
+  useState,
   ReactNode,
   Dispatch,
 } from "react";
@@ -98,13 +99,13 @@ type Action =
   | { type: "APP_CLEAR"; app: Application }
   | { type: "CAMERA_SET"; camera: Container | null }
   // Terminal actions
+  | { type: "TERMINAL_RESTORE"; open: boolean; wide: boolean }
   | { type: "TERMINAL_SET_OPEN"; open: boolean }
   | { type: "TERMINAL_TOGGLE" }
   | { type: "TERMINAL_TOGGLE_WIDTH" }
   | { type: "TERMINAL_SET_INPUT"; value: string }
   | { type: "TERMINAL_PUSH_HISTORY"; entry: CommandHistory }
-  | { type: "MESSAGE_LOG_PUSH"; entry: MessageLogEntry }
-  | { type: "HYDRATE"; state: HUDState };                         // for persistence restore
+  | { type: "MESSAGE_LOG_PUSH"; entry: MessageLogEntry };
 
 //
 // Reducer
@@ -147,6 +148,9 @@ function reducer(state: HUDState, action: Action): HUDState {
     case "TOOLTIP_SET":
       return { ...state, tooltip: action.text };
 
+    case "TERMINAL_RESTORE":
+      return { ...state, isTerminalOpen: action.open, isTerminalWide: action.open && action.wide };
+
     case "TERMINAL_SET_OPEN":
       return { ...state, isTerminalOpen: action.open, isTerminalWide: action.open ? state.isTerminalWide : false };
 
@@ -164,14 +168,6 @@ function reducer(state: HUDState, action: Action): HUDState {
 
     case "MESSAGE_LOG_PUSH":
       return { ...state, messageLog: appendMessageLog(state.messageLog, action.entry) };
-
-    case "HYDRATE":
-      // Rebuild Set from plain array if coming from JSON
-      return {
-        ...action.state,
-        messageLog: (action.state.messageLog ?? []).slice(-100),
-        selectedSet: new Set(action.state.selectedEntities),
-      };
 
     case "APP_SET":
       return { ...state, app: action.app };
@@ -260,43 +256,48 @@ const HUDContext = createContext<HUDContextValue | null>(null);
 //
 type HUDProviderProps = {
   children: ReactNode;
-  persistKey?: string; // e.g., "bitwars_hud"
-  persist?: boolean;   // default false
+  persistKey?: string;
+  persist?: boolean; // Terminal layout only; defaults to true.
 };
 
-export function HUDProvider({ children, persistKey = "hud", persist = false }: HUDProviderProps) {
+export function HUDProvider({ children, persistKey = "bitwars:terminal", persist = true }: HUDProviderProps) {
   const [state, dispatch] = useReducer(reducer, defaultState);
+  const [terminalRestored, setTerminalRestored] = useState(false);
 
   // Refs that we expose via context (not stored in state, not persisted)
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // (Optional) Load from sessionStorage once
+  // Restore after hydration, before allowing the initial defaults to be saved.
   useEffect(() => {
-    if (!persist) return;
-    try {
-      const raw = sessionStorage.getItem(persistKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as HUDState;
-        dispatch({ type: "HYDRATE", state: parsed });
+    if (persist) {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(persistKey) ?? "null");
+        if (saved && typeof saved.isTerminalOpen === "boolean" && typeof saved.isTerminalWide === "boolean") {
+          dispatch({
+            type: "TERMINAL_RESTORE",
+            open: saved.isTerminalOpen,
+            wide: saved.isTerminalWide,
+          });
+        }
+      } catch {
+        // Keep the default layout when storage is corrupt or unavailable.
       }
-    } catch {
-      // ignore bad payloads
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setTerminalRestored(true);
   }, [persist, persistKey]);
 
-  // (Optional) Save to sessionStorage on changes
   useEffect(() => {
-    if (!persist) return;
-    const serializable: HUDState = {
-      ...state,
-      selectedSet: undefined as any, // omit; we rebuild from selectedEntities
-    };
-    // Reinsert selectedSet as array’s Set reconstruction will happen in HYDRATE
-    const toSave = { ...serializable, selectedSet: undefined };
-    sessionStorage.setItem(persistKey, JSON.stringify({ ...toSave, selectedSet: undefined }));
-  }, [state, persist, persistKey]);
+    if (!persist || !terminalRestored) return;
+    try {
+      sessionStorage.setItem(persistKey, JSON.stringify({
+        isTerminalOpen: state.isTerminalOpen,
+        isTerminalWide: state.isTerminalWide,
+      }));
+    } catch {
+      // Terminal controls still work when browser storage is unavailable.
+    }
+  }, [state.isTerminalOpen, state.isTerminalWide, terminalRestored, persist, persistKey]);
 
   // Action creators
   const actions = useMemo(
