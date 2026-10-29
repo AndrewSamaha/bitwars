@@ -9,6 +9,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
 import { dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
+import { COLLECTION_DROPOFF_BLOCKED_EVENT } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 import { minimapMemory } from "@/features/gamestate/minimapMemory";
@@ -429,6 +430,13 @@ export default function GameStateStreamBridge() {
       for (const state of payload.collector_state_updates ?? []) {
         const existing = byId.get(normalizeId(state.entity_id));
         if (existing) {
+          if (state.activity === "waiting_for_dropoff"
+            && existing.collector_state?.activity !== "waiting_for_dropoff"
+            && existing.owner_player_id === currentPlayerIdRef.current) {
+            window.dispatchEvent(new CustomEvent(COLLECTION_DROPOFF_BLOCKED_EVENT, {
+              detail: { collectorEntityId: normalizeId(state.entity_id) },
+            }));
+          }
           if (shouldNotifyCollectionWaiting(
             existing.collector_state?.activity,
             state.activity,

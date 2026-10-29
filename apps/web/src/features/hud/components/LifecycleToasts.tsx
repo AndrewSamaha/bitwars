@@ -4,8 +4,14 @@ import { AlertTriangle, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
+import { contentManager } from "@/features/content/contentManager";
+import { game } from "@/features/gamestate/world";
 import {
   COLLECTION_WAITING_EVENT,
+  COLLECTION_DROPOFF_BLOCKED_EVENT,
+  COLLECT_COMMAND_EVENT,
+  hasFullIncompatibleCargo,
+  type CollectCommandDetail,
   TRANSFER_ENDPOINT_LOST_EVENT,
   dispatchCenterCameraOnEntity,
   ENTITY_RESOURCE_STARVATION_EVENT,
@@ -85,6 +91,25 @@ export default function LifecycleToasts() {
       const label = `Collector ${detail.collectorEntityId}`;
       showToast("Collection blocked", `${label} is too close to another active collector. Move it farther away and restart, or wait for an automatic retry.`, detail.collectorEntityId, label);
     };
+    const showDropoffBlocked = (entityId: string) => {
+      const entity = game.world.entities.find((entity) => String(entity.id) === entityId);
+      const cargo = entity?.collector_state?.resource_type || "cargo";
+      showToast("Collection blocked", `Worker ${entityId} cannot unload its ${cargo}: no eligible dropoff has room. Spend stored resources or provide dropoff capacity so collection can continue.`, entityId, `Worker ${entityId}`);
+    };
+    const onDropoffBlocked = (event: Event) => {
+      const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
+      if (detail) showDropoffBlocked(detail.collectorEntityId);
+    };
+    const onCollectCommand = (event: Event) => {
+      const detail = (event as CustomEvent<CollectCommandDetail>).detail;
+      if (!detail?.resourceTypeId || detail.nearestCompatible) return;
+      const entity = game.world.entities.find((entity) => String(entity.id) === String(detail.entityId));
+      if (!entity) return;
+      const capacities = contentManager.getEntityType(entity.entity_type_id ?? "")?.max_capacity ?? {};
+      if (hasFullIncompatibleCargo(entity.resources, capacities, detail.resourceTypeId)) {
+        showToast("Cargo bay full", `Worker ${detail.entityId} must unload its existing cargo before collecting ${detail.resourceTypeId}. If dropoff storage is full, spend stored resources or provide dropoff capacity.`, String(detail.entityId), `Worker ${detail.entityId}`);
+      }
+    };
     const onTransferEndpointLost = (event: Event) => {
       const detail = (event as CustomEvent<{ carrierEntityId: string }>).detail;
       if (detail) showToast("Resource transport canceled", "The donor or recipient is no longer available or compatible. Resources still aboard the worker are retained. Click to focus it.", detail.carrierEntityId);
@@ -108,6 +133,8 @@ export default function LifecycleToasts() {
       if (message) showToast("Escort", message);
     };
     window.addEventListener("bitwars:command-feedback", onCommandFeedback);
+    window.addEventListener(COLLECTION_DROPOFF_BLOCKED_EVENT, onDropoffBlocked);
+    window.addEventListener(COLLECT_COMMAND_EVENT, onCollectCommand);
     window.addEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
     window.addEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
     window.addEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
@@ -116,6 +143,8 @@ export default function LifecycleToasts() {
       unsubscribeMigrationNotice();
       window.cancelAnimationFrame(migrationNoticeFrame);
       window.removeEventListener("bitwars:command-feedback", onCommandFeedback);
+      window.removeEventListener(COLLECTION_DROPOFF_BLOCKED_EVENT, onDropoffBlocked);
+      window.removeEventListener(COLLECT_COMMAND_EVENT, onCollectCommand);
       window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
       window.removeEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
       window.removeEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);

@@ -8,6 +8,8 @@ export const BUILD_COMPLETED_EVENT = "bitwars:build-completed";
 export const MINIMUM_DISTANCE_VIOLATION_EVENT = "bitwars:minimum-distance-violation";
 export const TRANSFER_ENDPOINT_LOST_EVENT = "bitwars:transfer-endpoint-lost";
 export const COLLECTION_WAITING_EVENT = "bitwars:collection-waiting";
+export const COLLECTION_DROPOFF_BLOCKED_EVENT = "bitwars:collection-dropoff-blocked";
+export const COLLECT_COMMAND_EVENT = "bitwars:collect-command";
 export const CENTER_CAMERA_ON_ENTITY_EVENT = "bitwars:center-camera-on-entity";
 export const ENTITY_UNDER_ATTACK_EVENT = "bitwars:entity-under-attack";
 export const ENTITY_RESOURCE_STARVATION_EVENT = "bitwars:entity-resource-starvation";
@@ -21,6 +23,19 @@ export type MinimumDistanceViolationDetail = {
   actualDistance: number;
 };
 export type CollectionWaitingDetail = { collectorEntityId: string };
+export type CollectCommandDetail = { entityId: number; resourceTypeId?: string; nearestCompatible: boolean };
+
+export function hasFullIncompatibleCargo(
+  resources: Entity["resources"],
+  capacities: Record<string, number>,
+  resourceTypeId: string,
+) {
+  return resources?.some(({ resource_type, amount }) =>
+    resource_type !== resourceTypeId && amount > 0
+    && (capacities[resource_type] ?? 0) > 0
+    && amount >= capacities[resource_type],
+  ) ?? false;
+}
 
 export function shouldNotifyCollectionWaiting(
   previousActivity: string | undefined,

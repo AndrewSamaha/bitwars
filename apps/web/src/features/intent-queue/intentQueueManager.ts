@@ -1,5 +1,6 @@
 /** Server-owned route display, pending command previews, and ordered submissions. */
 import { v7 as uuidv7 } from "uuid";
+import { COLLECT_COMMAND_EVENT, type CollectCommandDetail } from "@/features/gamestate/events";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -429,6 +430,11 @@ export class IntentQueueManager {
     assignment: { resourceTypeId?: string; nearestCompatible: boolean },
     policy: IntentPolicyName = "REPLACE_ACTIVE",
   ) {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent<CollectCommandDetail>(COLLECT_COMMAND_EVENT, {
+        detail: { entityId, ...assignment },
+      }));
+    }
     const clientCmdId = uuidv7();
     this.sendCollectNow(entityId, clientCmdId, assignment, policy);
   }

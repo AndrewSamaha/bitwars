@@ -78,6 +78,8 @@ Solar collectors require their destination's service coverage at assignment and 
 
 Assignments survive stopping/restarting Collect, reconnects, and snapshot restoration. In Assign mode, **Use automatic destination** clears the explicit destination: solar returns to its automatic supply-depot association, while workers choose the nearest compatible depot with room. Explicit Deliver and Transport orders continue to use their own specified destinations.
 
+When an owned worker enters `waiting_for_dropoff`, show a focusable **Collection blocked** toast and record it in the message log. Do not repeat it on unchanged state updates; leaving and re-entering the wait raises it again. Every explicit Collect command for a different resource also raises **Cargo bay full** when an existing resource is at or above its carrying capacity. Compatible-resource and nearest-compatible orders do not raise that warning. Warnings preserve cargo and still submit the requested order.
+
 ## Spending and shortages
 
 Construction, upgrades, research, and repair use one eligible funding source. Never combine several depots or split a single payment across depot stock and worker cargo.
