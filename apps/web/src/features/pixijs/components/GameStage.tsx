@@ -405,9 +405,9 @@ export default function GameStage() {
 
         // M5.2: Voronoi border overlay in screen space (sample grid → edge test → draw dots)
         const voronoiBorderGraphics = new Graphics();
-        (voronoiBorderGraphics as any).label = "voronoiBorders";
+        voronoiBorderGraphics.label = "voronoiBorders";
         voronoiBorderGraphics.eventMode = "none";
-        app.stage.addChild(voronoiBorderGraphics);
+        app.stage.addChildAt(voronoiBorderGraphics, 0);
 
         // The fog is rendered to a fixed, viewport-sized texture. This keeps
         // its allocation and origin stable as sensor circles grow/shrink with
