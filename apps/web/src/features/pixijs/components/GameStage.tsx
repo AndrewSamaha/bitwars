@@ -519,7 +519,6 @@ export default function GameStage() {
         // Adversary dots stay above both visible and remembered entity dots.
         const minimapAdversaryGraphics = new Graphics();
         minimapAdversaryGraphics.label = "minimapAdversaries";
-        minimapAdversaryGraphics.eventMode = "none";
         minimapContainer.addChild(minimapAdversaryGraphics);
         const minimapViewportGraphics = new Graphics();
         minimapViewportGraphics.eventMode = "none";
@@ -528,6 +527,25 @@ export default function GameStage() {
         minimapNotificationGraphics.eventMode = "none";
         minimapContainer.addChild(minimapViewportGraphics, minimapNotificationGraphics);
         app.stage.addChild(minimapContainer);
+        const zoomText = new Text({
+          text: worldContainer.scale.x.toFixed(2),
+          style: { fontSize: 12, fill: 0xffffff },
+        });
+        zoomText.label = "zoomLevel";
+        zoomText.anchor.set(0.5, 0);
+        zoomText.eventMode = "none";
+        app.stage.addChild(zoomText);
+
+        const updateZoomText = () => {
+          zoomText.text = worldContainer.scale.x.toFixed(2);
+          zoomText.position.set(
+            app.screen.width - MINIMAP_MARGIN - MINIMAP_SIZE_PX / 2,
+            MINIMAP_MARGIN + MINIMAP_SIZE_PX + 4,
+          );
+        };
+        updateZoomText();
+
+        app.renderer.on("resize", updateZoomText);
 
         const selectionBoxGraphics = new Graphics();
         selectionBoxGraphics.label = "selectionBox";
@@ -895,6 +913,7 @@ export default function GameStage() {
             pointer.y - worldPoint.y * nextZoom,
           );
           fogRefreshAfterZoomAt = performance.now() + FOG_ZOOM_SETTLE_MS;
+          updateZoomText();
         };
         app.canvas.addEventListener("wheel", onWheel, { passive: false });
 
