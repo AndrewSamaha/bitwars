@@ -13,6 +13,7 @@ import { COLLECTION_DROPOFF_BLOCKED_EVENT } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 import { minimapMemory } from "@/features/gamestate/minimapMemory";
+import { collectionRouting } from "@/features/collection-routing/collectionRouting";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -156,6 +157,7 @@ export default function GameStateStreamBridge() {
     if (actingAsId) streamParams.set("as", actingAsId);
     const streamUrl = `/api/v2/gamestate/stream?${streamParams}`;
     gameConnection.begin();
+    const stopCollectionRouting = collectionRouting.start(currentPlayerIdRef.current);
     const watchdog = setInterval(() => gameConnection.check(), 250);
     const es = new EventSource(streamUrl);
     log.info("GameStateStreamBridge:es:create", { streamId: streamIdRef.current, url: streamUrl });
@@ -306,7 +308,10 @@ export default function GameStateStreamBridge() {
 
     const applyDelta = (payload: DeltaPayload) => {
       for (const update of payload.updates) minimapMemory.observe(update);
-      for (const id of payload.removed_entity_ids ?? []) minimapMemory.forget(id);
+      for (const id of payload.removed_entity_ids ?? []) {
+        minimapMemory.forget(id);
+        collectionRouting.forget(id);
+      }
       if (payload.escort_order_updates?.length || payload.escort_order_removals?.length) {
         intentQueue.applyEscortOrders(payload.escort_order_updates ?? [], payload.escort_order_removals ?? []);
         syncMoveOverlays([...activeIntentByEntityRef.current.keys(),
@@ -666,6 +671,7 @@ export default function GameStateStreamBridge() {
       intentQueue.reconcileWithServer().then(async (handshake) => {
         if (handshake && es.readyState !== EventSource.CLOSED) {
           if (!effectivePlayerId && handshake.player_id) currentPlayerIdRef.current = handshake.player_id;
+          collectionRouting.adopt(handshake.active_intents, currentPlayerIdRef.current ?? undefined, handshake.run_id);
           log.info("GameStateStreamBridge:reconnect:ok", {
             streamId: streamIdRef.current,
             serverTick: handshake.server_tick,
@@ -775,6 +781,7 @@ export default function GameStateStreamBridge() {
     es.addEventListener("error", onError as EventListener);
 
     return () => {
+      stopCollectionRouting();
       clearInterval(watchdog);
       clearTimeout(reconciliationRetry);
       gameConnection.disconnect();
@@ -800,7 +807,6 @@ export default function GameStateStreamBridge() {
         world.remove(ent);
       }
       byId.clear();
-      minimapMemory.clear();
       knownEntityIdsRef.current.clear();
       activeIntentByEntityRef.current.clear();
       // Reset readiness so a subsequent mount waits for the next snapshot

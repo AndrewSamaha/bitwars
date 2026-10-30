@@ -30,9 +30,16 @@ message PlayerTechnologyState {
   repeated string technology_ids = 2;
 }
 
+// Server-only collection checkpoint, saved with the worker position and cargo.
+message CollectionOrderState {
+  bytes client_cmd_id = 1;
+  CollectState state = 2;
+}
+
 message Snapshot {
   // Server-only persistent player discovery history; omitted from player streams.
   string discovered_entities_json = 14;
+  repeated CollectionOrderState collection_orders = 15;
   // Server checkpoint: versioned reservations and pending procedural starts.
   // Clients may ignore this JSON; it is persisted atomically with entities.
   string generation_state_json = 13;

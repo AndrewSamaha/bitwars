@@ -433,6 +433,23 @@ pub struct ResearchIntent {
     #[prost(string, tag = "2")]
     pub technology_id: ::prost::alloc::string::String,
 }
+/// Client-planned transport route. The server checks legality, never hazard safety.
+/// Waypoints are owned waypoint entities and are visited at their exact positions.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionTravelPlan {
+    #[prost(uint64, tag = "1")]
+    pub source_entity_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub depot_entity_id: u64,
+    /// depot -> source intermediates, at most 256
+    #[prost(uint64, repeated, tag = "3")]
+    pub waypoint_ids: ::prost::alloc::vec::Vec<u64>,
+    /// current position -> initial destination
+    #[prost(uint64, repeated, tag = "4")]
+    pub initial_waypoint_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(bool, tag = "5")]
+    pub initial_to_depot: bool,
+}
 /// Collect intent payload (authoritative server-side).
 /// Starts/maintains autonomous resource collection behavior for this entity.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -453,6 +470,8 @@ pub struct CollectIntent {
     /// separate flag so an empty resource_type_id is never ambiguous on the wire.
     #[prost(bool, tag = "5")]
     pub nearest_compatible: bool,
+    #[prost(message, optional, tag = "6")]
+    pub travel_plan: ::core::option::Option<CollectionTravelPlan>,
 }
 /// Repair intent payload (authoritative server-side).
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -744,6 +763,17 @@ pub struct CollectState {
     pub resource_type_id: ::prost::alloc::string::String,
     #[prost(bool, tag = "3")]
     pub nearest_compatible: bool,
+    #[prost(message, optional, tag = "4")]
+    pub travel_plan: ::core::option::Option<CollectionTravelPlan>,
+    #[prost(bool, tag = "5")]
+    pub initial_leg_complete: bool,
+    #[prost(bool, tag = "6")]
+    pub returning_to_depot: bool,
+    #[prost(uint32, tag = "7")]
+    pub next_waypoint_index: u32,
+    /// A newer tracked route cannot be resumed from an older position checkpoint.
+    #[prost(bool, tag = "8")]
+    pub route_checkpoint_missing: bool,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct RepairState {
@@ -1005,11 +1035,21 @@ pub struct PlayerTechnologyState {
     #[prost(string, repeated, tag = "2")]
     pub technology_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// Server-only collection checkpoint, saved with the worker position and cargo.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionOrderState {
+    #[prost(bytes = "vec", tag = "1")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub state: ::core::option::Option<CollectState>,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
     /// Server-only persistent player discovery history; omitted from player streams.
     #[prost(string, tag = "14")]
     pub discovered_entities_json: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "15")]
+    pub collection_orders: ::prost::alloc::vec::Vec<CollectionOrderState>,
     /// Server checkpoint: versioned reservations and pending procedural starts.
     /// Clients may ignore this JSON; it is persisted atomically with entities.
     #[prost(string, tag = "13")]

@@ -1,3 +1,4 @@
+mod collection_routes;
 mod discovery;
 mod resupply;
 pub mod intent;
@@ -1642,7 +1643,7 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries, mut snapshot_escorts)) =
+            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries, mut snapshot_escorts, snapshot_collections)) =
                 redis.read_latest_snapshot().await?
             {
                 info!(
@@ -1919,13 +1920,14 @@ impl Engine {
                             player_id: String::new(),
                             resource_type_id: resource_type_id.clone(),
                             nearest_compatible,
+                            travel_plan: entry.collect_travel_plan.as_ref().map(|plan| plan.to_proto()),
                         })),
                     };
                     let metadata = IntentMetadata {
                         entity_id: 0,
                         intent_id: intent_id.into_bytes().to_vec(),
                         client_cmd_id: client_cmd_id.into_bytes().to_vec(),
-                        player_id: entry.player_id,
+                        player_id: entry.player_id.clone(),
                         protocol_version: ENGINE_PROTOCOL_MAJOR,
                         server_tick: entry.started_tick,
                         policy: pb::IntentPolicy::ReplaceActive,
@@ -1933,6 +1935,11 @@ impl Engine {
                     engine
                         .intents
                         .try_activate(intent, metadata.clone(), &entity_type_id);
+                    if let Some(saved) = collection_routes::restore_order(&entry, &snapshot_collections) {
+                        if let Some(active) = engine.intents.current_action.get_mut(&entry.entity_id) {
+                            active.action.exec = Some(pb::action_state::Exec::Collect(saved));
+                        }
+                    }
                     engine
                         .redis
                         .persist_active_intent(
@@ -1940,7 +1947,7 @@ impl Engine {
                             &metadata,
                             "collect",
                             None,
-                            Some((resource_type_id, nearest_compatible)),
+                            Some((resource_type_id, nearest_compatible, entry.collect_travel_plan.as_ref().map(|plan| plan.to_proto()))),
                             None,
                         )
                         .await?;
@@ -2015,6 +2022,7 @@ impl Engine {
                         engine.intents.move_orders_for_snapshot(),
                         engine.intents.sentries.clone(),
                         engine.intents.escorts.clone(),
+                        engine.intents.collection_orders_for_snapshot(),
                     )
                     .await?;
                 let build_progress = engine.construction_progress_for_snapshot();
@@ -2105,7 +2113,7 @@ impl Engine {
         };
         engine
             .redis
-            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
+            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
             .await?;
 
         // M4: Publish content hash + definitions to Redis
@@ -3933,6 +3941,9 @@ impl Engine {
                 _ => None,
             })
             .collect();
+        let upgrading: HashSet<_> = self.intents.active_intents().iter()
+            .filter(|(_, active)| matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Upgrade(_))))
+            .map(|(id, _)| *id).collect();
         let mut collectors = self.build_collector_snapshots();
         // Existing producers keep their spot. Waiting transport collectors go
         // next in arrival order, then new arrivals in entity-ID order.
@@ -3979,11 +3990,15 @@ impl Engine {
             };
             let (nodes, node_by_id) = &nodes_by_owner[&collector.owner_player_id];
             let speed = def.speed.max(0.0);
+            let planned = self.intents.current_action.get(&collector.id).is_some_and(|active|
+                matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Collect(state)) if state.travel_plan.is_some()));
             let previous_resource = self.collector_ui_state_by_entity.get(&collector.id)
                 .map(|view| view.resource_type.as_str()).unwrap_or("");
             let assigned_resource = collection_assignments.get(&collector.id).map(|(resource, _)| resource.as_str()).unwrap_or("");
-            let load_snapshot = collection_entity(&self.state.entities, collector.id, &entity_by_id)
-                .and_then(|entity| collection_load(entity, &def, &[previous_resource, assigned_resource]));
+            let load_snapshot = if planned { None } else {
+                collection_entity(&self.state.entities, collector.id, &entity_by_id)
+                    .and_then(|entity| collection_load(entity, &def, &[previous_resource, assigned_resource]))
+            };
 
             // M8 (collect-intent model): autonomous collection only runs while
             // a maintained Collect intent is active for this entity.
@@ -4008,6 +4023,25 @@ impl Engine {
             else {
                 continue;
             };
+            if planned {
+                let content = self.content.as_ref().unwrap();
+                let active = self.intents.current_action.get_mut(&collector.id).unwrap();
+                let Some(pb::action_state::Exec::Collect(state)) = active.action.exec.as_mut() else { unreachable!() };
+                let (activity, rate) = collection_routes::advance(&mut self.state.entities, &entity_by_id, content,
+                    &self.state.discovered_entities[&collector.owner_player_id], &upgrading, state, &mut gathering_by_node, dt);
+                let resource = state.travel_plan.as_ref()
+                    .and_then(|plan| collection_entity(&self.state.entities, plan.source_entity_id, &entity_by_id))
+                    .and_then(|entity| content.get(&entity.entity_type_id))
+                    .and_then(|def| def.resource_node.as_ref()).map(|node| node.resource_type.clone())
+                    .unwrap_or_else(|| assigned_resource_type.clone());
+                if activity == COLLECTOR_ACTIVITY_WAITING_FOR_TURN {
+                    self.transport_wait_since_tick_by_entity.entry(collector.id).or_insert(self.state.tick);
+                } else {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
+                }
+                self.set_collector_ui_state(collector.id, activity, &resource, rate);
+                continue;
+            }
 
             // Finish delivery trips before gathering again, including partial unloads.
             if let Some(ref carry) = load_snapshot {
@@ -4526,6 +4560,7 @@ impl Engine {
                     self.intents.move_orders_for_snapshot(),
                     self.intents.sentries.clone(),
                     self.intents.escorts.clone(),
+                    self.intents.collection_orders_for_snapshot(),
                 )
                 .await
                 .is_ok()
@@ -4849,6 +4884,7 @@ impl Engine {
                         self.intents.move_orders_for_snapshot(),
                         self.intents.sentries.clone(),
                         self.intents.escorts.clone(),
+                        self.intents.collection_orders_for_snapshot(),
                     )
                     .await
                 {
@@ -5326,7 +5362,20 @@ impl Engine {
                 return Err(anyhow!("collector cannot collect requested resource type"));
             }
 
-
+            if let Some(plan) = collect.travel_plan.as_ref() {
+                discovery::update(&mut self.state, content);
+                let upgrading: HashSet<_> = self.intents.active_intents().iter()
+                    .filter(|(_, active)| matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Upgrade(_))))
+                    .map(|(id, _)| *id).collect();
+                let empty = std::collections::BTreeSet::new();
+                let known = self.state.discovered_entities.get(&player_id).unwrap_or(&empty);
+                if !collection_routes::valid(&self.state.entities, &collection_entity_index(&self.state.entities),
+                    content, known, &upgrading, collect.entity_id, &collect.resource_type_id, collect.nearest_compatible, plan) {
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                        pb::LifecycleReason::InvalidTarget, accept_tick).await?;
+                    return Err(anyhow!("invalid collection travel plan"));
+                }
+            }
         }
 
         // Production is entirely content-driven and always revalidated by the
@@ -5611,7 +5660,7 @@ impl Engine {
             Some(pb::intent::Kind::Collect(collect)) => (
                 "collect",
                 None,
-                Some((collect.resource_type_id.clone(), collect.nearest_compatible)),
+                Some((collect.resource_type_id.clone(), collect.nearest_compatible, collect.travel_plan.clone())),
                 None,
             ),
             Some(pb::intent::Kind::Repair(_)) => ("repair", None, None, None),

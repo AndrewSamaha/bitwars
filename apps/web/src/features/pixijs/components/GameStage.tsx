@@ -147,6 +147,13 @@ export default function GameStage() {
               ...(params.nearestCompatible
                 ? { nearest_compatible: true }
                 : { resource_type_id: params.resourceTypeId }),
+              ...(params.travelPlan ? { travel_plan: {
+                source_entity_id: params.travelPlan.sourceEntityId,
+                depot_entity_id: params.travelPlan.depotEntityId,
+                waypoint_ids: params.travelPlan.waypointIds,
+                initial_waypoint_ids: params.travelPlan.initialWaypointIds,
+                initial_to_depot: params.travelPlan.initialToDepot,
+              } } : {}),
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,

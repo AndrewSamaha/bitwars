@@ -17,6 +17,58 @@ Status: Move migration, shared formation movement, and Sentry implemented. Inter
 6. Individual replacement orders detach only their target member. Death removes a
    member. Remaining offsets stay stable; a one-member order can continue.
 
+## Automatic collection routing
+
+Transport collection issued by the browser is planned in a module Web Worker.
+The worker considers living, currently known owned waypoints within a corridor
+around the direct depot-to-source segment. The corridor extends
+`max(1500, 0.25 * direct distance)` world units from the segment, including its
+endpoints. Remote, foreign, destroyed, and remembered-only waypoints do not
+enable safe routing.
+
+With no eligible corridor waypoints, both the initial approach and recurring
+trip use direct segments, even through known radiation; ordinary damage applies.
+Otherwise, the worker builds a cached waypoint graph and uses Dijkstra to find
+radiation-safe connections. Safe direct segments remain eligible. The recurring
+route and initial approach must each be no longer than 1.5 times their own direct
+distance; an unsafe, unreachable, or excessively long route blocks collection.
+Known radiation uses content-defined bands and worker shielding, with a
+100-world-unit safety margin. Player/run-scoped remembered hazards survive
+browser reloads; no authoritative hidden-world data is used.
+
+The browser sends a `CollectionTravelPlan` with pinned source/depot IDs,
+depot-to-source intermediate waypoint IDs, and a separate initial approach.
+The server validates ownership, compatibility, discovery, finite positions,
+and the limit of 256 intermediates per list. It deliberately does not validate
+hazard safety: routing is assistance, not a restriction on legal movement.
+Proximity collection and collection submitted without a plan retain their
+existing behavior.
+
+The maintained Collect action executes the initial approach, collects, returns
+through the reverse route, deposits, and repeats without browser involvement.
+Route cursors and command identity are saved with positions in periodic world
+checkpoints; accepted plans also appear in active command tracking.
+Missing/incompatible destinations or required waypoints stop motion and publish
+`routing_blocked`; there is no direct-path fallback or endpoint reselection.
+After a restart, a tracked plan without a matching position checkpoint also
+blocks until a client replans. Accepting a route does not force a world snapshot.
+
+While connected, the browser replans on relevant world changes and blocked
+states. When eligible corridor waypoints exist but a newly known hazard leaves
+no safe route within the stretch limit, it issues one hold-position Move and
+saves the interrupted collection assignment. Removing the last eligible
+waypoint permits direct travel again. New player commands supersede the saved
+assignment. Offline workers continue accepted routes but cannot discover new
+safe detours.
+Routing status appears in the entity detail panel; this is environmental
+radiation avoidance, not avoidance of moving enemies or collision pathfinding.
+
+Verification: deterministic planner/lifecycle tests, engine route regressions,
+a real Chromium Web Worker run against the observed hub 910/resource layout,
+and an isolated production-engine smoke covering collection, return, checkpoint
+serialization, and waypoint disappearance. The live game was not modified.
+
+
 ## Existing implementation
 
 - `engine/intent.rs`: one active action per entity, Move steering and completion.

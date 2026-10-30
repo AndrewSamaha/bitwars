@@ -73,6 +73,8 @@ pub struct EntityActiveIntent {
     pub collect_resource_type_id: Option<String>,
     #[serde(default)]
     pub collect_nearest_compatible: Option<bool>,
+    #[serde(default)]
+    pub collect_travel_plan: Option<CollectionTravelPlan>,
     /// Placement point for an in-progress build.
     #[serde(default)]
     pub build_location: Option<IntentPoint>,
@@ -80,6 +82,25 @@ pub struct EntityActiveIntent {
     pub transfer_route: Option<TransferRoute>,
     #[serde(default)]
     pub resupply: Option<ResupplyOrder>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionTravelPlan {
+    pub source_entity_id: u64,
+    pub depot_entity_id: u64,
+    pub waypoint_ids: Vec<u64>,
+    pub initial_waypoint_ids: Vec<u64>,
+    pub initial_to_depot: bool,
+}
+
+impl CollectionTravelPlan {
+    pub fn to_proto(&self) -> pb::CollectionTravelPlan {
+        pb::CollectionTravelPlan {
+            source_entity_id: self.source_entity_id, depot_entity_id: self.depot_entity_id,
+            waypoint_ids: self.waypoint_ids.clone(), initial_waypoint_ids: self.initial_waypoint_ids.clone(),
+            initial_to_depot: self.initial_to_depot,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -425,6 +446,7 @@ impl RedisClient {
         move_orders: Vec<pb::MoveOrderState>,
         sentry_orders: Vec<pb::SentryOrderState>,
         escort_orders: Vec<pb::EscortOrderState>,
+        collection_orders: Vec<pb::CollectionOrderState>,
     ) -> anyhow::Result<()> {
         let mut inventory_totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
         for entity in &state.entities {
@@ -482,6 +504,7 @@ impl RedisClient {
             move_orders,
             sentry_orders,
             escort_orders,
+            collection_orders,
             tick: state.tick as i64,
             entities: state.entities.clone(),
             player_ledgers,
@@ -767,7 +790,7 @@ impl RedisClient {
     /// Returns state, boundary stream ID, and collector state or None if absent.
     pub async fn read_latest_snapshot(
         &mut self,
-    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>, Vec<pb::SentryOrderState>, Vec<pb::EscortOrderState>)>> {
+    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>, Vec<pb::SentryOrderState>, Vec<pb::EscortOrderState>, Vec<pb::CollectionOrderState>)>> {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
@@ -795,6 +818,7 @@ impl RedisClient {
         let move_orders = snapshot.move_orders.clone();
         let sentry_orders = snapshot.sentry_orders.clone();
         let escort_orders = snapshot.escort_orders.clone();
+        let collection_orders = snapshot.collection_orders.clone();
         anyhow::ensure!(snapshot.economy_version == 1 || !snapshot.entities.iter().any(|e| crate::spawn_config::is_player_owner(&e.owner_player_id)),
             "this match predates depot logistics; archive it and run game:reset before restarting the upgraded engine");
         let (state, collector_states) = restore_snapshot(snapshot)?;
@@ -807,7 +831,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary, collector_states, convoys, move_orders, sentry_orders, escort_orders)))
+        Ok(Some((state, boundary, collector_states, convoys, move_orders, sentry_orders, escort_orders, collection_orders)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -1018,7 +1042,7 @@ impl RedisClient {
         metadata: &IntentMetadata,
         intent_kind: &str,
         move_target: Option<IntentPoint>,
-        collect_assignment: Option<(String, bool)>,
+        collect_assignment: Option<(String, bool, Option<pb::CollectionTravelPlan>)>,
         construction: Option<(String, Option<IntentPoint>, f32)>,
     ) -> anyhow::Result<()> {
         let entry = EntityActiveIntent {
@@ -1036,8 +1060,13 @@ impl RedisClient {
             snapshot_progress: construction.as_ref().map(|(_, _, progress)| *progress),
             collect_resource_type_id: collect_assignment
                 .as_ref()
-                .map(|(resource, _)| resource.clone()),
-            collect_nearest_compatible: collect_assignment.map(|(_, nearest)| nearest),
+                .map(|(resource, _, _)| resource.clone()),
+            collect_nearest_compatible: collect_assignment.as_ref().map(|(_, nearest, _)| *nearest),
+            collect_travel_plan: collect_assignment.and_then(|(_, _, plan)| plan.map(|plan| CollectionTravelPlan {
+                source_entity_id: plan.source_entity_id, depot_entity_id: plan.depot_entity_id,
+                waypoint_ids: plan.waypoint_ids, initial_waypoint_ids: plan.initial_waypoint_ids,
+                initial_to_depot: plan.initial_to_depot,
+            })),
             build_location: construction.and_then(|(_, location, _)| location),
             transfer_route: None,
             resupply: None,
@@ -1053,6 +1082,7 @@ impl RedisClient {
             .query_async(&mut self.conn).await?;
         Ok(())
     }
+
 
     pub async fn persist_resupply(&mut self, entity_id: u64, intent: &pb::ResupplyIntent) -> anyhow::Result<()> {
         let key = self.active_intents_key();

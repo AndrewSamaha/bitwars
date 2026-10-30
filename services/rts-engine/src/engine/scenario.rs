@@ -279,6 +279,7 @@ impl Engine {
                 self.intents.move_orders_for_snapshot(),
                 self.intents.sentries.clone(),
                 self.intents.escorts.clone(),
+                self.intents.collection_orders_for_snapshot(),
             )
             .await?;
         self.publish_runtime().await

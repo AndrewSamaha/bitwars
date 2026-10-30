@@ -6,7 +6,7 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Entity } from "./entity_pb.js";
 import { file_entity } from "./entity_pb.js";
-import type { ConvoyOrderState } from "./intent_pb.js";
+import type { CollectState, ConvoyOrderState } from "./intent_pb.js";
 import { file_intent } from "./intent_pb.js";
 import type { EscortOrderState, MoveOrderState, SentryOrderState } from "./navigation_pb.js";
 import { file_navigation } from "./navigation_pb.js";
@@ -20,7 +20,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file snapshot.proto.
  */
 export const file_snapshot: GenFile = /*@__PURE__*/
-  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyJfCg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDEhMKC3NwZW5kX3RvdGFsGAMgASgBEhIKCmdhaW5fdG90YWwYBCABKAEiVAoUUGxheWVyUmVzb3VyY2VMZWRnZXISEQoJcGxheWVyX2lkGAEgASgJEikKCXJlc291cmNlcxgCIAMoCzIWLmJpdHdhcnMuUmVzb3VyY2VFbnRyeSJCChVQbGF5ZXJUZWNobm9sb2d5U3RhdGUSEQoJcGxheWVyX2lkGAEgASgJEhYKDnRlY2hub2xvZ3lfaWRzGAIgAygJIrQECghTbmFwc2hvdBIgChhkaXNjb3ZlcmVkX2VudGl0aWVzX2pzb24YDiABKAkSHQoVZ2VuZXJhdGlvbl9zdGF0ZV9qc29uGA0gASgJEhcKD2Vjb25vbXlfdmVyc2lvbhgMIAEoDRIMCgR0aWNrGAIgASgDEiEKCGVudGl0aWVzGAMgAygLMg8uYml0d2Fycy5FbnRpdHkSNQoOcGxheWVyX2xlZGdlcnMYBCADKAsyHS5iaXR3YXJzLlBsYXllclJlc291cmNlTGVkZ2VyEjEKEGNvbGxlY3Rvcl9zdGF0ZXMYBSADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEjgKFGNvbWJhdF9lZmZlY3Rfc3RhdGVzGAYgAygLMhouYml0d2Fycy5Db21iYXRFZmZlY3RTdGF0ZRI7ChNwbGF5ZXJfdGVjaG5vbG9naWVzGAcgAygLMh4uYml0d2Fycy5QbGF5ZXJUZWNobm9sb2d5U3RhdGUSKgoHY29udm95cxgIIAMoCzIZLmJpdHdhcnMuQ29udm95T3JkZXJTdGF0ZRIsCgttb3ZlX29yZGVycxgJIAMoCzIXLmJpdHdhcnMuTW92ZU9yZGVyU3RhdGUSMAoNc2VudHJ5X29yZGVycxgKIAMoCzIZLmJpdHdhcnMuU2VudHJ5T3JkZXJTdGF0ZRIwCg1lc2NvcnRfb3JkZXJzGAsgAygLMhkuYml0d2Fycy5Fc2NvcnRPcmRlclN0YXRlYgZwcm90bzM", [file_entity, file_intent, file_navigation, file_collector_state, file_combat_effect_state]);
+  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyJfCg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDEhMKC3NwZW5kX3RvdGFsGAMgASgBEhIKCmdhaW5fdG90YWwYBCABKAEiVAoUUGxheWVyUmVzb3VyY2VMZWRnZXISEQoJcGxheWVyX2lkGAEgASgJEikKCXJlc291cmNlcxgCIAMoCzIWLmJpdHdhcnMuUmVzb3VyY2VFbnRyeSJCChVQbGF5ZXJUZWNobm9sb2d5U3RhdGUSEQoJcGxheWVyX2lkGAEgASgJEhYKDnRlY2hub2xvZ3lfaWRzGAIgAygJIlMKFENvbGxlY3Rpb25PcmRlclN0YXRlEhUKDWNsaWVudF9jbWRfaWQYASABKAwSJAoFc3RhdGUYAiABKAsyFS5iaXR3YXJzLkNvbGxlY3RTdGF0ZSLuBAoIU25hcHNob3QSIAoYZGlzY292ZXJlZF9lbnRpdGllc19qc29uGA4gASgJEjgKEWNvbGxlY3Rpb25fb3JkZXJzGA8gAygLMh0uYml0d2Fycy5Db2xsZWN0aW9uT3JkZXJTdGF0ZRIdChVnZW5lcmF0aW9uX3N0YXRlX2pzb24YDSABKAkSFwoPZWNvbm9teV92ZXJzaW9uGAwgASgNEgwKBHRpY2sYAiABKAMSIQoIZW50aXRpZXMYAyADKAsyDy5iaXR3YXJzLkVudGl0eRI1Cg5wbGF5ZXJfbGVkZ2VycxgEIAMoCzIdLmJpdHdhcnMuUGxheWVyUmVzb3VyY2VMZWRnZXISMQoQY29sbGVjdG9yX3N0YXRlcxgFIAMoCzIXLmJpdHdhcnMuQ29sbGVjdG9yU3RhdGUSOAoUY29tYmF0X2VmZmVjdF9zdGF0ZXMYBiADKAsyGi5iaXR3YXJzLkNvbWJhdEVmZmVjdFN0YXRlEjsKE3BsYXllcl90ZWNobm9sb2dpZXMYByADKAsyHi5iaXR3YXJzLlBsYXllclRlY2hub2xvZ3lTdGF0ZRIqCgdjb252b3lzGAggAygLMhkuYml0d2Fycy5Db252b3lPcmRlclN0YXRlEiwKC21vdmVfb3JkZXJzGAkgAygLMhcuYml0d2Fycy5Nb3ZlT3JkZXJTdGF0ZRIwCg1zZW50cnlfb3JkZXJzGAogAygLMhkuYml0d2Fycy5TZW50cnlPcmRlclN0YXRlEjAKDWVzY29ydF9vcmRlcnMYCyADKAsyGS5iaXR3YXJzLkVzY29ydE9yZGVyU3RhdGViBnByb3RvMw", [file_entity, file_intent, file_navigation, file_collector_state, file_combat_effect_state]);
 
 /**
  * M7: Per-player resource totals. Resource types are data-driven (string IDs).
@@ -109,6 +109,30 @@ export const PlayerTechnologyStateSchema: GenMessage<PlayerTechnologyState> = /*
   messageDesc(file_snapshot, 2);
 
 /**
+ * Server-only collection checkpoint, saved with the worker position and cargo.
+ *
+ * @generated from message bitwars.CollectionOrderState
+ */
+export type CollectionOrderState = Message<"bitwars.CollectionOrderState"> & {
+  /**
+   * @generated from field: bytes client_cmd_id = 1;
+   */
+  clientCmdId: Uint8Array;
+
+  /**
+   * @generated from field: bitwars.CollectState state = 2;
+   */
+  state?: CollectState;
+};
+
+/**
+ * Describes the message bitwars.CollectionOrderState.
+ * Use `create(CollectionOrderStateSchema)` to create a new message.
+ */
+export const CollectionOrderStateSchema: GenMessage<CollectionOrderState> = /*@__PURE__*/
+  messageDesc(file_snapshot, 3);
+
+/**
  * @generated from message bitwars.Snapshot
  */
 export type Snapshot = Message<"bitwars.Snapshot"> & {
@@ -118,6 +142,11 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
    * @generated from field: string discovered_entities_json = 14;
    */
   discoveredEntitiesJson: string;
+
+  /**
+   * @generated from field: repeated bitwars.CollectionOrderState collection_orders = 15;
+   */
+  collectionOrders: CollectionOrderState[];
 
   /**
    * Server checkpoint: versioned reservations and pending procedural starts.
@@ -190,5 +219,5 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
  * Use `create(SnapshotSchema)` to create a new message.
  */
 export const SnapshotSchema: GenMessage<Snapshot> = /*@__PURE__*/
-  messageDesc(file_snapshot, 3);
+  messageDesc(file_snapshot, 4);
 

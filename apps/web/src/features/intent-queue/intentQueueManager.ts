@@ -1,6 +1,15 @@
 /** Server-owned route display, pending command previews, and ordered submissions. */
 import { v7 as uuidv7 } from "uuid";
 import { COLLECT_COMMAND_EVENT, type CollectCommandDetail } from "@/features/gamestate/events";
+import type { Assignment, TravelPlan } from "@/features/collection-routing/planner";
+
+export type CollectionRouter = {
+  request(entityId: number, assignment: Assignment, send: (travelPlan?: TravelPlan) => void): void;
+  cancel(entityId: number): void;
+  reassign(entityId: number, targetId: number): void;
+  cargoChanged(entityId: number): void;
+  reset(): void;
+};
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -77,6 +86,7 @@ export type QueuedOrder =
 
 export type PerEntityState = {
   queuedOrders?: QueuedOrder[];
+  collectionRoutingHold?: { playerId: string; assignment: Assignment; plan?: TravelPlan; holdClientCmdId: string };
   queuedAfter?: string;
   pendingMoves: PendingMoveCommand[];
   active: ActiveIntentInfo | null;
@@ -134,6 +144,7 @@ export type SendIntentParams =
       entityId: number;
       resourceTypeId?: string;
       nearestCompatible: boolean;
+      travelPlan?: TravelPlan;
       clientCmdId: string;
       clientSeq: number;
       policy: IntentPolicyName;
@@ -225,6 +236,7 @@ export class IntentQueueManager {
   private entities = new Map<string, PerEntityState>();
   private storageKey: string;
   private sendCallback: SendCallback | null = null;
+  private collectionRouter: CollectionRouter | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
   private cmdToKind = new Map<string, "escort" | "sentry" | "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "resupply">();
@@ -238,6 +250,7 @@ export class IntentQueueManager {
     if (runId && runId === this.runId) return;
     this.runId = runId ?? "";
     this.worldGeneration++;
+    this.collectionRouter?.reset();
     this.clientSeq = 0;
     this.entities.clear();
     this.sentryOrders.clear();
@@ -255,6 +268,10 @@ export class IntentQueueManager {
   /** Provide the callback that actually POSTs an intent to the server. */
   setSendCallback(cb: SendCallback) {
     this.sendCallback = cb;
+  }
+
+  setCollectionRouter(router: CollectionRouter | null) {
+    this.collectionRouter = router;
   }
 
   /** Subscribe to state changes (for React re-renders). Returns unsubscribe. */
@@ -437,8 +454,20 @@ export class IntentQueueManager {
         detail: { entityId, ...assignment },
       }));
     }
-    const clientCmdId = uuidv7();
-    this.sendCollectNow(entityId, clientCmdId, assignment, policy);
+    const send = (travelPlan?: TravelPlan) => {
+      this.sendCollectNow(entityId, uuidv7(), assignment, policy, travelPlan);
+    };
+    if (this.collectionRouter) this.collectionRouter.request(entityId, assignment, send);
+    else send();
+  }
+
+  submitPlannedCollection(entityId: number, assignment: Assignment, travelPlan: TravelPlan) {
+    void this.sendCollectNow(entityId, uuidv7(), assignment, "REPLACE_ACTIVE", travelPlan);
+  }
+
+  setCollectionRoutingHold(entityId: number, hold: PerEntityState["collectionRoutingHold"]) {
+    this.getOrCreate(entityId).collectionRoutingHold = hold;
+    this.persist();
   }
 
   /** Assignment is a setting: leave active work and queued moves intact. */
@@ -765,7 +794,15 @@ export class IntentQueueManager {
 
   /** All command kinds share the same sequence-ordered HTTP submission chain. */
   private submit(params: SendIntentParams): Promise<void> {
+    if (params.kind === "Assign") this.collectionRouter?.reassign(params.entityId, params.targetId);
+    else if (params.kind === "JettisonCargo") this.collectionRouter?.cargoChanged(params.entityId);
+    else if (params.kind !== "Collect") {
+      const ids = (params.kind === "Escort" || params.kind === "Convoy" || params.kind === "Sentry") ? params.entityIds : [params.entityId];
+      for (const id of ids) this.collectionRouter?.cancel(id);
+    }
     const generation = this.worldGeneration;
+    const commandIds = (params.kind === "Escort" || params.kind === "Convoy" || params.kind === "Sentry") ? params.entityIds : [params.entityId];
+    for (const id of commandIds) if (this.getOrCreate(id).collectionRoutingHold) this.setCollectionRoutingHold(id, undefined);
     const callback = this.sendCallback;
     this.pendingCommands.set(params.clientCmdId, params);
     this.stateRevision++;
@@ -878,6 +915,7 @@ export class IntentQueueManager {
     clientCmdId: string,
     assignment: { resourceTypeId?: string; nearestCompatible: boolean },
     policy: IntentPolicyName,
+    travelPlan?: TravelPlan,
   ) {
     const state = this.getOrCreate(entityId);
     // Collection replaces the move plan; subsequent Move edits are validated
@@ -899,6 +937,7 @@ export class IntentQueueManager {
         entityId,
         resourceTypeId: assignment.resourceTypeId,
         nearestCompatible: assignment.nearestCompatible,
+        travelPlan,
         clientCmdId,
         clientSeq: this.clientSeq,
         policy,
@@ -919,7 +958,7 @@ export class IntentQueueManager {
       const data: PersistedState = { schemaVersion: 2, migrationNotice: this.migrationNotice,
         clientSeq: this.clientSeq, runId: this.runId,
         entities: Object.fromEntries([...this.entities].map(([id, state]) =>
-          [id, { active: state.active, pendingMoves: [], queuedOrders: state.queuedOrders, queuedAfter: state.queuedAfter }])) };
+          [id, { active: state.active, pendingMoves: [], queuedOrders: state.queuedOrders, queuedAfter: state.queuedAfter, collectionRoutingHold: state.collectionRoutingHold }])) };
       localStorage.setItem(this.storageKey, JSON.stringify(data));
     } catch { /* SSR guard / quota exceeded */ }
   }
@@ -938,7 +977,7 @@ export class IntentQueueManager {
         this.migrationNotice = "Saved waypoints were cleared during this update. Reissue any remaining destinations.";
       }
       this.entities = new Map(Object.entries(data.entities || {}).map(([id, state]) =>
-        [id, { active: state.active ?? null, pendingMoves: [], queuedOrders: state.queuedOrders ?? [], queuedAfter: state.queuedAfter }]));
+        [id, { active: state.active ?? null, pendingMoves: [], queuedOrders: state.queuedOrders ?? [], queuedAfter: state.queuedAfter, collectionRoutingHold: state.collectionRoutingHold }]));
       this.persist();
     } catch { /* Ignore corrupt browser storage; reconnect restores server state. */ }
   }

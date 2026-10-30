@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
-import { JettisonCargoIntentSchema, SelfDestructIntentSchema, ResupplyIntentSchema, AssignDepotIntentSchema, EscortIntentSchema, SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
+import { CollectIntentSchema, CollectionTravelPlanSchema, JettisonCargoIntentSchema, SelfDestructIntentSchema, ResupplyIntentSchema, AssignDepotIntentSchema, EscortIntentSchema, SentryIntentSchema, ConvoyIntentSchema, BuildIntentSchema, DeliverIntentSchema, IntentEnvelopeSchema, IntentPolicy, MoveToLocationIntentSchema, RepairIntentSchema, ResearchIntentSchema, UpgradeIntentSchema } from "@bitwars/shared/gen/intent_pb";
 import { Vec2Schema } from "@bitwars/shared/gen/vec2_pb";
 import { toBinary, create } from "@bufbuild/protobuf";
 import { parse as parseUuid, validate as validateUuid, version as uuidVersion } from "uuid";
@@ -15,74 +15,6 @@ const POLICY_MAP: Record<string, IntentPolicy> = {
   CLEAR_THEN_APPEND: IntentPolicy.CLEAR_THEN_APPEND,
 };
 
-function encodeVarint(value: bigint): Uint8Array {
-  let v = value;
-  const out: number[] = [];
-  while (v >= 0x80n) {
-    out.push(Number((v & 0x7fn) | 0x80n));
-    v >>= 7n;
-  }
-  out.push(Number(v));
-  return Uint8Array.from(out);
-}
-
-function fieldTag(fieldNumber: number, wireType: number): Uint8Array {
-  return encodeVarint(BigInt((fieldNumber << 3) | wireType));
-}
-
-function concatBytes(parts: Uint8Array[]): Uint8Array {
-  const len = parts.reduce((sum, p) => sum + p.length, 0);
-  const out = new Uint8Array(len);
-  let offset = 0;
-  for (const p of parts) {
-    out.set(p, offset);
-    offset += p.length;
-  }
-  return out;
-}
-
-function encodeLengthDelimitedField(fieldNumber: number, payload: Uint8Array): Uint8Array {
-  return concatBytes([
-    fieldTag(fieldNumber, 2),
-    encodeVarint(BigInt(payload.length)),
-    payload,
-  ]);
-}
-
-function encodeVarintField(fieldNumber: number, value: bigint): Uint8Array {
-  return concatBytes([fieldTag(fieldNumber, 0), encodeVarint(value)]);
-}
-
-function encodeStringField(fieldNumber: number, value: string): Uint8Array {
-  return encodeLengthDelimitedField(fieldNumber, new TextEncoder().encode(value));
-}
-
-function encodeCollectEnvelope(params: {
-  clientCmdId: Uint8Array;
-  playerId: string;
-  clientSeq: bigint;
-  protocolVersion: number;
-  policy: IntentPolicy;
-  entityId: bigint;
-  resourceTypeId: string;
-  nearestCompatible: boolean;
-}): Uint8Array {
-  const collectPayload = concatBytes([
-    encodeVarintField(1, params.entityId), // CollectIntent.entity_id
-    ...(params.nearestCompatible
-      ? [encodeVarintField(5, 1n)]
-      : [encodeStringField(4, params.resourceTypeId)]),
-  ]);
-  return concatBytes([
-    encodeLengthDelimitedField(1, params.clientCmdId), // client_cmd_id
-    encodeStringField(3, params.playerId), // player_id
-    encodeVarintField(4, params.clientSeq), // client_seq
-    encodeVarintField(5, 0n), // server_tick
-    encodeVarintField(6, BigInt(params.protocolVersion)), // protocol_version
-    encodeVarintField(7, BigInt(params.policy)), // policy
-    encodeLengthDelimitedField(13, collectPayload), // payload.collect
-  ]);
-}
 
 // POST /api/v1/intent
 // Body (JSON):
@@ -176,6 +108,18 @@ export async function POST(req: NextRequest) {
     const nearestCompatible = body?.nearest_compatible === true;
     if (t === "Collect" && (nearestCompatible ? Boolean(resourceTypeId) : !resourceTypeId)) {
       return NextResponse.json({ error: "Collect requires exactly one of resource_type_id or nearest_compatible" }, { status: 400 });
+    }
+    const travelPlan = body?.travel_plan;
+    if (t === "Collect" && travelPlan !== undefined && (
+      !travelPlan || typeof travelPlan !== "object" || Array.isArray(travelPlan)
+      || !Number.isSafeInteger(travelPlan.source_entity_id) || travelPlan.source_entity_id <= 0
+      || !Number.isSafeInteger(travelPlan.depot_entity_id) || travelPlan.depot_entity_id <= 0
+      || typeof travelPlan.initial_to_depot !== "boolean"
+      || ![travelPlan.waypoint_ids, travelPlan.initial_waypoint_ids].every(
+        ids => Array.isArray(ids) && ids.length <= 256
+          && ids.every((id: unknown) => Number.isSafeInteger(id) && Number(id) > 0))
+    )) {
+      return NextResponse.json({ error: "Collect travel_plan requires positive source/depot IDs, up to 256 positive waypoint IDs per leg, and initial_to_depot" }, { status: 400 });
     }
 
     if (!validateUuid(clientCmdId) || uuidVersion(clientCmdId) !== 7) {
@@ -277,16 +221,20 @@ export async function POST(req: NextRequest) {
       });
       bytes = toBinary(IntentEnvelopeSchema, envelope);
     } else if (t === "Collect") {
-      bytes = encodeCollectEnvelope({
-        clientCmdId: clientCmdBytes,
-        playerId,
-        clientSeq: BigInt(clientSeqVal),
-        protocolVersion: ENGINE_PROTOCOL_MAJOR,
-        policy,
-        entityId,
-        resourceTypeId,
-        nearestCompatible,
-      });
+      bytes = toBinary(IntentEnvelopeSchema, create(IntentEnvelopeSchema, {
+        clientCmdId: clientCmdBytes, playerId, clientSeq: BigInt(clientSeqVal),
+        protocolVersion: ENGINE_PROTOCOL_MAJOR, policy,
+        payload: { case: "collect", value: create(CollectIntentSchema, {
+          entityId, resourceTypeId, nearestCompatible,
+          travelPlan: travelPlan === undefined ? undefined : create(CollectionTravelPlanSchema, {
+            sourceEntityId: BigInt(travelPlan.source_entity_id),
+            depotEntityId: BigInt(travelPlan.depot_entity_id),
+            waypointIds: travelPlan.waypoint_ids.map((id: number) => BigInt(id)),
+            initialWaypointIds: travelPlan.initial_waypoint_ids.map((id: number) => BigInt(id)),
+            initialToDepot: travelPlan.initial_to_depot,
+          }),
+        }) },
+      }));
     } else if (t === "Build") {
       const build = create(BuildIntentSchema, {
         entityId,
