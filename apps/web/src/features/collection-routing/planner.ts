@@ -27,8 +27,9 @@ export type PlanRequest = {
   definitions: Record<string, EntityTypeDef>;
   assignment: Assignment;
   pinned?: Pick<TravelPlan, "sourceEntityId" | "depotEntityId">;
+  currentPlan?: TravelPlan;
 };
-export type PlanResult = { kind: "planned"; travelPlan: TravelPlan } | { kind: "proximity" } | { kind: "blocked"; reason: string };
+export type PlanResult = { kind: "planned"; travelPlan: TravelPlan } | { kind: "retained" } | { kind: "proximity" } | { kind: "blocked"; reason: string };
 type Point = { x: number; y: number };
 type Hazard = Point & { inner: number; outer: number };
 const MARGIN = 100;
@@ -114,6 +115,26 @@ export class CollectionPlanner {
     const points = request.entities.filter(entity => entity.entity_type_id === "waypoint" && entity.owner_player_id === request.playerId
       && !entity.remembered && (entity.health ?? 1) > 0
       && distanceToSegment(entity.pos, depot.pos, source.pos) <= corridorWidth).sort((a, b) => a.id - b.id);
+    const current = request.currentPlan;
+    if (current && current.sourceEntityId === source.id && current.depotEntityId === depot.id) {
+      const hazards = hazardsFor(request, worker);
+      const markers = current.waypointIds.map(id => points.find(point => point.id === id));
+      const initial = current.initialWaypointIds.map(id => request.entities.find(entity => entity.id === id
+        && entity.entity_type_id === "waypoint" && entity.owner_player_id === request.playerId
+        && !entity.remembered && (entity.health ?? 1) > 0));
+      if (markers.every(point => point !== undefined) && initial.every(point => point !== undefined)) {
+        const recurring = [depot, ...markers as RouteEntity[], source];
+        const approach = [worker, ...initial as RouteEntity[], current.initialToDepot ? depot : source];
+        // No server route cursor is published. Prove every possible next leg safe
+        // rather than guessing which initial/recurring waypoint remains active.
+        const targets = [source, depot, ...markers as RouteEntity[], ...initial as RouteEntity[]];
+        const safe = points.length === 0 || (recurring.every((point, index) =>
+          index === 0 || safeSegment(recurring[index - 1]!.pos, point.pos, hazards))
+          && approach.every((point, index) => index === 0 || safeSegment(approach[index - 1]!.pos, point.pos, hazards))
+          && targets.every(point => safeSegment(worker.pos, point.pos, hazards)));
+        if (safe) return { kind: "retained" };
+      }
+    }
     // Without a local waypoint network, preserve ordinary direct travel and its risks.
     if (points.length === 0) return { kind: "planned", travelPlan: {
       sourceEntityId: source.id, depotEntityId: depot.id, waypointIds: [], initialWaypointIds: [], initialToDepot,

@@ -28,6 +28,30 @@ const detour: RouteEntity[] = [
 ];
 
 describe("collection routing", () => {
+  it("retains an unchanged collection contract when an unrelated depot moves or cargo phase changes", () => {
+    const request = fixture();
+    const planner = new CollectionPlanner();
+    const first = planner.plan(request);
+    if (first.kind !== "planned") throw new Error("Expected initial route");
+    request.currentPlan = first.travelPlan;
+    request.entities.push({ id: 20, entity_type_id: "habitat", owner_player_id: "me", pos: { x: 5000, y: 5000 } });
+    request.entities[0]!.resources = [{ resource_type: "minerals", amount: 10 }];
+    request.entities[0]!.collector_state = { activity: "moving_to_dropoff" };
+    expect(planner.plan(request)).toEqual({ kind: "retained" });
+    request.entities.at(-1)!.pos.x += 100;
+    expect(planner.plan(request)).toEqual({ kind: "retained" });
+  });
+  it("replaces an unsafe active direct route after discovering a hazard and holds if its detour is lost", () => {
+    const request = fixture();
+    const planner = new CollectionPlanner();
+    const first = planner.plan(request);
+    if (first.kind !== "planned") throw new Error("Expected initial route");
+    request.currentPlan = first.travelPlan;
+    request.entities.push(star, ...detour.map(entity => ({ ...entity })));
+    expect(planner.plan(request)).toMatchObject({ kind: "planned", travelPlan: { waypointIds: [4, 5] } });
+    request.entities.find(entity => entity.id === 5)!.health = 0;
+    expect(planner.plan(request).kind).toBe("blocked");
+  });
   it("uses a safe direct segment without inventing waypoints", () => {
     expect(new CollectionPlanner().plan(fixture())).toEqual({ kind: "planned", travelPlan: {
       sourceEntityId: 3, depotEntityId: 2, waypointIds: [], initialWaypointIds: [], initialToDepot: false,

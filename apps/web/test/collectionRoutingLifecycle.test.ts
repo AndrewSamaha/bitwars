@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi, type Mock } from "vitest";
 import type { RouteEntity, TravelPlan } from "../src/features/collection-routing/planner";
+import { CollectionPlanner } from "../src/features/collection-routing/planner";
 
 const env = vi.hoisted(() => {
   const base = { fog_memory: "retain_last_known", speed: 0, stop_radius: 0, mass: 1, health: 100 };
@@ -122,4 +123,32 @@ it("restores owner-scoped blocked collection only when no newer active command s
   collectionRouting.adopt([{ entity_id: 1, intent_kind: "move", client_cmd_id: "newer-command" }], "me", "world-1");
   expect(env.hold).toHaveBeenCalledWith(1, undefined);
   expect(env.submit).not.toHaveBeenCalled();
+});
+
+it("coalesces moving-depot updates and keeps a valid collection intent without replacement", async () => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  const planner = new CollectionPlanner();
+  cleanup = collectionRouting.start("me");
+  const send = vi.fn();
+  collectionRouting.request(1, { resourceTypeId: "minerals", nearestCompatible: false }, send);
+  const worker = env.workers[0]!;
+  const finish = () => {
+    const message = worker.postMessage.mock.calls.at(-1)![0];
+    worker.onmessage!({ data: { id: message.id, result: planner.plan(message.request) } });
+  };
+  finish();
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "collect-command" } });
+  env.entities.push({ id: 20, entity_type_id: "habitat", owner_player_id: "me", pos: { x: 5000, y: 5000 } });
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  for (let step = 0; step < 5; step++) {
+    env.entities.at(-1)!.pos.x += 10;
+    window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  }
+  expect(worker.postMessage).toHaveBeenCalledTimes(2);
+  finish(); // Stale result schedules one fresh computation, never a command.
+  expect(worker.postMessage).toHaveBeenCalledTimes(3);
+  finish();
+  expect(send).toHaveBeenCalledOnce();
+  expect(env.move).not.toHaveBeenCalled();
+  expect(collectionRouting.getStatus(1)).toContain("retained");
 });

@@ -12,11 +12,11 @@ type ManagedOrder = {
   plan?: TravelPlan;
   accepted: boolean;
   pending: boolean;
+  dirty?: boolean;
   revision: number;
   fingerprint: string;
   blockedActivity: boolean;
   holding?: boolean;
-  geometryChanged?: boolean;
   expectedDepotId?: number;
 };
 type ReconnectedOrder = {
@@ -238,14 +238,16 @@ class CollectionRouting implements CollectionRouter {
       const becameBlocked = blocked && !order.blockedActivity;
       order.blockedActivity = blocked;
       if (order.pending) {
-        if (changed) { order.revision = ++this.serial; order.pending = false; } else continue;
+        if (changed || becameBlocked) order.dirty = true;
+        continue;
       }
-      if (!changed && !becameBlocked) continue;
-      order.geometryChanged = !!order.fingerprint && changed;
+      if (!changed && !becameBlocked && !order.dirty) continue;
+      order.dirty = false;
       order.fingerprint = orderFingerprint;
       const request: PlanRequest = { workerId: id, playerId: this.playerId, entities: [...entities.values()], definitions, assignment: order.assignment,
         pinned: order.plan ? { sourceEntityId: order.plan.sourceEntityId,
-          depotEntityId: Number(worker.supply?.delivery_depot_id) || order.plan.depotEntityId } : undefined };
+          depotEntityId: Number(worker.supply?.delivery_depot_id) || order.plan.depotEntityId } : undefined,
+        currentPlan: order.accepted && !order.holding && !blocked ? order.plan : undefined };
       if (!this.worker) {
         try {
           this.worker = new Worker(new URL("./planner.worker.ts", import.meta.url), { type: "module" });
@@ -274,6 +276,14 @@ class CollectionRouting implements CollectionRouter {
     const order = this.orders.get(pending.entityId);
     if (!order || order.revision !== pending.revision) return;
     order.pending = false;
+    if (order.dirty) {
+      this.refresh();
+      return;
+    }
+    if (result.kind === "retained") {
+      this.status(pending.entityId, "Radiation-safe collection route retained");
+      return;
+    }
     if (result.kind === "blocked") {
       if (order.accepted && !order.holding) {
         const worker = Array.from(game.world.with("id", "pos")).find(entity => Number(entity.id) === pending.entityId);
@@ -290,16 +300,10 @@ class CollectionRouting implements CollectionRouter {
       this.status(pending.entityId, `Routing blocked: ${result.reason}`); return;
     }
     if (result.kind === "proximity") { order.send(); this.cancel(pending.entityId); return; }
-    const previous = order.plan;
     order.plan = result.travelPlan;
-    // First reconnect inspection does not restart an already accepted route.
-    const changed = !previous || previous.sourceEntityId !== result.travelPlan.sourceEntityId || previous.depotEntityId !== result.travelPlan.depotEntityId
-      || JSON.stringify(previous.waypointIds) !== JSON.stringify(result.travelPlan.waypointIds);
-    if (!order.accepted || changed || order.blockedActivity || order.holding || order.geometryChanged) {
-      order.accepted = true;
-      order.holding = false;
-      order.send(result.travelPlan);
-    }
+    order.accepted = true;
+    order.holding = false;
+    order.send(result.travelPlan);
     this.status(pending.entityId, "Radiation-safe collection route planned");
   }
 }

@@ -196,9 +196,9 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {
-      "scale": 2.5
+      "scale": 1.2
     },
-    "definition": "fog_memory: retain_last_known\nhealth: 100\nhull_radius: 50\nmass: 500\nmax_capacity: {}\nspeed: 0\nstop_radius: 1\nvisibility_range: 1000\nvisual:\n  scale: 2.5\nz_index: -1"
+    "definition": "fog_memory: retain_last_known\nhealth: 100\nhull_radius: 50\nmass: 500\nmax_capacity: {}\nspeed: 0\nstop_radius: 1\nvisibility_range: 1000\nvisual:\n  scale: 1.2\nz_index: -1"
   },
   {
     "id": "food_storage_container",

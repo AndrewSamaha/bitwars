@@ -848,7 +848,7 @@ entity_types:
     stop_radius: 1
     visibility_range: 1000
     visual:
-      scale: 2.5
+      scale: 1.2
     z_index: -1
   food_storage_container:
     build_cost:

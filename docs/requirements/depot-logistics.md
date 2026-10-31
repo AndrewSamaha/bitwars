@@ -80,6 +80,28 @@ Assignments survive stopping/restarting Collect, reconnects, and snapshot restor
 
 When an owned worker enters `waiting_for_dropoff`, show a focusable **Collection blocked** toast and record it in the message log. Do not repeat it on unchanged state updates; leaving and re-entering the wait raises it again. Every explicit Collect command for a different resource also raises **Cargo bay full** when an existing resource is at or above its carrying capacity. Compatible-resource and nearest-compatible orders do not raise that warning. Warnings preserve cargo and still submit the requested order.
 
+### Collection route recomputation
+
+Changes to discovered hazards, resource sources, depots, or owned waypoints trigger
+route evaluation, not unconditional replacement of the active Collect intent.
+An unrelated moving habitat must not restart collectors whose existing routes
+remain valid. Cargo phase changes alone do not redefine the recurring route.
+
+The browser planner retains the active source/depot/waypoint contract when its
+geometry remains valid. With a local waypoint network, retention requires safe
+recurring segments, the submitted initial approach, and every possible next leg
+from the worker. The server does not publish its exact collection waypoint cursor,
+so this is deliberately conservative: ambiguous paths near hazards may require a
+replacement even when the server's actual remaining path is safe. Without a local
+waypoint network, ordinary direct travel retains its existing radiation-risk policy.
+
+Invalid routes are replanned; a valid replacement is submitted with REPLACE_ACTIVE.
+If no safe route exists, an accepted collection enters a position hold once.
+Held or server-blocked collection must obtain a fresh plan before resuming.
+Only one planner request per collector is in flight; further updates mark it dirty
+and coalesce into a fresh evaluation before an obsolete result can issue commands.
+
+
 ### Jettison cargo
 
 Select an owned, living mobile cargo carrier with resources aboard and choose **[J] Jettison cargo**. The action supports multiple selected carriers when every selected entity is eligible; empty carriers, stationary entities, depots, and enemy entities are excluded. Issuing the command immediately discards **all** onboard resources, with no confirmation dialog, refund, or recoverable cargo drop.
