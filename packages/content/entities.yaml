@@ -998,7 +998,7 @@ entity_types:
     mass: 500
     max_capacity:
       energy: 1000
-      food: 3000
+      food: 1600
       minerals: 1500
     researches:
       - neutrino_sensors

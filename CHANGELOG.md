@@ -21,6 +21,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 - Moved legacy sprites for `planet_blue`, `star_yellow`, `minerals`, and `raider` from the web public directory into `packages/content/assets` so hot-reload revisions include their artwork instead of falling back to the corvette texture.
+- Replaced `packages/content/assets/theta/idle.png`, which contained a solar-collector image, with the correct theta star artwork already present in `public/assets`; republished and live-reloaded the revision.
 
 ### Notes
 - See the development milestones in `docs/milestones.md` for the incremental feature plan (M0–M10).
