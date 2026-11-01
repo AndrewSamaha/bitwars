@@ -105,3 +105,39 @@ Discovery uses operational sensors, technology effects and target visibility ran
 and continues while players are disconnected. Player streams omit this checkpoint.
 Older snapshots without discovery history start empty and discover currently visible
 entities on the next collection update; earlier exploration cannot be reconstructed.
+
+## Content reload diagnostics
+
+```bash
+# Active revision, last 100 reloads, current client reports and retained client transitions
+curl http://localhost:3000/api/v2/game-query/content-reloads
+
+# Original immutable manifest for an accepted SHA256 revision
+curl http://localhost:3000/api/v2/game-query/content-revisions/<revision>
+
+# Exact accepted definitions and per-entity definition/asset hashes
+curl 'http://localhost:3000/api/v2/content?revision=<revision>'
+```
+
+These reads do not stage or activate content. Snapshot responses now include
+`content_revision`, which identifies definitions/artwork, not the changing entity
+positions, health, stock or orders.
+
+Each reload operation records a dashed-UUID `reload_id`, candidate/base revisions,
+requester and time, status transitions, activation tick, and structured error when
+applicable. Rejection preserves the active world. Restart recovery and notification
+failures are exposed separately from successful activation.
+
+`clients` contains reports received within two minutes, including advertised and
+loaded definition revisions, rendered asset-bundle hashes and detailed load errors.
+`client_events` retains the latest 100 client state changes, so a decode failure
+remains traceable by reload ID after the client recovers. These are client-reported
+diagnostics, not an authoritative claim about a remote renderer.
+
+The same information appears under **Live content** on the `/content/` pages.
+Authenticated `POST /api/content/reload` stages current authored files and returns
+`content_reload` with the operation ID. An optional `base_revision` provides an
+optimistic lock. Editor definition/sprite/mask saves stage automatically.
+Authenticated clients post synchronization reports to `/api/v2/content/report`;
+this does not change game content.
+

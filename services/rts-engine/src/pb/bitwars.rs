@@ -1045,6 +1045,9 @@ pub struct CollectionOrderState {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
+    /// Exact accepted immutable content used by this checkpoint. Empty only on legacy snapshots.
+    #[prost(string, tag = "16")]
+    pub content_revision: ::prost::alloc::string::String,
     /// Server-only persistent player discovery history; omitted from player streams.
     #[prost(string, tag = "14")]
     pub discovered_entities_json: ::prost::alloc::string::String,

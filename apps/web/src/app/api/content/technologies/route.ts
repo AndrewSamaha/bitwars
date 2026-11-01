@@ -5,6 +5,8 @@ import { parseDocument, stringify } from "yaml";
 import { technologyRequirementErrors, unknownTechnologyFieldErrors } from "@/lib/content/schemaValidation";
 
 import { sortEntityDefinitions } from "@/lib/content/entityYaml";
+import { mutateContentResponse } from "@/lib/content/contentRevisions";
+import { requireAuthOr401 } from "@/features/users/utils/auth";
 
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
@@ -21,18 +23,24 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { parentId, childId, definition } = await request.json();
+  const { auth, res } = await requireAuthOr401();
+  if (res) return res;
+  if (typeof auth?.playerId !== "string" || !auth.playerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const requested_by = auth.playerId;
+  const { parentId, childId, definition, base_revision } = await request.json();
   if (!validId(childId)) return NextResponse.json({ error: "Invalid technology id" }, { status: 400 });
-  const doc = parseDocument(await readFile(contentPath, "utf8"));
-  const child = parseDocument(definition);
-  const technologies: any = doc.get("technologies", true);
-  if (doc.errors.length || child.errors.length || !technologies?.has(parentId) || technologies.has(childId)) return NextResponse.json({ error: "Invalid YAML, parent, or duplicate technology" }, { status: 400 });
-  const value = child.toJS();
-  const errors = unknownTechnologyFieldErrors(value);
-  if (errors.length) return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
-  const requirementErrors = technologyRequirementErrors(value.requires, new Set([...Object.keys(doc.toJS().technologies ?? {}), childId]));
-  if (requirementErrors.length) return NextResponse.json({ error: requirementErrors.join("; ") }, { status: 400 });
-  technologies.set(childId, { ...value, requires: parentId });
-  await writeFile(contentPath, String(sortEntityDefinitions(doc)));
-  return NextResponse.json({ ok: true });
+  return mutateContentResponse(async () => {
+    const doc = parseDocument(await readFile(contentPath, "utf8"));
+    const child = parseDocument(definition);
+    const technologies: any = doc.get("technologies", true);
+    if (doc.errors.length || child.errors.length || !technologies?.has(parentId) || technologies.has(childId)) return NextResponse.json({ error: "Invalid YAML, parent, or duplicate technology" }, { status: 400 });
+    const value = child.toJS();
+    const errors = unknownTechnologyFieldErrors(value);
+    if (errors.length) return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
+    const requirementErrors = technologyRequirementErrors(value.requires, new Set([...Object.keys(doc.toJS().technologies ?? {}), childId]));
+    if (requirementErrors.length) return NextResponse.json({ error: requirementErrors.join("; ") }, { status: 400 });
+    technologies.set(childId, { ...value, requires: parentId });
+    await writeFile(contentPath, String(sortEntityDefinitions(doc)));
+    return NextResponse.json({ ok: true });
+  }, { base_revision, requested_by });
 }

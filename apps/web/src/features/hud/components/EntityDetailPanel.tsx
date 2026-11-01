@@ -39,6 +39,7 @@ function MaintenanceCosts({ entityTypeId }: { entityTypeId: string }) {
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
   const { effectivePlayerId } = useSession();
+  const contentRevision = useSyncExternalStore(contentManager.subscribe, contentManager.getContentVersion, () => "");
   const { selectedEntities, selectedAction, isMeasuring } = selectors;
   const selectedIdsKey = selectedEntities.join(",");
   const donorId = typeof selectedAction === "object" && selectedAction?.kind === "Transport" ? selectedAction.donorId : undefined;
@@ -196,7 +197,7 @@ export default function EntityDetailPanel() {
           ),
         ),
       )
-    : [], [selectedIdsKey, selectedTypesKey]);
+    : [], [selectedIdsKey, selectedTypesKey, contentRevision]);
 
   // Dynamic actions for a given entity.
   const getActionsForEntity = (entityId: string): ActionDef[] => {
@@ -387,13 +388,13 @@ export default function EntityDetailPanel() {
     () => selectedEntities.length === 1
       ? contentManager.getEntityType(selectedType)?.upgrades ?? []
       : [],
-    [selectedEntities.length, selectedType],
+    [selectedEntities.length, selectedType, contentRevision],
   );
   const researchOptions = useMemo(
     () => selectedEntities.length === 1
       ? contentManager.getEntityType(selectedType)?.researches ?? []
       : [],
-    [selectedEntities.length, selectedType],
+    [selectedEntities.length, selectedType, contentRevision],
   );
   const collectOptions = useMemo(() => {
     if (selectedEntities.length === 0) return [];

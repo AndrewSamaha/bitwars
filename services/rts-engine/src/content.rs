@@ -19,7 +19,7 @@ pub struct ContentPack {
     /// M7: Resource type definitions for display (id → display_name, order).
     pub resource_types: HashMap<String, ResourceTypeDef>,
     pub technologies: HashMap<String, TechnologyDef>,
-    /// Hex-encoded xxh3-64 hash of the canonicalized JSON representation.
+    /// SHA256 of canonical definitions, or the immutable manifest revision when activated.
     pub content_hash: String,
 }
 
@@ -667,12 +667,19 @@ impl ContentPack {
     pub fn load(path: &Path) -> Result<Self> {
         let raw = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read content pack: {}", path.display()))?;
-        let file: ContentFile = serde_yaml::from_str(&raw)
+        let definitions: serde_json::Value = serde_yaml::from_str(&raw)
             .with_context(|| format!("failed to parse content pack YAML: {}", path.display()))?;
+        Self::from_definitions(definitions)
+    }
+
+    /// Validate authored definitions without normalizing the immutable manifest.
+    pub fn from_definitions(definitions: serde_json::Value) -> Result<Self> {
+        let file: ContentFile = serde_json::from_value(definitions)?;
 
         validate_resource_content(&file.entity_types, &file.resource_types)?;
         validate_upgrades(&file.entity_types)?;
         validate_technologies(&file.entity_types, &file.technologies)?;
+        validate_gameplay_content(&file.entity_types, &file.resource_types, &file.technologies)?;
 
         let content_hash =
             canonical_hash(&file.entity_types, &file.resource_types, &file.technologies)?;
@@ -948,24 +955,88 @@ fn validate_upgrades(entity_types: &HashMap<String, EntityTypeDef>) -> Result<()
     Ok(())
 }
 
-/// Compute a deterministic hash from entity and resource type definitions.
-///
-/// Both maps are serialized to JSON with sorted keys (via `BTreeMap` ordering)
-/// and no extra whitespace, then hashed with xxh3-64.
+/// Compute the SHA256 canonical definition hash (activation uses the whole manifest).
 fn canonical_hash(
     entity_types: &HashMap<String, EntityTypeDef>,
     resource_types: &HashMap<String, ResourceTypeDef>,
     technologies: &HashMap<String, TechnologyDef>,
 ) -> Result<String> {
-    let et: std::collections::BTreeMap<&String, &EntityTypeDef> = entity_types.iter().collect();
-    let rt: std::collections::BTreeMap<&String, &ResourceTypeDef> = resource_types.iter().collect();
-    let tech: std::collections::BTreeMap<&String, &TechnologyDef> = technologies.iter().collect();
-    let json =
-        serde_json::json!({ "entity_types": et, "resource_types": rt, "technologies": tech });
-    let json_str =
-        serde_json::to_string(&json).context("failed to serialize content to canonical JSON")?;
-    let hash = xxhash_rust::xxh3::xxh3_64(json_str.as_bytes());
-    Ok(format!("{:016x}", hash))
+    crate::content_revision::hash_json(&serde_json::json!({
+        "entity_types": entity_types, "resource_types": resource_types, "technologies": technologies
+    }))
+}
+
+fn validate_gameplay_content(
+    entities: &HashMap<String, EntityTypeDef>,
+    resources: &HashMap<String, ResourceTypeDef>,
+    technologies: &HashMap<String, TechnologyDef>,
+) -> Result<()> {
+    anyhow::ensure!(!entities.is_empty(), "entity_types must not be empty");
+    for id in resources.keys().chain(technologies.keys()) {
+        anyhow::ensure!(crate::content_revision::valid_id(id), "invalid definition ID {id}");
+    }
+    let costs = |values: &HashMap<String, f32>, path: &str| -> Result<()> {
+        for (id, value) in values {
+            anyhow::ensure!(resources.contains_key(id) && value.is_finite() && *value >= 0.0,
+                "{path}.{id}: expected known resource and finite nonnegative value");
+        }
+        Ok(())
+    };
+    for (id, def) in entities {
+        anyhow::ensure!(crate::content_revision::valid_id(id), "invalid entity ID {id}");
+        anyhow::ensure!(def.health.is_finite() && def.health > 0.0 && def.mass.is_finite() && def.mass > 0.0,
+            "entity {id}: health and mass must be positive and finite");
+        anyhow::ensure!([def.speed, def.stop_radius, def.hull_radius, def.visual.scale].iter().all(|v| v.is_finite() && *v >= 0.0),
+            "entity {id}: invalid movement or visual dimensions");
+        costs(&def.build_cost, &format!("{id}.build_cost"))?;
+        costs(&def.maintenance_cost_per_minute, &format!("{id}.maintenance"))?;
+        let mut targets = HashSet::new();
+        for option in &def.builds {
+            anyhow::ensure!(entities.contains_key(&option.entity_type_id) && targets.insert(&option.entity_type_id),
+                "entity {id}: unknown or duplicate build target {}", option.entity_type_id);
+            costs(&option.spend_rates, &format!("{id}.build.spend_rates"))?;
+        }
+        for option in &def.upgrades { costs(&option.spend_rates, &format!("{id}.upgrade.spend_rates"))?; }
+        if let Some(node) = &def.resource_node {
+            anyhow::ensure!(resources.contains_key(&node.resource_type), "entity {id}: unknown resource node type");
+            anyhow::ensure!([node.min_effective_distance, node.max_effective_distance].iter().all(|v| v.is_finite() && *v >= 0.0),
+                "entity {id}: invalid gathering band");
+        }
+        if let Some(collector) = &def.collector {
+            anyhow::ensure!(collector.collects.iter().all(|r| resources.contains_key(r)), "entity {id}: unknown collected resource");
+            anyhow::ensure!([collector.transport_rate_per_second, collector.proximity_rate_per_second].iter().all(|v| v.is_finite() && *v >= 0.0),
+                "entity {id}: invalid collection rate");
+        }
+        if let Some(sensor) = &def.sensor {
+            anyhow::ensure!(sensor.range.is_finite() && sensor.range >= 0.0, "entity {id}: invalid sensor range");
+            costs(&sensor.cost_per_minute, &format!("{id}.sensor.cost"))?;
+        }
+        if let Some(repair) = &def.repair {
+            anyhow::ensure!(repair.range.is_finite() && repair.range >= 0.0 && repair.efficiency.is_finite() && repair.efficiency > 0.0,
+                "entity {id}: invalid repair");
+            costs(&repair.cost_per_min, &format!("{id}.repair.cost"))?;
+        }
+        if let Some(combat) = &def.combat {
+            anyhow::ensure!(combat.acquisition_range.is_finite() && combat.acquisition_range >= 0.0, "entity {id}: invalid acquisition range");
+            let mut weapons = HashSet::new();
+            for attack in &combat.attacks {
+                anyhow::ensure!(!attack.id.is_empty() && weapons.insert(&attack.id)
+                    && [attack.range, attack.damage, attack.contact_tolerance].iter().all(|v| v.is_finite()),
+                    "entity {id}: invalid or duplicate weapon");
+            }
+        }
+        for radiation in &def.radiation_sources {
+            anyhow::ensure!(!radiation.radiation_type.is_empty()
+                && [radiation.min_effective_distance, radiation.max_effective_distance, radiation.full_damage_distance, radiation.damage_per_second]
+                    .iter().all(|v| v.is_finite() && *v >= 0.0), "entity {id}: invalid radiation");
+        }
+    }
+    for (id, technology) in technologies {
+        costs(&technology.research_cost, &format!("{id}.research_cost"))?;
+        costs(&technology.research_rates, &format!("{id}.research_rates"))?;
+        anyhow::ensure!(technology.research_rates.values().all(|v| *v > 0.0), "technology {id}: research rates must be positive");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1160,7 +1231,7 @@ mod tests {
         let h1 = canonical_hash(&types, &empty_resources, &empty_technologies).unwrap();
         let h2 = canonical_hash(&types, &empty_resources, &empty_technologies).unwrap();
         assert_eq!(h1, h2, "hash must be deterministic across calls");
-        assert_eq!(h1.len(), 16, "hex xxh3-64 should be 16 chars");
+        assert_eq!(h1.len(), 64, "hex SHA256 should be 64 chars");
     }
 
     #[test]

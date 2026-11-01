@@ -1,5 +1,9 @@
+// `content.rs` validates hashes through this sibling module; both paths are
+// included so the generator shares the library's validation code.
 #[path = "../content.rs"]
 mod content;
+#[path = "../content_revision.rs"]
+mod content_revision;
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);

@@ -11,6 +11,7 @@ mod navigation;
 pub mod state;
 pub mod generation;
 mod scenario;
+mod content_reload;
 
 use std::collections::{HashMap, HashSet};
 
@@ -1740,19 +1741,24 @@ impl Engine {
             info!(dataset = t.dataset(), "axiom telemetry enabled");
         }
 
-        // M4: Load content pack if configured
-        let content = if !cfg.content_pack_path.is_empty() {
-            let pack = ContentPack::load(std::path::Path::new(&cfg.content_pack_path))?;
-            info!(
-                content_hash = %pack.content_hash,
-                entity_types = pack.entity_types.len(),
-                "loaded content pack"
-            );
-            Some(pack)
-        } else {
-            info!("no CONTENT_PACK_PATH set; using default entity stats");
-            None
-        };
+        // Restore the exact accepted manifest before consulting mutable disk content.
+        let content_path = std::path::Path::new(&cfg.content_pack_path);
+        let restored_revision = if cfg.restore_gamestate {
+            let revision = redis.snapshot_content_revision().await?;
+            if revision.as_deref() == Some("") {
+                warn!("legacy snapshot has no content revision; adopting current disk manifest once");
+            }
+            revision.filter(|revision| !revision.is_empty())
+        } else { None };
+        let startup_revision = if let Some(revision) = restored_revision {
+            anyhow::ensure!(redis.accepted_content_revision(&revision).await?,
+                "snapshot content revision {revision} has no retained accepted payload");
+            Some(crate::content_revision::Revision::load(
+                &crate::content_revision::revision_root(content_path), &revision)?)
+        } else if !cfg.content_pack_path.is_empty() {
+            Some(crate::content_revision::Revision::bootstrap(content_path)?)
+        } else { None };
+        let content = startup_revision.as_ref().map(|revision| revision.pack.clone());
 
         let default_stop_radius = cfg.default_stop_radius;
         let default_speed = cfg.default_entity_speed;
@@ -2129,40 +2135,23 @@ impl Engine {
                 engine.restore_sentries(snapshot_sentries).await?;
                 engine.restore_escorts(snapshot_escorts).await?;
                 engine.hydrate_entity_health_if_missing();
-                // Publish a fresh snapshot so newly connecting clients see current state
-                let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
-                engine
-                    .redis
-                    .publish_snapshot(
-                        &engine.state,
-                        &engine.resource_spend_total,
-                        &engine.resource_gain_total,
-                        snap_boundary,
-                        engine.collector_states_for_stream(),
-                        engine.combat_effect_states_for_stream(),
-                        engine.intents.convoys.clone(),
-                        engine.intents.move_orders_for_snapshot(),
-                        engine.intents.sentries.clone(),
-                        engine.intents.escorts.clone(),
+                if let Some(revision) = startup_revision {
+                    engine.bootstrap_content_revision(revision).await?;
+                } else {
+                    let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
+                    engine.redis.publish_snapshot(
+                        &engine.state, &engine.resource_spend_total, &engine.resource_gain_total, snap_boundary,
+                        engine.collector_states_for_stream(), engine.combat_effect_states_for_stream(),
+                        engine.intents.convoys.clone(), engine.intents.move_orders_for_snapshot(),
+                        engine.intents.sentries.clone(), engine.intents.escorts.clone(),
                         engine.intents.collection_orders_for_snapshot(),
-                    )
-                    .await?;
+                    ).await?;
+                }
                 let build_progress = engine.construction_progress_for_snapshot();
                 engine
                     .redis
                     .checkpoint_construction_progress(&build_progress)
                     .await?;
-
-                // M4: Publish content hash + definitions in restore path too
-                if let Some(ref pack) = engine.content {
-                    engine
-                        .redis
-                        .publish_content_version(&pack.content_hash)
-                        .await?;
-                    let json = pack.to_json()?;
-                    engine.redis.publish_content_defs(&json).await?;
-                }
-
                 engine.initialize_runtime(true).await?;
                 return Ok(engine);
             }
@@ -2233,21 +2222,12 @@ impl Engine {
             scenario_runtime: Default::default(),
             loaded_scenario: None,
         };
-        engine
-            .redis
-            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
-            .await?;
-
-        // M4: Publish content hash + definitions to Redis
-        if let Some(ref pack) = engine.content {
-            engine
-                .redis
-                .publish_content_version(&pack.content_hash)
-                .await?;
-            let json = pack.to_json()?;
-            engine.redis.publish_content_defs(&json).await?;
+        if let Some(revision) = startup_revision {
+            engine.bootstrap_content_revision(revision).await?;
+        } else {
+            engine.redis.publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total,
+                "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).await?;
         }
-
         engine.initialize_runtime(false).await?;
         Ok(engine)
     }
@@ -4737,6 +4717,8 @@ impl Engine {
 
         loop {
             ticker.tick().await;
+            // Reload is a tick-boundary control operation, including while paused.
+            self.process_content_reload().await?;
             if !self.process_scenario_controls().await? { continue; }
             let raider_ai_spatial_index_enabled = self
                 .cfg

@@ -52,13 +52,16 @@ bitwars/
 
 ### Content pack (`packages/content`) and entity types on the front-end
 
-The **content pack** is the source of truth for entity type definitions (e.g. worker, scout). The Rust engine loads `packages/content/entities.yaml` at startup for per-entity stats (speed, mass, etc.). The same file is used to drive what the front-end preloads.
+The **content pack** is the source of truth for entity/resource/technology definitions and entity artwork. The engine and web server must share `packages/content` and its immutable `.revisions` storage.
 
-- **`entities.yaml`** – Defines `entity_types` (each key is an `entity_type_id`). Edit this file to add or change entity types.
-- **Build script** – `packages/content/scripts/generate-preload-entity-types.js` runs at build time (via Turborepo when building or running the web app). It reads `entities.yaml`, extracts the `entity_type_id` keys, and writes **`preload-entity-types.ts`** with an exported list (e.g. `PRELOAD_ENTITY_TYPES = ["worker", "scout"]`).
-- **Front-end use** – The web app imports `PRELOAD_ENTITY_TYPES` from `@bitwars/content` and uses it to preload sprite textures (`/assets/${entity_type_id}/idle.png`) before the first frame. That way entities render with the correct sprite as soon as they appear, with no async texture swap.
+- **Edit live content** at `/content/entities`, `/content/techtree`, and the sprite editors. Authenticated saves stage a revision automatically; the engine validates and applies it between ticks, including while paused. Existing clients update without reconnecting.
+- **External file edits** are published with **Publish files** in the content navigation's **Live content** panel, or authenticated `POST /api/content/reload`. There is no filesystem watcher.
+- **Versioning** uses a global SHA256 content revision, per-entity definition hashes, and independent sprite-bundle hashes. Immutable assets are served at `/assets/<entity_id>/<asset_hash>/<filename>`. Gameplay definition changes do not invalidate unchanged textures.
+- **Safety and diagnostics:** invalid/incompatible revisions leave the active game unchanged. The Live content panel shows reload IDs, transition history, errors, activation ticks, client synchronization, and retained client failure/recovery history.
+- **Restart safety:** snapshots record their active revision; restoration loads that retained revision rather than current authored files. Back up `.revisions` alongside Redis snapshots. A legacy snapshot without a revision adopts current disk content once with a warning.
+- **Build-time content generation** still supplies editor metadata and standalone rendering labs. The live game loads its accepted definitions and artwork from the server, so new entity types do not require rebuilding the web app.
 
-Turborepo runs the content package’s `build` before the web app’s `build` or `dev`, so the generated list is always up to date when the app runs.
+See [content revision requirements](docs/requirements/entities-and-abilities.md#data-model-and-content-pipeline) and [reload inspection endpoints](docs/game-query.md#content-reload-diagnostics).
 
 ### Using pnpm in monorepo
 Adding dependencies at the root level is easy, you simply run your pnpm commands at root.
@@ -75,6 +78,7 @@ Configuration is loaded from the root `.env` file. The `dev` and `fe:run` script
 | Variable | Default | Description |
 |---|---|---|
 | `GAME_ID` | `demo-001` | Unique identifier for the game/match |
+| `PORT` | `3001` in `.env.example` | Next.js dev/start port. `pnpm dev` binds it directly instead of falling back when 3000 is busy; keep `BITWARS_GAME_QUERY_BASE_URL` aligned. |
 | `GAME_TPS` | `20` | Authoritative simulation ticks per second. Weapon cooldowns in the bundled content are tuned for 20 TPS. |
 | `GAMESTATE_REDIS_URL` | `redis://127.0.0.1/` | Redis connection URL |
 | `RTS_ENGINE_LOG_LEVEL` | `INFO` | Tracing log level for the Rust engine |

@@ -1,5 +1,6 @@
 import { Container, Rectangle, Sprite, Texture } from "pixi.js";
 import type { Entity } from "@/features/gamestate/world";
+import { retainGameEntityTexture } from "../renderer/entityVisuals";
 
 type Fragment = {
   sprite: Sprite;
@@ -14,6 +15,7 @@ type Explosion = {
   startedAt: number;
   lastUpdatedAt: number;
   lifetimeMs: number;
+  releaseTexture: () => void;
 };
 
 type FragmentFrame = { x: number; y: number; width: number; height: number };
@@ -103,7 +105,8 @@ export function createDespawnExplosionSystem(worldContainer: Container) {
         };
       });
     const startedAt = performance.now();
-    explosions.push({ container, fragments, startedAt, lastUpdatedAt: startedAt, lifetimeMs: 500 + Math.random() * 1300 });
+    explosions.push({ container, fragments, startedAt, lastUpdatedAt: startedAt,
+      lifetimeMs: 500 + Math.random() * 1300, releaseTexture: retainGameEntityTexture(sourceTexture) });
   };
 
   const update = (nowMs: number) => {
@@ -113,6 +116,7 @@ export function createDespawnExplosionSystem(worldContainer: Container) {
       const progress = elapsedMs / explosion.lifetimeMs;
       if (progress >= 1) {
         explosion.container.destroy({ children: true, texture: true, textureSource: false });
+        explosion.releaseTexture();
         explosions.splice(index, 1);
         continue;
       }
@@ -128,6 +132,7 @@ export function createDespawnExplosionSystem(worldContainer: Container) {
   };
 
   const destroy = () => {
+    for (const explosion of explosions) explosion.releaseTexture();
     explosions.length = 0;
     effectContainer.destroy({ children: true, texture: true, textureSource: false });
   };

@@ -87,4 +87,19 @@ describe("VisibilityFilter", () => {
     expect(delta?.hidden_entity_ids).toEqual([2]);
     expect(delta?.removed_entity_ids).toEqual([]);
   });
+
+  it("applies hot-reloaded sensor ranges without losing the connection's cached world", () => {
+    const filter = new VisibilityFilter("me", { habitat: { sensor: { range: 100 } } });
+    const enemy = { id: 2, entity_type_id: "raider", owner_player_id: "other", pos: { x: 500, y: 0 } };
+    const initial = filter.filterSnapshot({ type: "snapshot", tick: 1, entities: [
+      { id: 1, entity_type_id: "habitat", owner_player_id: "me", pos: { x: 0, y: 0 } }, enemy,
+    ] });
+    expect(initial.entities.map((entity) => entity.id)).toEqual([1]);
+    filter.updateContent({ habitat: { sensor: { range: 1000 } } }, {});
+    expect(filter.filterDelta({ type: "delta", tick: 2, updates: [] })?.updates).toEqual([enemy]);
+    filter.updateContent({ habitat: { sensor: { range: 100 } } }, {});
+    const hidden = filter.filterDelta({ type: "delta", tick: 3, updates: [] });
+    expect(hidden?.hidden_entity_ids).toEqual([2]);
+    expect(hidden?.removed_entity_ids).toEqual([]);
+  });
 });

@@ -60,6 +60,8 @@ pub struct PlayerResourceLedger {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
+    #[prost(string, tag = "16")]
+    pub content_revision: String,
     #[prost(message, repeated, tag = "5")]
     pub collector_states: Vec<CollectorState>,
     #[prost(int64, tag = "2")]

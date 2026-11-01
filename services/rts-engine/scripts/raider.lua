@@ -27,8 +27,8 @@ raider's desired velocity.
 
 Shared strategic state
 ----------------------
-The neutral map is catalogued once because celestial objects are static. The
-host provides this input sorted by entity ID.
+The neutral map is catalogued at initialization and refreshed after content
+activation. The host provides this input sorted by entity ID.
 
   shared.world
       Compact common knowledge for stars, theta, minerals, and planets.
@@ -167,8 +167,6 @@ local function move_toward(ctx, x, y)
 end
 
 function world_tick(ctx)
-  if ctx.shared.landmarks then return end
-
   local world = {}
   local landmarks = {}
   local landmark_by_id = {}
@@ -197,10 +195,10 @@ function world_tick(ctx)
   ctx.shared.landmarks = landmarks
   ctx.shared.landmark_by_id = landmark_by_id
   ctx.shared.hazards = hazards
-  ctx.shared.visited = {}
-  ctx.shared.claims = {}
-  ctx.shared.sightings = {}
-  ctx.shared.missions = {}
+  ctx.shared.visited = ctx.shared.visited or {}
+  ctx.shared.claims = ctx.shared.claims or {}
+  ctx.shared.sightings = ctx.shared.sightings or {}
+  ctx.shared.missions = ctx.shared.missions or {}
 end
 
 local function sync_mission(ctx, reason)

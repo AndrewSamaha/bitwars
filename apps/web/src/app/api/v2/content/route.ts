@@ -1,67 +1,20 @@
 import { NextResponse } from "next/server";
-import { redis } from "@/lib/db/connection";
-import { getEnv } from "@/lib/utils";
+import { readAcceptedContent } from "@/lib/content/contentReloadStatus";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DEFAULT_GAME_ID = "demo-001";
-
-/**
- * M4 Content Endpoint
- *
- * GET /api/v2/content
- *
- * Returns entity type definitions and content version hash so clients can
- * fetch the current content when their bundled copy is stale or missing.
- *
- * The entity definitions are stored on disk as YAML but served here as
- * canonical JSON (matching the format used for content hashing).
- *
- * Response shape:
- * {
- *   content_version: string,          // xxh3 hex hash
- *   entity_types: {                   // entity_type_id → definition
- *     "worker": { speed: 60, stop_radius: 0.75, mass: 1, health: 100 },
- *     ...
- *   },
- *   resource_types: {                 // M7: resource_type_id → { display_name, order }
- *     "gold": { display_name: "Gold", order: 0 },
- *     ...
- *   }
- * }
- *
- * The engine stores both entity_types and resource_types in Redis at
- * rts:match:{GAME_ID}:content_defs. If missing, returns empty objects.
- */
-export async function GET() {
+/** Returns one coherent accepted revision, never a staged candidate. */
+export async function GET(request: Request) {
+  const revision = new URL(request.url).searchParams.get("revision") ?? undefined;
+  if (revision !== undefined && !/^[a-f0-9]{64}$/.test(revision)) {
+    return NextResponse.json({ error: "Invalid content revision" }, { status: 400 });
+  }
   try {
-    const GAME_ID = getEnv("GAME_ID", DEFAULT_GAME_ID);
-
-    const contentVersionKey = `rts:match:${GAME_ID}:content_version`;
-    const contentDefsKey = `rts:match:${GAME_ID}:content_defs`;
-
-    const [contentVersion, contentDefsJson]: [string | null, string | null] =
-      await Promise.all([
-        (redis as any).get(contentVersionKey),
-        (redis as any).get(contentDefsKey),
-      ]);
-
-    const parsed = contentDefsJson ? JSON.parse(contentDefsJson) : {};
-    const entityTypes = parsed.entity_types ?? {};
-    const resourceTypes = parsed.resource_types ?? {};
-    const technologies = parsed.technologies ?? {};
-
-    return NextResponse.json({
-      content_version: contentVersion ?? "",
-      entity_types: entityTypes,
-      resource_types: resourceTypes,
-      technologies,
-    });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message ?? String(e) },
-      { status: 500 },
-    );
+    const content = await readAcceptedContent(revision);
+    if (!content) return NextResponse.json({ error: "Accepted content revision is unavailable" }, { status: 404 });
+    return NextResponse.json(content, { headers: { "Cache-Control": revision ? "public, max-age=31536000, immutable" : "no-store" } });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to read accepted content" }, { status: 500 });
   }
 }

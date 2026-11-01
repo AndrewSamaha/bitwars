@@ -6,6 +6,8 @@ import { parseSpawnConfig, renameSpawnEntity } from "@/lib/content/spawnConfig";
 import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, depotErrors } from "@/lib/content/schemaValidation";
 
 import { sortEntityDefinitions, stringifyEntityDefinition } from "@/lib/content/entityYaml";
+import { mutateContentResponse } from "@/lib/content/contentRevisions";
+import { requireAuthOr401 } from "@/features/users/utils/auth";
 
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
@@ -22,35 +24,42 @@ async function exists(path: string) {
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ entityId: string }> }) {
+  const { auth, res } = await requireAuthOr401();
+  if (res) return res;
+  if (typeof auth?.playerId !== "string" || !auth.playerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const requested_by = auth.playerId;
   const { entityId } = await params;
-  const { definition, newId = entityId } = await request.json();
+  const { definition, newId = entityId, base_revision } = await request.json();
   if (!/^[a-z][a-z0-9_]*$/.test(newId)) return NextResponse.json({ error: "Invalid entity id" }, { status: 400 });
-  const doc = parseDocument(await readFile(contentPath, "utf8"));
-  const entity = parseDocument(definition);
-  const types: any = doc.get("entity_types", true);
-  if (doc.errors.length || entity.errors.length || !types?.has(entityId) || (newId !== entityId && types.has(newId))) return NextResponse.json({ error: "Invalid YAML or duplicate id" }, { status: 400 });
-  const normalizedDefinition = omitNulls(entity.toJS());
-  const validationErrors = [...depotErrors(normalizedDefinition), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {})))];
-  if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
-  const replace = (value: any): any => Array.isArray(value) ? value.map(replace) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replace(item)])) : value === entityId ? newId : value;
-  const content = replace(doc.toJS());
-  content.entity_types[newId] = normalizedDefinition;
-  if (newId !== entityId) delete content.entity_types[entityId];
-  const spawn = parseDocument(await readFile(spawnPath, "utf8"));
-  if (newId !== entityId) {
-    const assetPaths = ["../../packages/content/assets", "public/assets"].map((root) => ({
-      from: path.resolve(process.cwd(), root, entityId),
-      to: path.resolve(process.cwd(), root, newId),
-    }));
-    for (const { from, to } of assetPaths) {
-      if (await exists(from) && await exists(to)) return NextResponse.json({ error: "Target asset path already exists" }, { status: 409 });
-    }
-    for (const { from, to } of assetPaths) {
-      if (await exists(from)) {
-        await rename(from, to);
+  return mutateContentResponse(async () => {
+    const doc = parseDocument(await readFile(contentPath, "utf8"));
+    const entity = parseDocument(definition);
+    const types: any = doc.get("entity_types", true);
+    if (doc.errors.length || entity.errors.length || !types?.has(entityId) || (newId !== entityId && types.has(newId))) return NextResponse.json({ error: "Invalid YAML or duplicate id" }, { status: 400 });
+    const normalizedDefinition = omitNulls(entity.toJS());
+    const validationErrors = [...depotErrors(normalizedDefinition), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {})))];
+    if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
+    const replace = (value: any): any => Array.isArray(value) ? value.map(replace) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replace(item)])) : value === entityId ? newId : value;
+    const content = replace(doc.toJS());
+    content.entity_types[newId] = normalizedDefinition;
+    if (newId !== entityId) delete content.entity_types[entityId];
+    const spawn = parseDocument(await readFile(spawnPath, "utf8"));
+    if (newId !== entityId) {
+      const assetPaths = ["../../packages/content/assets", "public/assets"].map((root) => ({
+        from: path.resolve(process.cwd(), root, entityId),
+        to: path.resolve(process.cwd(), root, newId),
+      }));
+      for (const { from, to } of assetPaths) {
+        if (await exists(from) && await exists(to)) return NextResponse.json({ error: "Target asset path already exists" }, { status: 409 });
       }
     }
-  }
-  await Promise.all([writeFile(contentPath, String(sortEntityDefinitions(new Document(content)))), writeFile(spawnPath, stringify(renameSpawnEntity(parseSpawnConfig(String(spawn)), entityId, newId)))]);
-  return NextResponse.json({ ok: true, id: newId, definition: stringifyEntityDefinition(normalizedDefinition) });
+    if (newId !== entityId) {
+      for (const root of ["../../packages/content/assets", "public/assets"]) {
+        const from = path.resolve(process.cwd(), root, entityId);
+        if (await exists(from)) await rename(from, path.resolve(process.cwd(), root, newId));
+      }
+    }
+    await Promise.all([writeFile(contentPath, String(sortEntityDefinitions(new Document(content)))), writeFile(spawnPath, stringify(renameSpawnEntity(parseSpawnConfig(String(spawn)), entityId, newId)))]);
+    return NextResponse.json({ ok: true, id: newId, definition: stringifyEntityDefinition(normalizedDefinition) });
+  }, { base_revision, requested_by });
 }

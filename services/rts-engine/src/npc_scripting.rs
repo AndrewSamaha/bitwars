@@ -73,6 +73,12 @@ pub struct RaiderScript {
 }
 
 impl RaiderScript {
+    /// Refresh static world profiles on the next tick without resetting Lua-owned
+    /// per-entity state, selected targets, or the scheduling cursor.
+    pub(crate) fn invalidate_content(&self) {
+        self.world_tick_initialized.set(false);
+    }
+
     pub fn debug_snapshot(&self, tick: u64) -> Result<serde_json::Value> {
         Ok(crate::script_debug::snapshot(
             RAIDERS_OWNER,

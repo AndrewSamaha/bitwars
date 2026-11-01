@@ -11,8 +11,17 @@ const mocks = vi.hoisted(() => ({
   writeFile: vi.fn(),
   access: vi.fn(),
   rename: vi.fn(),
+  auth: vi.fn(),
 }));
 vi.mock("node:fs/promises", () => mocks);
+vi.mock("@/features/users/utils/auth", () => ({ requireAuthOr401: mocks.auth }));
+vi.mock("@/lib/content/contentRevisions", () => ({
+  mutateContentResponse: async (mutation: () => Promise<Response>) => {
+    const response = await mutation();
+    if (!response.ok) return response;
+    return Response.json({ ...await response.json(), content_reload: { status: "staged" } });
+  },
+}));
 
 import { PUT } from "@/app/api/content/entities/[entityId]/route";
 import { GET, POST } from "@/app/api/content/entities/route";
@@ -33,6 +42,7 @@ function expectSorted(value: unknown) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.auth.mockResolvedValue({ auth: { playerId: "editor-player" }, res: null });
   mocks.readFile.mockImplementation(async (path: string) =>
     path.endsWith("spawn.yaml") ? spawn : authored,
   );

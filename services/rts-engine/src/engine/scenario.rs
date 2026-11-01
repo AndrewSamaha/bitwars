@@ -262,7 +262,7 @@ impl Engine {
             .publish_runtime(&serde_json::to_string(&self.scenario_runtime)?)
             .await
     }
-    async fn scenario_snapshot(&mut self) -> Result<()> {
+    pub(super) async fn scenario_snapshot(&mut self) -> Result<()> {
         self.redis.run_id = self.scenario_runtime.run_id.clone();
         self.redis.scenario_mode = self.scenario_runtime.scenario_id.is_some();
         let collectors = self.collector_states_for_stream();

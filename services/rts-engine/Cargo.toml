@@ -22,6 +22,8 @@ prost = "0.13"
 prost-types = "0.13"
 uuid = { version = "1", features = ["v7"] }
 hex = "0.4"
+sha2 = "0.10"
+ryu-js = "1"
 libc = "0.2"
 thiserror = "1.0"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }

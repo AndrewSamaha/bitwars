@@ -6,6 +6,7 @@ import { useLogger } from "@/lib/axiom/client";
 import { game, RADIATION_DAMAGE_VISUAL_LINGER_MS, type Entity } from "../world";
 import { intentQueue, type EscortOrderPayload, type EscortOrderRemovalPayload, type MoveOrderPayload, type MoveOrderRemovalPayload, type SentryOrderPayload, type SentryOrderRemovalPayload } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
+import { syncContentChangedEvent } from "@/features/content/contentEvents";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
 import { dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
@@ -159,6 +160,7 @@ export default function GameStateStreamBridge() {
     gameConnection.begin();
     const stopCollectionRouting = collectionRouting.start(currentPlayerIdRef.current);
     const watchdog = setInterval(() => gameConnection.check(), 250);
+    const stopContentReporting = contentManager.startReporting();
     const es = new EventSource(streamUrl);
     log.info("GameStateStreamBridge:es:create", { streamId: streamIdRef.current, url: streamUrl });
 
@@ -218,6 +220,7 @@ export default function GameStateStreamBridge() {
       for (const entity of payload.entities) minimapMemory.observe(entity);
       const worldChanged = !!payload.run_id && payload.run_id !== game.runId;
       if (worldChanged) {
+        if (game.runId) contentManager.beginWorld();
         buildProgressStore.resetStream();
         intentQueue.resetForWorld(payload.run_id);
         hud.actions.clearSelection();
@@ -657,6 +660,7 @@ export default function GameStateStreamBridge() {
       }, 1000);
     };
     const onOpen = () => {
+      const contentGeneration = contentManager.getSyncGeneration();
       lastHealthAt = -Infinity;
       gameConnection.begin();
       buildProgressStore.streamConnected();
@@ -702,9 +706,9 @@ export default function GameStateStreamBridge() {
           refreshIntentOverlays();
           dispatchGameStateUpdated(Array.from(byId.keys()));
 
-          // M4: Validate content version and fetch if stale
+          // A delayed handshake must not overwrite a newer named content event.
           const serverContentVersion = handshake.content_version ?? "";
-          if (serverContentVersion) {
+          if (serverContentVersion && contentGeneration === contentManager.getSyncGeneration()) {
             const ok = await contentManager.validateAndSync(serverContentVersion);
             if (ok) {
               log.info("GameStateStreamBridge:content:synced", {
@@ -713,8 +717,6 @@ export default function GameStateStreamBridge() {
               });
             } else {
               log.warn("GameStateStreamBridge:content:sync-failed", { streamId: streamIdRef.current });
-              retryBootstrap();
-              return;
             }
           }
           if (es.readyState === EventSource.OPEN) gameConnection.reconciledIntents();
@@ -742,6 +744,7 @@ export default function GameStateStreamBridge() {
       const payload = JSON.parse(event.data);
       if (payload.run_id === game.runId) return;
       es.close();
+      contentManager.beginWorld();
       buildProgressStore.resetStream();
       intentQueue.resetForWorld(payload.run_id);
       hud.actions.clearSelection();
@@ -769,6 +772,10 @@ export default function GameStateStreamBridge() {
         gameConnection.health(healthy);
       } catch { gameConnection.health(false); }
     };
+    const onContentChanged = (event: MessageEvent) => {
+      void syncContentChangedEvent(event.data);
+    };
+    es.addEventListener("content_changed", onContentChanged as EventListener);
     es.addEventListener("health", onHealth as EventListener);
     es.addEventListener("world-reset", onWorldReset as EventListener);
     es.addEventListener("runtime", onRuntime as EventListener);
@@ -782,10 +789,12 @@ export default function GameStateStreamBridge() {
 
     return () => {
       stopCollectionRouting();
+      stopContentReporting();
       clearInterval(watchdog);
       clearTimeout(reconciliationRetry);
       gameConnection.disconnect();
       es.removeEventListener("health", onHealth as EventListener);
+      es.removeEventListener("content_changed", onContentChanged as EventListener);
       log.info("GameStateStreamBridge:cleanup", { streamId: streamIdRef.current });
       es.removeEventListener("snapshot", onSnapshot as EventListener);
       es.removeEventListener("delta", onDelta as EventListener);

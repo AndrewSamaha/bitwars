@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
 import sharp from "sharp";
-import { readLibrarySprite, saveLibrarySprite, transformLibrarySprite } from "@/lib/content/spriteLibraryAsset";
+import { readLibrarySprite, saveLibrarySprites, transformLibrarySprite } from "@/lib/content/spriteLibraryAsset";
 import { parseSpriteFront, parseSpriteSize } from "@/lib/content/spriteProcessing";
+import { requireAuthOr401 } from "@/features/users/utils/auth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const { auth, res } = await requireAuthOr401();
+  if (res) return res;
+  if (typeof auth?.playerId !== "string" || !auth.playerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const requested_by = auth.playerId;
   try {
     const body = await request.json();
     const relativePath = body?.path;
@@ -55,12 +60,12 @@ export async function POST(request: Request) {
     }
     const transformedCompanions = await Promise.all(companions.filter((companion): companion is NonNullable<typeof companion> => companion !== null)
       .map(async (companion) => ({ path: companion.path, image: await transformLibrarySprite(companion.image, operation) })));
-    await Promise.all([
-      saveLibrarySprite(relativePath, transformed),
-      ...transformedCompanions.map((companion) => saveLibrarySprite(companion.path, companion.image)),
-    ]);
+    const content_reload = await saveLibrarySprites([
+      { path: relativePath, image: transformed },
+      ...transformedCompanions,
+    ], { base_revision: body.base_revision, requested_by });
     const metadata = await sharp(transformed).metadata();
-    return NextResponse.json({ ok: true, width: metadata.width, height: metadata.height });
+    return NextResponse.json({ ok: true, width: metadata.width, height: metadata.height, content_reload });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to update sprite." }, { status: 400 });
   }

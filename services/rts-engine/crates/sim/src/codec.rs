@@ -33,11 +33,9 @@ pub fn from_snapshot_proto(snapshot: &[u8]) -> Result<WorldState> {
             (pl.player_id.clone(), resources)
         })
         .collect();
-    Ok(WorldState::new_with_ledger(
-        snapshot.tick as u64,
-        snapshot.entities,
-        ledger,
-    ))
+    let mut state = WorldState::new_with_ledger(snapshot.tick as u64, snapshot.entities, ledger);
+    state.content_revision = snapshot.content_revision;
+    Ok(state)
 }
 
 /// Convert a WorldState to sorted JSON for stable hashing

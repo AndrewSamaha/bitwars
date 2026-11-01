@@ -118,6 +118,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
   return {
     type: "snapshot" as const,
     tick: biToNumOrStr(s.tick),
+    content_revision: s.contentRevision,
     entities: (s.entities ?? []).map(mapEntityToJson),
     player_ledgers,
     escort_orders: (s.escortOrders ?? []).map(mapEscortOrderToJson),

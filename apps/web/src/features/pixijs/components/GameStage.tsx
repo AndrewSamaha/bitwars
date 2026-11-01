@@ -22,6 +22,7 @@ import {
   createGameEntityVisual,
   createGameWorldContainer,
   loadGameEntityTextures,
+  gameEntityBundleKey,
   setGameEntityVisualType,
   updateGameEntityVisual,
   type EntityVisual,
@@ -206,23 +207,31 @@ export default function GameStage() {
 
     let cancelled = false;
     const initWorld = async () => {
-        const textureCache = await loadGameEntityTextures();
-        if (cancelled) return;
+        let renderContent = contentManager.getContent();
+        if (!renderContent) throw new Error("Renderer requires accepted content");
+        let textureCache = await loadGameEntityTextures(renderContent);
+        if (cancelled) { textureCache.release(); return; }
         const updateMoveDebug = (message: string, payload?: Record<string, unknown>) => {
           if (!DEBUG_MOVE_INPUT) return;
           const suffix = payload ? ` ${JSON.stringify(payload)}` : "";
           setMoveDebug(`${message}${suffix}`);
         };
         const app = new Application();
-        await app.init({
-            background: BACKGROUND_APP_COLOR,
-            resizeTo: window,
-            antialias: true,
-            resolution: window.devicePixelRatio || 1,
-            autoDensity: true,
-        });
+        try {
+          await app.init({
+              background: BACKGROUND_APP_COLOR,
+              resizeTo: window,
+              antialias: true,
+              resolution: window.devicePixelRatio || 1,
+              autoDensity: true,
+          });
+        } catch (error) {
+          textureCache.release();
+          throw error;
+        }
         if (cancelled) {
           app.destroy({ removeView: true }, { children: true, texture: false });
+          textureCache.release();
           return;
         }
         setApp(app);
@@ -1070,17 +1079,17 @@ export default function GameStage() {
               (e as any).hover = false;
               setHovered(null);
             }
-            if (typeId !== ref.lastEntityTypeId) {
+            if (typeId !== ref.lastEntityTypeId || ref.lastAssetKey !== gameEntityBundleKey(textureCache, typeId)) {
               setGameEntityVisualType(ref, textureCache, typeId);
             }
             if (!remembered) updateGameEntityVisual(ref, nowMs);
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
             const scale = (e as any).scale ?? 1;
-            const visual = contentManager.getEntityType(typeId)?.visual;
+            const visual = renderContent?.entity_types[typeId]?.visual;
             const visualScale = visual?.scale ?? 1;
             container.scale.set(gameEntityScale(scale, visualScale));
-            container.zIndex = contentManager.getEntityType(typeId)?.z_index ?? 0;
+            container.zIndex = renderContent?.entity_types[typeId]?.z_index ?? 0;
             container.alpha = remembered ? 0.45 : 1;
 
             // Rotation: if we have proto velocity, rotate to face direction of travel
@@ -1664,6 +1673,24 @@ export default function GameStage() {
         app.stage.on("pointerup", onPointerUp);
         app.stage.on("pointerupoutside", onPointerUp);
 
+        const unregisterContentRenderer = contentManager.registerRenderer(async (content, isCurrent) => {
+          const nextTextures = await loadGameEntityTextures(content);
+          if (cancelled || !isCurrent()) {
+            nextTextures.release();
+            return {};
+          }
+          const previousTextures = textureCache;
+          textureCache = nextTextures;
+          renderContent = content;
+          // One synchronous projection swaps base art, masks, colors and visual
+          // definitions together, including existing entities of the same type.
+          render();
+          updateVisibilityFog();
+          updateMinimap(true);
+          previousTextures.release();
+          return nextTextures.assetBundles;
+        });
+
         app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
             if (!game.ready || !gameConnection.check()) {
@@ -1743,6 +1770,7 @@ export default function GameStage() {
         return () => {
           if (destroyed) return;
           destroyed = true;
+          unregisterContentRenderer();
           saveCamera();
           window.removeEventListener("pagehide", saveCamera);
           document.removeEventListener("visibilitychange", onVisibilityChange);
@@ -1764,6 +1792,7 @@ export default function GameStage() {
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });
           }
+          textureCache.release();
           clearApp(app);
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
@@ -1773,7 +1802,10 @@ export default function GameStage() {
     (async () => {
       cleanup = await initWorld();
       if (cancelled && cleanup) cleanup();
-    })().catch((error) => console.error("Failed to initialize game renderer", error));
+    })().catch((error) => {
+      if (!cancelled) contentManager.reportRendererFailure(error);
+      console.error("Failed to initialize game renderer", error);
+    });
     return () => {
       cancelled = true;
       if (cleanup) cleanup();

@@ -1,8 +1,10 @@
 import sharp from "sharp";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { generationSize } from "../src/lib/content/generatePlayerMasks";
 import { alignMaskToSprite, copyInvariantColors, cutOutInvariantRegions } from "../src/lib/content/maskCandidates";
 import { secondaryCoverageAlpha, tintableSpriteAlpha } from "../src/lib/playerColorSettings";
+
+vi.mock("@/lib/db/connection", () => ({ redis: {} }));
 
 const WIDTH = 4;
 const HEIGHT = 4;

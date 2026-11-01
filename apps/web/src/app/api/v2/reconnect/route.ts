@@ -1,3 +1,4 @@
+import { readAcceptedContent } from "@/lib/content/contentReloadStatus";
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/db/connection";
 import { getEnv } from "@/lib/utils";
@@ -59,9 +60,8 @@ export async function GET() {
     const meta: Record<string, string> = await (redis as any).hgetall(snapshotMetaKey) ?? {};
     const serverTick = Number(meta?.tick ?? 0);
 
-    // M4: Read content_version
-    const contentVersionKey = `rts:match:${GAME_ID}:content_version`;
-    const contentVersion: string = (await (redis as any).get(contentVersionKey)) ?? "";
+    const acceptedContent = await readAcceptedContent();
+    const contentVersion: string = acceptedContent?.content_revision ?? "";
 
     // Read last_processed_client_seq for this player
     const playerSeqKey = `rts:match:${GAME_ID}:player_seq`;

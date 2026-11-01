@@ -5,6 +5,7 @@ import { collectionRouting } from "@/features/collection-routing/collectionRouti
 
 /** Keep collection destinations distinct from the depot that funds operations. */
 export function CollectionAssignment({ entity, tooltip = false }: { entity: Entity; tooltip?: boolean }) {
+  useSyncExternalStore(contentManager.subscribe, contentManager.getContentVersion, () => "");
   const routingStatus = useSyncExternalStore(collectionRouting.subscribe,
     () => collectionRouting.getStatus(Number(entity.id)), () => "");
   const definition = contentManager.getEntityType(entity.entity_type_id ?? "");

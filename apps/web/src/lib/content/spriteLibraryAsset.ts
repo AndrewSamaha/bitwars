@@ -1,6 +1,7 @@
 import { readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { orientSprite, resizeSprite, type SpriteFront } from "@/lib/content/spriteProcessing";
+import { mutateContentAndReload, type ReloadOptions } from "./contentRevisions";
 
 const PUBLIC_ROOT = path.resolve(process.cwd(), "public/assets");
 const CONTENT_ROOT = path.resolve(process.cwd(), "../../packages/content/assets");
@@ -26,7 +27,7 @@ export async function readLibrarySprite(relativePath: string): Promise<Buffer> {
   return readFile(await existingPublicSpritePath(relativePath));
 }
 
-export async function saveLibrarySprite(relativePath: string, image: Buffer) {
+async function writeLibrarySprite(relativePath: string, image: Buffer) {
   const publicPath = await existingPublicSpritePath(relativePath);
   const contentPath = path.resolve(CONTENT_ROOT, relativePath);
   const resolvedContentPath = await realpath(contentPath).catch((error) => {
@@ -37,6 +38,14 @@ export async function saveLibrarySprite(relativePath: string, image: Buffer) {
     throw new Error("Sprite path is outside the content asset directory.");
   }
   await Promise.all([writeFile(publicPath, image), ...(resolvedContentPath ? [writeFile(resolvedContentPath, image)] : [])]);
+}
+
+/** Publish related sprite files as one revision, never a partially transformed bundle. */
+export async function saveLibrarySprites(sprites: { path: string; image: Buffer }[], options: ReloadOptions = {}) {
+  const { content_reload } = await mutateContentAndReload(
+    async () => { await Promise.all(sprites.map((sprite) => writeLibrarySprite(sprite.path, sprite.image))); }, options,
+  );
+  return content_reload;
 }
 
 export async function transformLibrarySprite(image: Buffer, operation: { kind: "downsample"; size: 192 | 512 } | { kind: "rotate"; front: SpriteFront }) {

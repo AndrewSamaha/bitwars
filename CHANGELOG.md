@@ -13,9 +13,14 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Added configurable per-resource inventory regeneration using normalized Hill growth, including capacity limits and zero-stock exhaustion.
 - Added the immobile, non-attacking `planet_blue_inhabitated` hub with directly spendable food regrowth, habitat depot services, and worker/scout construction. Default player starts now convert their selected blue planet instead of spawning a separate habitat.
 - Extended yellow-star solar collection reach to 15,000 world units, with proximity production decreasing linearly to zero at the source's outer collection boundary.
+- Added live content publication from authenticated definition and sprite editors: global SHA256 revisions, per-entity definition/artwork hashes, immutable versioned asset bundles, compatible tick-boundary activation, exact snapshot revision restoration, and live client visual updates without reconnecting.
+- Added reload lifecycle/history inspection, client synchronization and retained error/recovery diagnostics to the content UI and game-query endpoints.
 - `CHANGELOG.md` created and aligned with existing git history.
 - Updated `README.md` Getting Started to match current tooling (`pnpm`, `turbo`) and Redis Stack via `docker-compose.yml`.
 - Documentation index and links surfaced in `README.md` (see `docs/`).
+
+### Fixed
+- Moved legacy sprites for `planet_blue`, `star_yellow`, `minerals`, and `raider` from the web public directory into `packages/content/assets` so hot-reload revisions include their artwork instead of falling back to the corvette texture.
 
 ### Notes
 - See the development milestones in `docs/milestones.md` for the incremental feature plan (M0–M10).

@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import ContentReloadPanel from "./ContentReloadPanel";
 
 const tabs = [
   ["entities", "Entities"],
@@ -12,6 +13,7 @@ const tabs = [
 ];
 export default function ContentNavigation({ active }: { active: string }) {
   return (
+    <>
     <nav
       aria-label="Content"
       className="mb-3 flex flex-wrap gap-1 border-b border-slate-700"
@@ -27,5 +29,7 @@ export default function ContentNavigation({ active }: { active: string }) {
         </Link>
       ))}
     </nav>
+      <ContentReloadPanel />
+    </>
   );
 }

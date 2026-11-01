@@ -15,8 +15,8 @@ export type StreamEntity = {
 };
 
 type EntityType = {
-  sensor?: { range?: number };
-  visibility_range?: number;
+  sensor?: { range?: number } | null;
+  visibility_range?: number | null;
 };
 type TechnologyDef = { effects?: Array<{ target: string; operation: "add" | "multiply" | "set" | "cap"; value: number }> };
 
@@ -68,9 +68,15 @@ export class VisibilityFilter {
 
   constructor(
     readonly playerId: string,
-    private readonly entityTypes: Record<string, EntityType>,
-    private readonly technologies: Record<string, TechnologyDef> = {},
+    private entityTypes: Record<string, EntityType>,
+    private technologies: Record<string, TechnologyDef> = {},
   ) {}
+
+  /** Keep connection-local discovery while adopting accepted live content. */
+  updateContent(entityTypes: Record<string, EntityType>, technologies: Record<string, TechnologyDef>) {
+    this.entityTypes = entityTypes;
+    this.technologies = technologies;
+  }
 
   filterSnapshot(snapshot: SnapshotPayload): SnapshotPayload {
     this.entities = new Map(snapshot.entities.map((entity) => [idOf(entity.id), { ...entity }]));

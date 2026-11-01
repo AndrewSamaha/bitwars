@@ -1,6 +1,6 @@
 // TooltipOverlay.tsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import * as PIXI from "pixi.js";
 import { CollectionAssignment } from "./CollectionAssignment";
 import { useHUD } from "./HUDContext";
@@ -11,6 +11,7 @@ import { GAMESTATE_UPDATED_EVENT, type GameStateUpdatedDetail } from "@/features
 export function TooltipOverlay() {
   const { selectors: { hoveredEntity, app } } = useHUD();
   const { player } = usePlayer();
+  useSyncExternalStore(contentManager.subscribe, contentManager.getContentVersion, () => "");
   const [pos, setPos] = useState<{x:number;y:number}|null>(null);
   const [playerNamesById, setPlayerNamesById] = useState<Record<string, string>>({});
   const [, forceRerender] = useState(0);

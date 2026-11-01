@@ -12,6 +12,9 @@ fn ledger_is_empty(ledger: &ResourceLedger) -> bool {
 /// Core world state containing all entities and components
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorldState {
+    /// Immutable definitions associated with a decoded checkpoint; empty for legacy fixtures.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub content_revision: String,
     pub tick: u64,
     pub entities: Vec<SerializableEntity>,
     /// Omit when empty so existing golden hashes (no ledger) stay unchanged.
@@ -108,6 +111,7 @@ impl WorldState {
     pub fn new(tick: u64, entities: Vec<Entity>) -> Self {
         let serializable_entities = entities.iter().map(SerializableEntity::from).collect();
         Self {
+            content_revision: String::new(),
             tick,
             entities: serializable_entities,
             ledger: ResourceLedger::new(),
@@ -117,7 +121,7 @@ impl WorldState {
     /// Create a new world state with the given tick, entities, and ledger.
     pub fn new_with_ledger(tick: u64, entities: Vec<Entity>, ledger: ResourceLedger) -> Self {
         let serializable_entities = entities.iter().map(SerializableEntity::from).collect();
-        Self { tick, entities: serializable_entities, ledger }
+        Self { tick, entities: serializable_entities, ledger, content_revision: String::new() }
     }
 
     /// Find an entity by ID
