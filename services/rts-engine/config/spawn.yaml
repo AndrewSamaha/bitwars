@@ -34,6 +34,11 @@ resource_amounts:
     sd: 2000
     min: 6000
     max: 20000
+  asteroid:
+    average: 2000
+    sd: 500
+    min: 1000
+    max: 3000
   planet_blue:
     average: 10000
     sd: 2000

@@ -848,6 +848,12 @@ entity_types:
     hull_radius: 50
     mass: 500
     max_capacity: {}
+    resource_node:
+      collection_mode: transport
+      max_effective_distance: 50
+      max_simultaneous_collectors: 1
+      min_effective_distance: 20
+      resource_type: minerals
     speed: 0
     stop_radius: 1
     visibility_range: 1000
