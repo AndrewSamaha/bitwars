@@ -67,6 +67,24 @@ export function unknownTechnologyFieldErrors(value: unknown): string[] {
   return errors;
 }
 
+/** Validate spendable inventory grants applied only when an entity is created. */
+export function initialResourceErrors(value: unknown, knownResources?: Set<string>): string[] {
+  if (!value || typeof value !== "object") return [];
+  const entity = value as { max_capacity?: Record<string, unknown>; initial_resources?: unknown };
+  const amounts = entity.initial_resources;
+  if (amounts === undefined) return [];
+  if (!amounts || typeof amounts !== "object" || Array.isArray(amounts)) return ["initial_resources must be a resource amount map"];
+  const errors: string[] = [];
+  for (const [resource, amount] of Object.entries(amounts)) {
+    const path = `initial_resources.${resource}`;
+    const capacity = entity.max_capacity?.[resource];
+    if (knownResources && !knownResources.has(resource)) errors.push(`${path}: unknown resource`);
+    if (typeof capacity !== "number" || !Number.isFinite(capacity) || capacity < 0) errors.push(`${path}: requires finite nonnegative max_capacity`);
+    else if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0 || amount > capacity) errors.push(`${path}: must be between 0 and max_capacity (${capacity})`);
+  }
+  return errors;
+}
+
 /** Validate deprecated reserve syntax for legacy content; reserves have no runtime effect. */
 export function resourceReserveErrors(value: unknown, knownResources?: Set<string>): string[] {
   if (!value || typeof value !== "object") return [];

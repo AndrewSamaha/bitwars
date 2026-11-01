@@ -73,6 +73,14 @@
       "format": "float",
       "default": 0.0
     },
+    "initial_resources": {
+      "description": "Spendable resource amounts granted once at creation, never on restore or content reload.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "format": "double"
+      }
+    },
     "inventory_regeneration": {
       "description": "Stock-dependent growth credited directly to spendable inventory, capped by max_capacity.",
       "type": "object",

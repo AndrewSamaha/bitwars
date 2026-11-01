@@ -39,6 +39,19 @@ habitat:
 
 `depot: true` means nearby same-owner entities may spend resources stored on this entity. A positive, finite `depot_range` is required for a depot. Depot status alone does not enable gathering, transport, construction, research, or repair; existing capabilities continue to define those actions.
 
+### Initial inventory
+
+Entity definitions may specify `initial_resources`, a map of resource IDs to
+amounts granted once when a new entity is created, including player loadouts and
+completed construction. Omission grants nothing. Each amount must be finite,
+nonnegative, name a known resource, and not exceed that resource's `max_capacity`.
+These are ordinary spendable resources, not protected maintenance reserves.
+
+`worker` and `scout` start with their full capacities: 50 energy, 50 food, and
+50 minerals each. Explicit player-start `starting_resources` override the grant
+for their listed resources on the configured recipient. Loading saved state,
+reloading content, and upgrading an existing entity do not reapply the grant.
+
 This model replaces `resource_sharing`, including `wireless_receives`, per-resource priorities, overflow priorities, refill thresholds, fill targets, and outgoing reserves. Remove `resource_reserves` when cargo no longer funds upkeep. Ordinary consumers should not be required to declare positive inventory capacities.
 
 ## Mapping to current entities

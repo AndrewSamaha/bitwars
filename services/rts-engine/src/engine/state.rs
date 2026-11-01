@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tracing::debug;
 
-use crate::content::ContentPack;
+use crate::content::{ContentPack, EntityTypeDef};
 use crate::pb::{Entity, Vec2};
 use crate::spawn_config::{
     is_system_owner, Loadout, NeutralNearSpawn, SpawnConfig, UNIVERSE_OWNER,
@@ -27,6 +27,22 @@ pub fn set_resource_amount(entity: &mut Entity, resource_type: &str, amount: f64
         });
         inventory.resources.sort_by(|left, right| left.resource_type.cmp(&right.resource_type));
     }
+}
+
+/// One-time inventory grant for a newly created entity, never restored stock.
+pub(crate) fn initial_resource_inventory(definition: &EntityTypeDef) -> Option<crate::pb::ResourceInventory> {
+    if definition.initial_resources.is_empty() {
+        return None;
+    }
+    let mut resources: Vec<_> = definition.initial_resources.iter()
+        .filter(|(_, amount)| **amount > f64::EPSILON)
+        .map(|(resource_type, amount)| crate::pb::ResourceAmount {
+            resource_type: resource_type.clone(),
+            amount: *amount,
+        })
+        .collect();
+    resources.sort_unstable_by(|left, right| left.resource_type.cmp(&right.resource_type));
+    Some(crate::pb::ResourceInventory { resources })
 }
 
 pub fn resource_capacity(content: &ContentPack, entity_type_id: &str, resource_type: &str) -> f64 {
@@ -197,6 +213,7 @@ pub(super) fn sample_normal_position(
 }
 
 pub(super) fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &ContentPack) -> Entity {
+    let definition = content.get(entity_type_id);
     Entity {
         id,
         entity_type_id: entity_type_id.to_string(),
@@ -204,13 +221,10 @@ pub(super) fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, cont
         vel: Some(Vec2 { x: 0.0, y: 0.0 }),
         force: Some(Vec2 { x: 0.0, y: 0.0 }),
         owner_player_id: UNIVERSE_OWNER.to_string(),
-        health: content
-            .get(entity_type_id)
-            .map(|def| def.health.max(0.0))
-            .unwrap_or(0.0),
+        health: definition.map(|def| def.health.max(0.0)).unwrap_or(0.0),
         supply: None,
         resource_deposit: None,
-        resources: None,
+        resources: definition.and_then(initial_resource_inventory),
     }
 }
 
@@ -249,21 +263,10 @@ pub fn on_player_spawn(
                     rng,
                 )
             };
-            entities.push(Entity {
-                id,
-                entity_type_id: type_id.clone(),
-                pos: Some(Vec2 { x, y }),
-                vel: Some(Vec2 { x: 0.0, y: 0.0 }),
-                force: Some(Vec2 { x: 0.0, y: 0.0 }),
-                owner_player_id: player_id.to_string(),
-                health: content
-                    .get(type_id)
-                    .map(|def| def.health.max(0.0))
-                    .unwrap_or(0.0),
-                supply: None,
-                resource_deposit: None,
-                resources: Some(Default::default()),
-            });
+            let mut entity = neutral_entity(id, type_id, x, y, content);
+            entity.owner_player_id = player_id.to_string();
+            entity.resources.get_or_insert_with(Default::default);
+            entities.push(entity);
             placed_player_positions.push(Vec2 { x, y });
             id += 1;
         }
@@ -293,21 +296,7 @@ pub fn on_player_spawn(
             } else {
                 sample_position_in_annulus(spawn_x, spawn_y, min_distance, max_distance, rng)
             };
-            entities.push(Entity {
-                id,
-                entity_type_id: neutral.entity_type_id.clone(),
-                pos: Some(Vec2 { x, y }),
-                vel: Some(Vec2 { x: 0.0, y: 0.0 }),
-                force: Some(Vec2 { x: 0.0, y: 0.0 }),
-                owner_player_id: UNIVERSE_OWNER.to_string(),
-                health: content
-                    .get(&neutral.entity_type_id)
-                    .map(|def| def.health.max(0.0))
-                    .unwrap_or(0.0),
-                supply: None,
-                resource_deposit: None,
-                resources: None,
-            });
+            entities.push(neutral_entity(id, &neutral.entity_type_id, x, y, content));
             id += 1;
         }
     }
@@ -448,6 +437,41 @@ pub fn log_sample(state: &GameState) {
 mod tests {
     use super::*;
     use rand::SeedableRng;
+
+    #[test]
+    fn fresh_worker_and_scout_loadouts_start_full_without_filling_other_types() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut entities = Vec::new();
+        let loadout = [("worker".into(), 1), ("scout".into(), 1), ("habitat".into(), 1)].into();
+        on_player_spawn(&mut entities, 1, "alice", 0.0, 0.0, &loadout,
+            0.0, 0.0, &[], &content, &mut rand::rngs::StdRng::seed_from_u64(42));
+        for entity in &entities {
+            assert_eq!(entity.owner_player_id, "alice");
+            if entity.entity_type_id == "habitat" {
+                assert!(entity.resources.as_ref().unwrap().resources.is_empty());
+                continue;
+            }
+            let definition = content.get(&entity.entity_type_id).unwrap();
+            assert_eq!(entity.resources.as_ref().unwrap().resources.len(), 3);
+            for resource in ["energy", "food", "minerals"] {
+                assert_eq!(resource_amount(entity, resource), 50.0);
+                assert_eq!(resource_amount(entity, resource), definition.max_capacity[resource] as f64);
+            }
+        }
+    }
+
+    #[test]
+    fn fresh_neutral_entities_receive_only_explicit_initial_resources() {
+        let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        content.entity_types.get_mut("minerals").unwrap().initial_resources =
+            [("energy".into(), 7.5)].into();
+        let entity = neutral_entity(1, "minerals", 0.0, 0.0, &content);
+        assert_eq!(resource_amount(&entity, "energy"), 7.5);
+        assert_eq!(entity.resources.as_ref().unwrap().resources.len(), 1);
+        assert!(neutral_entity(2, "habitat", 0.0, 0.0, &content).resources.is_none());
+    }
 
     #[test]
     fn finite_deposits_are_sampled_once_and_cannot_be_overdrawn_or_refilled() {

@@ -490,7 +490,7 @@ fn candidate(
                     planet.id, id, pos(planet)[0], pos(planet)[1], content,
                 );
                 inhabited.owner_player_id = owner.to_string();
-                inhabited.resources = Some(Default::default());
+                inhabited.resources.get_or_insert_with(Default::default);
                 trial[index] = inhabited;
             }
             if !trial
@@ -1055,6 +1055,39 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn starting_resources_override_grants_and_repeated_spawn_never_refills() {
+        let (mut content, mut config) = fixture();
+        config.player_starts.fallback.generate_additional_systems = false;
+        content.entity_types.get_mut("planet_blue_inhabitated").unwrap().initial_resources =
+            [("energy".into(), 17.0), ("food".into(), 23.0), ("minerals".into(), 31.0)].into();
+        config.starting_resources = [("food".into(), 0), ("minerals".into(), 11)].into();
+        config.loadouts[0].insert("worker".into(), 1);
+        config.loadouts[0].insert("scout".into(), 1);
+        let mut state = super::super::state::init_world(&config);
+        let mut rng = StdRng::seed_from_u64(73);
+        add_object(&mut state.entities, &content, &config, "star_yellow", [0.0, 0.0], &mut rng);
+        add_object(&mut state.entities, &content, &config, "planet_blue",
+            [config.exposure.reference_distance as f32, 0.0], &mut rng);
+        spawn_player(&mut state, &content, &config, "alice", 0, &mut rng).unwrap();
+        let planet = state.entities.iter().find(|entity| entity.owner_player_id == "alice"
+            && entity.entity_type_id == "planet_blue_inhabitated").unwrap();
+        assert_eq!(super::super::state::resource_amount(planet, "energy"), 17.0);
+        assert_eq!(super::super::state::resource_amount(planet, "food"), 0.0);
+        assert_eq!(super::super::state::resource_amount(planet, "minerals"), 11.0);
+        for kind in ["worker", "scout"] {
+            let entity = state.entities.iter_mut().find(|entity| entity.owner_player_id == "alice"
+                && entity.entity_type_id == kind).unwrap();
+            for resource in ["energy", "food", "minerals"] {
+                assert_eq!(super::super::state::resource_amount(entity, resource), 50.0);
+                set_resource_amount(entity, resource, 0.0);
+            }
+        }
+        let before = state.entities.clone();
+        spawn_player(&mut state, &content, &config, "alice", 0, &mut rng).unwrap();
+        assert_eq!(state.entities, before);
+    }
+
     #[test]
     fn conversion_preserves_planet_identity_and_legacy_starts_keep_the_deposit() {
         for convert in [true, false] {

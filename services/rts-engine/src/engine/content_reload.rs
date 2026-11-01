@@ -327,6 +327,7 @@ mod tests {
         let original: Value = serde_yaml::from_slice(&std::fs::read(&path)?)?;
         let mut changed = original.clone();
         changed["entity_types"]["worker"]["speed"] = json!(123);
+        changed["entity_types"]["worker"]["initial_resources"] = json!({"energy":30.0,"food":40.0,"minerals":50.0});
         std::fs::write(&path, serde_yaml::to_string(&changed)?)?;
         let accepted = Revision::bootstrap(&path)?.pack.content_hash;
 
@@ -347,6 +348,7 @@ mod tests {
         engine.process_content_reload().await?;
         assert_eq!(engine.content.as_ref().unwrap().content_hash, accepted);
         assert_eq!(engine.intents.entity_types["worker"].speed, 123.0);
+        assert_eq!(engine.content.as_ref().unwrap().get("worker").unwrap().initial_resources["energy"], 30.0);
         assert_eq!(engine.state.tick, tick);
         assert_eq!(engine.state.entities.iter().map(Message::encode_to_vec).collect::<Vec<_>>(), before);
         let operation = engine.redis.content_reload_operation(&accepted_id).await?.unwrap();
@@ -366,6 +368,7 @@ mod tests {
         engine.process_content_reload().await?;
         assert_eq!(engine.redis.content_reload_operation(&stale).await?.unwrap()["error"]["code"], "stale_base_revision");
         changed["entity_types"]["worker"]["max_capacity"]["minerals"] = json!(7);
+        changed["entity_types"]["worker"]["initial_resources"]["minerals"] = json!(7);
         std::fs::write(&path, serde_yaml::to_string(&changed)?)?;
         let bad = Revision::bootstrap(&path)?.pack.content_hash;
         let rejected = enqueue(&mut connection, &prefix, &accepted, &bad).await?;

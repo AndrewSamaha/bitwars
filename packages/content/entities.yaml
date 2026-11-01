@@ -231,6 +231,10 @@ entity_types:
       energy: 50
       food: 50
       minerals: 50
+    initial_resources:
+      energy: 50
+      food: 50
+      minerals: 50
     repair:
       cost_per_min:
         energy: 60
@@ -387,6 +391,10 @@ entity_types:
       food: 1
     mass: 0.6
     max_capacity:
+      energy: 50
+      food: 50
+      minerals: 50
+    initial_resources:
       energy: 50
       food: 50
       minerals: 50

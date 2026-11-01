@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Added optional per-entity `initial_resources` with capacity/resource validation and creation-only grants. Workers and scouts now spawn and complete construction with 50 energy, 50 food, and 50 minerals each; restoration, content reload, and upgrades preserve existing inventory.
 - Added configurable per-resource inventory regeneration using normalized Hill growth, including capacity limits and zero-stock exhaustion.
 - Added the immobile, non-attacking `planet_blue_inhabitated` hub with directly spendable food regrowth, habitat depot services, and worker/scout construction. Default player starts now convert their selected blue planet instead of spawning a separate habitat.
 - Extended yellow-star solar collection reach to 15,000 world units, with proximity production decreasing linearly to zero at the source's outer collection boundary.

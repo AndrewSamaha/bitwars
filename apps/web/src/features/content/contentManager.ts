@@ -40,6 +40,8 @@ export type EntityTypeDef = {
   build_cost?: Record<string, number>;
   /** Physical depot stock or carrier cargo capacity, per resource. */
   max_capacity?: Record<string, number>;
+  /** Spendable inventory granted once at creation, never on restore or content reload. */
+  initial_resources?: Record<string, number>;
   /** Regrows spendable stock up to max_capacity; empty inventories do not regrow. */
   inventory_regeneration?: Record<string, {
     model: "hill";

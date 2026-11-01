@@ -3,7 +3,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { Document, parseDocument, stringify } from "yaml";
 import { parseSpawnConfig, renameSpawnEntity } from "@/lib/content/spawnConfig";
-import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, depotErrors } from "@/lib/content/schemaValidation";
+import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, initialResourceErrors, depotErrors } from "@/lib/content/schemaValidation";
 
 import { sortEntityDefinitions, stringifyEntityDefinition } from "@/lib/content/entityYaml";
 import { mutateContentResponse } from "@/lib/content/contentRevisions";
@@ -38,6 +38,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ enti
     if (doc.errors.length || entity.errors.length || !types?.has(entityId) || (newId !== entityId && types.has(newId))) return NextResponse.json({ error: "Invalid YAML or duplicate id" }, { status: 400 });
     const normalizedDefinition = omitNulls(entity.toJS());
     const validationErrors = [...depotErrors(normalizedDefinition), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {})))];
+    validationErrors.push(...initialResourceErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))));
     if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
     const replace = (value: any): any => Array.isArray(value) ? value.map(replace) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, replace(item)])) : value === entityId ? newId : value;
     const content = replace(doc.toJS());

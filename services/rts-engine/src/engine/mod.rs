@@ -12,6 +12,8 @@ pub mod state;
 pub mod generation;
 mod scenario;
 mod content_reload;
+#[cfg(test)]
+mod initial_resources_tests;
 
 use std::collections::{HashMap, HashSet};
 
@@ -41,7 +43,7 @@ use crate::physics::integrate;
 use crate::spatial::SpatialIndex;
 use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_OWNER};
 use prost::Message;
-use state::{take_from_deposit, init_world, log_sample, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
+use state::{initial_resource_inventory, take_from_deposit, init_world, log_sample, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
 pub const ENGINE_PROTOCOL_MAJOR: u32 = 21;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
@@ -982,6 +984,7 @@ mod radiation_tests {
         entity_types.insert(
             "star_yellow".to_string(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
                 inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
@@ -1039,6 +1042,7 @@ mod radiation_tests {
         entity_types.insert(
             "collector_solar".to_string(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
                 inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
@@ -1075,6 +1079,7 @@ mod radiation_tests {
         entity_types.insert(
             "worker".to_string(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
                 inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
@@ -2385,7 +2390,7 @@ impl Engine {
                 health,
                 supply: None,
                 resource_deposit: None,
-                resources: None,
+                resources: initial_resource_inventory(definition),
             });
         }
         info!(
@@ -2709,7 +2714,7 @@ impl Engine {
                 health,
                 supply: None,
                 resource_deposit: None,
-                resources: None,
+                resources: initial_resource_inventory(product_def),
             });
             if let Some(metadata) = self.intents.finish(builder_id) {
                 let _ = self.redis.clear_active_intent(builder_id).await;

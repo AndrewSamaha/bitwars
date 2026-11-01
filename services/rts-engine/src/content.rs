@@ -40,6 +40,9 @@ pub struct EntityTypeDef {
     /// Per-resource physical depot stock or carrier cargo capacity. Ordinary consumers may omit this.
     #[serde(default)]
     pub max_capacity: HashMap<String, f32>,
+    /// Spendable resource amounts granted once at creation, never on restore or content reload.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub initial_resources: HashMap<String, f64>,
     /// Stock-dependent growth credited directly to spendable inventory, capped by max_capacity.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub inventory_regeneration: HashMap<String, ResourceRegenerationDef>,
@@ -736,6 +739,13 @@ fn validate_resource_content(
         if def.max_capacity.values().any(|capacity| !capacity.is_finite() || *capacity < 0.0) {
             anyhow::bail!("entity type {id} has an invalid max_capacity");
         }
+        for (resource, amount) in &def.initial_resources {
+            let capacity = def.max_capacity.get(resource).copied().map(f64::from);
+            if !resource_types.contains_key(resource) || !amount.is_finite() || *amount < 0.0
+                || capacity.is_none_or(|capacity| !capacity.is_finite() || *amount > capacity) {
+                anyhow::bail!("entity type {id} initial_resources.{resource} requires a known resource with finite capacity and 0 <= amount <= capacity");
+            }
+        }
         for (resource, regeneration) in &def.inventory_regeneration {
             let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0);
             if !resource_types.contains_key(resource) || !capacity.is_finite() || capacity <= 0.0 {
@@ -1044,6 +1054,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn initial_resources_validate_known_resources_finite_amounts_and_capacity() {
+        let mut def: EntityTypeDef = serde_yaml::from_str(
+            "fog_memory: forget_when_hidden\nspeed: 0\nstop_radius: 1\nmass: 1\nhealth: 1\n",
+        ).unwrap();
+        assert!(def.initial_resources.is_empty());
+        assert!(serde_json::to_value(&def).unwrap().get("initial_resources").is_none());
+        let resources = HashMap::from([("food".into(), ResourceTypeDef {
+            display_name: "Food".into(), order: 0,
+        })]);
+        let validate = |def: &EntityTypeDef| validate_resource_content(
+            &HashMap::from([("worker".into(), def.clone())]), &resources);
+        def.max_capacity.insert("food".into(), 50.0);
+        for amount in [0.0, 5.0, 50.0] {
+            def.initial_resources = HashMap::from([("food".into(), amount)]);
+            assert!(validate(&def).is_ok());
+        }
+        let restored: EntityTypeDef = serde_json::from_value(serde_json::to_value(&def).unwrap()).unwrap();
+        assert_eq!(restored.initial_resources["food"], 50.0);
+        for (resource, amount) in [
+            ("food", -1.0), ("food", 51.0), ("food", f64::NAN),
+            ("food", f64::INFINITY), ("food", f64::NEG_INFINITY), ("unknown", 0.0),
+        ] {
+            def.initial_resources = HashMap::from([(resource.into(), amount)]);
+            assert!(validate(&def).is_err());
+        }
+        def.initial_resources = HashMap::from([("food".into(), 0.0)]);
+        for capacity in [None, Some(-1.0), Some(f32::NAN), Some(f32::INFINITY)] {
+            def.max_capacity.remove("food");
+            if let Some(capacity) = capacity { def.max_capacity.insert("food".into(), capacity); }
+            assert!(validate(&def).is_err());
+        }
+        def.max_capacity.insert("food".into(), 0.0);
+        assert!(validate(&def).is_ok());
+    }
+
+    #[test]
     fn inventory_regeneration_validates_resources_capacity_and_hill_parameters() {
         let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();
@@ -1156,6 +1202,7 @@ mod tests {
         types.insert(
             "worker".into(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
                 inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
@@ -1192,6 +1239,7 @@ mod tests {
         types.insert(
             "scout".into(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
                 inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
@@ -1240,6 +1288,7 @@ mod tests {
         types_a.insert(
             "worker".into(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
                 inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
@@ -1276,6 +1325,7 @@ mod tests {
         types_a.insert(
             "scout".into(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
                 inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
@@ -1314,6 +1364,7 @@ mod tests {
         types_b.insert(
             "scout".into(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
                 inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
@@ -1350,6 +1401,7 @@ mod tests {
         types_b.insert(
             "worker".into(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
                 inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
