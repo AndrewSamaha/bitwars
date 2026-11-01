@@ -14,6 +14,8 @@ mod scenario;
 mod content_reload;
 #[cfg(test)]
 mod initial_resources_tests;
+#[cfg(test)]
+mod collection_capacity_tests;
 
 use std::collections::{HashMap, HashSet};
 
@@ -117,10 +119,11 @@ fn deposit_collection_inventory(
     );
 }
 
-fn collection_load(entity: &pb::Entity, def: &EntityTypeDef, preferred: &[&str]) -> Option<CollectionLoad> {
+fn collection_load<'a>(entity: &pb::Entity, def: &EntityTypeDef,
+    resources: impl IntoIterator<Item = &'a str>) -> Option<CollectionLoad> {
     let collector = def.collector.as_ref()?;
     if collector.transport_rate_per_second <= 0.0 { return None; }
-    preferred.iter().copied().chain(collector.collects.iter().map(String::as_str))
+    resources.into_iter()
         .filter(|resource| collector.collects.iter().any(|kind| kind == resource))
         .find_map(|resource| {
             let amount = collection_transferable_resource(entity, def, resource);
@@ -821,11 +824,12 @@ mod transport_capacity_tests {
             max_simultaneous_collectors: Some(1), min_effective_distance: 20.0, max_effective_distance: 50.0 };
         let world = [node.clone(), ResourceNodeSnapshot { id: 11, x: 10.0, ..node }];
         let collects = vec!["minerals".into()];
+        let capacities = HashMap::from([("minerals".into(), 50.0)]);
         let (known, indexes) = discovered_resource_nodes(&world, &[10].into());
-        assert_eq!(Engine::pick_transport_node(&collector, &known, Some(11), &indexes, None, "minerals", false, &collects).unwrap().id, 10);
-        assert_eq!(Engine::pick_transport_node(&collector, &known, None, &indexes, None, "", true, &collects).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &known, Some(11), &indexes, None, "minerals", false, &collects, &capacities).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &known, None, &indexes, None, "", true, &collects, &capacities).unwrap().id, 10);
         let (empty, indexes) = discovered_resource_nodes(&world, &Default::default());
-        assert!(Engine::pick_transport_node(&collector, &empty, Some(11), &indexes, None, "minerals", false, &collects).is_none());
+        assert!(Engine::pick_transport_node(&collector, &empty, Some(11), &indexes, None, "minerals", false, &collects, &capacities).is_none());
         let proximity: Vec<_> = world.iter().cloned().map(|node| ResourceNodeSnapshot { mode: CollectionMode::Proximity, ..node }).collect();
         let (known, _) = discovered_resource_nodes(&proximity, &[10].into());
         assert_eq!(Engine::pick_best_node(&collector, &known, CollectionMode::Proximity, &collects).unwrap().id, 10);
@@ -852,9 +856,10 @@ mod transport_capacity_tests {
         };
         let nodes = [far.clone(), ResourceNodeSnapshot { id: 11, x: 10.0, ..far }];
         let collects = vec!["minerals".to_string()];
+        let capacities = HashMap::from([("minerals".into(), 50.0)]);
         let node_by_id = nodes.iter().enumerate().map(|(index, node)| (node.id, index)).collect();
-        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(10), &node_by_id, None, "minerals", false, &collects).unwrap().id, 10);
-        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(99), &node_by_id, None, "minerals", false, &collects).unwrap().id, 11);
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(10), &node_by_id, None, "minerals", false, &collects, &capacities).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(99), &node_by_id, None, "minerals", false, &collects, &capacities).unwrap().id, 11);
     }
 }
 
@@ -3828,15 +3833,16 @@ impl Engine {
         assigned_resource_type: &str,
         nearest_compatible: bool,
         collects: &[String],
+        capacities: &HashMap<String, f32>,
     ) -> Option<&'a ResourceNodeSnapshot> {
         let eligible = |node: &&ResourceNodeSnapshot| {
             node.mode == CollectionMode::Transport
-                && if let Some(resource_type) = preferred_resource_type {
-                    node.resource_type == resource_type
-                } else if nearest_compatible {
-                    collects.contains(&node.resource_type)
-                } else {
+                && collects.contains(&node.resource_type)
+                && if !nearest_compatible {
                     node.resource_type == assigned_resource_type
+                } else {
+                    capacities.get(&node.resource_type).is_some_and(|capacity| *capacity > 0.0)
+                        && preferred_resource_type.is_none_or(|resource| node.resource_type == resource)
                 }
         };
         let bound_node = bound_id.and_then(|id| {
@@ -4108,10 +4114,19 @@ impl Engine {
                 matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Collect(state)) if state.travel_plan.is_some()));
             let previous_resource = self.collector_ui_state_by_entity.get(&collector.id)
                 .map(|view| view.resource_type.as_str()).unwrap_or("");
-            let assigned_resource = collection_assignments.get(&collector.id).map(|(resource, _)| resource.as_str()).unwrap_or("");
             let load_snapshot = if planned { None } else {
                 collection_entity(&self.state.entities, collector.id, &entity_by_id)
-                    .and_then(|entity| collection_load(entity, &def, &[previous_resource, assigned_resource]))
+                    .and_then(|entity| {
+                        if let Some((resource, false)) = collection_assignments.get(&collector.id) {
+                            // An explicit order owns only its requested resource, even
+                            // when a previous order was delivering something else.
+                            collection_load(entity, &def, [resource.as_str()])
+                        } else {
+                            collection_load(entity, &def, [previous_resource].into_iter()
+                                .chain(collector_def.collects.iter().map(String::as_str))
+                                .filter(|resource| def.max_capacity.get(*resource).is_some_and(|capacity| *capacity > 0.0)))
+                        }
+                    })
             };
 
             // M8 (collect-intent model): autonomous collection only runs while
@@ -4162,13 +4177,14 @@ impl Engine {
                 let inventory_is_full = collection_entity(&self.state.entities, collector.id, &entity_by_id)
                     .is_some_and(|entity| resource_amount(entity, &carry.resource_type)
                         >= def.max_capacity.get(&carry.resource_type).copied().unwrap_or(0.0) as f64 - f64::EPSILON);
-                let source_depleted = self.transport_node_by_entity.get(&collector.id)
-                    .is_some_and(|id| !nodes.iter().any(|node| node.id == *id));
+                let source_depleted = previous_resource == carry.resource_type
+                    && self.transport_node_by_entity.get(&collector.id)
+                        .is_some_and(|id| !nodes.iter().any(|node| node.id == *id));
                 let no_source = !nodes.iter().any(|node| node.mode == CollectionMode::Transport && node.resource_type == carry.resource_type);
                 let delivery_in_progress = self.collector_ui_state_by_entity.get(&collector.id).is_some_and(|state|
-                    matches!(state.activity.as_str(), COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF | COLLECTOR_ACTIVITY_DELIVERING | "waiting_for_dropoff"));
-                if carry.amount > 0.0 && (inventory_is_full || source_depleted || no_source || delivery_in_progress
-                    || (!nearest_compatible && carry.resource_type != *assigned_resource_type)) {
+                    state.resource_type == carry.resource_type
+                        && matches!(state.activity.as_str(), COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF | COLLECTOR_ACTIVITY_DELIVERING | "waiting_for_dropoff"));
+                if carry.amount > 0.0 && (inventory_is_full || source_depleted || no_source || delivery_in_progress) {
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     if let Some(refinery) = Self::pick_collection_depot(
                         &collector,
@@ -4245,8 +4261,17 @@ impl Engine {
                 assigned_resource_type,
                 *nearest_compatible,
                 &collector_def.collects,
+                &def.max_capacity,
             );
             if let Some(node) = node {
+                if def.max_capacity.get(&node.resource_type).copied().unwrap_or(0.0) <= 0.0 {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
+                    self.set_collector_ui_state(collector.id, "waiting_for_capacity", &node.resource_type, 0.0);
+                    if let Some(entity) = collection_entity_mut(&mut self.state.entities, collector.id, &entity_by_id) {
+                        entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+                    }
+                    continue;
+                }
                 if self.transport_node_by_entity.get(&collector.id) != Some(&node.id) {
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
                 }
@@ -6110,9 +6135,9 @@ mod jettison_tests {
         })) };
         assert!(intents.try_activate(order, metadata.clone(), "worker").started.is_some());
         let assignment = intents.active_collect_assignment(1);
-        assert!(collection_load(&current.entities[0], def, &["food"]).is_some());
+        assert!(collection_load(&current.entities[0], def, ["food"]).is_some());
         logistics::jettison_cargo(&mut current.entities, &content, "me", 1).unwrap();
-        assert!(collection_load(&current.entities[0], def, &["food"]).is_none());
+        assert!(collection_load(&current.entities[0], def, ["food"]).is_none());
         assert_eq!(intents.active_collect_assignment(1), assignment);
         assert_eq!(intents.active_intents()[&1].metadata.intent_id, metadata.intent_id);
         let delta = compute_delta(&previous, &current,

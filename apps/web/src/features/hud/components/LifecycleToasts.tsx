@@ -10,7 +10,7 @@ import {
   COLLECTION_WAITING_EVENT,
   COLLECTION_DROPOFF_BLOCKED_EVENT,
   COLLECT_COMMAND_EVENT,
-  hasFullIncompatibleCargo,
+  collectionCapacityStatus,
   type CollectCommandDetail,
   TRANSFER_ENDPOINT_LOST_EVENT,
   dispatchCenterCameraOnEntity,
@@ -106,8 +106,11 @@ export default function LifecycleToasts() {
       const entity = game.world.entities.find((entity) => String(entity.id) === String(detail.entityId));
       if (!entity) return;
       const capacities = contentManager.getEntityType(entity.entity_type_id ?? "")?.max_capacity ?? {};
-      if (hasFullIncompatibleCargo(entity.resources, capacities, detail.resourceTypeId)) {
-        showToast("Cargo bay full", `Worker ${detail.entityId} must unload its existing cargo before collecting ${detail.resourceTypeId}. If dropoff storage is full, spend stored resources or provide dropoff capacity.`, String(detail.entityId), `Worker ${detail.entityId}`);
+      const capacityStatus = collectionCapacityStatus(entity.resources, capacities, detail.resourceTypeId);
+      if (capacityStatus === "unavailable") {
+        showToast("Collection blocked", `Worker ${detail.entityId} has no capacity for ${detail.resourceTypeId} and cannot collect it.`, String(detail.entityId), `Worker ${detail.entityId}`);
+      } else if (capacityStatus === "full") {
+        showToast("Cargo bay full", `Worker ${detail.entityId}'s ${detail.resourceTypeId} storage is full. It must deliver ${detail.resourceTypeId} before collecting more. If dropoff storage is full, spend stored resources or provide dropoff capacity.`, String(detail.entityId), `Worker ${detail.entityId}`);
       }
     };
     const onTransferEndpointLost = (event: Event) => {

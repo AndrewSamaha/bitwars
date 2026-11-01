@@ -136,11 +136,8 @@ pub(super) fn advance(
             (&mut right[0], &mut left[depot_index])
         };
         let depot_def = content.get(&depot.entity_type_id).unwrap();
-        // An initial depot leg can also finish a previously selected resource load.
-        for resource in &collector.collects {
-            deposit_collection_inventory(actor, actor_def, depot, depot_def, resource);
-        }
-        if collector.collects.iter().any(|resource| resource_amount(actor, resource) > f64::EPSILON) {
+        deposit_collection_inventory(actor, actor_def, depot, depot_def, &node.resource_type);
+        if resource_amount(actor, &node.resource_type) > f64::EPSILON {
             return ("waiting_for_dropoff", 0.0);
         }
         next_leg(state, false);
@@ -364,6 +361,88 @@ mod tests {
         assert_eq!(state.next_waypoint_index, 0);
         step(&content, &mut entities, &mut state, &known);
         assert!(entities[0].vel.unwrap().y > 0.0);
+    }
+
+    #[test]
+    fn planned_mineral_collection_preserves_full_unrelated_resources() {
+        for nearest_compatible in [false, true] {
+            let (content, mut entities, mut state, known) = fixture();
+            if nearest_compatible {
+                state.nearest_compatible = true;
+                state.resource_type_id.clear();
+            }
+            let plan = state.travel_plan.as_mut().unwrap();
+            plan.initial_waypoint_ids.clear();
+            plan.waypoint_ids.clear();
+            let node = content.get("minerals").unwrap().resource_node.as_ref().unwrap();
+            let source = entities[1].pos.unwrap();
+            entities[0].pos = Some(pb::Vec2 {
+                x: source.x - (node.min_effective_distance + node.max_effective_distance) / 2.0, y: source.y,
+            });
+            let worker = content.get("worker").unwrap();
+            for resource in ["food", "energy"] {
+                set_resource_amount(&mut entities[0], resource, worker.max_capacity[resource] as f64);
+            }
+            assert_eq!(step(&content, &mut entities, &mut state, &known), COLLECTOR_ACTIVITY_GATHERING);
+            assert_eq!(resource_amount(&entities[0], "minerals"), 8.0);
+            assert!(!state.returning_to_depot);
+            set_resource_amount(&mut entities[0], "minerals", worker.max_capacity["minerals"] as f64);
+            assert_eq!(step(&content, &mut entities, &mut state, &known), COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF);
+            assert!(state.returning_to_depot);
+            entities[0].pos = entities[2].pos;
+            assert_eq!(step(&content, &mut entities, &mut state, &known), COLLECTOR_ACTIVITY_DELIVERING);
+            assert_eq!(resource_amount(&entities[0], "minerals"), 0.0);
+            assert_eq!(resource_amount(&entities[2], "minerals"), worker.max_capacity["minerals"] as f64);
+            assert!(!state.returning_to_depot);
+            for resource in ["food", "energy"] {
+                assert_eq!(resource_amount(&entities[0], resource), worker.max_capacity[resource] as f64);
+                assert_eq!(resource_amount(&entities[2], resource), 0.0);
+            }
+        }
+    }
+
+    #[test]
+    fn planned_initial_and_recurring_dropoff_wait_only_for_route_resource() {
+        for initial_leg_complete in [false, true] {
+            let (content, mut entities, mut state, known) = fixture();
+            let plan = state.travel_plan.as_mut().unwrap();
+            plan.initial_waypoint_ids.clear();
+            plan.waypoint_ids.clear();
+            plan.initial_to_depot = true;
+            state.initial_leg_complete = initial_leg_complete;
+            state.returning_to_depot = true;
+            entities[0].pos = entities[2].pos;
+            let worker = content.get("worker").unwrap();
+            let depot = content.get("habitat").unwrap();
+            for resource in ["food", "energy"] {
+                set_resource_amount(&mut entities[0], resource, worker.max_capacity[resource] as f64);
+                set_resource_amount(&mut entities[2], resource, depot.max_capacity[resource] as f64);
+            }
+            set_resource_amount(&mut entities[0], "minerals", 10.0);
+            set_resource_amount(&mut entities[2], "minerals", depot.max_capacity["minerals"] as f64 - 3.0);
+            assert_eq!(step(&content, &mut entities, &mut state, &known), "waiting_for_dropoff");
+            assert_eq!(resource_amount(&entities[0], "minerals"), 7.0);
+            set_resource_amount(&mut entities[2], "minerals", 0.0);
+            assert_eq!(step(&content, &mut entities, &mut state, &known), COLLECTOR_ACTIVITY_DELIVERING);
+            assert_eq!(resource_amount(&entities[0], "minerals"), 0.0);
+            assert_eq!(resource_amount(&entities[2], "minerals"), 7.0);
+            assert!(state.initial_leg_complete && !state.returning_to_depot);
+            for resource in ["food", "energy"] {
+                assert_eq!(resource_amount(&entities[0], resource), worker.max_capacity[resource] as f64);
+                assert_eq!(resource_amount(&entities[2], resource), depot.max_capacity[resource] as f64);
+            }
+        }
+    }
+
+    #[test]
+    fn planned_collection_rejects_zero_route_resource_capacity() {
+        let (mut content, mut entities, mut state, known) = fixture();
+        content.entity_types.get_mut("worker").unwrap().max_capacity.insert("minerals".into(), 0.0);
+        let before = entities[0].resources.clone();
+        assert!(!legal(&content, &entities, &state, &known));
+        assert_eq!(step(&content, &mut entities, &mut state, &known), BLOCKED);
+        assert_eq!(entities[0].resources, before);
+        assert_eq!(entities[0].vel, Some(pb::Vec2 { x: 0.0, y: 0.0 }));
     }
 
     #[test]

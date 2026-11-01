@@ -84,30 +84,34 @@ export class CollectionPlanner {
     if (!definition?.collector) return blocked("Entity cannot collect resources.");
     if ((definition.collector.transport_rate_per_second ?? 8) <= 0) return { kind: "proximity" };
     const collects = definition.collector.collects ?? [];
-    const cargo = [worker.collector_state?.resource_type, request.assignment.resourceTypeId, ...collects]
-      .filter((resource): resource is string => !!resource && collects.includes(resource))
+    const hasCapacity = (resource: string) => (definition.max_capacity?.[resource] ?? 0) > 0;
+    const explicitResource = request.assignment.nearestCompatible ? undefined : request.assignment.resourceTypeId;
+    if (explicitResource && !hasCapacity(explicitResource)) return blocked(`Worker has no capacity for ${explicitResource}.`);
+    const preferredCargo = explicitResource ? [explicitResource] : [worker.collector_state?.resource_type, ...collects];
+    const cargo = preferredCargo
+      .filter((resource): resource is string => !!resource && collects.includes(resource) && hasCapacity(resource))
       .map(resource => worker.resources?.find(entry => entry.resource_type === resource && entry.amount > 0))
       .find(entry => entry !== undefined);
-    const mismatch = !!cargo && !request.assignment.nearestCompatible && cargo.resource_type !== request.assignment.resourceTypeId;
-    const resource = cargo && !mismatch ? cargo.resource_type : request.assignment.nearestCompatible ? undefined : request.assignment.resourceTypeId;
+    const resource = explicitResource ?? cargo?.resource_type;
     const nearest = (a: RouteEntity, b: RouteEntity) => distance(worker.pos, a.pos) - distance(worker.pos, b.pos) || a.id - b.id;
     const sources = request.entities.filter(entity => {
       const node = request.definitions[entity.entity_type_id ?? ""]?.resource_node;
       return (entity.health ?? 1) > 0 && (entity.resource_deposit?.remaining ?? 1) > 0 && node?.collection_mode === "transport"
-        && collects.includes(node.resource_type) && (resource === undefined || node.resource_type === resource);
+        && collects.includes(node.resource_type) && hasCapacity(node.resource_type) && (resource === undefined || node.resource_type === resource);
     }).sort(nearest);
     const source = request.pinned ? sources.find(entity => entity.id === request.pinned!.sourceEntityId) : sources[0];
     if (!source) return blocked("No compatible discovered transport source is available.");
     const sourceResource = request.definitions[source.entity_type_id ?? ""]!.resource_node!.resource_type;
-    const initialToDepot = !!cargo && (mismatch || cargo.amount >= (definition.max_capacity?.[cargo.resource_type] ?? Infinity)
-      || ["moving_to_dropoff", "delivering", "waiting_for_dropoff"].includes(worker.collector_state?.activity ?? ""));
+    const sourceCargo = cargo?.resource_type === sourceResource ? cargo : undefined;
+    const initialToDepot = !!sourceCargo && (sourceCargo.amount >= definition.max_capacity![sourceResource]!
+      || (worker.collector_state?.resource_type === sourceResource
+        && ["moving_to_dropoff", "delivering", "waiting_for_dropoff"].includes(worker.collector_state.activity)));
     const assigned = Number(worker.supply?.delivery_depot_id ?? 0);
     const depots = request.entities.filter(entity => {
       const depot = request.definitions[entity.entity_type_id ?? ""];
       const remaining = (resourceId: string) => (depot?.max_capacity?.[resourceId] ?? 0) - (entity.resources?.find(entry => entry.resource_type === resourceId)?.amount ?? 0);
       return !entity.remembered && entity.id !== worker.id && entity.owner_player_id === request.playerId && (entity.health ?? 1) > 0
-        && depot?.depot && (!assigned || entity.id === assigned) && remaining(sourceResource) > 0
-        && (!initialToDepot || !cargo || remaining(cargo.resource_type) > 0);
+        && depot?.depot && (!assigned || entity.id === assigned) && remaining(sourceResource) > 0;
     }).sort(nearest);
     const depot = request.pinned ? depots.find(entity => entity.id === request.pinned!.depotEntityId) : depots[0];
     if (!depot) return blocked(assigned ? "Assigned collection depot is unavailable or has no compatible capacity." : "No owned collection depot has compatible capacity.");

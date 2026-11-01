@@ -1,14 +1,24 @@
-import { expect, it } from "vitest";
-import { hasFullIncompatibleCargo } from "../src/features/gamestate/events";
+import { describe, expect, it } from "vitest";
+import { collectionCapacityStatus } from "../src/features/gamestate/events";
 
-it("warns on full or over-capacity incompatible cargo, not partial or compatible cargo", () => {
-  const capacities = { minerals: 50, food: 50 };
-  const cargo = (resource_type: string, amount: number) => [{ resource_type, amount }];
-  expect(hasFullIncompatibleCargo(cargo("minerals", 50), capacities, "food")).toBe(true);
-  expect(hasFullIncompatibleCargo(cargo("minerals", 60), capacities, "food")).toBe(true);
-  expect(hasFullIncompatibleCargo(cargo("minerals", 49), capacities, "food")).toBe(false);
-  expect(hasFullIncompatibleCargo(cargo("food", 50), capacities, "food")).toBe(false);
-  expect(hasFullIncompatibleCargo(cargo("energy", 50), capacities, "food")).toBe(false);
-  expect(hasFullIncompatibleCargo(undefined, capacities, "food")).toBe(false);
-  expect(hasFullIncompatibleCargo(cargo("minerals", 0), { minerals: 0 }, "food")).toBe(false);
+describe("collection capacity", () => {
+  const capacities = { minerals: 50, food: 50, energy: 50 };
+
+  it("allows an empty or partial requested resource despite full unrelated stores", () => {
+    const supplies = [{ resource_type: "food", amount: 50 }, { resource_type: "energy", amount: 60 }];
+    expect(collectionCapacityStatus(supplies, capacities, "minerals")).toBe("available");
+    expect(collectionCapacityStatus([...supplies, { resource_type: "minerals", amount: 49 }], capacities, "minerals")).toBe("available");
+    expect(collectionCapacityStatus(undefined, capacities, "minerals")).toBe("available");
+  });
+
+  it.each([50, 60])("marks requested minerals at %i as full independently of other stores", (amount) => {
+    expect(collectionCapacityStatus([{ resource_type: "minerals", amount }], capacities, "minerals")).toBe("full");
+    expect(collectionCapacityStatus([{ resource_type: "minerals", amount }], capacities, "food")).toBe("available");
+  });
+
+  it("distinguishes missing or zero capacity from full usable storage", () => {
+    expect(collectionCapacityStatus(undefined, { minerals: 0 }, "minerals")).toBe("unavailable");
+    expect(collectionCapacityStatus([{ resource_type: "minerals", amount: 10 }], { minerals: 0 }, "minerals")).toBe("unavailable");
+    expect(collectionCapacityStatus(undefined, { food: 50 }, "minerals")).toBe("unavailable");
+  });
 });

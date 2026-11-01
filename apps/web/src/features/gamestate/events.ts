@@ -25,16 +25,15 @@ export type MinimumDistanceViolationDetail = {
 export type CollectionWaitingDetail = { collectorEntityId: string };
 export type CollectCommandDetail = { entityId: number; resourceTypeId?: string; nearestCompatible: boolean };
 
-export function hasFullIncompatibleCargo(
+export function collectionCapacityStatus(
   resources: Entity["resources"],
   capacities: Record<string, number>,
   resourceTypeId: string,
-) {
-  return resources?.some(({ resource_type, amount }) =>
-    resource_type !== resourceTypeId && amount > 0
-    && (capacities[resource_type] ?? 0) > 0
-    && amount >= capacities[resource_type],
-  ) ?? false;
+): "available" | "full" | "unavailable" {
+  const capacity = capacities[resourceTypeId] ?? 0;
+  if (capacity <= 0) return "unavailable";
+  const amount = resources?.find(entry => entry.resource_type === resourceTypeId)?.amount ?? 0;
+  return amount >= capacity ? "full" : "available";
 }
 
 export function shouldNotifyCollectionWaiting(

@@ -138,9 +138,47 @@ describe("collection routing", () => {
     request.entities[0]!.resources[0]!.amount = 5;
     expect(planner.plan(request)).toMatchObject({ kind: "planned", travelPlan: { initialToDepot: false, initialWaypointIds: [] } });
   });
-  it("delivers incompatible cargo before collecting the newly assigned resource", () => {
-    const request = fixture(); request.entities[0]!.resources = [{ resource_type: "food", amount: 2 }];
-    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { sourceEntityId: 3, initialToDepot: true } });
+  it.each([2, 10, 15])("retains %i food while collecting minerals even when food dropoff storage is full", (food) => {
+    const request = fixture();
+    request.definitions.worker!.max_capacity!.energy = 50;
+    request.entities[0]!.resources = [{ resource_type: "food", amount: food }, { resource_type: "energy", amount: 50 }];
+    request.entities[1]!.resources = [{ resource_type: "food", amount: 100 }];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { sourceEntityId: 3, initialToDepot: false } });
+  });
+  it.each(["moving_to_dropoff", "delivering", "waiting_for_dropoff"])("ignores stale %s food state after assigning minerals", (activity) => {
+    const request = fixture();
+    request.entities[0]!.resources = [{ resource_type: "food", amount: 10 }, { resource_type: "minerals", amount: 2 }];
+    request.entities[0]!.collector_state = { activity, resource_type: "food" };
+    request.entities[1]!.resources = [{ resource_type: "food", amount: 100 }];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { sourceEntityId: 3, initialToDepot: false } });
+    request.entities[0]!.collector_state.resource_type = "minerals";
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { initialToDepot: true } });
+  });
+  it.each([10, 15])("delivers %i requested minerals without needing food dropoff capacity", (minerals) => {
+    const request = fixture();
+    request.entities[0]!.resources = [{ resource_type: "food", amount: 10 }, { resource_type: "minerals", amount: minerals }];
+    request.entities[1]!.resources = [{ resource_type: "food", amount: 100 }];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { sourceEntityId: 3, depotEntityId: 2, initialToDepot: true } });
+  });
+  it.each([0, undefined])("blocks an explicit resource with %s capacity even with existing cargo", (capacity) => {
+    const request = fixture();
+    if (capacity === undefined) delete request.definitions.worker!.max_capacity!.minerals;
+    else request.definitions.worker!.max_capacity!.minerals = capacity;
+    request.entities[0]!.resources = [{ resource_type: "minerals", amount: 2 }];
+    expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
+    request.entities[0]!.resources = [];
+    expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
+  });
+  it("skips zero-capacity resources and their stale cargo for nearest-compatible collection", () => {
+    const request = fixture();
+    request.assignment = { nearestCompatible: true };
+    request.definitions.worker!.max_capacity!.food = 0;
+    request.entities[0]!.resources = [{ resource_type: "food", amount: 5 }];
+    request.entities[0]!.collector_state = { activity: "delivering", resource_type: "food" };
+    request.entities.push({ id: 8, entity_type_id: "food", pos: { x: -2000, y: 0 } });
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { sourceEntityId: 3, initialToDepot: false } });
+    request.definitions.worker!.max_capacity!.minerals = 0;
+    expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
   });
   it("honors a manual depot without fallback, full capacity, and pinned endpoints", () => {
     const request = fixture(); request.entities[0]!.supply = { delivery_depot_id: 9 };

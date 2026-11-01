@@ -104,7 +104,9 @@ Solar collectors require their destination's service coverage at assignment and 
 
 Assignments survive stopping/restarting Collect, reconnects, and snapshot restoration. In Assign mode, **Use automatic destination** clears the explicit destination: solar returns to its automatic supply-depot association, while workers choose the nearest compatible depot with room. Explicit Deliver and Transport orders continue to use their own specified destinations.
 
-When an owned worker enters `waiting_for_dropoff`, show a focusable **Collection blocked** toast and record it in the message log. Do not repeat it on unchanged state updates; leaving and re-entering the wait raises it again. Every explicit Collect command for a different resource also raises **Cargo bay full** when an existing resource is at or above its carrying capacity. Compatible-resource and nearest-compatible orders do not raise that warning. Warnings preserve cargo and still submit the requested order.
+When an owned worker enters `waiting_for_dropoff`, show a focusable **Collection blocked** toast and record it in the message log. Do not repeat it on unchanged state updates; leaving and re-entering the wait raises it again.
+
+Collection capacity is independent per resource. Explicit Collect orders gather and deliver only the requested resource: full food or energy does not block mineral gathering or cause those supplies to be unloaded. Planned collection routes likewise deliver only their source resource. If the requested resource is full, deliver that resource before gathering more; if its capacity is zero, collection cannot gather it. Explicit collection warnings describe only the requested resource's storage, never another full resource. Explicit Deliver and Transport orders retain their configured resource lists.
 
 ### Collection route recomputation
 

@@ -25,6 +25,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Set maximum energy storage to 200 for all three defense pylon types.
 
 ### Fixed
+- Made collection capacity and delivery resource-specific: full food or energy no longer blocks mineral collection or gets unloaded by mineral routes. Full/no-capacity warnings now refer only to the requested resource.
 - Moved legacy sprites for `planet_blue`, `star_yellow`, `minerals`, and `raider` from the web public directory into `packages/content/assets` so hot-reload revisions include their artwork instead of falling back to the corvette texture.
 - Replaced `packages/content/assets/theta/idle.png`, which contained a solar-collector image, with the correct theta star artwork already present in `public/assets`; republished and live-reloaded the revision.
 
