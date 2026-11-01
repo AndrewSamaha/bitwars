@@ -73,6 +73,13 @@
       "format": "float",
       "default": 0.0
     },
+    "inventory_regeneration": {
+      "description": "Stock-dependent growth credited directly to spendable inventory, capped by max_capacity.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ResourceRegenerationDef"
+      }
+    },
     "maintenance_cost_per_minute": {
       "description": "Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.\nPaid atomically from the associated depot. Shortage pauses powered capabilities without damage or debt.",
       "type": "object",
@@ -688,7 +695,7 @@
           ]
         },
         "max_effective_distance": {
-          "description": "Outer center-to-center gathering distance in world units, inclusive. Defaults to 120 and is clamped to at least the inner distance.",
+          "description": "Outer center-to-center gathering distance in world units, inclusive. Proximity production falls linearly from full rate at the inner distance to zero here; transport production is constant within the band. Defaults to 120 and is clamped to at least the inner distance.",
           "type": "number",
           "format": "float",
           "default": 120.0
@@ -731,7 +738,7 @@
       ]
     },
     "ResourceRegenerationDef": {
-      "description": "Regeneration uses x = remaining / the planet's sampled maximum stock.",
+      "description": "Regeneration uses x = current stock / maximum stock, for deposits or inventory.",
       "oneOf": [
         {
           "type": "object",

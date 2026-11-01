@@ -68,6 +68,19 @@ Check range when spending or contributing resources. Moving a depot changes its 
 
 Solar collectors move into the radiation source's collection band and transmit energy wirelessly to their collection destination; they never travel to a depot to unload. A full destination reports `waiting_for_depot_capacity`; a missing or out-of-range destination reports `waiting_for_depot`. Both states hold position at the source and resume when wireless delivery is possible. Source approach movement still runs when the destination is full.
 
+Proximity production falls linearly with center-to-center source distance:
+`collector.proximity_rate_per_second * (max_distance - distance) / (max_distance - min_distance)`.
+The source defines both distances through `resource_node`. Production is full at
+the inner boundary, half at the band's midpoint, and zero at or beyond the outer
+boundary; below the inner boundary and zero-width bands also produce nothing.
+An in-band collector at zero strength reports `idle`, not a depot-capacity shortage.
+This does not alter transport harvesting rates.
+
+`star_yellow.resource_node.max_effective_distance` is 15,000 world units and its
+inner distance remains 10. This reach applies to all compatible proximity
+collectors, including habitats and inhabited planets. Radiation and
+`collector.minimum_distance` spacing rules remain independent and unchanged.
+
 For local production, gathered energy credits the associated depot up to capacity. Excess cannot be credited or silently moved elsewhere. Transport collection remains physical: workers gather into cargo and deliver to a depot. Retain ordinary capacity and compatibility checks.
 
 ## Assigning collection destinations

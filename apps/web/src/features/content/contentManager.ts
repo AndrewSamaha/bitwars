@@ -56,6 +56,13 @@ export type EntityTypeDef = {
   build_cost?: Record<string, number>;
   /** Physical depot stock or carrier cargo capacity, per resource. */
   max_capacity?: Record<string, number>;
+  /** Regrows spendable stock up to max_capacity; empty inventories do not regrow. */
+  inventory_regeneration?: Record<string, {
+    model: "hill";
+    max_rate_per_second: number;
+    half_saturation_fraction: number;
+    exponent: number;
+  }>;
   /** Enables local spending from this physical stockpile. */
   depot?: boolean;
   /** Local service radius; depot inventories never merge. */

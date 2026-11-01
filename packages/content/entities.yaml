@@ -72,6 +72,7 @@ entity_types:
       - duration_seconds: 1
         entity_type_id: dead_planet_blue
       - entity_type_id: planet_ice
+      - entity_type_id: planet_blue_inhabitated
     fog_memory: retain_last_known
     health: 100
     hull_radius: 50
@@ -111,7 +112,7 @@ entity_types:
         radiation_type: stellar_heat
     resource_node:
       collection_mode: proximity
-      max_effective_distance: 1500
+      max_effective_distance: 15000
       min_effective_distance: 10
       resource_type: energy
     speed: 0
@@ -154,6 +155,7 @@ entity_types:
           - collector_solar
           - collector_solar_v2
           - habitat
+          - planet_blue_inhabitated
         retry_after_ms: 1000
         value: 800
       proximity_rate_per_second: 3
@@ -256,6 +258,7 @@ entity_types:
           - collector_solar
           - collector_solar_v2
           - habitat
+          - planet_blue_inhabitated
         retry_after_ms: 1000
         value: 800
       proximity_rate_per_second: 5
@@ -285,7 +288,7 @@ entity_types:
     max_capacity:
       energy: 1000
       food: 3000
-      minerals: 1000
+      minerals: 1500
     researches:
       - neutrino_sensors
     sensor:
@@ -494,6 +497,7 @@ entity_types:
           - collector_solar
           - collector_solar_v2
           - habitat
+          - planet_blue_inhabitated
         retry_after_ms: 1000
         value: 800
       proximity_rate_per_second: 15
@@ -947,6 +951,61 @@ entity_types:
     hull_radius: 50
     mass: 500
     max_capacity: {}
+    speed: 0
+    stop_radius: 1
+    visual:
+      scale: 4
+    z_index: -2
+  planet_blue_inhabitated:
+    build_cost:
+      energy: 600
+      minerals: 600
+    builds:
+      - duration_seconds: 37.5
+        entity_type_id: worker
+      - duration_seconds: 93.75
+        entity_type_id: scout
+    collector:
+      collects:
+        - energy
+      minimum_distance:
+        entity_types:
+          - collector_solar
+          - collector_solar_v2
+          - habitat
+          - planet_blue_inhabitated
+        retry_after_ms: 1000
+        value: 800
+      proximity_rate_per_second: 5
+      transport_rate_per_second: 0
+      vfx: solar_proximity
+    combat_targetable: true
+    depot: true
+    depot_range: 4000
+    fog_memory: retain_last_known
+    health: 1000
+    hull_radius: 190
+    inventory_regeneration:
+      food:
+        exponent: 4
+        half_saturation_fraction: 0.5
+        max_rate_per_second: 2
+        model: hill
+    maintenance_cost_per_minute:
+      energy: 10
+      food: 60
+      minerals: 5
+    mass: 500
+    max_capacity:
+      energy: 1000
+      food: 3000
+      minerals: 1500
+    researches:
+      - neutrino_sensors
+    sensor:
+      cost_per_minute:
+        energy: 5
+      range: 10000
     speed: 0
     stop_radius: 1
     visual:

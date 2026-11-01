@@ -50,8 +50,8 @@ The wireless-energy sample has a yellow star at (0,0), a solar collector at
 (1250,0), a habitat at (3500,0), and a worker at (3700,0). Select the solar
 collector and assign energy collection while paused, then resume or step. The
 collector is within the star's collection range and outside its radiation ring;
-the habitat is outside direct stellar collection range but within its own
-4000-unit sharing range of the collector. The habitat starts with low energy,
+the habitat is also within direct stellar collection range and within its own
+4000-unit depot service range of the collector. The habitat starts with low energy,
 500 food and 500 minerals so wireless receipt and sharing are easy to observe.
 Orders submitted while paused apply on the next simulated tick.
 

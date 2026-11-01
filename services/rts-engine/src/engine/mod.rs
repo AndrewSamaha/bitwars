@@ -352,6 +352,72 @@ mod action_resource_tests {
     use super::*;
 
     #[test]
+    fn regenerated_planet_inventory_funds_nearby_actions_but_not_remote_consumers() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let planet = content.get("planet_blue_inhabitated").unwrap();
+        let make_entity = |id, kind: &str, x| pb::Entity {
+            id, entity_type_id: kind.into(), owner_player_id: "me".into(), health: 100.0,
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default()
+        };
+        let mut entities = vec![
+            make_entity(1, "planet_blue_inhabitated", 0.0),
+            make_entity(2, "scout", planet.depot_range),
+        ];
+        set_resource_amount(&mut entities[0], "food", 10.0);
+        let costs = HashMap::from([("food".into(), 11.0)]);
+        let source = logistics::funding_source(&entities, &content, 2, "me");
+        assert_eq!(source, Some(1));
+        assert!(!logistics::pay(&mut entities, source, &costs));
+        state::regenerate_inventory(&mut entities, &content, 1_000_000_000.0);
+        let grown = resource_amount(&entities[0], "food");
+        assert!(grown > 11.0);
+        assert!(logistics::pay(&mut entities, source, &costs));
+        assert_eq!(resource_amount(&entities[0], "food"), grown - 11.0);
+        assert_eq!(resource_amount(&entities[1], "food"), 0.0);
+        entities[1].pos.as_mut().unwrap().x = planet.depot_range + 1.0;
+        let source = logistics::funding_source(&entities, &content, 2, "me");
+        assert!(source.is_none());
+        let before = entities.clone();
+        assert!(!logistics::pay(&mut entities, source, &costs));
+        assert_eq!(entities, before);
+    }
+
+    #[test]
+    fn inhabited_planet_can_pay_upfront_for_worker_and_scout_construction() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let planet = content.get("planet_blue_inhabitated").unwrap();
+        for blueprint in ["worker", "scout"] {
+            assert!(planet.builds.iter().any(|option| option.entity_type_id == blueprint));
+            let costs = &content.get(blueprint).unwrap().build_cost;
+            let mut entities = vec![pb::Entity {
+                id: 1, entity_type_id: "planet_blue_inhabitated".into(),
+                owner_player_id: "me".into(), health: planet.health,
+                pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }), ..Default::default()
+            }];
+            for resource in costs.keys() {
+                set_resource_amount(&mut entities[0], resource, planet.max_capacity[resource] as f64);
+            }
+            let before = entities[0].clone();
+            let source = logistics::funding_source(&entities, &content, 1, "me");
+            assert_eq!(source, Some(1));
+            assert_eq!(logistics::charge_construction(
+                &mut entities, source, 1, costs, blueprint.as_bytes(), 0.5,
+            ), Some(true));
+            for (resource, amount) in costs {
+                assert_eq!(resource_amount(&entities[0], resource),
+                    resource_amount(&before, resource) - *amount as f64);
+            }
+            let paid = entities[0].resources.clone();
+            assert_eq!(logistics::charge_construction(
+                &mut entities, source, 1, costs, blueprint.as_bytes(), 1.0,
+            ), Some(false));
+            assert_eq!(entities[0].resources, paid);
+        }
+    }
+
+    #[test]
     fn upgrades_and_research_spend_local_inventories_atomically() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
@@ -416,7 +482,8 @@ mod wireless_collection_tests {
 
     #[test]
     fn moves_toward_radiation_source_even_when_wireless_depot_is_full() {
-        let (content, mut entities, node) = setup(2000.0);
+        let (content, mut entities, node) = setup(16000.0);
+        entities[1].pos.as_mut().unwrap().x = 17000.0;
         set_resource_amount(&mut entities[1], "energy", 1000.0);
         assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, 0.0, None));
         // The star is to the left; the receiving depot is to the right.
@@ -426,7 +493,7 @@ mod wireless_collection_tests {
 
     #[test]
     fn transmits_wirelessly_from_source_band_without_travel_or_cargo() {
-        let (content, mut entities, node) = setup(1393.0);
+        let (content, mut entities, node) = setup(10.0);
         let pos = entities[0].pos;
         let (activity, rate, recipient) = advance(&content, &mut entities, &node);
         assert_eq!(activity, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING);
@@ -440,17 +507,68 @@ mod wireless_collection_tests {
 
     #[test]
     fn full_or_unavailable_wireless_destination_waits_at_source_then_resumes() {
-        let (content, mut entities, node) = setup(1393.0);
+        let (content, mut entities, node) = setup(10.0);
         set_resource_amount(&mut entities[1], "energy", 1000.0);
         assert_eq!(advance(&content, &mut entities, &node), ("waiting_for_depot_capacity", 0.0, Some(2)));
         assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
-        entities[1].pos.as_mut().unwrap().x = 6000.0;
+        entities[1].pos.as_mut().unwrap().x = 5000.0;
         assert_eq!(advance(&content, &mut entities, &node), ("waiting_for_depot", 0.0, None));
         assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
         entities[1].pos.as_mut().unwrap().x = 3000.0;
         set_resource_amount(&mut entities[1], "energy", 990.0);
         assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING, 3.0, Some(2)));
         assert_eq!(resource_amount(&entities[1], "energy"), 993.0);
+    }
+
+    #[test]
+    fn proximity_falloff_credits_scaled_energy_and_stops_at_source_boundaries() {
+        for kind in ["collector_solar", "habitat", "planet_blue_inhabitated"] {
+            let (content, _, node) = setup(0.0);
+            let min = node.min_effective_distance;
+            let max = node.max_effective_distance;
+            for (distance, strength, activity) in [
+                (min - 1.0, 0.0, COLLECTOR_ACTIVITY_MOVING_TO_SOURCE),
+                (min, 1.0, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
+                ((min + max) / 2.0, 0.5, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
+                (max, 0.0, COLLECTOR_ACTIVITY_IDLE),
+                (max + 1.0, 0.0, COLLECTOR_ACTIVITY_MOVING_TO_SOURCE),
+            ] {
+                let (_, mut entities, _) = setup(distance);
+                entities[0].entity_type_id = kind.into();
+                entities[0].supply.as_mut().unwrap().delivery_depot_id = 0;
+                entities[1].pos.as_mut().unwrap().x = distance + 100.0;
+                let collector = CollectorSnapshot {
+                    id: 1, entity_type_id: kind.into(), owner_player_id: "me".into(),
+                    x: distance, y: 0.0,
+                };
+                let def = content.get(kind).unwrap();
+                let expected = def.collector.as_ref().unwrap().proximity_rate_per_second * strength;
+                let (actual_activity, rate, recipient) = Engine::advance_wireless_collection(
+                    &mut entities, &content, &collector, &node, def, 2.0);
+                assert_eq!(actual_activity, activity, "{kind} at {distance}");
+                assert!((rate - expected).abs() < 1e-6, "{kind} at {distance}: {rate}");
+                let target = if def.depot { 1 } else { 2 };
+                let total = resource_amount(&entities[0], "energy") + resource_amount(&entities[1], "energy");
+                assert!((total - expected as f64 * 2.0).abs() < 1e-6);
+                if strength > 0.0 {
+                    assert_eq!(recipient, Some(target));
+                } else {
+                    assert_eq!(recipient, None);
+                }
+                assert_eq!(entities[0].pos.unwrap().x, distance);
+                if def.speed == 0.0 {
+                    assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn zero_width_proximity_band_has_no_production() {
+        let (content, mut entities, mut node) = setup(10.0);
+        node.max_effective_distance = node.min_effective_distance;
+        assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_IDLE, 0.0, None));
+        assert_eq!(resource_amount(&entities[1], "energy"), 0.0);
     }
 }
 
@@ -594,11 +712,12 @@ mod transport_capacity_tests {
 
     #[test]
     fn collection_delivery_fills_capacity_and_retains_excess_without_reserves() {
-        let content = ContentPack::load(
+        let mut content = ContentPack::load(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../packages/content/entities.yaml"),
         )
         .unwrap();
+        content.entity_types.get_mut("habitat").unwrap().max_capacity.insert("minerals".into(), 1000.0);
         let mut depot = pb::Entity::default();
         let mut worker = pb::Entity::default();
         set_resource_amount(&mut depot, "minerals", 990.0);
@@ -862,6 +981,7 @@ mod radiation_tests {
         entity_types.insert(
             "star_yellow".to_string(),
             EntityTypeDef {
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -918,6 +1038,7 @@ mod radiation_tests {
         entity_types.insert(
             "collector_solar".to_string(),
             EntityTypeDef {
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -953,6 +1074,7 @@ mod radiation_tests {
         entity_types.insert(
             "worker".to_string(),
             EntityTypeDef {
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -3894,7 +4016,13 @@ impl Engine {
         if distance < node.min_effective_distance || distance > node.max_effective_distance {
             return (COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, 0.0, None);
         }
-        let rate = def.collector.as_ref().map_or(0.0, |c| c.proximity_rate_per_second.max(0.0));
+        let efficiency = crate::content::proximity_collection_efficiency(
+            distance, node.min_effective_distance, node.max_effective_distance);
+        if efficiency == 0.0 {
+            return (COLLECTOR_ACTIVITY_IDLE, 0.0, None);
+        }
+        let rate = def.collector.as_ref().map_or(0.0, |c| c.proximity_rate_per_second.max(0.0))
+            * efficiency;
         let (amount, recipient) = logistics::collect_to_depot(entities, content,
             collector.id, node.id, &node.resource_type, (rate * dt) as f64);
         let activity = if recipient.is_none() {
@@ -3918,6 +4046,7 @@ impl Engine {
         state::initialize_fixed_resource_deposits(
             &mut self.state.entities, self.content.as_ref().unwrap(), &self.spawn_config);
         state::regenerate_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), dt as f64);
+        state::regenerate_inventory(&mut self.state.entities, self.content.as_ref().unwrap(), dt as f64);
         let collect_active_entities: HashSet<u64> = self
             .intents
             .active_intents()

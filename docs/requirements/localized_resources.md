@@ -23,6 +23,8 @@ This builds on the data-driven resource types, entity upkeep, collector, refiner
 
 `services/rts-engine/config/spawn.yaml` defines `starting_resources` and `starting_resources_recipient_type` (default `habitat`). On first player spawn, the engine grants the configured stock directly into the newly spawned recipient’s inventory. The selected loadout must contain exactly one recipient of that type, and every configured amount must fit its capacity; otherwise spawning fails validation. Existing inventories are restored from snapshots rather than recreated from current spawn configuration.
 
+The default starting stock is 1,500 food, 1,500 minerals, and 700 energy. Habitats hold up to 1,500 minerals so this starting grant fits.
+
 Snapshot `player_ledgers` are derived reporting totals, not a second spendable resource pool.
 
 ## Content and state shape

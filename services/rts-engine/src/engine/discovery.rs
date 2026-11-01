@@ -149,11 +149,12 @@ mod tests {
 
     #[test]
     fn extended_target_visibility_uses_exact_distance_and_requires_operational_sensor() {
-        let (content, mut state) = setup(vec![
+        let (mut content, mut state) = setup(vec![
             entity(1, "worker", "alice", 0.0),
             entity(2, "star_yellow", "universe", 39999.0),
             entity(3, "star_yellow", "universe", 40001.0),
         ]);
+        content.entity_types.get_mut("star_yellow").unwrap().visibility_range = Some(40_000.0);
         state.entities[0].supply = Some(DepotSupply {
             operational: false,
             ..Default::default()

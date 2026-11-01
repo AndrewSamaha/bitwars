@@ -460,6 +460,11 @@
           "pattern": "^[a-z][a-z0-9_]*$",
           "description": "Eligible starting planet type; must have finite food stock."
         },
+        "inhabited_planet_type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Optional immobile depot replacing the selected neutral planet in place; must occur exactly once in each loadout and cannot have a resource node."
+        },
         "exposure": {
           "description": "Inclusive Goldilocks interval for both start origin and planet.",
           "type": "object",

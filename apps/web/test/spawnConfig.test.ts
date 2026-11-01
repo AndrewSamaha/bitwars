@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { parse, stringify } from "yaml";
-import { parseSpawnConfig, renameSpawnEntity } from "../src/lib/content/spawnConfig";
+import { parseSpawnConfig, renameSpawnEntity, type SpawnContent } from "../src/lib/content/spawnConfig";
 
 const mocks = vi.hoisted(() => ({ readFile: vi.fn(), writeFile: vi.fn(), auth: vi.fn() }));
 vi.mock("node:fs/promises", () => ({ readFile: mocks.readFile, writeFile: mocks.writeFile }));
@@ -124,6 +124,34 @@ describe("procedural spawn rules", () => {
     config.exposure.sources.missing_star = 1;
     expect(() => parseSpawnConfig(stringify(config), parse(content))).toThrow("Unknown spawn entity");
   });
+  it("accepts legacy starts without conversion and validates inhabited planet loadouts", () => {
+    const legacy = parse(yaml);
+    delete legacy.player_starts.inhabited_planet_type;
+    legacy.loadouts[0].habitat = legacy.loadouts[0].planet_blue_inhabitated;
+    delete legacy.loadouts[0].planet_blue_inhabitated;
+    legacy.starting_resources_recipient_type = "habitat";
+    expect(() => parseSpawnConfig(stringify(legacy), parse(content))).not.toThrow();
+    for (const count of [0, 2]) {
+      const config = parse(yaml);
+      config.loadouts[0].planet_blue_inhabitated = count;
+      expect(() => parseSpawnConfig(stringify(config), parse(content))).toThrow("exactly once");
+    }
+    const missing = parse(yaml);
+    missing.player_starts.inhabited_planet_type = "missing_planet";
+    missing.loadouts[0].missing_planet = 1;
+    expect(() => parseSpawnConfig(stringify(missing), parse(content))).toThrow("Unknown spawn entity missing_planet");
+  });
+  it("requires an immobile depot without a resource deposit for conversion", () => {
+    for (const edit of [
+      (type: SpawnContent["entity_types"][string]) => { type.depot = false; },
+      (type: SpawnContent["entity_types"][string]) => { type.speed = 1; },
+      (type: SpawnContent["entity_types"][string]) => { type.resource_node = { resource_type: "food", amount: 100 }; },
+    ]) {
+      const entities = parse(content);
+      edit(entities.entity_types.planet_blue_inhabitated);
+      expect(() => parseSpawnConfig(yaml, entities)).toThrow("immobile depot without a resource node");
+    }
+  });
   it("rejects invalid exposure tables, incomplete configuration and local sources", () => {
     for (const edit of [
       (v: any) => { delete v.exposure; },
@@ -156,5 +184,9 @@ describe("procedural spawn rules", () => {
     const sources = renameSpawnEntity(parseSpawnConfig(yaml), "star_yellow", "star_red");
     expect(sources.exposure.sources).toHaveProperty("star_red");
     expect(sources.solar_systems.anchor_type).toBe("star_red");
+    const inhabited = renameSpawnEntity(parseSpawnConfig(yaml), "planet_blue_inhabitated", "planet_home");
+    expect(inhabited.player_starts.inhabited_planet_type).toBe("planet_home");
+    expect(inhabited.starting_resources_recipient_type).toBe("planet_home");
+    expect(inhabited.loadouts[0]).toHaveProperty("planet_home", 1);
   });
 });

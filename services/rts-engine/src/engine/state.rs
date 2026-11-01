@@ -90,6 +90,24 @@ pub fn regenerate_resource_deposits(entities: &mut [Entity], content: &ContentPa
     }
 }
 
+/// Grow existing spendable stock without creating resources from an empty inventory.
+pub fn regenerate_inventory(entities: &mut [Entity], content: &ContentPack, dt: f64) {
+    if !dt.is_finite() || dt <= 0.0 { return; }
+    for entity in entities {
+        if !entity.health.is_finite() || entity.health <= 0.0 { continue; }
+        let Some(definition) = content.get(&entity.entity_type_id) else { continue; };
+        if definition.inventory_regeneration.is_empty() { continue; }
+        let Some(inventory) = entity.resources.as_mut() else { continue; };
+        for entry in &mut inventory.resources {
+            let Some(regeneration) = definition.inventory_regeneration.get(&entry.resource_type) else { continue; };
+            let capacity = definition.max_capacity.get(&entry.resource_type).copied().unwrap_or(0.0) as f64;
+            if !entry.amount.is_finite() || entry.amount <= 0.0 || entry.amount >= capacity { continue; }
+            let rate = regeneration.rate_per_second(entry.amount / capacity);
+            entry.amount = (entry.amount + rate * dt).min(capacity);
+        }
+    }
+}
+
 /// Convert exhausted sources after collection, preserving identity and position.
 /// The replacement gets its configured average stock, never the exhausted stock.
 pub fn transform_depleted_resource_nodes(entities: &mut [Entity], content: &ContentPack, config: Option<&SpawnConfig>) -> Vec<u64> {
@@ -504,6 +522,75 @@ mod tests {
         take_from_deposit(&mut entities[1], f64::MAX);
         assert!(transform_depleted_resource_nodes(&mut entities, &content, Some(&config)).is_empty());
         assert_eq!(entities[1].entity_type_id, "minerals");
+    }
+
+    #[test]
+    fn inventory_regeneration_grows_spendable_stock_without_touching_deposits() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let kind = "planet_blue_inhabitated";
+        let def = content.get(kind).unwrap();
+        let capacity = def.max_capacity["food"] as f64;
+        let mut entities = vec![
+            neutral_entity(1, kind, 0.0, 0.0, &content),
+            neutral_entity(2, "planet_blue", 0.0, 0.0, &content),
+        ];
+        entities[0].owner_player_id = "me".into();
+        set_resource_amount(&mut entities[0], "food", capacity / 2.0);
+        set_resource_amount(&mut entities[0], "energy", 5.0);
+        set_resource_amount(&mut entities[1], "food", 50.0);
+        entities[1].resource_deposit = Some(crate::pb::ResourceDeposit { amount: 2000.0, remaining: 1000.0 });
+        let ordinary_planet = entities[1].clone();
+        let rate = def.inventory_regeneration["food"].rate_per_second(0.5);
+        regenerate_inventory(&mut entities, &content, 0.25);
+        assert_eq!(resource_amount(&entities[0], "food"), capacity / 2.0 + rate * 0.25);
+        assert_eq!(resource_amount(&entities[0], "energy"), 5.0);
+        assert!(entities[0].resource_deposit.is_none());
+        assert_eq!(entities[1], ordinary_planet);
+        regenerate_inventory(&mut entities, &content, f64::MAX);
+        assert_eq!(resource_amount(&entities[0], "food"), capacity);
+        let full = entities.clone();
+        regenerate_inventory(&mut entities, &content, 100.0);
+        assert_eq!(entities, full);
+        set_resource_amount(&mut entities[0], "food", 0.0);
+        regenerate_inventory(&mut entities, &content, 100.0);
+        assert_eq!(resource_amount(&entities[0], "food"), 0.0);
+    }
+
+    #[test]
+    fn inventory_regeneration_requires_positive_time_life_and_existing_stock() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut living = neutral_entity(1, "planet_blue_inhabitated", 0.0, 0.0, &content);
+        set_resource_amount(&mut living, "food", 100.0);
+        for dt in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut entities = vec![living.clone()];
+            regenerate_inventory(&mut entities, &content, dt);
+            assert_eq!(entities[0], living);
+        }
+        let mut dead = living.clone();
+        dead.health = 0.0;
+        let mut destroyed = living.clone();
+        destroyed.health = -1.0;
+        let mut missing = living.clone();
+        missing.resources = None;
+        let mut empty = living.clone();
+        empty.resources = Some(Default::default());
+        let mut zero = living.clone();
+        zero.resources.as_mut().unwrap().resources[0].amount = 0.0;
+        let mut negative = living.clone();
+        negative.resources.as_mut().unwrap().resources[0].amount = -1.0;
+        let mut entities = vec![dead, destroyed, missing, empty, zero, negative];
+        let before = entities.clone();
+        regenerate_inventory(&mut entities, &content, 100.0);
+        assert_eq!(entities, before);
+        for amount in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut entity = living.clone();
+            entity.resources.as_mut().unwrap().resources[0].amount = amount;
+            regenerate_inventory(std::slice::from_mut(&mut entity), &content, 100.0);
+            let after = resource_amount(&entity, "food");
+            assert!(if amount.is_nan() { after.is_nan() } else { after == amount });
+        }
     }
 
     #[test]

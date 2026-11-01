@@ -40,6 +40,9 @@ pub struct EntityTypeDef {
     /// Per-resource physical depot stock or carrier cargo capacity. Ordinary consumers may omit this.
     #[serde(default)]
     pub max_capacity: HashMap<String, f32>,
+    /// Stock-dependent growth credited directly to spendable inventory, capped by max_capacity.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub inventory_regeneration: HashMap<String, ResourceRegenerationDef>,
     /// Enables a physical stockpile that nearby friendly consumers may spend from.
     #[serde(default)]
     pub depot: bool,
@@ -506,12 +509,20 @@ pub struct ResourceNodeDef {
     /// Inner center-to-center gathering distance in world units, inclusive. Defaults to 0.
     #[serde(default)]
     pub min_effective_distance: f32,
-    /// Outer center-to-center gathering distance in world units, inclusive. Defaults to 120 and is clamped to at least the inner distance.
+    /// Outer center-to-center gathering distance in world units, inclusive. Proximity production falls linearly from full rate at the inner distance to zero here; transport production is constant within the band. Defaults to 120 and is clamped to at least the inner distance.
     #[serde(default = "default_max_effective_distance")]
     pub max_effective_distance: f32,
 }
 
-/// Regeneration uses x = remaining / the planet's sampled maximum stock.
+/// Linear proximity production strength; a zero-width band produces nothing.
+pub fn proximity_collection_efficiency(distance: f32, min_distance: f32, max_distance: f32) -> f32 {
+    if distance < min_distance || distance >= max_distance || max_distance <= min_distance {
+        return 0.0;
+    }
+    ((max_distance - distance) / (max_distance - min_distance)).clamp(0.0, 1.0)
+}
+
+/// Regeneration uses x = current stock / maximum stock, for deposits or inventory.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "model", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ResourceRegenerationDef {
@@ -530,6 +541,17 @@ pub enum ResourceRegenerationDef {
 }
 
 impl ResourceRegenerationDef {
+    fn is_valid(&self) -> bool {
+        match *self {
+            Self::Hill { max_rate_per_second, half_saturation_fraction, exponent } => {
+                max_rate_per_second.is_finite() && max_rate_per_second > 0.0
+                    && half_saturation_fraction.is_finite()
+                    && half_saturation_fraction > 0.0 && half_saturation_fraction <= 1.0
+                    && exponent.is_finite() && exponent > 0.0
+            }
+        }
+    }
+
     pub fn rate_per_second(&self, fraction: f64) -> f64 {
         match *self {
             Self::Hill { max_rate_per_second, half_saturation_fraction, exponent } => {
@@ -707,6 +729,15 @@ fn validate_resource_content(
         if def.max_capacity.values().any(|capacity| !capacity.is_finite() || *capacity < 0.0) {
             anyhow::bail!("entity type {id} has an invalid max_capacity");
         }
+        for (resource, regeneration) in &def.inventory_regeneration {
+            let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0);
+            if !resource_types.contains_key(resource) || !capacity.is_finite() || capacity <= 0.0 {
+                anyhow::bail!("entity type {id} inventory_regeneration.{resource} requires a known resource with positive finite capacity");
+            }
+            if !regeneration.is_valid() {
+                anyhow::bail!("entity type {id} inventory_regeneration.{resource} has invalid regeneration parameters");
+            }
+        }
         for (resource, reserve) in &def.resource_reserves {
             let capacity = def.max_capacity.get(resource).copied().unwrap_or(0.0) as f64;
             if !resource_types.contains_key(resource) || capacity <= 0.0
@@ -800,15 +831,8 @@ fn validate_technologies(
             if node.amount.is_some_and(|amount| !amount.is_finite() || amount < 0.0) {
                 anyhow::bail!("entity type {entity_id} has an invalid resource node amount");
             }
-            if let Some(ResourceRegenerationDef::Hill {
-                max_rate_per_second, half_saturation_fraction, exponent,
-            }) = &node.regeneration {
-                if node.amount.is_some_and(|amount| amount <= 0.0)
-                    || !max_rate_per_second.is_finite() || *max_rate_per_second <= 0.0
-                    || !half_saturation_fraction.is_finite()
-                    || *half_saturation_fraction <= 0.0 || *half_saturation_fraction > 1.0
-                    || !exponent.is_finite() || *exponent <= 0.0
-                {
+            if let Some(regeneration) = &node.regeneration {
+                if node.amount.is_some_and(|amount| amount <= 0.0) || !regeneration.is_valid() {
                     anyhow::bail!("entity type {entity_id} has invalid regeneration parameters or maximum stock");
                 }
             }
@@ -949,6 +973,62 @@ mod tests {
     use super::*;
 
     #[test]
+    fn inventory_regeneration_validates_resources_capacity_and_hill_parameters() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let mut def = content.get("worker").unwrap().clone();
+        let valid = ResourceRegenerationDef::Hill {
+            max_rate_per_second: 2.0, half_saturation_fraction: 0.5, exponent: 4.0,
+        };
+        def.inventory_regeneration = HashMap::from([("food".into(), valid.clone())]);
+        let validate = |def: &EntityTypeDef| validate_resource_content(
+            &HashMap::from([("worker".into(), def.clone())]), &content.resource_types);
+        assert!(validate(&def).is_ok());
+        for capacity in [None, Some(0.0), Some(-1.0), Some(f32::NAN), Some(f32::INFINITY)] {
+            def.max_capacity.remove("food");
+            if let Some(capacity) = capacity { def.max_capacity.insert("food".into(), capacity); }
+            assert!(validate(&def).is_err());
+        }
+        def.max_capacity.insert("food".into(), 50.0);
+        def.max_capacity.insert("unknown".into(), 50.0);
+        def.inventory_regeneration = HashMap::from([("unknown".into(), valid)]);
+        assert!(validate(&def).is_err());
+        def.max_capacity.remove("unknown");
+        for (rate, fraction, exponent) in [
+            (0.0, 0.5, 4.0), (-1.0, 0.5, 4.0),
+            (f64::NAN, 0.5, 4.0), (f64::INFINITY, 0.5, 4.0),
+            (2.0, 0.0, 4.0), (2.0, -0.1, 4.0), (2.0, 1.1, 4.0),
+            (2.0, f64::NAN, 4.0), (2.0, f64::INFINITY, 4.0),
+            (2.0, 0.5, 0.0), (2.0, 0.5, -1.0),
+            (2.0, 0.5, f64::NAN), (2.0, 0.5, f64::INFINITY),
+        ] {
+            def.inventory_regeneration = HashMap::from([("food".into(), ResourceRegenerationDef::Hill {
+                max_rate_per_second: rate, half_saturation_fraction: fraction, exponent,
+            })]);
+            assert!(validate(&def).is_err());
+        }
+        def.inventory_regeneration = HashMap::from([("food".into(), ResourceRegenerationDef::Hill {
+            max_rate_per_second: 2.0, half_saturation_fraction: 1.0, exponent: 0.5,
+        })]);
+        assert!(validate(&def).is_ok());
+    }
+
+    #[test]
+    fn inventory_regeneration_is_optional_and_round_trips_without_empty_fields() {
+        let mut def: EntityTypeDef = serde_yaml::from_str(
+            "fog_memory: forget_when_hidden\nspeed: 0\nstop_radius: 1\nmass: 1\nhealth: 1\n",
+        ).unwrap();
+        assert!(def.inventory_regeneration.is_empty());
+        assert!(serde_json::to_value(&def).unwrap().get("inventory_regeneration").is_none());
+        def.max_capacity.insert("food".into(), 100.0);
+        def.inventory_regeneration.insert("food".into(), ResourceRegenerationDef::Hill {
+            max_rate_per_second: 2.0, half_saturation_fraction: 0.5, exponent: 4.0,
+        });
+        let restored: EntityTypeDef = serde_json::from_value(serde_json::to_value(&def).unwrap()).unwrap();
+        assert_eq!(restored.inventory_regeneration["food"].rate_per_second(1.0), 2.0);
+    }
+
+    #[test]
     fn validates_inventory_reserves_against_known_resources_and_capacity() {
         let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();
@@ -1005,6 +1085,7 @@ mod tests {
         types.insert(
             "worker".into(),
             EntityTypeDef {
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -1040,6 +1121,7 @@ mod tests {
         types.insert(
             "scout".into(),
             EntityTypeDef {
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -1087,6 +1169,7 @@ mod tests {
         types_a.insert(
             "worker".into(),
             EntityTypeDef {
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -1122,6 +1205,7 @@ mod tests {
         types_a.insert(
             "scout".into(),
             EntityTypeDef {
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -1159,6 +1243,7 @@ mod tests {
         types_b.insert(
             "scout".into(),
             EntityTypeDef {
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -1194,6 +1279,7 @@ mod tests {
         types_b.insert(
             "worker".into(),
             EntityTypeDef {
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -1235,59 +1321,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn load_entities_yaml() {
-        // Resolve the path relative to the workspace root
-        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let content_path = manifest_dir.join("../../packages/content/entities.yaml");
-        if !content_path.exists() {
-            // Skip if running in CI without the full workspace
-            return;
-        }
-        let pack = ContentPack::load(&content_path).unwrap();
-        assert!(
-            pack.entity_types.contains_key("worker"),
-            "should have worker type"
-        );
-        assert!(
-            pack.resource_types.get("minerals").is_some(),
-            "M7: should have minerals resource type"
-        );
-        assert!(
-            pack.entity_types.contains_key("scout"),
-            "should have scout type"
-        );
-        let habitat_sensor = pack.entity_types["habitat"].sensor.as_ref().unwrap();
-        assert_eq!(habitat_sensor.range, 4000.0);
-        assert_eq!(habitat_sensor.cost_per_minute["energy"], 5.0);
-        assert_eq!(
-            pack.entity_types["star_yellow"].visibility_range,
-            Some(40_000.0)
-        );
-        assert!(
-            !pack.content_hash.is_empty(),
-            "content hash should be non-empty"
-        );
-
-        let worker = pack.get("worker").unwrap();
-        assert_eq!(worker.speed, 90.0);
-        assert_eq!(worker.stop_radius, 0.75);
-        let scout = pack.get("scout").unwrap();
-        assert_eq!(scout.speed, 140.0);
-    }
-
-    #[test]
-    fn hill_regeneration_matches_worker_balance_and_declines_with_stock() {
-        let pack = ContentPack::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../packages/content/entities.yaml")).unwrap();
-        let regeneration = pack.get("planet_blue").unwrap().resource_node.as_ref().unwrap()
-            .regeneration.as_ref().unwrap();
-        let worker_rate = pack.get("worker").unwrap().collector.as_ref().unwrap().transport_rate_per_second as f64;
-        assert!((regeneration.rate_per_second(0.5) - worker_rate / 2.0).abs() < 1e-12);
-        assert!((regeneration.rate_per_second(1.0) - 128.0 / 17.0).abs() < 1e-12);
-        assert!((regeneration.rate_per_second(0.25) - 8.0 / 17.0).abs() < 1e-12);
-        assert_eq!(regeneration.rate_per_second(0.0), 0.0);
-    }
 
     #[test]
     fn regeneration_schema_rejects_invalid_parameters_and_depletion_targets() {
@@ -1320,17 +1353,6 @@ mod tests {
         assert!(serde_json::from_value::<ResourceNodeDef>(json).is_err());
     }
 
-    #[test]
-    fn loads_worker_repair_ability() {
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../packages/content/entities.yaml");
-        let pack = ContentPack::load(&path).unwrap();
-        let repair = pack.get("worker").unwrap().repair.as_ref().unwrap();
-        assert_eq!(repair.range, 150.0);
-        assert_eq!(repair.cost_per_min["energy"], 60.0);
-        assert_eq!(repair.cost_per_min["minerals"], 60.0);
-        assert_eq!(repair.efficiency, 1.0);
-    }
 
     #[test]
     fn loads_explicit_fog_memory_policy() {

@@ -307,6 +307,7 @@ fn eligible_planet(
 ) -> bool {
     let start = &config.player_starts;
     e.entity_type_id == start.planet_type
+        && (e.owner_player_id.is_empty() || e.owner_player_id == UNIVERSE_OWNER)
         && e.health > 0.0
         && e.pos.is_some()
         && e.resource_deposit.as_ref().is_some_and(|d| {
@@ -421,6 +422,17 @@ fn candidate(
     rng: &mut impl Rng,
 ) -> Option<(Vec<Entity>, StartReservation)> {
     let start = &config.player_starts;
+    let mut nearby_loadout;
+    let spawned_loadout = if let Some(id) = &start.inhabited_planet_type {
+        if loadout.get(id) != Some(&1) {
+            return None;
+        }
+        nearby_loadout = loadout.clone();
+        nearby_loadout.remove(id);
+        &nearby_loadout
+    } else {
+        loadout
+    };
     let mut planets: Vec<_> = entities
         .iter()
         .filter(|e| e.id >= min_planet_id && eligible_planet(e, entities, generation, config))
@@ -460,9 +472,30 @@ fn candidate(
                 continue;
             }
             let mut trial = entities.to_vec();
+            if let Some(id) = &start.inhabited_planet_type {
+                let radius = hull(content, id);
+                // Test the replacement hull without treating the old planet as an obstacle.
+                if !trial.iter().filter(|e| e.id != planet.id && e.health > 0.0).all(|e| {
+                    distance(pos(planet), pos(e)) >= radius + hull(content, &e.entity_type_id)
+                }) || !radiation_safe(
+                    &trial, content, pos(planet), radius,
+                    start.placement.radiation_clearance_multiplier,
+                ) || !enemy_clear(
+                    &trial, content, owner, pos(planet), radius, start.enemy_clearance,
+                ) {
+                    continue;
+                }
+                let index = trial.iter().position(|e| e.id == planet.id)?;
+                let mut inhabited = neutral_entity(
+                    planet.id, id, pos(planet)[0], pos(planet)[1], content,
+                );
+                inhabited.owner_player_id = owner.to_string();
+                inhabited.resources = Some(Default::default());
+                trial[index] = inhabited;
+            }
             if !trial
                 .iter()
-                .any(|e| usable_mineral(e, entities, content, config, origin, collector_radius))
+                .any(|e| usable_mineral(e, &trial, content, config, origin, collector_radius))
             {
                 if !start.minerals.create_if_missing {
                     continue;
@@ -505,7 +538,7 @@ fn candidate(
                 owner,
                 origin[0],
                 origin[1],
-                loadout,
+                spawned_loadout,
                 config.min_entity_spawn_distance,
                 config.max_entity_spawn_distance,
                 &config.neutrals_near_spawn,
@@ -520,7 +553,7 @@ fn candidate(
                 // The legacy sampler has a bounded fallback; reject rather than
                 // accepting that fallback if it breaks the configured spacing.
                 let spacing_safe = e.owner_player_id != owner
-                    || trial[before..i]
+                    || trial[..i]
                         .iter()
                         .filter(|other| other.owner_player_id == owner)
                         .all(|other| distance(p, pos(other)) >= config.min_entity_spawn_distance);
@@ -577,7 +610,7 @@ fn candidate(
             }
             initialize_resource_deposits(&mut trial[before..], content, Some(config), rng);
             if !config.starting_resources.is_empty() {
-                let recipient = trial[before..].iter_mut().find(|e| {
+                let recipient = trial.iter_mut().find(|e| {
                     e.entity_type_id == config.starting_resources_recipient_type
                         && e.owner_player_id == owner
                 })?;
@@ -840,6 +873,7 @@ mod tests {
     fn exposure_combines_theta_and_stars_and_is_finite_at_source() {
         let (content, mut config) = fixture();
         config.exposure.sources.insert("star_yellow".into(), 0.5);
+        config.exposure.reference_distance = 3750.0;
         config.exposure.sources.insert("theta".into(), 0.5);
         let entities = vec![
             entity(&content, 2, "theta", [3750.0, 0.0]),
@@ -980,6 +1014,13 @@ mod tests {
                 .filter(|e| e.owner_player_id == owner)
                 .collect();
             for (i, unit) in units.iter().enumerate() {
+                assert!(radiation_safe(
+                    &state.entities, &content, pos(unit), hull(&content, &unit.entity_type_id),
+                    config.player_starts.placement.radiation_clearance_multiplier,
+                ));
+                assert!(state.entities.iter().filter(|other| other.id != unit.id && other.health > 0.0)
+                    .all(|other| distance(pos(unit), pos(other))
+                        >= hull(&content, &unit.entity_type_id) + hull(&content, &other.entity_type_id)));
                 for other in &units[..i] {
                     assert!(distance(pos(unit), pos(other)) >= config.min_entity_spawn_distance);
                 }
@@ -989,15 +1030,60 @@ mod tests {
         spawn_player(&mut state, &content, &config, "alice", 0, &mut rng).unwrap();
         assert_eq!(before, state.entities);
         for owner in ["alice", "bob", "carol"] {
-            let habitat = state
+            let planet = state
                 .entities
                 .iter()
-                .find(|e| e.owner_player_id == owner && e.entity_type_id == "habitat")
+                .find(|e| e.id == state.generation.starts[owner].planet_id)
                 .unwrap();
-            assert_eq!(
-                super::super::state::resource_amount(habitat, "food"),
-                config.starting_resources["food"] as f64
-            );
+            assert_eq!(planet.entity_type_id, "planet_blue_inhabitated");
+            assert_eq!(planet.owner_player_id, owner);
+            assert_eq!(pos(planet), state.generation.starts[owner].planet_position);
+            assert_eq!(planet.health, content.get(&planet.entity_type_id).unwrap().health);
+            assert!(planet.resource_deposit.is_none());
+            assert_eq!(state.entities.iter().filter(|e| e.owner_player_id == owner
+                && e.entity_type_id == "planet_blue_inhabitated").count(), 1);
+            assert!(!state.entities.iter().any(|e| e.owner_player_id == owner && e.entity_type_id == "habitat"));
+            for (resource, amount) in &config.starting_resources {
+                assert_eq!(super::super::state::resource_amount(planet, resource), *amount as f64);
+            }
+            let def = content.get(&planet.entity_type_id).unwrap();
+            for kind in ["worker", "scout"] {
+                assert!(def.builds.iter().any(|option| option.entity_type_id == kind));
+                for (resource, cost) in &content.get(kind).unwrap().build_cost {
+                    assert!(super::super::state::resource_amount(planet, resource) >= *cost as f64);
+                }
+            }
+        }
+    }
+    #[test]
+    fn conversion_preserves_planet_identity_and_legacy_starts_keep_the_deposit() {
+        for convert in [true, false] {
+            let (content, mut config) = fixture();
+            config.player_starts.fallback.generate_additional_systems = false;
+            if !convert {
+                config.player_starts.inhabited_planet_type = None;
+                config.loadouts[0].remove("planet_blue_inhabitated");
+                config.loadouts[0].insert("habitat".into(), 1);
+                config.starting_resources_recipient_type = "habitat".into();
+            }
+            config.validate_content(&content).unwrap();
+            let mut state = super::super::state::init_world(&config);
+            let mut rng = StdRng::seed_from_u64(73);
+            let planet_position = [config.exposure.reference_distance as f32, 0.0];
+            add_object(&mut state.entities, &content, &config, "star_yellow", [0.0, 0.0], &mut rng);
+            add_object(&mut state.entities, &content, &config, "planet_blue", planet_position, &mut rng);
+            let original = state.entities.last().unwrap().clone();
+            spawn_player(&mut state, &content, &config, "alice", 0, &mut rng).unwrap();
+            let selected = state.entities.iter().find(|e| e.id == original.id).unwrap();
+            assert_eq!(pos(selected), planet_position);
+            assert_eq!(state.generation.starts["alice"].planet_id, original.id);
+            if convert {
+                assert_eq!(selected.entity_type_id, "planet_blue_inhabitated");
+                assert_eq!(selected.owner_player_id, "alice");
+                assert!(selected.resource_deposit.is_none());
+            } else {
+                assert_eq!(selected, &original);
+            }
         }
     }
     #[test]
@@ -1046,7 +1132,7 @@ mod tests {
             &content,
             &config,
             "planet_blue",
-            [3750.0, 0.0],
+            [config.exposure.reference_distance as f32, 0.0],
             &mut rng,
         );
         let planet = state.entities.last_mut().unwrap();
@@ -1100,7 +1186,7 @@ mod tests {
             &content,
             &config,
             "planet_blue",
-            [3750.0, 0.0],
+            [config.exposure.reference_distance as f32, 0.0],
             &mut rng,
         );
         let initial = state.entities.clone();
@@ -1111,7 +1197,7 @@ mod tests {
             &content,
             &config,
             "minerals",
-            [5000.0, 0.0],
+            [config.exposure.reference_distance as f32 + 1250.0, 0.0],
             &mut rng,
         );
         spawn_player(&mut state, &content, &config, "alice", 0, &mut rng).unwrap();
@@ -1144,10 +1230,10 @@ mod tests {
             &content,
             &config,
             "planet_blue",
-            [3750.0, 0.0],
+            [config.exposure.reference_distance as f32, 0.0],
             &mut rng,
         );
-        let mut enemy = entity(&content, next_id(&state.entities), "raider", [3750.0, 0.0]);
+        let mut enemy = entity(&content, next_id(&state.entities), "raider", [config.exposure.reference_distance as f32, 0.0]);
         enemy.owner_player_id = crate::spawn_config::RAIDERS_OWNER.into();
         state.entities.push(enemy);
         let initial = state.entities.clone();
@@ -1197,7 +1283,7 @@ mod tests {
             &content,
             &config,
             "planet_blue",
-            [3750.0, 0.0],
+            [config.exposure.reference_distance as f32, 0.0],
             &mut rng,
         );
         let revision = start_revision(&state, &config);

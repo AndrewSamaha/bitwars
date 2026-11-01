@@ -460,6 +460,7 @@ mod tests {
 
     fn content() -> ContentPack {
         let raider = EntityTypeDef {
+            inventory_regeneration: HashMap::new(),
             resource_reserves: HashMap::new(),
             max_capacity: HashMap::new(),
             depot: false,

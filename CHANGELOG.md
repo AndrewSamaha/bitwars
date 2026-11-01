@@ -10,6 +10,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Added configurable per-resource inventory regeneration using normalized Hill growth, including capacity limits and zero-stock exhaustion.
+- Added the immobile, non-attacking `planet_blue_inhabitated` hub with directly spendable food regrowth, habitat depot services, and worker/scout construction. Default player starts now convert their selected blue planet instead of spawning a separate habitat.
+- Extended yellow-star solar collection reach to 15,000 world units, with proximity production decreasing linearly to zero at the source's outer collection boundary.
 - `CHANGELOG.md` created and aligned with existing git history.
 - Updated `README.md` Getting Started to match current tooling (`pnpm`, `turbo`) and Redis Stack via `docker-compose.yml`.
 - Documentation index and links surfaced in `README.md` (see `docs/`).
