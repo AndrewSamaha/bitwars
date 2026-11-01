@@ -19,6 +19,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Updated `README.md` Getting Started to match current tooling (`pnpm`, `turbo`) and Redis Stack via `docker-compose.yml`.
 - Documentation index and links surfaced in `README.md` (see `docs/`).
 
+### Changed
+- Added 60 minutes of maintenance-only storage capacity to factory, military factory, defense pylons, fighters, battleship, science vessel, and long-range scout types that previously had no capacity. Initial resource amounts are unchanged; sensor operating costs are additional.
+- Set maximum energy storage to 200 for all three defense pylon types.
+
 ### Fixed
 - Moved legacy sprites for `planet_blue`, `star_yellow`, `minerals`, and `raider` from the web public directory into `packages/content/assets` so hot-reload revisions include their artwork instead of falling back to the corvette texture.
 - Replaced `packages/content/assets/theta/idle.png`, which contained a solar-collector image, with the correct theta star artwork already present in `public/assets`; republished and live-reloaded the revision.

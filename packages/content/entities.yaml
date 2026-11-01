@@ -350,7 +350,9 @@ entity_types:
       energy: 4
       food: 1
     mass: 7
-    max_capacity: {}
+    max_capacity:
+      energy: 240
+      food: 60
     sensor:
       cost_per_minute:
         energy: 0.1
@@ -438,7 +440,8 @@ entity_types:
     maintenance_cost_per_minute:
       energy: 200
     mass: 1
-    max_capacity: {}
+    max_capacity:
+      energy: 200
     sensor:
       cost_per_minute:
         energy: 2.5
@@ -473,7 +476,8 @@ entity_types:
     maintenance_cost_per_minute:
       energy: 30
     mass: 1
-    max_capacity: {}
+    max_capacity:
+      energy: 200
     sensor:
       cost_per_minute:
         energy: 2.5
@@ -544,7 +548,8 @@ entity_types:
     maintenance_cost_per_minute:
       energy: 220
     mass: 1
-    max_capacity: {}
+    max_capacity:
+      energy: 200
     sensor:
       cost_per_minute:
         energy: 2.5
@@ -575,7 +580,9 @@ entity_types:
       energy: 2
       food: 1
     mass: 0.6
-    max_capacity: {}
+    max_capacity:
+      energy: 120
+      food: 60
     sensor:
       range: 2000
     speed: 400
@@ -605,7 +612,9 @@ entity_types:
       energy: 3
       food: 1
     mass: 0.6
-    max_capacity: {}
+    max_capacity:
+      energy: 180
+      food: 60
     sensor:
       range: 2000
     speed: 400
@@ -635,7 +644,9 @@ entity_types:
       energy: 25
       food: 15
     mass: 0.6
-    max_capacity: {}
+    max_capacity:
+      energy: 1500
+      food: 900
     requires_technologies:
       all:
         - space_age
@@ -668,7 +679,9 @@ entity_types:
       energy: 10
       food: 10
     mass: 0.6
-    max_capacity: {}
+    max_capacity:
+      energy: 600
+      food: 600
     researches:
       - neutrino_sensors
       - solar_efficiency_1
@@ -700,7 +713,9 @@ entity_types:
       energy: 1.2
       food: 1
     mass: 0.6
-    max_capacity: {}
+    max_capacity:
+      energy: 72
+      food: 60
     sensor:
       range: 5000
     speed: 500
@@ -760,7 +775,9 @@ entity_types:
       energy: 5
       food: 1
     mass: 7
-    max_capacity: {}
+    max_capacity:
+      energy: 300
+      food: 60
     sensor:
       cost_per_minute:
         energy: 0.1
