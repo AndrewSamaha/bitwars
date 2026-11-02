@@ -110,7 +110,7 @@ export function TooltipOverlay() {
   const capacities = (contentManager.getEntityType(entityTypeId) as any)?.max_capacity as Record<string, number> | undefined;
   const deposit = (hoveredEntity as any).resource_deposit as { amount: number; remaining: number } | null | undefined;
   const depositResource = contentManager.getEntityType(entityTypeId)?.resource_node?.resource_type;
-  const rememberedAt = (hoveredEntity as any).remembered?.last_seen_at as number | undefined;
+  const remembered = hoveredEntity.remembered !== undefined;
 
   return (
     <div
@@ -126,7 +126,7 @@ export function TooltipOverlay() {
         fontSize: 12
       }}
     >
-      {rememberedAt !== undefined && <div><b>Last known</b></div>}
+      {remembered && <div><b>Last known</b></div>}
       {ownerPlayerName && <div><b>owner:</b> {ownerPlayerName}</div>}
       <div><b>{entityTypeId || "—"}</b></div>
       <div><b>id:</b> {(hoveredEntity as any).id}</div>
@@ -139,7 +139,7 @@ export function TooltipOverlay() {
             : ""}
         </div>
       )}
-      {rememberedAt === undefined && deposit && depositResource && (
+      {!remembered && deposit && depositResource && (
         <div><b>{depositResource}:</b> {deposit.remaining.toFixed(1)} / {deposit.amount.toFixed(1)}</div>
       )}
       {ownerPlayerId === player?.id && Object.entries(capacities ?? {}).filter(([, capacity]) => capacity > 0).map(([resource_type, capacity]) => {

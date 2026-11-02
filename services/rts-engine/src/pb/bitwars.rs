@@ -328,8 +328,41 @@ impl SentryPhase {
         }
     }
 }
+/// Last observed values only; never hydrate from a currently hidden entity.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EntityObservation {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(string, tag = "2")]
+    pub entity_type_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub owner_player_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "4")]
+    pub pos: ::core::option::Option<Vec2>,
+    #[prost(uint64, tag = "5")]
+    pub last_seen_tick: u64,
+}
+/// Authoritative checkpoint knowledge. Player transports must select their owner.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerKnowledge {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub observations: ::prost::alloc::vec::Vec<EntityObservation>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerKnowledgeUpdate {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub upserts: ::prost::alloc::vec::Vec<EntityObservation>,
+    #[prost(uint64, repeated, tag = "3")]
+    pub removed_entity_ids: ::prost::alloc::vec::Vec<u64>,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Delta {
+    #[prost(message, repeated, tag = "12")]
+    pub player_knowledge_updates: ::prost::alloc::vec::Vec<PlayerKnowledgeUpdate>,
     #[prost(uint64, tag = "1")]
     pub tick: u64,
     #[prost(message, repeated, tag = "2")]
@@ -1045,6 +1078,8 @@ pub struct CollectionOrderState {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
+    #[prost(message, repeated, tag = "17")]
+    pub player_knowledge: ::prost::alloc::vec::Vec<PlayerKnowledge>,
     /// Exact accepted immutable content used by this checkpoint. Empty only on legacy snapshots.
     #[prost(string, tag = "16")]
     pub content_revision: ::prost::alloc::string::String,

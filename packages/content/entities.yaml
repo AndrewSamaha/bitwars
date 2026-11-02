@@ -223,15 +223,15 @@ entity_types:
     fog_memory: forget_when_hidden
     health: 200
     hull_radius: 50
+    initial_resources:
+      energy: 50
+      food: 50
+      minerals: 50
     maintenance_cost_per_minute:
       energy: 1
       food: 1
     mass: 1
     max_capacity:
-      energy: 50
-      food: 50
-      minerals: 50
-    initial_resources:
       energy: 50
       food: 50
       minerals: 50
@@ -286,7 +286,7 @@ entity_types:
     hull_radius: 90
     maintenance_cost_per_minute:
       energy: 10
-      food: 60
+      food: 10
       minerals: 5
     mass: 4
     max_capacity:
@@ -386,15 +386,15 @@ entity_types:
     fog_memory: forget_when_hidden
     health: 60
     hull_radius: 50
+    initial_resources:
+      energy: 50
+      food: 50
+      minerals: 50
     maintenance_cost_per_minute:
       energy: 1
       food: 1
     mass: 0.6
     max_capacity:
-      energy: 50
-      food: 50
-      minerals: 50
-    initial_resources:
       energy: 50
       food: 50
       minerals: 50
@@ -1019,7 +1019,7 @@ entity_types:
     inventory_regeneration:
       food:
         exponent: 4
-        half_saturation_fraction: 0.5
+        half_saturation_fraction: 0.2
         max_rate_per_second: 2
         model: hill
     maintenance_cost_per_minute:

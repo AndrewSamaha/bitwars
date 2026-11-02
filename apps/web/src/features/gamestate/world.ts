@@ -19,8 +19,8 @@ export type RadiationDamagePresentation = {
   radiation_damage_last_at?: number;
   radiation_shed_started_at?: number;
 };
-/** Client-only marker for an entity whose state is no longer authoritative. */
-export type FogMemoryView = { remembered?: { last_seen_at: number } };
+/** Last-known server observation, never an actionable live entity. */
+export type FogMemoryView = { remembered?: { last_seen_tick: string | number } };
 export const RADIATION_DAMAGE_VISUAL_LINGER_MS = 2_000;
 export type UIState = { hover: boolean };
 export type ActiveIntentView = {

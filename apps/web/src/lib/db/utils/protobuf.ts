@@ -2,6 +2,7 @@ import { type Delta } from "@bitwars/shared/gen/delta_pb";
 import { type Entity } from "@bitwars/shared/gen/entity_pb";
 import type { EscortOrderState, SentryOrderState, MoveOrderState } from "@bitwars/shared/gen/navigation_pb";
 import { type Snapshot } from "@bitwars/shared/gen/snapshot_pb";
+import type { EntityObservation } from "@bitwars/shared/gen/player_knowledge_pb";
 
 // Helpers to convert protobuf-es messages into compact, client-friendly JSON
 export const biToNumOrStr = (v: bigint): number | string => {
@@ -42,11 +43,32 @@ export const mapSentryOrderToJson = (order: SentryOrderState) => ({
     next_waypoint_index: order.route.nextWaypointIndex, direction: order.route.direction, traversal: order.route.traversal } : null,
 });
 
+const mapObservationToJson = (observation: EntityObservation) => {
+  const pos = observation.pos;
+  if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return [];
+  return [{
+    id: observation.entityId.toString(),
+    entity_type_id: observation.entityTypeId,
+    owner_player_id: observation.ownerPlayerId,
+    pos: { x: pos.x, y: pos.y },
+    last_seen_tick: biToNumOrStr(observation.lastSeenTick),
+  }];
+};
+
+const mapKnowledgeUpdateToJson = (delta: Delta, playerId?: string) => {
+  const knowledge = playerId ? delta.playerKnowledgeUpdates?.find((state) => state.playerId === playerId) : undefined;
+  return {
+    remembered_entity_updates: (knowledge?.upserts ?? []).flatMap(mapObservationToJson),
+    forgotten_entity_ids: (knowledge?.removedEntityIds ?? []).map(biToNumOrStr),
+  };
+};
+
 // Entity has entity_type_id (proto field 2); TS codegen may use camelCase
-export const mapDeltaToJson = (d: Delta) => ({
+export const mapDeltaToJson = (d: Delta, playerId?: string) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
   removed_entity_ids: (d.removedEntityIds ?? []).map(biToNumOrStr),
+  ...mapKnowledgeUpdateToJson(d, playerId),
   escort_order_updates: (d.escortOrderUpdates ?? []).map(mapEscortOrderToJson),
   escort_order_removals: (d.escortOrderRemovals ?? []).map((order) => ({ player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId) })),
   sentry_order_updates: (d.sentryOrderUpdates ?? []).map(mapSentryOrderToJson),
@@ -105,7 +127,8 @@ export const mapEntityToJson = (e: Entity) => {
   };
 };
 
-export const mapSnapshotToJson = (s: Snapshot) => {
+export const mapSnapshotToJson = (s: Snapshot, playerId?: string) => {
+  const knowledge = playerId ? s.playerKnowledge?.find((state) => state.playerId === playerId) : undefined;
   const player_ledgers = (s.playerLedgers ?? []).map((pl) => ({
     player_id: pl.playerId ?? "",
     resources: (pl.resources ?? []).map((r) => ({
@@ -120,6 +143,7 @@ export const mapSnapshotToJson = (s: Snapshot) => {
     tick: biToNumOrStr(s.tick),
     content_revision: s.contentRevision,
     entities: (s.entities ?? []).map(mapEntityToJson),
+    remembered_entities: (knowledge?.observations ?? []).flatMap(mapObservationToJson),
     player_ledgers,
     escort_orders: (s.escortOrders ?? []).map(mapEscortOrderToJson),
     sentry_orders: (s.sentryOrders ?? []).map(mapSentryOrderToJson),

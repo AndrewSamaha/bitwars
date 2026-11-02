@@ -59,7 +59,7 @@ describe("collection routing", () => {
   });
   it("travels directly through known radiation when no local waypoint network exists", () => {
     const request = fixture();
-    request.entities.push({ ...star, remembered: { last_seen_at: 1 } });
+    request.entities.push({ ...star, remembered: { last_seen_tick: 1 } });
     expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { waypointIds: [], initialWaypointIds: [] } });
   });
   it("ignores remote, foreign, destroyed, and remembered waypoints when enabling safe routing", () => {

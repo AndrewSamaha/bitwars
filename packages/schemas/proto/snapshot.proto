@@ -6,6 +6,7 @@ import "intent.proto";
 import "navigation.proto";
 import "collector_state.proto";
 import "combat_effect_state.proto";
+import "player_knowledge.proto";
 
 // M7: Per-player resource totals. Resource types are data-driven (string IDs).
 message ResourceEntry {
@@ -37,6 +38,7 @@ message CollectionOrderState {
 }
 
 message Snapshot {
+  repeated PlayerKnowledge player_knowledge = 17;
   // Exact accepted immutable content used by this checkpoint. Empty only on legacy snapshots.
   string content_revision = 16;
   // Server-only persistent player discovery history; omitted from player streams.

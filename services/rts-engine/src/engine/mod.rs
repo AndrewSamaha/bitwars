@@ -1,5 +1,5 @@
 mod collection_routes;
-mod discovery;
+pub(crate) mod discovery;
 mod resupply;
 pub mod intent;
 mod logistics;
@@ -1628,6 +1628,7 @@ fn should_publish_delta(delta: &pb::Delta) -> bool {
         || !delta.sentry_order_removals.is_empty()
         || !delta.escort_order_updates.is_empty()
         || !delta.escort_order_removals.is_empty()
+        || !delta.player_knowledge_updates.is_empty()
 }
 
 fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<String> {
@@ -1964,7 +1965,7 @@ impl Engine {
                 }
 
                 let mut engine = Self {
-                    prev_state: state.clone(),
+                    prev_state: state.clone_for_delta(),
                     state,
                     last_delta_id: if boundary == "0-0" {
                         None
@@ -2201,7 +2202,7 @@ impl Engine {
         );
 
         let mut engine = Self {
-            prev_state: state.clone(),
+            prev_state: state.clone_for_delta(),
             state,
             last_delta_id: None,
             content,
@@ -2908,7 +2909,7 @@ impl Engine {
                 entity.health = def.health.max(0.0);
             }
         }
-        self.prev_state = self.state.clone();
+        self.prev_state = self.state.clone_for_delta();
     }
 
     fn build_resource_node_snapshots(&self) -> Vec<ResourceNodeSnapshot> {
@@ -3705,6 +3706,9 @@ impl Engine {
         destructions: &[crate::combat::CombatDestruction],
     ) {
         for destruction in destructions {
+            if let Some(content) = self.content.as_ref() {
+                discovery::forget_destroyed(&mut self.state, content, &destruction.victim);
+            }
             let recipients = gameplay_event_recipients(
                 &destruction.victim.owner_player_id,
                 &destruction.attacker_owner_player_id,
@@ -4032,7 +4036,8 @@ impl Engine {
         }
         // Collection only changes entity fields, so vector indexes remain valid
         // until this call returns.
-        discovery::update(&mut self.state, self.content.as_ref().unwrap());
+        // The completed-tick observation pass refreshes discovery once for all
+        // players. Intent acceptance separately refreshes newly requested routes.
         let entity_by_id = collection_entity_index(&self.state.entities);
         state::initialize_fixed_resource_deposits(
             &mut self.state.entities, self.content.as_ref().unwrap(), &self.spawn_config);
@@ -4078,6 +4083,11 @@ impl Engine {
         let mut operating_collectors = HashSet::new();
         let mut gathering_by_node = HashMap::new();
         let nodes = self.build_resource_node_snapshots();
+        // A newly joined player (or a legacy checkpoint) has no completed-tick
+        // history yet. Bootstrap it once before collection indexes by owner.
+        if collectors.iter().any(|collector| !self.state.discovered_entities.contains_key(&collector.owner_player_id)) {
+            discovery::update(&mut self.state, self.content.as_ref().unwrap());
+        }
         // Share each player's discovered source list across all of their workers.
         let nodes_by_owner: HashMap<_, _> = self.state.discovered_entities.iter()
             .map(|(owner, known)| (owner.clone(), discovered_resource_nodes(&nodes, known))).collect();
@@ -4646,6 +4656,11 @@ impl Engine {
             .cloned()
             .collect();
         let radiation_dead_entity_ids = self.remove_zero_health_entities();
+        if let Some(content) = self.content.as_ref() {
+            for victim in &radiation_victims {
+                discovery::forget_destroyed(&mut self.state, content, victim);
+            }
+        }
         self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
         self.cancel_destroyed_intents(&radiation_dead_entity_ids)
             .await;
@@ -4656,6 +4671,9 @@ impl Engine {
         }
         self.publish_script_debug().await;
         self.state.tick += 1;
+        if let Some(content) = self.content.as_ref() {
+            discovery::observe(&mut self.state, content);
+        }
 
         let mut delta = compute_delta(
             &self.prev_state,
@@ -4672,12 +4690,14 @@ impl Engine {
         self.intents.append_move_order_changes(&mut delta);
         self.intents.append_sentry_changes(&mut delta);
         self.intents.append_escort_changes(&mut delta);
+        self.state.discovered_entities.append_changes(&mut delta);
         if should_publish_delta(&delta) {
             if let Ok(id) = self.redis.publish_delta(&delta).await {
                 self.last_delta_id = Some(id);
                 self.intents.acknowledge_move_order_changes(&delta);
                 self.intents.acknowledge_sentry_changes(&delta);
                 self.intents.acknowledge_escort_changes(&delta);
+                self.state.discovered_entities.acknowledge_changes();
             }
         }
         let _ = self.publish_build_progress_if_due().await;
@@ -4716,7 +4736,7 @@ impl Engine {
         if self.state.tick % (self.cfg.tps as u64) == 0 {
             log_sample(&self.state);
         }
-        self.prev_state = self.state.clone();
+        self.prev_state = self.state.clone_for_delta();
         self.finish_scenario_tick().await?;
         self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
         self.prev_combat_effect_ui_state_by_entity = self.combat_effect_ui_state_by_entity.clone();
@@ -4946,6 +4966,11 @@ impl Engine {
                 .cloned()
                 .collect();
             let radiation_dead_entity_ids = self.remove_zero_health_entities();
+            if let Some(content) = self.content.as_ref() {
+                for victim in &radiation_victims {
+                    discovery::forget_destroyed(&mut self.state, content, victim);
+                }
+            }
             self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
             self.cancel_destroyed_intents(&radiation_dead_entity_ids)
                 .await;
@@ -4968,6 +4993,9 @@ impl Engine {
                 &mut phase_started,
             );
             self.state.tick += 1;
+            if let Some(content) = self.content.as_ref() {
+                discovery::observe(&mut self.state, content);
+            }
 
             // Delta
             let mut delta = compute_delta(
@@ -4985,6 +5013,7 @@ impl Engine {
             self.intents.append_move_order_changes(&mut delta);
             self.intents.append_sentry_changes(&mut delta);
             self.intents.append_escort_changes(&mut delta);
+            self.state.discovered_entities.append_changes(&mut delta);
             if should_publish_delta(&delta) {
                 match self.redis.publish_delta(&delta).await {
                     Ok(id) => {
@@ -4992,6 +5021,7 @@ impl Engine {
                         self.intents.acknowledge_move_order_changes(&delta);
                         self.intents.acknowledge_sentry_changes(&delta);
                         self.intents.acknowledge_escort_changes(&delta);
+                        self.state.discovered_entities.acknowledge_changes();
                     },
                     Err(e) => error!(?e, "delta publish failed"),
                 }
@@ -5050,7 +5080,7 @@ impl Engine {
                 log_sample(&self.state);
             }
 
-            self.prev_state = self.state.clone();
+            self.prev_state = self.state.clone_for_delta();
             self.finish_scenario_tick().await?;
             self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
             self.prev_combat_effect_ui_state_by_entity =
@@ -5292,6 +5322,9 @@ impl Engine {
         let mut payload_intent = match envelope.payload {
             Some(intent_envelope::Payload::SelfDestruct(order)) => {
                 let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
+                if let Some(content) = self.content.as_ref() {
+                    discovery::forget_self_destruct(&mut self.state, content, &player_id, order.entity_id);
+                }
                 if let Err(reason) = self_destruct_entity(&mut self.state.entities, &player_id, order.entity_id) {
                     self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
                     return Err(anyhow!("invalid self-destruct target"));

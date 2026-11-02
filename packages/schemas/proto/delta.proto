@@ -5,8 +5,10 @@ import "entity_delta.proto";
 import "navigation.proto";
 import "collector_state.proto";
 import "combat_effect_state.proto";
+import "player_knowledge.proto";
 
 message Delta {
+  repeated PlayerKnowledgeUpdate player_knowledge_updates = 12;
   uint64 tick = 1;
   repeated EntityDelta updates = 2;
   // Entity IDs removed from the authoritative world since the previous delta.

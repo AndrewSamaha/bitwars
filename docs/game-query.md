@@ -104,7 +104,18 @@ collection select only discovered sources, including sources no longer visible.
 Discovery uses operational sensors, technology effects and target visibility ranges,
 and continues while players are disconnected. Player streams omit this checkpoint.
 Older snapshots without discovery history start empty and discover currently visible
-entities on the next collection update; earlier exploration cannot be reconstructed.
+entities on the next completed simulation tick; earlier exploration cannot be reconstructed.
+
+Last-known observations are checkpointed separately as `player_knowledge`, which this
+authoritative snapshot endpoint exposes for every player. Each entry has `player_id`
+and `observations` containing `entity_id`, `entity_type_id`, `owner_player_id`, `pos`,
+and `last_seen_tick`. Hidden observations retain their last-observed values rather
+than exposing current entity state. Normal player snapshots expose only the
+authenticated/acting player's `remembered_entities`; deltas carry
+`remembered_entity_updates` and `forgotten_entity_ids`. World sprites still respect
+the type's `fog_memory` policy, while minimap sightings remain independent.
+Legacy checkpoints without `player_knowledge` cannot recover earlier last-known
+positions from discovery IDs; observations start accumulating on the next tick.
 
 ## Content reload diagnostics
 

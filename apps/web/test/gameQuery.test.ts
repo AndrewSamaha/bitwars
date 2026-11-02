@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { create, toBinary } from "@bufbuild/protobuf";
+import { SnapshotSchema } from "@bitwars/shared/gen/snapshot_pb";
+import { GET as getSnapshot } from "@/app/api/v2/game-query/snapshot/route";
 
-const mockedRedis = vi.hoisted(() => ({ mget: vi.fn(), set: vi.fn() }));
+const mockedRedis = vi.hoisted(() => ({ mget: vi.fn(), set: vi.fn(), getBuffer: vi.fn() }));
 vi.mock("@/lib/db/connection", () => ({ redis: mockedRedis }));
 vi.mock("@/lib/db/utils/redis-streams", () => ({ xRangeWithBuffers: vi.fn() }));
 
@@ -32,4 +35,28 @@ it("blocks external queries when the M2M-auth gate is enabled", () => {
   process.env.GAME_QUERY_REQUIRE_AUTH = "true";
   expect(assertGameQueryAccess).toThrow("M2M authentication is required");
   process.env.GAME_QUERY_REQUIRE_AUTH = "false";
+});
+
+it("includes all players' persisted knowledge only in the operator snapshot response", async () => {
+  process.env.GAME_QUERY_REQUIRE_AUTH = "false";
+  const large = 9_007_199_254_740_993n;
+  mockedRedis.getBuffer.mockResolvedValue(Buffer.from(toBinary(SnapshotSchema, create(SnapshotSchema, {
+    tick: 20n,
+    playerKnowledge: [
+      { playerId: "one", observations: [{ entityId: 2n, entityTypeId: "raider", ownerPlayerId: "enemy",
+        pos: { x: 10, y: 20 }, lastSeenTick: 7n }] },
+      { playerId: "two", observations: [{ entityId: large, entityTypeId: "minerals", ownerPlayerId: "universe",
+        pos: { x: 30, y: 40 }, lastSeenTick: large }] },
+    ],
+  }))));
+  const response = await getSnapshot();
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body.remembered_entities).toEqual([]);
+  expect(body.player_knowledge).toEqual([
+    { player_id: "one", observations: [{ entity_id: 2, entity_type_id: "raider", owner_player_id: "enemy",
+      pos: { x: 10, y: 20 }, last_seen_tick: 7 }] },
+    { player_id: "two", observations: [{ entity_id: large.toString(), entity_type_id: "minerals", owner_player_id: "universe",
+      pos: { x: 30, y: 40 }, last_seen_tick: large.toString() }] },
+  ]);
 });

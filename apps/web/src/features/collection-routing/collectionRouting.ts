@@ -47,9 +47,6 @@ class CollectionRouting implements CollectionRouter {
   private timer: number | undefined;
   private live = false;
   private holdingEntity: number | null = null;
-  private hazards = new Map<number, RouteEntity>();
-  private hazardContext = "";
-  private savedHazards = "";
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
@@ -92,17 +89,6 @@ class CollectionRouting implements CollectionRouter {
   adopt(orders: ReconnectedOrder[], playerId?: string, runId = game.runId) {
     if (playerId && playerId !== this.playerId) { this.reset(); this.playerId = playerId; }
     this.runId = runId;
-    const context = `${this.playerId}:${runId}`;
-    if (context !== this.hazardContext) {
-      this.hazardContext = context;
-      this.hazards.clear();
-      try {
-        const saved = JSON.parse(localStorage.getItem("bitwars:collection-hazards") ?? "null") as { context: string; entities: RouteEntity[] } | null;
-        if (saved?.context === context) for (const entity of saved.entities) {
-          if (Number.isSafeInteger(entity.id) && Number.isFinite(entity.pos?.x) && Number.isFinite(entity.pos?.y)) this.hazards.set(entity.id, entity);
-        }
-      } catch { /* Missing/corrupt browser memory cannot reveal unknown hazards. */ }
-    }
     for (const [entityId, state] of intentQueue.getAllEntityStates()) {
       const id = Number(entityId), hold = state.collectionRoutingHold;
       if (!hold || hold.playerId !== this.playerId || this.orders.has(id)) continue;
@@ -168,24 +154,11 @@ class CollectionRouting implements CollectionRouter {
   reset() {
     this.suspend();
     this.orders.clear();
-    this.hazards.clear();
-    this.hazardContext = "";
     this.statuses.clear();
     for (const listener of this.listeners) listener();
     this.runId = game.runId;
   }
 
-  forget(entityId: number | string) {
-    if (!this.hazards.delete(Number(entityId))) return;
-    this.saveHazards();
-  }
-
-  private saveHazards() {
-    const value = JSON.stringify({ context: this.hazardContext, entities: [...this.hazards.values()] });
-    if (value === this.savedHazards) return;
-    this.savedHazards = value;
-    try { localStorage.setItem("bitwars:collection-hazards", value); } catch { /* Browser storage may be unavailable. */ }
-  }
   private suspend() {
     this.epoch++;
     this.worker?.terminate(); this.worker = null;
@@ -202,8 +175,7 @@ class CollectionRouting implements CollectionRouter {
     const definitions = contentManager.getContent()?.entity_types;
     if (!definitions) return;
     const entities = new Map<number, RouteEntity>();
-    for (const [id, entity] of this.hazards) entities.set(id, entity);
-    // Minimap sightings survive full reconnect snapshots, unlike streamed entities.
+    // Server knowledge includes remembered hazards independently of world fog_memory policy.
     for (const entity of minimapMemory.entries()) entities.set(Number(entity.id), { ...entity, id: Number(entity.id) });
     for (const entity of game.world.with("id", "pos")) entities.set(Number(entity.id), {
       id: Number(entity.id), pos: { ...entity.pos }, entity_type_id: entity.entity_type_id,
@@ -211,12 +183,6 @@ class CollectionRouting implements CollectionRouter {
       resource_deposit: entity.resource_deposit, resources: entity.resources,
       supply: entity.supply, collector_state: entity.collector_state,
     });
-    for (const entity of entities.values()) {
-      if (definitions[entity.entity_type_id ?? ""]?.radiation_sources?.length) {
-        this.hazards.set(entity.id, { id: entity.id, entity_type_id: entity.entity_type_id, pos: { ...entity.pos }, remembered: true });
-      } else this.hazards.delete(entity.id);
-    }
-    this.saveHazards();
     const relevant = [...entities.values()].filter(entity => {
       const definition = definitions[entity.entity_type_id ?? ""];
       return definition && (definition.radiation_sources?.length || definition.resource_node || definition.depot || entity.entity_type_id === "waypoint");

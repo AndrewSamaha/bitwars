@@ -7,7 +7,7 @@ const hud = vi.hoisted(() => ({ selectedId: null as string | null }));
 const world = vi.hoisted(() => ({ entities: [] as Array<{
   id: number;
   resources?: Array<{ resource_type: string; amount: number }>;
-  remembered?: { last_seen_at: number };
+  remembered?: { last_seen_tick: string | number };
 }> }));
 vi.mock("@/features/hud/components/HUDContext", () => ({
   useHUD: () => ({ selectors: { firstSelectedId: hud.selectedId }, state: { resources: { food: 9999 } } }),
@@ -51,7 +51,7 @@ describe("selected entity resource banner", () => {
 
   it("does not show stale inventory for a remembered entity", () => {
     hud.selectedId = "2";
-    world.entities = [{ id: 2, remembered: { last_seen_at: 1 }, resources: [{ resource_type: "food", amount: 900 }] }];
+    world.entities = [{ id: 2, remembered: { last_seen_tick: 1 }, resources: [{ resource_type: "food", amount: 900 }] }];
     expect(render()).toContain('aria-label="Resources: food —, minerals —, energy —"');
   });
 });

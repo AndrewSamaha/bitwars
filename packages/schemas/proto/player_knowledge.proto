@@ -1,0 +1,25 @@
+syntax = "proto3";
+package bitwars;
+
+import "vec2.proto";
+
+// Last observed values only; never hydrate from a currently hidden entity.
+message EntityObservation {
+  uint64 entity_id = 1;
+  string entity_type_id = 2;
+  string owner_player_id = 3;
+  Vec2 pos = 4;
+  uint64 last_seen_tick = 5;
+}
+
+// Authoritative checkpoint knowledge. Player transports must select their owner.
+message PlayerKnowledge {
+  string player_id = 1;
+  repeated EntityObservation observations = 2;
+}
+
+message PlayerKnowledgeUpdate {
+  string player_id = 1;
+  repeated EntityObservation upserts = 2;
+  repeated uint64 removed_entity_ids = 3;
+}

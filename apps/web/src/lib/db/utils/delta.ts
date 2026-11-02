@@ -126,7 +126,7 @@ export async function emitEventFromBuffer(
       break;
     }
     case "delta": {
-      const deltaJson = mapDeltaToJson(record.record.value as any);
+      const deltaJson = mapDeltaToJson(record.record.value, visibility?.playerId);
       const filtered = visibility ? visibility.filterDelta(deltaJson) : deltaJson;
       if (filtered) await channel.write(sseFormat({ event: "delta", id, data: filtered }));
       break;

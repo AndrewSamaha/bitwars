@@ -519,6 +519,7 @@ impl RedisClient {
         player_technologies.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
         let snap = Snapshot {
+            player_knowledge: state.discovered_entities.knowledge_for_snapshot(),
             content_revision: content.and_then(|(payload, _)| payload["content_revision"].as_str())
                 .unwrap_or(&self.content_revision).to_string(),
             discovered_entities_json: serde_json::to_string(&state.discovered_entities)?,
@@ -1449,11 +1450,12 @@ fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<Co
     } else {
         serde_json::from_str(&snapshot.generation_state_json)?
     };
-    let discovered_entities = if snapshot.discovered_entities_json.is_empty() {
+    let mut discovered_entities: crate::engine::discovery::Discoveries = if snapshot.discovered_entities_json.is_empty() {
         Default::default()
     } else {
         serde_json::from_str(&snapshot.discovered_entities_json)?
     };
+    discovered_entities.restore_knowledge(snapshot.player_knowledge, snapshot.tick as u64);
     Ok((GameState {
         discovered_entities,
         generation,
@@ -1520,9 +1522,47 @@ mod inventory_restore_tests {
         let discoveries: std::collections::BTreeMap<String, std::collections::BTreeSet<u64>> = [("alice".into(), [42, u64::MAX].into())].into();
         let snapshot = Snapshot { discovered_entities_json: serde_json::to_string(&discoveries).unwrap(), ..Default::default() };
         let (state, _) = restore_snapshot(Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
-        assert_eq!(state.discovered_entities, discoveries);
+        assert_eq!(*state.discovered_entities, discoveries);
         assert!(restore_snapshot(Snapshot::default()).unwrap().0.discovered_entities.is_empty());
         assert!(restore_snapshot(Snapshot { discovered_entities_json: "invalid".into(), ..Default::default() }).is_err());
+    }
+
+    #[test]
+    fn observation_checkpoint_restore_keeps_last_seen_values_not_hidden_live_state() {
+        let remembered = pb::EntityObservation {
+            entity_id: u64::MAX, entity_type_id: "worker".into(),
+            owner_player_id: "bob".into(), pos: Some(pb::Vec2 { x: 100.0, y: 20.0 }),
+            last_seen_tick: 8,
+        };
+        let knowledge = vec![pb::PlayerKnowledge {
+            player_id: "alice".into(), observations: vec![remembered],
+        }];
+        let snapshot = Snapshot {
+            tick: 10,
+            entities: vec![pb::Entity {
+                id: u64::MAX, entity_type_id: "habitat".into(),
+                owner_player_id: "carol".into(), pos: Some(pb::Vec2 { x: 99_999.0, y: -50.0 }),
+                ..Default::default()
+            }],
+            player_knowledge: knowledge.clone(),
+            ..Default::default()
+        };
+        let (state, _) = restore_snapshot(Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(state.discovered_entities.knowledge_for_snapshot(), knowledge);
+        assert!(state.discovered_entities["alice"].contains(&u64::MAX));
+        let mut delta = pb::Delta::default();
+        state.discovered_entities.append_changes(&mut delta);
+        assert!(delta.player_knowledge_updates.is_empty());
+        let saved = Snapshot {
+            tick: state.tick as i64, entities: state.entities.clone(),
+            discovered_entities_json: serde_json::to_string(&state.discovered_entities).unwrap(),
+            player_knowledge: state.discovered_entities.knowledge_for_snapshot(),
+            ..Default::default()
+        };
+        let (again, _) = restore_snapshot(Snapshot::decode(saved.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(again.discovered_entities.knowledge_for_snapshot(), knowledge);
+        assert!(restore_snapshot(Snapshot::default()).unwrap().0
+            .discovered_entities.knowledge_for_snapshot().is_empty());
     }
 
     #[test]

@@ -168,6 +168,19 @@ pub struct GameState {
     pub technologies: PlayerTechnologies,
 }
 
+impl GameState {
+    /// Entity delta comparison must not clone persistent per-player history.
+    pub fn clone_for_delta(&self) -> Self {
+        Self {
+            discovered_entities: Default::default(),
+            generation: self.generation.clone(),
+            tick: self.tick,
+            entities: self.entities.clone(),
+            technologies: self.technologies.clone(),
+        }
+    }
+}
+
 /// Initialise the game world (config-based only). No player entities at init; they spawn on join.
 /// Caller must ensure spawn_config is valid; panics if not.
 pub fn init_world(spawn_config: &SpawnConfig) -> GameState {

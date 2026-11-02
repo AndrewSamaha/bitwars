@@ -19,6 +19,15 @@ Define a data-driven model for entities (units, buildings, resources) and abilit
 - **Authoring concurrency:** each reload has a dashed-UUID `reload_id` and `base_revision`; a stale base is rejected. Whole-file editor reads/writes and revision capture are serialized within the web process. Concurrent external file changes during capture fail staging rather than publishing an inconsistent bundle.
 - **Scope:** this revision covers definitions and entity artwork, not live positions/resources/orders, spawn configuration, scenario selection, or SFX. Those retain their own controls.
 
+## Fog-of-War Knowledge
+
+- **Ownership:** the engine records compact per-player observations once per completed simulation tick, including while players are disconnected. Each observation contains the entity ID, last-observed type, owner and position, and `last_seen_tick`; it contains no inventory, orders, velocity, or live combat state.
+- **Persistence:** observations are stored in `Snapshot.player_knowledge` alongside the world checkpoint. Monotonic collection discovery remains separate in `discovered_entities_json`. Older checkpoints without observations start with no last-known values; previously discovered IDs cannot safely reconstruct hidden positions or ownership.
+- **Visibility:** hidden observations remain frozen. Reacquisition replaces them. Witnessed destruction or legitimate coverage of an empty last-known location removes them; destruction elsewhere under fog does not reveal itself by deleting a marker.
+- **Transport:** player snapshots contain only that player's `remembered_entities`; deltas carry `remembered_entity_updates` and `forgotten_entity_ids`. Bootstrap and gap catch-up share a checkpoint boundary. The operator game-query snapshot explicitly exposes all-player `player_knowledge`; normal player streams do not.
+- **Presentation:** complete snapshots replace browser memory. Currently visible entities take precedence. World sprites respect each type's `fog_memory` policy; the minimap and collection hazard planning use authoritative non-owned sightings independently of that policy. A player or run change clears the client projection.
+- **Cost:** reuse spatial sensor/target indexing; retain compact records and dirty/removal sets rather than full entity copies. Unchanged visible records advance checkpoint ticks without generating repeated observation updates. Recurring previous-world clones omit discovery/knowledge maps; persistence uses the existing batched delta/checkpoint writes, not per-sighting Redis commands.
+
 ## Scripting Model (Server-Authoritative)
 
 - **Engine and Sandbox**

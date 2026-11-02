@@ -13,7 +13,8 @@ import { dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBui
 import { COLLECTION_DROPOFF_BLOCKED_EVENT } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
-import { minimapMemory } from "@/features/gamestate/minimapMemory";
+import { minimapMemory, type EntityObservation } from "@/features/gamestate/minimapMemory";
+import { reconcileRememberedEntity } from "../entityMemory";
 import { collectionRouting } from "@/features/collection-routing/collectionRouting";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
@@ -58,6 +59,7 @@ type SnapshotPayload = {
     resources?: Array<{ resource_type: string; amount: number }>;
     resource_deposit?: { amount: number; remaining: number } | null;
   }>;
+  remembered_entities?: EntityObservation[];
   collector_states?: StreamCollectorStatePayload[];
   combat_effect_states?: CombatEffectStatePayload[];
 };
@@ -73,6 +75,8 @@ type DeltaPayload = {
   tick: number | string;
   removed_entity_ids?: Array<number | string>;
   hidden_entity_ids?: Array<number | string>;
+  remembered_entity_updates?: EntityObservation[];
+  forgotten_entity_ids?: Array<number | string>;
   updates: Array<{
     id: number | string;
     entity_type_id?: string;
@@ -166,6 +170,12 @@ export default function GameStateStreamBridge() {
 
     const normalizeId = (id: number | string) => String(id);
 
+    const syncMemory = (id: string | number, hidden = false) => {
+      const observation = minimapMemory.get(id);
+      reconcileRememberedEntity(world, byId, id, observation,
+        contentManager.getEntityType(observation?.entity_type_id ?? "")?.fog_memory, hidden);
+    };
+
     const applyIntentOverlayToEntity = (ent: Entity, overlay: ActiveIntentOverlay | undefined) => {
       if (!overlay) {
         delete (ent as any).active_intent_kind;
@@ -189,7 +199,7 @@ export default function GameStateStreamBridge() {
 
     const refreshIntentOverlays = () => {
       for (const [id, ent] of byId.entries()) {
-        applyIntentOverlayToEntity(ent, activeIntentByEntityRef.current.get(id));
+        applyIntentOverlayToEntity(ent, ent.remembered ? undefined : activeIntentByEntityRef.current.get(id));
       }
     };
 
@@ -217,7 +227,7 @@ export default function GameStateStreamBridge() {
 
     const applySnapshot = (payload: SnapshotPayload & { run_id?: string; paused?: boolean }) => {
       minimapMemory.setContext(currentPlayerIdRef.current, payload.run_id ?? game.runId);
-      for (const entity of payload.entities) minimapMemory.observe(entity);
+      minimapMemory.replace(payload.remembered_entities ?? []);
       const worldChanged = !!payload.run_id && payload.run_id !== game.runId;
       if (worldChanged) {
         if (game.runId) contentManager.beginWorld();
@@ -239,7 +249,6 @@ export default function GameStateStreamBridge() {
       syncMoveOverlays([...(payload.escort_orders ?? []).flatMap((order) => order.slots.map((slot) => slot.entity_id)), ...(payload.sentry_orders ?? []).flatMap((order) => order.slots.map((slot) => slot.entity_id)), ...activeIntentByEntityRef.current.keys(), ...(payload.move_orders ?? []).map((order) => order.entity_id)]);
       // Remove old streamed entities (and destroy any attached sprites)
       for (const [id, ent] of byId) {
-        if (ent.remembered && !worldChanged) continue;
         try {
           // @ts-ignore - sprite is optional
           ent.sprite?.destroy?.();
@@ -259,21 +268,6 @@ export default function GameStateStreamBridge() {
         knownEntityIdsRef.current.add(normalizeId(s.id));
         const collectorState = collectorStateByEntity.get(normalizeId(s.id));
         const combatEffectState = combatEffectStateByEntity.get(normalizeId(s.id));
-        const remembered = byId.get(normalizeId(s.id));
-        if (remembered) {
-          world.removeComponent(remembered, "remembered");
-          if (s.entity_type_id !== undefined) remembered.entity_type_id = s.entity_type_id;
-          if (s.owner_player_id !== undefined) remembered.owner_player_id = s.owner_player_id;
-          if (s.health !== undefined) remembered.health = s.health;
-          if (s.supply !== undefined) remembered.supply = s.supply;
-          if (s.resources !== undefined) remembered.resources = s.resources;
-          if (s.resource_deposit !== undefined) remembered.resource_deposit = s.resource_deposit;
-          if (s.pos) remembered.pos = { x: s.pos.x, y: s.pos.y };
-          if (s.vel) remembered.vel = { x: s.vel.x, y: s.vel.y };
-          if (collectorState) remembered.collector_state = collectorStateFromStream(collectorState);
-          if (combatEffectState) remembered.combat_effect_state = combatEffectState;
-          continue;
-        }
         const ent: Entity = {
           id: s.id,
           ...(s.entity_type_id ? { entity_type_id: s.entity_type_id } : {}),
@@ -291,11 +285,12 @@ export default function GameStateStreamBridge() {
         world.add(ent);
         byId.set(normalizeId(s.id), ent);
       }
+      for (const entity of minimapMemory.entries()) syncMemory(entity.id);
       refreshIntentOverlays();
       log.info("GameStateStreamBridge:snapshot:applied", { streamId: streamIdRef.current, count: payload.entities.length });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("bitwars:snapshot-applied"));
-        dispatchGameStateUpdated(payload.entities.map((entity) => normalizeId(entity.id)));
+        dispatchGameStateUpdated(Array.from(byId.keys()));
       }
       // Signal that the world is ready for ticking/rendering
       if (!game.ready) {
@@ -310,11 +305,12 @@ export default function GameStateStreamBridge() {
     };
 
     const applyDelta = (payload: DeltaPayload) => {
-      for (const update of payload.updates) minimapMemory.observe(update);
-      for (const id of payload.removed_entity_ids ?? []) {
+      for (const observation of payload.remembered_entity_updates ?? []) minimapMemory.upsert(observation);
+      for (const id of payload.forgotten_entity_ids ?? []) {
         minimapMemory.forget(id);
-        collectionRouting.forget(id);
+        syncMemory(id);
       }
+      for (const id of payload.removed_entity_ids ?? []) minimapMemory.forget(id);
       if (payload.escort_order_updates?.length || payload.escort_order_removals?.length) {
         intentQueue.applyEscortOrders(payload.escort_order_updates ?? [], payload.escort_order_removals ?? []);
         syncMoveOverlays([...activeIntentByEntityRef.current.keys(),
@@ -337,21 +333,12 @@ export default function GameStateStreamBridge() {
       const newlyKnown: Entity[] = [];
       // Fog-of-war loss only removes local presentation; it is not a death.
       for (const id of payload.hidden_entity_ids ?? []) {
-        const key = normalizeId(id);
-        const existing = byId.get(key);
-        if (!existing) continue;
-        const fogMemory = contentManager.getEntityType(existing.entity_type_id ?? "")?.fog_memory;
-        if (fogMemory === "retain_last_known") {
-          world.addComponent(existing, "remembered", { last_seen_at: Date.now() });
-          continue;
+        syncMemory(id, true);
+        activeIntentByEntityRef.current.delete(normalizeId(id));
+        if (!byId.has(normalizeId(id))) {
+          hud.actions.setHovered(null);
+          hud.actions.setTooltip(null);
         }
-        try {
-          // @ts-ignore - sprite is optional
-          existing.sprite?.destroy?.();
-        } catch {}
-        world.remove(existing);
-        byId.delete(key);
-        activeIntentByEntityRef.current.delete(key);
       }
       for (const id of payload.removed_entity_ids ?? []) {
         const key = normalizeId(id);
@@ -435,9 +422,10 @@ export default function GameStateStreamBridge() {
         }
         knownEntityIdsRef.current.add(key);
       }
+      for (const observation of payload.remembered_entity_updates ?? []) syncMemory(observation.id);
       for (const state of payload.collector_state_updates ?? []) {
         const existing = byId.get(normalizeId(state.entity_id));
-        if (existing) {
+        if (existing && !existing.remembered) {
           if (state.activity === "waiting_for_dropoff"
             && existing.collector_state?.activity !== "waiting_for_dropoff"
             && existing.owner_player_id === currentPlayerIdRef.current) {
@@ -459,7 +447,7 @@ export default function GameStateStreamBridge() {
       }
       for (const state of payload.combat_effect_state_updates ?? []) {
         const existing = byId.get(normalizeId(state.entity_id));
-        if (existing) existing.combat_effect_state = state;
+        if (existing && !existing.remembered) existing.combat_effect_state = state;
       }
       const playerId = currentPlayerIdRef.current;
       if (playerId && newlyKnown.length > 0) {
@@ -485,6 +473,8 @@ export default function GameStateStreamBridge() {
           ...(payload.move_order_removals ?? []).map((order) => normalizeId(order.entity_id)),
           ...(payload.removed_entity_ids ?? []).map(normalizeId),
           ...(payload.hidden_entity_ids ?? []).map(normalizeId),
+          ...(payload.forgotten_entity_ids ?? []).map(normalizeId),
+          ...(payload.remembered_entity_updates ?? []).map((observation) => normalizeId(observation.id)),
           ...payload.updates.map((update) => normalizeId(update.id)),
           ...(payload.collector_state_updates ?? []).map((state) => normalizeId(state.entity_id)),
           ...(payload.combat_effect_state_updates ?? []).map((state) => normalizeId(state.entity_id)),
@@ -744,6 +734,7 @@ export default function GameStateStreamBridge() {
       const payload = JSON.parse(event.data);
       if (payload.run_id === game.runId) return;
       es.close();
+      minimapMemory.clear();
       contentManager.beginWorld();
       buildProgressStore.resetStream();
       intentQueue.resetForWorld(payload.run_id);
@@ -816,6 +807,7 @@ export default function GameStateStreamBridge() {
         world.remove(ent);
       }
       byId.clear();
+      minimapMemory.clear();
       knownEntityIdsRef.current.clear();
       activeIntentByEntityRef.current.clear();
       // Reset readiness so a subsequent mount waits for the next snapshot

@@ -16,7 +16,7 @@ describe("local action affordability", () => {
     for (const donor of [
       { ...habitat, pos: { x: 4000.1, y: 0 } },
       { ...habitat, owner_player_id: "other" },
-      { ...habitat, remembered: { last_seen_at: 1 } },
+      { ...habitat, remembered: { last_seen_tick: 1 } },
       { ...habitat, entity_type_id: "worker" },
     ]) {
       expect(canAffordAction("718", [actor, donor], entityTypes, costs)).toBe(false);
