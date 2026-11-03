@@ -39,6 +39,19 @@ habitat:
 
 `depot: true` means nearby same-owner entities may spend resources stored on this entity. A positive, finite `depot_range` is required for a depot. Depot status alone does not enable gathering, transport, construction, research, or repair; existing capabilities continue to define those actions.
 
+### Initial inventory
+
+Entity definitions may specify `initial_resources`, a map of resource IDs to
+amounts granted once when a new entity is created, including player loadouts and
+completed construction. Omission grants nothing. Each amount must be finite,
+nonnegative, name a known resource, and not exceed that resource's `max_capacity`.
+These are ordinary spendable resources, not protected maintenance reserves.
+
+`worker` and `scout` start with their full capacities: 50 energy, 50 food, and
+50 minerals each. Explicit player-start `starting_resources` override the grant
+for their listed resources on the configured recipient. Loading saved state,
+reloading content, and upgrading an existing entity do not reapply the grant.
+
 This model replaces `resource_sharing`, including `wireless_receives`, per-resource priorities, overflow priorities, refill thresholds, fill targets, and outgoing reserves. Remove `resource_reserves` when cargo no longer funds upkeep. Ordinary consumers should not be required to declare positive inventory capacities.
 
 ## Mapping to current entities
@@ -68,6 +81,19 @@ Check range when spending or contributing resources. Moving a depot changes its 
 
 Solar collectors move into the radiation source's collection band and transmit energy wirelessly to their collection destination; they never travel to a depot to unload. A full destination reports `waiting_for_depot_capacity`; a missing or out-of-range destination reports `waiting_for_depot`. Both states hold position at the source and resume when wireless delivery is possible. Source approach movement still runs when the destination is full.
 
+Proximity production falls linearly with center-to-center source distance:
+`collector.proximity_rate_per_second * (max_distance - distance) / (max_distance - min_distance)`.
+The source defines both distances through `resource_node`. Production is full at
+the inner boundary, half at the band's midpoint, and zero at or beyond the outer
+boundary; below the inner boundary and zero-width bands also produce nothing.
+An in-band collector at zero strength reports `idle`, not a depot-capacity shortage.
+This does not alter transport harvesting rates.
+
+`star_yellow.resource_node.max_effective_distance` is 15,000 world units and its
+inner distance remains 10. This reach applies to all compatible proximity
+collectors, including habitats and inhabited planets. Radiation and
+`collector.minimum_distance` spacing rules remain independent and unchanged.
+
 For local production, gathered energy credits the associated depot up to capacity. Excess cannot be credited or silently moved elsewhere. Transport collection remains physical: workers gather into cargo and deliver to a depot. Retain ordinary capacity and compatibility checks.
 
 ## Assigning collection destinations
@@ -77,6 +103,40 @@ Select solar collectors or workers, press **[A] Assign**, and click a friendly c
 Solar collectors require their destination's service coverage at assignment and whenever energy is credited. Workers physically deliver cargo to their assigned depot, including outside service coverage. A depot must accept at least one resource the collector gathers; other resources wait if they cannot be accepted. Full, destroyed, hostile, or out-of-range destinations never trigger automatic fallback. Collection pauses or cargo waits until the destination is usable or the player changes the assignment. The detail panel shows the assignment and collection activity.
 
 Assignments survive stopping/restarting Collect, reconnects, and snapshot restoration. In Assign mode, **Use automatic destination** clears the explicit destination: solar returns to its automatic supply-depot association, while workers choose the nearest compatible depot with room. Explicit Deliver and Transport orders continue to use their own specified destinations.
+
+When an owned worker enters `waiting_for_dropoff`, show a focusable **Collection blocked** toast and record it in the message log. Do not repeat it on unchanged state updates; leaving and re-entering the wait raises it again.
+
+Collection capacity is independent per resource. Explicit Collect orders gather and deliver only the requested resource: full food or energy does not block mineral gathering or cause those supplies to be unloaded. Planned collection routes likewise deliver only their source resource. If the requested resource is full, deliver that resource before gathering more; if its capacity is zero, collection cannot gather it. Explicit collection warnings describe only the requested resource's storage, never another full resource. Explicit Deliver and Transport orders retain their configured resource lists.
+
+### Collection route recomputation
+
+Changes to discovered hazards, resource sources, depots, or owned waypoints trigger
+route evaluation, not unconditional replacement of the active Collect intent.
+An unrelated moving habitat must not restart collectors whose existing routes
+remain valid. Cargo phase changes alone do not redefine the recurring route.
+
+The browser planner retains the active source/depot/waypoint contract when its
+geometry remains valid. With a local waypoint network, retention requires safe
+recurring segments, the submitted initial approach, and every possible next leg
+from the worker. The server does not publish its exact collection waypoint cursor,
+so this is deliberately conservative: ambiguous paths near hazards may require a
+replacement even when the server's actual remaining path is safe. Without a local
+waypoint network, ordinary direct travel retains its existing radiation-risk policy.
+
+Invalid routes are replanned; a valid replacement is submitted with REPLACE_ACTIVE.
+If no safe route exists, an accepted collection enters a position hold once.
+Held or server-blocked collection must obtain a fresh plan before resuming.
+Only one planner request per collector is in flight; further updates mark it dirty
+and coalesce into a fresh evaluation before an obsolete result can issue commands.
+
+
+### Jettison cargo
+
+Select an owned, living mobile cargo carrier with resources aboard and choose **[J] Jettison cargo**. The action supports multiple selected carriers when every selected entity is eligible; empty carriers, stationary entities, depots, and enemy entities are excluded. Issuing the command immediately discards **all** onboard resources, with no confirmation dialog, refund, or recoverable cargo drop.
+
+Jettison is immediate and does not replace active orders, queued work, or collection/delivery-depot assignments. A worker waiting to unload incompatible cargo can resume its existing collection assignment after the inventory is cleared. Repeating delivery, transport, or resupply orders remain active and may load new resources afterward.
+
+The authenticated intent endpoint accepts `type: "JettisonCargo"` and a positive safe-integer `entity_id`, using the normal command UUID and sequence fields. The engine validates ownership and carrier eligibility before clearing inventory, then emits Accepted/Finished for this command independently of the active order. Player MCP `send_intent` accepts the same type. Deploy the updated engine and web/shared protocol code together; no match reset is required.
 
 ## Spending and shortages
 

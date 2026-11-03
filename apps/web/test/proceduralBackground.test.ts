@@ -8,7 +8,50 @@ import {
   getSiteForCell,
   getViewportWorldAABB,
   getVisibleCellRange,
+  getStarCountForCell,
+  getStarForCell,
 } from "@/features/pixijs/utils/proceduralBackground";
+
+  it("generates stable 0–10 star counts and positions within each grid cell", () => {
+    for (const [cellX, cellY] of [[0, 0], [-3, 7], [14, -9]]) {
+      const count = getStarCountForCell(cellX, cellY, SEED);
+      expect(count).toBeGreaterThanOrEqual(0);
+      expect(count).toBeLessThanOrEqual(10);
+      expect(getStarCountForCell(cellX, cellY, SEED)).toBe(count);
+      for (let index = 0; index < count; index++) {
+        const star = getStarForCell(cellX, cellY, index, CELL_SIZE, SEED);
+        expect(star).toEqual(getStarForCell(cellX, cellY, index, CELL_SIZE, SEED));
+        expect(star.x).toBeGreaterThanOrEqual(cellX * CELL_SIZE);
+        expect(star.x).toBeLessThan((cellX + 1) * CELL_SIZE);
+        expect(star.y).toBeGreaterThanOrEqual(cellY * CELL_SIZE);
+        expect(star.y).toBeLessThan((cellY + 1) * CELL_SIZE);
+      }
+    }
+  });
+
+it("favors empty cells with a sparse tail and decorrelated position axes", () => {
+  const counts = Array(11).fill(0);
+  let xy = 0;
+  let xSum = 0;
+  let ySum = 0;
+  const samples = 10000;
+  for (let i = 0; i < samples; i++) {
+    counts[getStarCountForCell(i - 5000, 17, SEED)]++;
+    const star = getStarForCell(i - 5000, 17, 0, 1, SEED);
+    const x = star.x - (i - 5000);
+    const y = star.y - 17;
+    xy += x * y;
+    xSum += x;
+    ySum += y;
+  }
+  expect(counts[0] / samples).toBeGreaterThan(0.37);
+  expect(counts[0] / samples).toBeLessThan(0.43);
+  expect(counts[0]).toBeGreaterThan(counts[1]);
+  expect(counts[1]).toBeGreaterThan(counts[2]);
+  expect(counts[10]).toBeGreaterThan(0);
+  expect(counts[10] / samples).toBeLessThan(0.015);
+  expect(Math.abs(xy / samples - xSum * ySum / samples ** 2)).toBeLessThan(0.005);
+});
 
 describe("proceduralBackground (M5.2 determinism)", () => {
   it("getSiteForCell is deterministic for fixed (cellX, cellY)", () => {

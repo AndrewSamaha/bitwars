@@ -1,0 +1,51 @@
+{
+  "models": [
+    {
+      "slug": "nemotron-lightning-3p5-30b-a3b",
+      "display_name": "Nemotron Lightning 3.5 30B A3B",
+      "description": "NVIDIA Nemotron 3.5 Lightning 30B A3B, a text-only MoE model with 3B active parameters.",
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "prefer_websockets": false,
+      "support_verbosity": true,
+      "default_verbosity": "low",
+      "supports_reasoning_summaries": true,
+      "default_reasoning_summary": "none",
+      "experimental_supported_tools": [],
+      "base_instructions": "",
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "minimal_client_version": "0.0.1",
+      "supports_search_tool": true,
+      "priority": 99,
+      "auto_review_model_override": "nemotron-lightning-3p5-30b-a3b",
+      "input_modalities": [
+        "text"
+      ],
+      "supports_parallel_tool_calls": true,
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "effort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        }
+      ],
+      "reasoning_summary_format": "experimental",
+      "web_search_tool_type": "text",
+      "supports_image_detail_original": false,
+      "context_window": 262144,
+      "max_context_window": 262144,
+      "auto_compact_token_limit": 209715
+    }
+  ]
+}

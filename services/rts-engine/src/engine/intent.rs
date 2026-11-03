@@ -328,6 +328,20 @@ impl IntentManager {
         &mut self.current_action
     }
 
+    pub fn collection_orders_for_snapshot(&self) -> Vec<pb::CollectionOrderState> {
+        let mut orders: Vec<_> = self.current_action.values().filter_map(|active| {
+            match active.action.exec.as_ref()? {
+                pb::action_state::Exec::Collect(state) if state.travel_plan.is_some() => Some(pb::CollectionOrderState {
+                    client_cmd_id: active.metadata.client_cmd_id.clone(),
+                    state: Some(state.clone()),
+                }),
+                _ => None,
+            }
+        }).collect();
+        orders.sort_by_key(|order| order.state.as_ref().map_or(0, |state| state.entity_id));
+        orders
+    }
+
     /// Finish a non-movement action after its authoritative system completes it.
     pub fn finish(&mut self, entity_id: u64) -> Option<IntentMetadata> {
         self.move_routes.remove(&entity_id);
@@ -383,6 +397,9 @@ fn make_action_state_from_intent(intent: pb::Intent, default_stop_radius: f32) -
                     entity_id: c.entity_id,
                     resource_type_id: c.resource_type_id.clone(),
                     nearest_compatible: c.nearest_compatible,
+                    travel_plan: c.travel_plan.clone(),
+                    returning_to_depot: c.travel_plan.as_ref().is_some_and(|plan| plan.initial_to_depot),
+                    ..Default::default()
                 };
                 exec = Some(pb::action_state::Exec::Collect(collect_state));
             }
@@ -513,6 +530,7 @@ mod tests {
                 player_id: String::new(),
                 resource_type_id: String::new(),
                 nearest_compatible: true,
+                travel_plan: None,
             })),
         }
     }

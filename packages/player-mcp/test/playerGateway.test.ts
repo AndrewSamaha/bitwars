@@ -10,7 +10,7 @@ async function eventually(check: () => boolean, maxAttempts = 100): Promise<void
 }
 
 describe("PlayerGateway", () => {
-  it("uses a separate authenticated SSE session, reconciles, polls, stamps intents, and disconnects", async () => {
+  it.each(["loadtest-one", "agent-one"])("uses a separate authenticated SSE session, reconciles, polls, stamps intents, and disconnects for %s", async (username) => {
     let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
     const encoder = new TextEncoder();
     const postedIntents: Record<string, unknown>[] = [];
@@ -41,14 +41,14 @@ describe("PlayerGateway", () => {
     }) as typeof fetch;
     const gateway = new PlayerGateway({ baseUrl: "http://127.0.0.1:3000", fetchImpl: fakeFetch, progressIntervalMs: 20 });
     try {
-      const { handle } = await gateway.connectPlayer("loadtest-one");
+      const { handle } = await gateway.connectPlayer(username);
       await eventually(() => streamController !== undefined);
       streamController!.enqueue(encoder.encode('event: snapshot\nid: 1-0\ndata: {"run_id":"run-1","tick":8,"entities":[{"id":710,"owner_player_id":"player-1","pos":{"x":1,"y":2}}]}\n\n'));
       await eventually(() => gateway.getPlayerState(handle).ready);
       expect(gateway.getPlayerState(handle).client_seq).toBe(3);
       expect(gateway.getPlayerState(handle).owned_entities).toHaveLength(1);
       await expect(gateway.observeEvents(handle, 0)).resolves.toMatchObject({ gap: false, ready: true });
-      await expect(gateway.connectPlayer("loadtest-one")).rejects.toThrow("already connected");
+      await expect(gateway.connectPlayer(username)).rejects.toThrow("already connected");
       expect(() => gateway.setProgressWatch(handle, [711])).toThrow("not known to be owned");
       await expect(gateway.sendIntent(handle, { type: "Move", entity_id: 711, target: { x: 1, y: 2 } })).rejects.toThrow("not known to be owned");
 
@@ -60,6 +60,34 @@ describe("PlayerGateway", () => {
       expect(sent).toMatchObject({ accepted_http: true, status: 200, client_seq: 4 });
       expect(sent.client_cmd_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
       expect(postedIntents[0]).toMatchObject({ run_id: "run-1", client_seq: 4, entity_id: 710 });
+      expect(sent.submitted_intent).toEqual({ type: "Move", entity_id: 710, target: { x: 5, y: 6 }, policy: "REPLACE_ACTIVE" });
+      for (const intent of [
+        { type: "Build", entity_id: 710, blueprint_id: "collector_solar", policy: "APPEND" },
+        { type: "Collect", entity_id: 710, resource_type_id: "energy" },
+        { type: "JettisonCargo", entity_id: 710 },
+      ] as const) {
+        const receipt = await gateway.sendIntent(handle, intent);
+        const posted = postedIntents.at(-1)!;
+        expect(receipt.submitted_intent).toEqual({ ...intent, policy: intent.type === "Build" ? "APPEND" : "REPLACE_ACTIVE" });
+        const { run_id, client_seq, client_cmd_id, ...actualIntent } = posted;
+        expect(receipt.submitted_intent).toEqual(actualIntent);
+        expect(receipt.client_cmd_id).toBe(client_cmd_id);
+        if (intent.type === "Collect" || intent.type === "JettisonCargo") {
+          const activeBefore = gateway.getPlayerState(handle).active_intents;
+          for (const state of intent.type === "Collect" ? [2] : [2, 5]) {
+            const lifecycle = {
+              playerId: "player-1", clientCmdId: receipt.client_cmd_id,
+              intentId: receipt.client_cmd_id, state, reason: 1, serverTick: "9",
+            };
+            streamController!.enqueue(encoder.encode(`event: lifecycle\ndata: ${JSON.stringify(lifecycle)}\n\n`));
+            await eventually(() => gateway.getCommand(handle, receipt.client_cmd_id)?.lifecycle_state === state);
+            if (intent.type === "JettisonCargo") {
+              expect(gateway.getPlayerState(handle).active_intents).toEqual(activeBefore);
+              expect(activeBefore).toEqual([expect.objectContaining({ intent_kind: "collect" })]);
+            }
+          }
+        }
+      }
       expect(calls.filter(call => call.path !== "/api/players/login").every(call => call.cookie === "player_token=test-token")).toBe(true);
 
       expect(gateway.disconnectPlayer(handle)).toEqual({ disconnected: true });
@@ -69,9 +97,9 @@ describe("PlayerGateway", () => {
     }
   });
 
-  it("rejects non-test identities before creating a player", async () => {
+  it.each(["andrew", "agent-", "loadtest-", "agent-bad.name", `agent-${"a".repeat(49)}`])("rejects invalid identity %s before creating a player", async (username) => {
     const gateway = new PlayerGateway({ baseUrl: "http://127.0.0.1:3000", fetchImpl: (() => { throw new Error("should not fetch"); }) as typeof fetch });
-    await expect(gateway.connectPlayer("andrew")).rejects.toThrow("loadtest-");
+    await expect(gateway.connectPlayer(username)).rejects.toThrow("loadtest- or agent-");
   });
 
   it("reopens SSE and reconciles a newer sequence after the stream ends", async () => {

@@ -42,11 +42,21 @@ describe("stdio MCP server", () => {
       child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
       const listed = await call(2, "tools/list");
       expect(listed.error).toBeUndefined();
-      const names = ((listed.result as { tools: Array<{ name: string }> }).tools).map(tool => tool.name);
+      const advertised = (listed.result as { tools: Array<{ name: string; inputSchema: { properties: Record<string, unknown>; required: string[] } }> }).tools;
+      const names = advertised.map(tool => tool.name);
       expect(names).toEqual(expect.arrayContaining([
         "connect_player", "observe_events", "get_player_state", "set_progress_watch",
-        "send_intent", "disconnect_player",
+        "send_intent", "move_entity", "build_entity", "collect_resource", "disconnect_player",
       ]));
+      for (const [name, required] of [
+        ["move_entity", ["handle", "entity_id", "x", "y"]],
+        ["build_entity", ["handle", "entity_id", "blueprint_id"]],
+        ["collect_resource", ["handle", "entity_id", "resource_type_id"]],
+      ] as const) {
+        const schema = advertised.find(tool => tool.name === name)!.inputSchema;
+        expect(schema.required).toEqual(expect.arrayContaining([...required]));
+        expect(schema.properties).not.toHaveProperty("intent");
+      }
       const invalidHandle = await call(3, "tools/call", {
         name: "get_player_state", arguments: { handle: "missing" },
       });

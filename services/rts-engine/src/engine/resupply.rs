@@ -24,11 +24,7 @@ pub(super) fn valid(
     };
     actor.id != depot.id
         && actor.owner_player_id == depot.owner_player_id
-        && def.speed > 0.0
-        && def
-            .collector
-            .as_ref()
-            .is_some_and(|c| c.transport_rate_per_second > 0.0)
+        && def.max_capacity.values().any(|capacity| *capacity > 0.0)
         && content.get(&depot.entity_type_id).is_some_and(|d| d.depot)
         && !order.target_amounts.is_empty()
         && order.target_amounts.len() <= 64
@@ -171,6 +167,25 @@ mod tests {
     }
 
     #[test]
+    fn scout_without_transport_capability_can_resupply_all_resources() {
+        let (content, mut entities, mut order) = setup();
+        entities[0].entity_type_id = "scout".into();
+        order.target_amounts = ["energy", "food", "minerals"]
+            .into_iter()
+            .map(|resource| (resource.to_string(), 50.0))
+            .collect();
+        set_resource_amount(&mut entities[1], "food", 100.0);
+        assert!(valid(&entities, &content, &order));
+        assert_eq!(advance(&mut entities, &content, &order, 0.05), Progress::Finished);
+        for resource in ["energy", "food", "minerals"] {
+            assert_eq!(resource_amount(&entities[0], resource), 50.0);
+            assert_eq!(resource_amount(&entities[1], resource), 50.0);
+        }
+        order.target_amounts.insert("food".into(), 51.0);
+        assert!(!valid(&entities, &content, &order));
+    }
+
+    #[test]
     fn follows_depot_then_waits_for_missing_stock_and_resumes() {
         let (content, mut entities, order) = setup();
         entities[1].pos.as_mut().unwrap().x = 1000.0;
@@ -222,7 +237,7 @@ mod tests {
                 0 => es[1].health = 0.0,
                 1 => es[1].owner_player_id = "enemy".into(),
                 2 => es[1].entity_type_id = "factory".into(),
-                _ => es[0].entity_type_id = "scout".into(),
+                _ => es[0].entity_type_id = "factory".into(),
             }
             let before = es.clone();
             assert_eq!(advance(&mut es, &content, &order, 0.05), Progress::Lost);

@@ -8,6 +8,7 @@ import { requireAuthOr401 } from "@/features/users/utils/auth";
 import { redis } from "@/lib/db/connection";
 import { VisibilityFilter } from "@/lib/db/utils/visibility";
 import { trackPlayerConnection } from "@/lib/db/utils/player-presence";
+import { readAcceptedContent } from "@/lib/content/contentReloadStatus";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,13 +99,24 @@ export const GET = withAxiom(async (req: Request) => {
       // (Handshake and boot delay removed; client now gates readiness.)
 
       const streamEvents = `rts:match:${GAME_ID}:events`;
-      const contentDefsKey = `rts:match:${GAME_ID}:content_defs`;
-      const contentDefs = await redis.get(contentDefsKey);
-      const parsedContent = contentDefs ? JSON.parse(contentDefs) : {};
-      const entityTypes = parsedContent.entity_types ?? {};
-      const visibility = new VisibilityFilter(actingAsId ?? playerId ?? "", entityTypes, parsedContent.technologies ?? {});
+      const parsedContent = await readAcceptedContent();
+      const entityTypes = parsedContent?.entity_types ?? {};
+      const visibility = new VisibilityFilter(actingAsId ?? playerId ?? "", entityTypes, parsedContent?.technologies ?? {});
       let lastId: string | undefined;
       let previousRuntime = await redis.get(`rts:match:${GAME_ID}:runtime`);
+      let advertisedContentRevision = "";
+      const publishAcceptedContent = async () => {
+        const revision = await redis.get(`rts:match:${GAME_ID}:content_version`);
+        if (!revision || revision === advertisedContentRevision) return;
+        const active = await readAcceptedContent();
+        if (!active?.content_revision || active.content_revision === advertisedContentRevision) return;
+        visibility.updateContent(active.entity_types ?? {}, active.technologies ?? {});
+        await channel.write(`event: content_changed\ndata: ${JSON.stringify({
+          type: "content_changed", content_revision: active.content_revision,
+          reload_id: active.reload_id, activated_tick: active.activated_tick,
+        })}\n\n`);
+        advertisedContentRevision = active.content_revision;
+      };
 
       // Visibility state is connection-local, so every connection starts from
       // a filtered snapshot rather than replaying an unfiltered cursor.
@@ -124,6 +136,7 @@ export const GET = withAxiom(async (req: Request) => {
       }
 
       if (!lastId || channel.isClosed()) return;
+      await publishAcceptedContent();
 
       // A full progress batch gives new connections a current owner-scoped
       // state. Clients use server_tick to ignore older catch-up events.
@@ -160,6 +173,7 @@ export const GET = withAxiom(async (req: Request) => {
       while (!channel.isClosed()) {
         try {
           const entries = await xReadWithBuffers(streamEvents, lastId, XREAD_BLOCK_MS, XRANGE_BATCH_COUNT);
+          await publishAcceptedContent();
           const runtime = await redis.get(`rts:match:${GAME_ID}:runtime`);
           if (runtime && runtime !== previousRuntime) {
             const next = JSON.parse(runtime);

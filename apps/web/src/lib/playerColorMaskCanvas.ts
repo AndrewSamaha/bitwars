@@ -10,6 +10,11 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 /** Build color-only masks from the published sprite and its primary selection. */
 export async function playerColorMaskCanvases(baseUrl: string, primaryUrl: string, secondaryBrightnessThreshold = DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD, invariantsUrl?: string | null) {
   const [baseImage, primaryImage, invariantsImage] = await Promise.all([loadImage(baseUrl), loadImage(primaryUrl), invariantsUrl ? loadImage(invariantsUrl) : Promise.resolve(null)]);
+  return playerColorMaskCanvasesFromImages(baseImage, primaryImage, secondaryBrightnessThreshold, invariantsImage);
+}
+
+/** Reuse already hash-verified images instead of fetching masks a second time. */
+export function playerColorMaskCanvasesFromImages(baseImage: HTMLImageElement, primaryImage: HTMLImageElement, secondaryBrightnessThreshold = DEFAULT_SECONDARY_BRIGHTNESS_THRESHOLD, invariantsImage?: HTMLImageElement | null) {
   const width = baseImage.naturalWidth;
   const height = baseImage.naturalHeight;
   if (primaryImage.naturalWidth !== width || primaryImage.naturalHeight !== height || (invariantsImage && (invariantsImage.naturalWidth !== width || invariantsImage.naturalHeight !== height))) {

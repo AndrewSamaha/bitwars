@@ -1,7 +1,6 @@
 /**
- * M5.2: Deterministic procedural Voronoi-style background.
- * Pure functions of world position + SEED only. No Date, no Math.random().
- * Same (x, y) + SEED → same sector and color on all clients and reloads.
+ * M5.2: deterministic procedural background grid and starfield inputs.
+ * Pure functions of cell coordinates + SEED only. No Date, no Math.random().
  */
 
 export const CELL_SIZE = 1200;
@@ -46,6 +45,33 @@ function cellOffset(cellX: number, cellY: number, seed: number): { u: number; v:
   const u = (h & 0xffff) / 65536;
   const v = ((h >>> 16) & 0xffff) / 65536;
   return { u, v };
+}
+
+/** Independent avalanche-mixed samples for star counts and each position axis. */
+function starSample(cellX: number, cellY: number, seed: number, stream: number): number {
+  let h = Math.imul(cellX, 0x9e3779b1) ^ Math.imul(cellY, 0x85ebca77)
+    ^ seed ^ Math.imul(stream, 0xc2b2ae3d);
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  return ((h ^ (h >>> 16)) >>> 0) / 0x1_0000_0000;
+}
+
+/** Capped geometric count: 40% empty cells, with a decreasing tail up to 10. */
+export function getStarCountForCell(cellX: number, cellY: number, seed: number): number {
+  const sample = starSample(cellX, cellY, seed, 0);
+  return Math.min(10, Math.floor(Math.log1p(-sample) / Math.log(0.6)));
+}
+
+export function getStarForCell(
+  cellX: number,
+  cellY: number,
+  starIndex: number,
+  cellSize: number,
+  seed: number,
+): { x: number; y: number } {
+  const x = starSample(cellX, cellY, seed, 1 + starIndex * 2);
+  const y = starSample(cellX, cellY, seed, 2 + starIndex * 2);
+  return { x: (cellX + x) * cellSize, y: (cellY + y) * cellSize };
 }
 
 /**

@@ -18,6 +18,7 @@ const handleSchema = z.object({ handle: z.string().min(1) });
 const entityId = z.number().int().positive().safe();
 const policy = z.enum(["REPLACE_ACTIVE", "APPEND", "CLEAR_THEN_APPEND"]).optional();
 const intentSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("JettisonCargo"), entity_id: entityId, policy }),
   z.object({ type: z.literal("Move"), entity_id: entityId, target: z.object({ x: z.number().finite(), y: z.number().finite() }), policy }),
   z.object({ type: z.literal("Build"), entity_id: entityId, blueprint_id: z.string().min(1), policy }),
   z.object({ type: z.literal("Upgrade"), entity_id: entityId, target_entity_type_id: z.string().min(1), policy }),
@@ -67,8 +68,8 @@ function createServer() {
     ].join(" "),
   });
   server.registerTool("connect_player", {
-    description: "Log in as a loadtest-* player and open its game SSE connection. Only use on a disposable game.",
-    inputSchema: z.object({ username: z.string().regex(/^loadtest-[a-zA-Z0-9_-]{1,48}$/) }),
+    description: "Log in as a loadtest-* or agent-* player and open its game SSE connection. Only use on a disposable game.",
+    inputSchema: z.object({ username: z.string().regex(/^(?:loadtest|agent)-[a-zA-Z0-9_-]{1,48}$/) }),
   }, ({ username }) => tool(() => gateway.connectPlayer(username))());
   server.registerTool("observe_events", {
     description: "Read a bounded batch of this player's game SSE events after a cursor; reports dropped-event gaps.",
@@ -122,6 +123,24 @@ function createServer() {
     description: "Submit an intent for an owned entity using this player's current run and next sequence.",
     inputSchema: handleSchema.extend({ intent: intentSchema }),
   }, ({ handle, intent }) => tool(() => gateway.sendIntent(handle, intent as IntentInput))());
+  server.registerTool("move_entity", {
+    description: "Move an owned entity to world coordinates. Replaces its active order by default, including continuous collection. Prefer this over send_intent for movement.",
+    inputSchema: handleSchema.extend({ entity_id: entityId, x: z.number().finite(), y: z.number().finite(), policy }),
+  }, ({ handle, entity_id, x, y, policy }) => tool(() => gateway.sendIntent(handle, {
+    type: "Move", entity_id, target: { x, y }, policy,
+  }))());
+  server.registerTool("build_entity", {
+    description: "Order an owned builder to construct a blueprint. The product spawns near the builder; no placement coordinate is accepted. Prefer this over send_intent for construction.",
+    inputSchema: handleSchema.extend({ entity_id: entityId, blueprint_id: z.string().min(1), policy }),
+  }, ({ handle, entity_id, blueprint_id, policy }) => tool(() => gateway.sendIntent(handle, {
+    type: "Build", entity_id, blueprint_id, policy,
+  }))());
+  server.registerTool("collect_resource", {
+    description: "Order an owned collector to collect an explicit resource such as food, minerals, or energy. Replaces its active order by default. Prefer this over send_intent for resource collection.",
+    inputSchema: handleSchema.extend({ entity_id: entityId, resource_type_id: z.string().min(1), policy }),
+  }, ({ handle, entity_id, resource_type_id, policy }) => tool(() => gateway.sendIntent(handle, {
+    type: "Collect", entity_id, resource_type_id, policy,
+  }))());
   server.registerTool("disconnect_player", {
     description: "Close the player's game SSE stream, progress timer, and event buffer.",
     inputSchema: handleSchema,

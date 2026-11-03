@@ -4,6 +4,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { isPlayerColorOpacity, isSecondaryBrightnessThreshold } from "@/lib/playerColorSettings";
 import { readLibrarySprite } from "./spriteLibraryAsset";
+import { mutateContentAndReload, type ReloadOptions } from "./contentRevisions";
 
 export type MaskCandidatePart = "upscaled" | "gray-upscaled" | "gray" | "primary" | "primary-upscaled" | "invariants" | "invariants-upscaled" | "invariant-colors" | "invariant-colors-upscaled";
 export type MaskCandidateManifest = {
@@ -130,7 +131,7 @@ export async function copyInvariantColors(colorImage: Buffer, invariantMaskImage
   return sharp(color, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
 }
 
-export async function publishMaskCandidate(sourcePath: string, requestId: string, primaryOpacity: number, secondaryOpacity: number, secondaryBrightnessThreshold: number) {
+export async function publishMaskCandidate(sourcePath: string, requestId: string, primaryOpacity: number, secondaryOpacity: number, secondaryBrightnessThreshold: number, options: ReloadOptions = {}) {
   if (!isPlayerColorOpacity(primaryOpacity) || !isPlayerColorOpacity(secondaryOpacity)) {
     throw new Error("Player color opacity must be between 0 and 1.");
   }
@@ -152,9 +153,12 @@ export async function publishMaskCandidate(sourcePath: string, requestId: string
   ];
   const filenames = ["gray.png", "primary.png", "invariants.png", "invariant-colors.png"] as const;
   const settings = JSON.stringify({ primaryOpacity, secondaryOpacity, secondaryBrightnessThreshold }, null, 2) + "\n";
-  await Promise.all(roots.map((root) => mkdir(root, { recursive: true })));
-  await Promise.all(roots.flatMap((root) => [
-    ...filenames.map((filename, index) => writeFile(path.join(root, filename), images[index]!)),
-    writeFile(path.join(root, "player-colors.json"), settings),
-  ]));
+  const { content_reload } = await mutateContentAndReload(async () => {
+    await Promise.all(roots.map((root) => mkdir(root, { recursive: true })));
+    await Promise.all(roots.flatMap((root) => [
+      ...filenames.map((filename, index) => writeFile(path.join(root, filename), images[index]!)),
+      writeFile(path.join(root, "player-colors.json"), settings),
+    ]));
+  }, options);
+  return content_reload;
 }

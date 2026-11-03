@@ -10,9 +10,26 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Persisted server-owned fog-of-war observations across refreshes, reconnects, and world checkpoint restoration. Player-scoped snapshot/delta delivery restores world and minimap sightings without exposing hidden changes; revisiting an empty last-known location clears stale markers. Removed browser-owned sightings and the separate localStorage hazard cache.
+- Added optional per-entity `initial_resources` with capacity/resource validation and creation-only grants. Workers and scouts now spawn and complete construction with 50 energy, 50 food, and 50 minerals each; restoration, content reload, and upgrades preserve existing inventory.
+- Added configurable per-resource inventory regeneration using normalized Hill growth, including capacity limits and zero-stock exhaustion.
+- Added the immobile, non-attacking `planet_blue_inhabitated` hub with directly spendable food regrowth, habitat depot services, and worker/scout construction. Default player starts now convert their selected blue planet instead of spawning a separate habitat.
+- Extended yellow-star solar collection reach to 15,000 world units, with proximity production decreasing linearly to zero at the source's outer collection boundary.
+- Added live content publication from authenticated definition and sprite editors: global SHA256 revisions, per-entity definition/artwork hashes, immutable versioned asset bundles, compatible tick-boundary activation, exact snapshot revision restoration, and live client visual updates without reconnecting.
+- Added reload lifecycle/history inspection, client synchronization and retained error/recovery diagnostics to the content UI and game-query endpoints.
 - `CHANGELOG.md` created and aligned with existing git history.
 - Updated `README.md` Getting Started to match current tooling (`pnpm`, `turbo`) and Redis Stack via `docker-compose.yml`.
 - Documentation index and links surfaced in `README.md` (see `docs/`).
+
+### Changed
+- Bumped the engine and web intent protocol major from 21 to 22; deploy them together to avoid protocol mismatch rejections.
+- Added 60 minutes of maintenance-only storage capacity to factory, military factory, defense pylons, fighters, battleship, science vessel, and long-range scout types that previously had no capacity. Initial resource amounts are unchanged; sensor operating costs are additional.
+- Set maximum energy storage to 200 for all three defense pylon types.
+
+### Fixed
+- Made collection capacity and delivery resource-specific: full food or energy no longer blocks mineral collection or gets unloaded by mineral routes. Full/no-capacity warnings now refer only to the requested resource.
+- Moved legacy sprites for `planet_blue`, `star_yellow`, `minerals`, and `raider` from the web public directory into `packages/content/assets` so hot-reload revisions include their artwork instead of falling back to the corvette texture.
+- Replaced `packages/content/assets/theta/idle.png`, which contained a solar-collector image, with the correct theta star artwork already present in `public/assets`; republished and live-reloaded the revision.
 
 ### Notes
 - See the development milestones in `docs/milestones.md` for the incremental feature plan (M0–M10).

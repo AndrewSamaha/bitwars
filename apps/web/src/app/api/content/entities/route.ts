@@ -1,8 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { parseDocument, stringify } from "yaml";
-import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, depotErrors } from "@/lib/content/schemaValidation";
+import { parseDocument } from "yaml";
+import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, initialResourceErrors, depotErrors } from "@/lib/content/schemaValidation";
+
+import { sortEntityDefinitions, stringifyEntityDefinition } from "@/lib/content/entityYaml";
+import { mutateContentResponse } from "@/lib/content/contentRevisions";
+import { requireAuthOr401 } from "@/features/users/utils/auth";
 
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
@@ -21,25 +25,32 @@ export async function GET() {
     builds: definition.builds?.map((build: { entity_type_id: string }) => build.entity_type_id) ?? [],
     upgrades: definition.upgrades?.map((upgrade: { entity_type_id: string }) => upgrade.entity_type_id) ?? [],
     visual: definition.visual ?? {},
-    definition: stringify(definition).trim(),
+    definition: stringifyEntityDefinition(definition),
   })) });
 }
 
 export async function POST(request: Request) {
-  const { parentId, childId, definition } = await request.json();
+  const { auth, res } = await requireAuthOr401();
+  if (res) return res;
+  if (typeof auth?.playerId !== "string" || !auth.playerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const requested_by = auth.playerId;
+  const { parentId, childId, definition, base_revision } = await request.json();
   if (!/^[a-z][a-z0-9_]*$/.test(childId)) return NextResponse.json({ error: "Invalid entity id" }, { status: 400 });
-  const doc = parseDocument(await readFile(contentPath, "utf8"));
-  const child = parseDocument(definition);
-  if (doc.errors.length || child.errors.length) return NextResponse.json({ error: "Invalid YAML" }, { status: 400 });
-  const normalizedDefinition = omitNulls(child.toJS());
-  const validationErrors = [...depotErrors(normalizedDefinition), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {})))];
-  if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
-  const types: any = doc.get("entity_types", true);
-  if (!types?.has(parentId) || types.has(childId)) return NextResponse.json({ error: "Invalid parent or duplicate child" }, { status: 400 });
-  const parent: any = types.get(parentId, true);
-  const builds: any = parent.get("builds", true);
-  if (builds) builds.add({ entity_type_id: childId }); else parent.set("builds", [{ entity_type_id: childId }]);
-  types.set(childId, normalizedDefinition);
-  await writeFile(contentPath, String(doc));
-  return NextResponse.json({ ok: true });
+  return mutateContentResponse(async () => {
+    const doc = parseDocument(await readFile(contentPath, "utf8"));
+    const child = parseDocument(definition);
+    if (doc.errors.length || child.errors.length) return NextResponse.json({ error: "Invalid YAML" }, { status: 400 });
+    const normalizedDefinition = omitNulls(child.toJS());
+    const validationErrors = [...depotErrors(normalizedDefinition), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {})))];
+    validationErrors.push(...initialResourceErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))));
+    if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
+    const types: any = doc.get("entity_types", true);
+    if (!types?.has(parentId) || types.has(childId)) return NextResponse.json({ error: "Invalid parent or duplicate child" }, { status: 400 });
+    const parent: any = types.get(parentId, true);
+    const builds: any = parent.get("builds", true);
+    if (builds) builds.add({ entity_type_id: childId }); else parent.set("builds", [{ entity_type_id: childId }]);
+    types.set(childId, normalizedDefinition);
+    await writeFile(contentPath, String(sortEntityDefinitions(doc)));
+    return NextResponse.json({ ok: true });
+  }, { base_revision, requested_by });
 }

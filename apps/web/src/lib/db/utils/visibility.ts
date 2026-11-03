@@ -14,9 +14,17 @@ export type StreamEntity = {
   resource_deposit?: { amount: number; remaining: number } | null;
 };
 
+type EntityObservation = {
+  id: string;
+  entity_type_id: string;
+  owner_player_id: string;
+  pos?: Pos;
+  last_seen_tick: number | string;
+};
+
 type EntityType = {
-  sensor?: { range?: number };
-  visibility_range?: number;
+  sensor?: { range?: number } | null;
+  visibility_range?: number | null;
 };
 type TechnologyDef = { effects?: Array<{ target: string; operation: "add" | "multiply" | "set" | "cap"; value: number }> };
 
@@ -24,6 +32,7 @@ type SnapshotPayload = {
   type: "snapshot";
   tick: number | string;
   entities: StreamEntity[];
+  remembered_entities?: EntityObservation[];
   player_ledgers?: Array<{ player_id: string; resources: unknown[] }>;
   collector_states?: Array<{ entity_id: number | string }>;
   combat_effect_states?: Array<{ entity_id: number | string }>;
@@ -47,6 +56,8 @@ type DeltaPayload = {
   /** Connection-local visibility loss, not an authoritative world removal. */
   hidden_entity_ids?: Array<number | string>;
   updates: StreamEntity[];
+  remembered_entity_updates?: EntityObservation[];
+  forgotten_entity_ids?: Array<number | string>;
   collector_state_updates?: Array<{ entity_id: number | string }>;
   combat_effect_state_updates?: Array<{ entity_id: number | string }>;
 };
@@ -65,18 +76,27 @@ export class VisibilityFilter {
   private entities = new Map<string, StreamEntity>();
   private visible = new Set<string>();
   private withinSensors = new Set<string>();
+  private visibilityDirty = false;
 
   constructor(
     readonly playerId: string,
-    private readonly entityTypes: Record<string, EntityType>,
-    private readonly technologies: Record<string, TechnologyDef> = {},
+    private entityTypes: Record<string, EntityType>,
+    private technologies: Record<string, TechnologyDef> = {},
   ) {}
+
+  /** Adopt accepted content without changing authoritative observation memory. */
+  updateContent(entityTypes: Record<string, EntityType>, technologies: Record<string, TechnologyDef>) {
+    this.entityTypes = entityTypes;
+    this.technologies = technologies;
+    this.visibilityDirty = true;
+  }
 
   filterSnapshot(snapshot: SnapshotPayload): SnapshotPayload {
     this.entities = new Map(snapshot.entities.map((entity) => [idOf(entity.id), { ...entity }]));
     this.ownedTechnologies = new Set(snapshot.player_technologies?.find((state) => state.player_id === this.playerId)?.technology_ids ?? []);
     this.visible = this.currentlyVisible();
     this.withinSensors = this.currentlyWithinSensors();
+    this.visibilityDirty = false;
     return {
       ...snapshot,
       entities: snapshot.entities.filter((entity) => this.visible.has(idOf(entity.id))).map((entity) => forClient(entity, this.playerId, this.withinSensors.has(idOf(entity.id)))),
@@ -92,7 +112,7 @@ export class VisibilityFilter {
   }
 
   filterDelta(delta: DeltaPayload): DeltaPayload | undefined {
-    const wasVisible = new Set(this.visible);
+    const wasVisible = this.visible;
     const removed: Array<number | string> = [];
     const hidden: Array<number | string> = [];
     for (const id of delta.removed_entity_ids ?? []) {
@@ -105,10 +125,11 @@ export class VisibilityFilter {
       this.entities.set(key, { ...this.entities.get(key), ...update });
     }
 
-    const nowVisible = this.currentlyVisible();
-    const nowWithinSensors = this.currentlyWithinSensors();
+    const visibilityChanged = this.visibilityDirty || delta.updates.length > 0 || !!delta.removed_entity_ids?.length;
+    const nowVisible = visibilityChanged ? this.currentlyVisible() : this.visible;
+    const nowWithinSensors = visibilityChanged ? this.currentlyWithinSensors() : this.withinSensors;
     const updates: StreamEntity[] = [];
-    for (const [key, entity] of this.entities) {
+    if (visibilityChanged) for (const [key, entity] of this.entities) {
       if (!wasVisible.has(key) && nowVisible.has(key)) {
         updates.push(forClient(entity, this.playerId, nowWithinSensors.has(key)));
       } else if (wasVisible.has(key) && !nowVisible.has(key)) {
@@ -129,6 +150,7 @@ export class VisibilityFilter {
     }
     this.visible = nowVisible;
     this.withinSensors = nowWithinSensors;
+    this.visibilityDirty = false;
 
     const collector_state_updates = delta.collector_state_updates?.filter((state) => nowVisible.has(idOf(state.entity_id)));
     const combat_effect_state_updates = delta.combat_effect_state_updates?.filter((state) => nowVisible.has(idOf(state.entity_id)));
@@ -138,7 +160,7 @@ export class VisibilityFilter {
     const sentry_order_removals = delta.sentry_order_removals?.filter((order) => order.player_id === this.playerId);
     const move_order_updates = delta.move_order_updates?.filter((order) => order.player_id === this.playerId);
     const move_order_removals = delta.move_order_removals?.filter((order) => order.player_id === this.playerId);
-    if (updates.length === 0 && removed.length === 0 && hidden.length === 0 && !collector_state_updates?.length && !combat_effect_state_updates?.length && !move_order_updates?.length && !move_order_removals?.length && !sentry_order_updates?.length && !sentry_order_removals?.length && !escort_order_updates?.length && !escort_order_removals?.length) return undefined;
+    if (updates.length === 0 && removed.length === 0 && hidden.length === 0 && !delta.remembered_entity_updates?.length && !delta.forgotten_entity_ids?.length && !collector_state_updates?.length && !combat_effect_state_updates?.length && !move_order_updates?.length && !move_order_removals?.length && !sentry_order_updates?.length && !sentry_order_removals?.length && !escort_order_updates?.length && !escort_order_removals?.length) return undefined;
     return {
       ...delta,
       removed_entity_ids: removed,

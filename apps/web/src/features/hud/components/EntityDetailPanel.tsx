@@ -39,6 +39,7 @@ function MaintenanceCosts({ entityTypeId }: { entityTypeId: string }) {
 export default function EntityDetailPanel() {
   const { selectors, actions } = useHUD();
   const { effectivePlayerId } = useSession();
+  const contentRevision = useSyncExternalStore(contentManager.subscribe, contentManager.getContentVersion, () => "");
   const { selectedEntities, selectedAction, isMeasuring } = selectors;
   const selectedIdsKey = selectedEntities.join(",");
   const donorId = typeof selectedAction === "object" && selectedAction?.kind === "Transport" ? selectedAction.donorId : undefined;
@@ -196,7 +197,7 @@ export default function EntityDetailPanel() {
           ),
         ),
       )
-    : [], [selectedIdsKey, selectedTypesKey]);
+    : [], [selectedIdsKey, selectedTypesKey, contentRevision]);
 
   // Dynamic actions for a given entity.
   const getActionsForEntity = (entityId: string): ActionDef[] => {
@@ -234,6 +235,7 @@ export default function EntityDetailPanel() {
       { key: "u", name: "upgrade", enabled: canUpgrade, value: "Upgrade" },
       { key: "t", name: "research", enabled: canResearch, value: "Research" },
       { key: "r", name: "repair", enabled: canRepair, value: "Repair" },
+      ...(canJettisonCargo ? [{ key: "j", name: "jettison cargo", value: "JettisonCargo" as const }] : []),
       { key: "s", name: "self destruct", enabled: canSelfDestruct, value: "SelfDestruct" },
     ];
   };
@@ -245,12 +247,20 @@ export default function EntityDetailPanel() {
     const entity = entities.find(e => String(e.id) === id);
     return entity?.owner_player_id === effectivePlayerId && entity.remembered === undefined && (entity.health ?? 0) > 0;
   });
+  const canJettisonCargo = !!effectivePlayerId && selectedEntities.length > 0 && selectedEntities.every(id => {
+    const entity = entities.find(e => String(e.id) === id);
+    const def = contentManager.getEntityType(entity?.entity_type_id ?? "");
+    return entity?.owner_player_id === effectivePlayerId
+      && entity.remembered === undefined && (entity.health ?? 0) > 0
+      && (def?.speed ?? 0) > 0 && !def?.depot
+      && Object.values(def?.max_capacity ?? {}).some(capacity => capacity > 0)
+      && (entity.resources ?? []).some(resource => resource.amount > 0);
+  });
   const carrierEntity = entities.find((e) => String(e.id) === firstId);
   const carrierDef = contentManager.getEntityType(idToType.get(firstId) ?? "");
   const canResupply = selectedEntities.length > 0 && selectedEntities.every(id => {
     const def = contentManager.getEntityType(idToType.get(id) ?? "");
-    return (def?.speed ?? 0) > 0 && (def?.collector?.transport_rate_per_second ?? 0) > 0
-      && Object.values(def?.max_capacity ?? {}).some(capacity => capacity > 0);
+    return Object.values(def?.max_capacity ?? {}).some(capacity => capacity > 0);
   });
   const canTransport = selectedEntities.length === 1 && (carrierDef?.speed ?? 0) > 0 && (carrierDef?.collector != null && (carrierDef.collector.transport_rate_per_second ?? 8) > 0);
   const transportSelection = deliverySelection?.kind === "Transport" ? deliverySelection : null;
@@ -304,6 +314,11 @@ export default function EntityDetailPanel() {
   }, [buildStateById, firstId, isSelectedEntityBuilding]);
 
   const onClickAction = (val: ActionDef["value"]) => {
+    if (val === "JettisonCargo") {
+      if (!canJettisonCargo) return;
+      for (const id of selectedEntities) intentQueue.handleJettisonCargoCommand(Number(id));
+      return;
+    }
     if (val === "SelfDestruct") {
       if (!canSelfDestruct) return;
       actions.setSelectedAction(null);
@@ -373,13 +388,13 @@ export default function EntityDetailPanel() {
     () => selectedEntities.length === 1
       ? contentManager.getEntityType(selectedType)?.upgrades ?? []
       : [],
-    [selectedEntities.length, selectedType],
+    [selectedEntities.length, selectedType, contentRevision],
   );
   const researchOptions = useMemo(
     () => selectedEntities.length === 1
       ? contentManager.getEntityType(selectedType)?.researches ?? []
       : [],
-    [selectedEntities.length, selectedType],
+    [selectedEntities.length, selectedType, contentRevision],
   );
   const collectOptions = useMemo(() => {
     if (selectedEntities.length === 0) return [];
@@ -525,6 +540,12 @@ export default function EntityDetailPanel() {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable=true]")) return;
       const key = event.key.toLowerCase();
+      if (key === "j" && canJettisonCargo && !event.ctrlKey && !event.metaKey && !event.altKey
+        && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen && !deliverySelection && !resupplySelection) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!event.repeat) onClickAction("JettisonCargo");
+        return;
+      }
       if (key === "s" && canSelfDestruct && !event.ctrlKey && !event.metaKey && !event.altKey
         && !collectMenuOpen && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen && !deliverySelection && !resupplySelection) {
         event.preventDefault(); event.stopImmediatePropagation();

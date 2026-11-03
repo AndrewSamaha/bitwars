@@ -73,6 +73,12 @@ pub struct RaiderScript {
 }
 
 impl RaiderScript {
+    /// Refresh static world profiles on the next tick without resetting Lua-owned
+    /// per-entity state, selected targets, or the scheduling cursor.
+    pub(crate) fn invalidate_content(&self) {
+        self.world_tick_initialized.set(false);
+    }
+
     pub fn debug_snapshot(&self, tick: u64) -> Result<serde_json::Value> {
         Ok(crate::script_debug::snapshot(
             RAIDERS_OWNER,
@@ -459,10 +465,8 @@ impl RaiderScript {
             .max()
             .unwrap_or(0)
             .saturating_add(1);
-        let health = content
-            .get(RAIDER_TYPE)
-            .map(|def| def.health.max(0.0))
-            .unwrap_or(0.0);
+        let definition = content.get(RAIDER_TYPE).expect("raider type checked above");
+        let health = definition.health.max(0.0);
         entities.push(Entity {
             id,
             entity_type_id: RAIDER_TYPE.into(),
@@ -473,7 +477,7 @@ impl RaiderScript {
             health,
             supply: None,
             resource_deposit: None,
-            resources: None,
+            resources: crate::engine::state::initial_resource_inventory(definition),
         });
     }
 }

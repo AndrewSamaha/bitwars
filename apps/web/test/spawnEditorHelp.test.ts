@@ -23,5 +23,8 @@ describe("procedural spawn editor help", () => {
       expect(complete(source).references, source).toBe("entities");
     }
     expect(complete("solar_systems:\n  planets:\n    count_weights:\n      |: 10").references).toBeUndefined();
+    expect(complete("player_starts:\n  inhabited_planet_type: |").references).toBe("entities");
+    const source = "player_starts:\n  inhabited_planet_type: planet_blue_inhabitated";
+    expect(hoverHelp(source, source.indexOf("inhabited_planet_type"), "spawn")).toContain("replacing the selected neutral planet");
   });
 });

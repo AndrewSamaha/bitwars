@@ -45,7 +45,10 @@ export async function bootstrapAndCatchUp(
     const snapshot = decodeSnapshotBinary(snapshotBuf);
     const runtimeValue = await redis.get(`rts:match:${gameId}:runtime`);
     const runtime = runtimeValue ? JSON.parse(runtimeValue) : {};
-    const payload = { ...mapSnapshotToJson(snapshot as any), run_id: meta?.run_id || runtime.run_id || "", paused: !!runtime.paused, scenario_id: runtime.scenario_id ?? null };
+    // A reset can publish its runtime before the replacement checkpoint arrives.
+    // Do not label the previous run's world or observations with the new run.
+    if (meta?.run_id && runtime.run_id && meta.run_id !== runtime.run_id) return undefined;
+    const payload = { ...mapSnapshotToJson(snapshot, visibility?.playerId), run_id: meta?.run_id || runtime.run_id || "", paused: !!runtime.paused, scenario_id: runtime.scenario_id ?? null };
     const visiblePayload = visibility ? visibility.filterSnapshot(payload) : payload;
     const entCount = Array.isArray((payload as any)?.entities) ? (payload as any).entities.length : 0;
     let concerningEntities = 0;

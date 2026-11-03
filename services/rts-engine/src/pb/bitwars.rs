@@ -328,8 +328,41 @@ impl SentryPhase {
         }
     }
 }
+/// Last observed values only; never hydrate from a currently hidden entity.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EntityObservation {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(string, tag = "2")]
+    pub entity_type_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub owner_player_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "4")]
+    pub pos: ::core::option::Option<Vec2>,
+    #[prost(uint64, tag = "5")]
+    pub last_seen_tick: u64,
+}
+/// Authoritative checkpoint knowledge. Player transports must select their owner.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerKnowledge {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub observations: ::prost::alloc::vec::Vec<EntityObservation>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlayerKnowledgeUpdate {
+    #[prost(string, tag = "1")]
+    pub player_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub upserts: ::prost::alloc::vec::Vec<EntityObservation>,
+    #[prost(uint64, repeated, tag = "3")]
+    pub removed_entity_ids: ::prost::alloc::vec::Vec<u64>,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Delta {
+    #[prost(message, repeated, tag = "12")]
+    pub player_knowledge_updates: ::prost::alloc::vec::Vec<PlayerKnowledgeUpdate>,
     #[prost(uint64, tag = "1")]
     pub tick: u64,
     #[prost(message, repeated, tag = "2")]
@@ -433,6 +466,23 @@ pub struct ResearchIntent {
     #[prost(string, tag = "2")]
     pub technology_id: ::prost::alloc::string::String,
 }
+/// Client-planned transport route. The server checks legality, never hazard safety.
+/// Waypoints are owned waypoint entities and are visited at their exact positions.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionTravelPlan {
+    #[prost(uint64, tag = "1")]
+    pub source_entity_id: u64,
+    #[prost(uint64, tag = "2")]
+    pub depot_entity_id: u64,
+    /// depot -> source intermediates, at most 256
+    #[prost(uint64, repeated, tag = "3")]
+    pub waypoint_ids: ::prost::alloc::vec::Vec<u64>,
+    /// current position -> initial destination
+    #[prost(uint64, repeated, tag = "4")]
+    pub initial_waypoint_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(bool, tag = "5")]
+    pub initial_to_depot: bool,
+}
 /// Collect intent payload (authoritative server-side).
 /// Starts/maintains autonomous resource collection behavior for this entity.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -453,6 +503,8 @@ pub struct CollectIntent {
     /// separate flag so an empty resource_type_id is never ambiguous on the wire.
     #[prost(bool, tag = "5")]
     pub nearest_compatible: bool,
+    #[prost(message, optional, tag = "6")]
+    pub travel_plan: ::core::option::Option<CollectionTravelPlan>,
 }
 /// Repair intent payload (authoritative server-side).
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -507,6 +559,13 @@ pub struct SelfDestructIntent {
     #[prost(uint64, tag = "1")]
     pub entity_id: u64,
 }
+/// Immediately discard all cargo from an owned mobile carrier without interrupting orders.
+/// No resource refund or dropped entity is created.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct JettisonCargoIntent {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+}
 /// Transport envelope that wraps all intent payloads and carries authoritative metadata.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntentEnvelope {
@@ -532,7 +591,7 @@ pub struct IntentEnvelope {
     pub policy: i32,
     #[prost(
         oneof = "intent_envelope::Payload",
-        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24"
+        tags = "10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25"
     )]
     pub payload: ::core::option::Option<intent_envelope::Payload>,
 }
@@ -568,6 +627,8 @@ pub mod intent_envelope {
         Resupply(super::ResupplyIntent),
         #[prost(message, tag = "24")]
         SelfDestruct(super::SelfDestructIntent),
+        #[prost(message, tag = "25")]
+        JettisonCargo(super::JettisonCargoIntent),
     }
 }
 /// Extensible Intent envelope.
@@ -735,6 +796,17 @@ pub struct CollectState {
     pub resource_type_id: ::prost::alloc::string::String,
     #[prost(bool, tag = "3")]
     pub nearest_compatible: bool,
+    #[prost(message, optional, tag = "4")]
+    pub travel_plan: ::core::option::Option<CollectionTravelPlan>,
+    #[prost(bool, tag = "5")]
+    pub initial_leg_complete: bool,
+    #[prost(bool, tag = "6")]
+    pub returning_to_depot: bool,
+    #[prost(uint32, tag = "7")]
+    pub next_waypoint_index: u32,
+    /// A newer tracked route cannot be resumed from an older position checkpoint.
+    #[prost(bool, tag = "8")]
+    pub route_checkpoint_missing: bool,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct RepairState {
@@ -996,11 +1068,26 @@ pub struct PlayerTechnologyState {
     #[prost(string, repeated, tag = "2")]
     pub technology_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+/// Server-only collection checkpoint, saved with the worker position and cargo.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionOrderState {
+    #[prost(bytes = "vec", tag = "1")]
+    pub client_cmd_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub state: ::core::option::Option<CollectState>,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
+    #[prost(message, repeated, tag = "17")]
+    pub player_knowledge: ::prost::alloc::vec::Vec<PlayerKnowledge>,
+    /// Exact accepted immutable content used by this checkpoint. Empty only on legacy snapshots.
+    #[prost(string, tag = "16")]
+    pub content_revision: ::prost::alloc::string::String,
     /// Server-only persistent player discovery history; omitted from player streams.
     #[prost(string, tag = "14")]
     pub discovered_entities_json: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "15")]
+    pub collection_orders: ::prost::alloc::vec::Vec<CollectionOrderState>,
     /// Server checkpoint: versioned reservations and pending procedural starts.
     /// Clients may ignore this JSON; it is persisted atomically with entities.
     #[prost(string, tag = "13")]

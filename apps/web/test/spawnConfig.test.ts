@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { parse, stringify } from "yaml";
-import { parseSpawnConfig, renameSpawnEntity } from "../src/lib/content/spawnConfig";
+import { parseSpawnConfig, renameSpawnEntity, type SpawnContent } from "../src/lib/content/spawnConfig";
 
 const mocks = vi.hoisted(() => ({ readFile: vi.fn(), writeFile: vi.fn(), auth: vi.fn() }));
 vi.mock("node:fs/promises", () => ({ readFile: mocks.readFile, writeFile: mocks.writeFile }));
@@ -63,10 +63,94 @@ describe("spawn configuration editor", () => {
 
 
 describe("procedural spawn rules", () => {
+  it("saves star and theta fields with distribution-backed food and minerals", async () => {
+    const config = parse(yaml);
+    config.global_neutral_fields = config.global_neutral_fields.filter((field: { type: string }) => ["star_yellow", "theta"].includes(field.type));
+    const entities = parse(content);
+    delete entities.entity_types.planet_blue.resource_node.amount;
+    delete entities.entity_types.minerals.resource_node.amount;
+    mocks.auth.mockResolvedValue({ res: null });
+    mocks.readFile.mockResolvedValue(stringify(entities));
+    const response = await PUT(new Request("http://localhost/api/content/spawn", { method: "PUT", body: JSON.stringify({ yaml: stringify(config) }) }));
+    expect(response.status).toBe(200);
+  });
+
+  it("uses distribution stock before entity stock and falls back when absent", () => {
+    const config = parse(yaml);
+    const entities = parse(content);
+    delete entities.entity_types.planet_blue.resource_node.regeneration;
+    entities.entity_types.planet_blue.resource_node.amount = 2000;
+    delete config.resource_amounts.planet_blue;
+    expect(() => parseSpawnConfig(stringify(config), entities)).not.toThrow();
+    config.resource_amounts.planet_blue = { average: 0, sd: 0, min: 0, max: 0 };
+    expect(() => parseSpawnConfig(stringify(config), entities)).toThrow("Starting planet requires finite food");
+    delete config.resource_amounts.planet_blue;
+    delete entities.entity_types.planet_blue.resource_node.amount;
+    expect(() => parseSpawnConfig(stringify(config), entities)).toThrow("Starting planet requires finite food");
+  });
+
+  it("rejects distributions on entities without resource nodes", () => {
+    const config = parse(yaml);
+    config.resource_amounts.worker = { average: 100, sd: 0, min: 100, max: 100 };
+    expect(() => parseSpawnConfig(stringify(config), parse(content))).toThrow("requires a resource node: worker");
+  });
+
+  it("requires positive minimum stock for every renewable node", () => {
+    const config = parse(yaml);
+    const entities = parse(content);
+    entities.entity_types.minerals.resource_node.regeneration = {};
+    config.resource_amounts.minerals.min = 0;
+    expect(() => parseSpawnConfig(stringify(config), entities)).toThrow("Renewable resource minerals");
+    config.resource_amounts.minerals.sd = 0;
+    expect(() => parseSpawnConfig(stringify(config), entities)).not.toThrow();
+  });
+
+  it("checks attainable mineral stock for fixed and sampled distributions", () => {
+    const config = parse(yaml);
+    config.resource_amounts.minerals = { average: 100, sd: 0, min: 0, max: 2000 };
+    expect(() => parseSpawnConfig(stringify(config), parse(content))).toThrow("Mineral stock cannot meet start minimum");
+    config.resource_amounts.minerals.sd = 1;
+    expect(() => parseSpawnConfig(stringify(config), parse(content))).not.toThrow();
+  });
+
+  it("reports an empty planet table as a schema error", () => {
+    const config = parse(yaml);
+    config.solar_systems.planets.type_weights.points = [];
+    expect(() => parseSpawnConfig(stringify(config))).toThrow("solar_systems.planets.type_weights.points:");
+  });
+
   it("validates the real content and rejects unknown references", () => {
     const config = parseSpawnConfig(yaml, parse(content));
     config.exposure.sources.missing_star = 1;
     expect(() => parseSpawnConfig(stringify(config), parse(content))).toThrow("Unknown spawn entity");
+  });
+  it("accepts legacy starts without conversion and validates inhabited planet loadouts", () => {
+    const legacy = parse(yaml);
+    delete legacy.player_starts.inhabited_planet_type;
+    legacy.loadouts[0].habitat = legacy.loadouts[0].planet_blue_inhabitated;
+    delete legacy.loadouts[0].planet_blue_inhabitated;
+    legacy.starting_resources_recipient_type = "habitat";
+    expect(() => parseSpawnConfig(stringify(legacy), parse(content))).not.toThrow();
+    for (const count of [0, 2]) {
+      const config = parse(yaml);
+      config.loadouts[0].planet_blue_inhabitated = count;
+      expect(() => parseSpawnConfig(stringify(config), parse(content))).toThrow("exactly once");
+    }
+    const missing = parse(yaml);
+    missing.player_starts.inhabited_planet_type = "missing_planet";
+    missing.loadouts[0].missing_planet = 1;
+    expect(() => parseSpawnConfig(stringify(missing), parse(content))).toThrow("Unknown spawn entity missing_planet");
+  });
+  it("requires an immobile depot without a resource deposit for conversion", () => {
+    for (const edit of [
+      (type: SpawnContent["entity_types"][string]) => { type.depot = false; },
+      (type: SpawnContent["entity_types"][string]) => { type.speed = 1; },
+      (type: SpawnContent["entity_types"][string]) => { type.resource_node = { resource_type: "food", amount: 100 }; },
+    ]) {
+      const entities = parse(content);
+      edit(entities.entity_types.planet_blue_inhabitated);
+      expect(() => parseSpawnConfig(yaml, entities)).toThrow("immobile depot without a resource node");
+    }
   });
   it("rejects invalid exposure tables, incomplete configuration and local sources", () => {
     for (const edit of [
@@ -87,7 +171,7 @@ describe("procedural spawn rules", () => {
   it("accepts quoted count keys but rejects numeric/string key collisions", () => {
     const quoted = yaml.replace("      0: 15", '      "0": 15');
     expect(parseSpawnConfig(quoted).solar_systems.planets.count_weights["0"]).toBe(15);
-    expect(() => parseSpawnConfig(yaml.replace("      0: 15", '      0: 15\n      "0": 10'))).toThrow("Duplicate spawn key");
+    expect(() => parseSpawnConfig(yaml.replace('      "0": 15', '      0: 15\n      "0": 10'))).toThrow("Duplicate spawn key");
   });
   it("renames entity keys and values without changing resource IDs or count keys", () => {
     const renamed = renameSpawnEntity(parseSpawnConfig(yaml), "planet_blue", "planet_temperate");
@@ -100,5 +184,9 @@ describe("procedural spawn rules", () => {
     const sources = renameSpawnEntity(parseSpawnConfig(yaml), "star_yellow", "star_red");
     expect(sources.exposure.sources).toHaveProperty("star_red");
     expect(sources.solar_systems.anchor_type).toBe("star_red");
+    const inhabited = renameSpawnEntity(parseSpawnConfig(yaml), "planet_blue_inhabitated", "planet_home");
+    expect(inhabited.player_starts.inhabited_planet_type).toBe("planet_home");
+    expect(inhabited.starting_resources_recipient_type).toBe("planet_home");
+    expect(inhabited.loadouts[0]).toHaveProperty("planet_home", 1);
   });
 });

@@ -1,6 +1,7 @@
 pub mod combat;
 pub mod config;
 pub mod content;
+pub mod content_revision;
 pub mod delta;
 pub mod engine;
 pub mod io;

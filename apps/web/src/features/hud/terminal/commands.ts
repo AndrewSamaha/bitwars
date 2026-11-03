@@ -126,6 +126,30 @@ const commands: TerminalCommand[] = [
     },
   },
   {
+    name: "world",
+    description: "world respawn — replace the shared world using spawn.yaml and respawn your player",
+    requiresAuth: true,
+    run: async (args) => {
+      if (args.length !== 1 || args[0] !== "respawn") return { output: "usage: world respawn" };
+      const response = await fetch("/api/content/scenarios", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "world_respawn", run_id: game.runId || undefined }),
+      });
+      let data = await response.json();
+      if (!response.ok && response.status !== 202) return { output: `world: ${data.error ?? "Respawn failed"}` };
+      const requestId = data.request_id;
+      const deadline = Date.now() + 10_000;
+      while (data.pending && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        const result = await fetch(`/api/content/scenarios?request_id=${encodeURIComponent(requestId)}`, { cache: "no-store" });
+        data = await result.json();
+        if (!result.ok && result.status !== 202) return { output: `world: ${data.error ?? "Could not read result"}` };
+      }
+      if (data.pending) return { output: `world: request ${requestId} is pending; check that the engine is running.` };
+      return { output: data.ok ? "World regenerated from spawn.yaml. Your player has respawned." : `world: ${data.error}` };
+    },
+  },
+  {
     name: "scenario",
     description: "scenario list|status|validate <id>|load <id>|reload|pause|resume|step [ticks]|bookmark <id> [tags...] [--entities=1,2]",
     requiresAuth: true,

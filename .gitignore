@@ -45,6 +45,7 @@ coverage/
 # Locally generated image candidates; selected final sprites are committed separately.
 /packages/content/art-candidates/
 /packages/content/mask-candidates/
+/packages/content/.revisions/
 
 # debug
 npm-debug.log*

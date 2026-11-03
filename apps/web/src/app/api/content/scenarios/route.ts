@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const action = body.action;
-    if (!["save", "validate", "load", "reload", "pause", "resume", "step", "bookmark"].includes(action)) throw new Error("Unknown scenario action");
+    if (!["save", "validate", "load", "reload", "pause", "resume", "step", "bookmark", "world_respawn"].includes(action)) throw new Error("Unknown scenario action");
     const command: Record<string, unknown> = { action: action === "save" ? "validate" : action };
     if (body.run_id !== undefined) {
       if (typeof body.run_id !== "string") throw new Error("Invalid run id");

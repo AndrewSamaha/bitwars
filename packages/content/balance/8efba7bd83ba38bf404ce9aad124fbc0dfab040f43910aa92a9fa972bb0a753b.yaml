@@ -1,0 +1,11 @@
+version: 1
+id: build-vs-maintenance
+name: Build vs Maintenance
+visualization_type: scatter_plot
+dot_size: 30
+x:
+  expression: sum(build_cost.*)
+  label: Build Cost
+y:
+  expression: sum(maintenance_cost_per_minute.*)
+  label: Maintenance Cost per Min

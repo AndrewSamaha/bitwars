@@ -12,18 +12,25 @@ import type { CollectorState } from "./collector_state_pb.js";
 import { file_collector_state } from "./collector_state_pb.js";
 import type { CombatEffectState } from "./combat_effect_state_pb.js";
 import { file_combat_effect_state } from "./combat_effect_state_pb.js";
+import type { PlayerKnowledgeUpdate } from "./player_knowledge_pb.js";
+import { file_player_knowledge } from "./player_knowledge_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file delta.proto.
  */
 export const file_delta: GenFile = /*@__PURE__*/
-  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyKqBAoFRGVsdGESDAoEdGljaxgBIAEoBBIlCgd1cGRhdGVzGAIgAygLMhQuYml0d2Fycy5FbnRpdHlEZWx0YRIaChJyZW1vdmVkX2VudGl0eV9pZHMYAyADKAQSOAoXY29sbGVjdG9yX3N0YXRlX3VwZGF0ZXMYBCADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEj8KG2NvbWJhdF9lZmZlY3Rfc3RhdGVfdXBkYXRlcxgFIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGUSMwoSbW92ZV9vcmRlcl91cGRhdGVzGAYgAygLMhcuYml0d2Fycy5Nb3ZlT3JkZXJTdGF0ZRI2ChNtb3ZlX29yZGVyX3JlbW92YWxzGAcgAygLMhkuYml0d2Fycy5Nb3ZlT3JkZXJSZW1vdmFsEjcKFHNlbnRyeV9vcmRlcl91cGRhdGVzGAggAygLMhkuYml0d2Fycy5TZW50cnlPcmRlclN0YXRlEjoKFXNlbnRyeV9vcmRlcl9yZW1vdmFscxgJIAMoCzIbLmJpdHdhcnMuU2VudHJ5T3JkZXJSZW1vdmFsEjcKFGVzY29ydF9vcmRlcl91cGRhdGVzGAogAygLMhkuYml0d2Fycy5Fc2NvcnRPcmRlclN0YXRlEjoKFWVzY29ydF9vcmRlcl9yZW1vdmFscxgLIAMoCzIbLmJpdHdhcnMuRXNjb3J0T3JkZXJSZW1vdmFsYgZwcm90bzM", [file_entity_delta, file_navigation, file_collector_state, file_combat_effect_state]);
+  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyLsBAoFRGVsdGESQAoYcGxheWVyX2tub3dsZWRnZV91cGRhdGVzGAwgAygLMh4uYml0d2Fycy5QbGF5ZXJLbm93bGVkZ2VVcGRhdGUSDAoEdGljaxgBIAEoBBIlCgd1cGRhdGVzGAIgAygLMhQuYml0d2Fycy5FbnRpdHlEZWx0YRIaChJyZW1vdmVkX2VudGl0eV9pZHMYAyADKAQSOAoXY29sbGVjdG9yX3N0YXRlX3VwZGF0ZXMYBCADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEj8KG2NvbWJhdF9lZmZlY3Rfc3RhdGVfdXBkYXRlcxgFIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGUSMwoSbW92ZV9vcmRlcl91cGRhdGVzGAYgAygLMhcuYml0d2Fycy5Nb3ZlT3JkZXJTdGF0ZRI2ChNtb3ZlX29yZGVyX3JlbW92YWxzGAcgAygLMhkuYml0d2Fycy5Nb3ZlT3JkZXJSZW1vdmFsEjcKFHNlbnRyeV9vcmRlcl91cGRhdGVzGAggAygLMhkuYml0d2Fycy5TZW50cnlPcmRlclN0YXRlEjoKFXNlbnRyeV9vcmRlcl9yZW1vdmFscxgJIAMoCzIbLmJpdHdhcnMuU2VudHJ5T3JkZXJSZW1vdmFsEjcKFGVzY29ydF9vcmRlcl91cGRhdGVzGAogAygLMhkuYml0d2Fycy5Fc2NvcnRPcmRlclN0YXRlEjoKFWVzY29ydF9vcmRlcl9yZW1vdmFscxgLIAMoCzIbLmJpdHdhcnMuRXNjb3J0T3JkZXJSZW1vdmFsYgZwcm90bzM", [file_entity_delta, file_navigation, file_collector_state, file_combat_effect_state, file_player_knowledge]);
 
 /**
  * @generated from message bitwars.Delta
  */
 export type Delta = Message<"bitwars.Delta"> & {
+  /**
+   * @generated from field: repeated bitwars.PlayerKnowledgeUpdate player_knowledge_updates = 12;
+   */
+  playerKnowledgeUpdates: PlayerKnowledgeUpdate[];
+
   /**
    * @generated from field: uint64 tick = 1;
    */

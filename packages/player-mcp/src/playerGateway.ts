@@ -73,6 +73,7 @@ export type WaitCondition =
   | { type: "resource_at_least"; entity_id: number; resource_type_id: string; amount: number };
 
 export type IntentInput =
+  | { type: "JettisonCargo"; entity_id: number; policy?: string }
   | { type: "Resupply"; entity_id: number; depot_id: number; target_amounts: Record<string, number>; policy?: string }
   | { type: "Move"; entity_id: number; target: { x: number; y: number }; policy?: string }
   | { type: "Build"; entity_id: number; blueprint_id: string; policy?: string }
@@ -279,7 +280,7 @@ export class PlayerGateway {
   }
 
   private setActiveIntent(session: Session, command: CommandStatus): void {
-    if (command.lifecycle_state === 1) return;
+    if (command.intent_type === "JettisonCargo" || command.lifecycle_state === 1) return;
     const active = session.activeIntents.filter(item => {
       const intent = object(item);
       return command.terminal
@@ -317,8 +318,8 @@ export class PlayerGateway {
 
   async connectPlayer(username: string): Promise<{ handle: string; status: ReturnType<PlayerGateway["getPlayerState"]> }> {
     if (this.sessions.size >= this.maxPlayers) throw new Error("player limit reached");
-    if (!/^loadtest-[a-zA-Z0-9_-]{1,48}$/.test(username)) {
-      throw new Error("test usernames must start with loadtest- and use only letters, digits, _ or -");
+    if (!/^(?:loadtest|agent)-[a-zA-Z0-9_-]{1,48}$/.test(username)) {
+      throw new Error("test usernames must start with loadtest- or agent- and use only letters, digits, _ or -");
     }
     if ([...this.sessions.values()].some(session => session.username === username)) {
       throw new Error("test username is already connected");
@@ -790,13 +791,14 @@ export class PlayerGateway {
     session.sending = true;
     const clientSeq = ++session.clientSeq;
     const clientCmdId = uuidV7();
+    const submittedIntent = { ...input, policy: input.policy ?? "REPLACE_ACTIVE" };
     try {
       const response = await this.request(session, "/api/v1/intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...input, run_id: session.runId, client_seq: clientSeq,
-          client_cmd_id: clientCmdId, policy: input.policy ?? "REPLACE_ACTIVE",
+          ...submittedIntent, run_id: session.runId, client_seq: clientSeq,
+          client_cmd_id: clientCmdId,
         }),
       });
       const body = await response.text();
@@ -814,7 +816,7 @@ export class PlayerGateway {
         session.pendingLifecycles.delete(clientCmdId);
         for (const lifecycle of pending) this.applyLifecycle(session, lifecycle);
       }
-      return { accepted_http: response.ok, status: response.status, client_seq: clientSeq, client_cmd_id: clientCmdId, result };
+      return { accepted_http: response.ok, status: response.status, client_seq: clientSeq, client_cmd_id: clientCmdId, submitted_intent: submittedIntent, result };
     } finally {
       session.sending = false;
     }

@@ -1,8 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { parseDocument, stringify } from "yaml";
+import { Document, parseDocument } from "yaml";
 import { technologyRequirementErrors, unknownTechnologyFieldErrors } from "@/lib/content/schemaValidation";
+
+import { sortEntityDefinitions } from "@/lib/content/entityYaml";
+import { mutateContentResponse } from "@/lib/content/contentRevisions";
+import { requireAuthOr401 } from "@/features/users/utils/auth";
 
 export const runtime = "nodejs";
 const contentPath = path.resolve(process.cwd(), "../../packages/content/entities.yaml");
@@ -14,21 +18,27 @@ const replaceId = (value: any, oldId: string, newId: string): any => Array.isArr
     : value === oldId ? newId : value;
 
 export async function PUT(request: Request, { params }: { params: Promise<{ technologyId: string }> }) {
+  const { auth, res } = await requireAuthOr401();
+  if (res) return res;
+  if (typeof auth?.playerId !== "string" || !auth.playerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const requested_by = auth.playerId;
   const { technologyId } = await params;
-  const { definition, newId = technologyId } = await request.json();
+  const { definition, newId = technologyId, base_revision } = await request.json();
   if (!validId(newId)) return NextResponse.json({ error: "Invalid technology id" }, { status: 400 });
-  const doc = parseDocument(await readFile(contentPath, "utf8"));
-  const technology = parseDocument(definition);
-  const technologies: any = doc.get("technologies", true);
-  if (doc.errors.length || technology.errors.length || !technologies?.has(technologyId) || (newId !== technologyId && technologies.has(newId))) return NextResponse.json({ error: "Invalid YAML or duplicate technology id" }, { status: 400 });
-  const errors = unknownTechnologyFieldErrors(technology.toJS());
-  if (errors.length) return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
-  const content = replaceId(doc.toJS(), technologyId, newId);
-  content.technologies[newId] = replaceId(technology.toJS(), technologyId, newId);
-  if (newId !== technologyId) delete content.technologies[technologyId];
-  const knownIds = new Set(Object.keys(content.technologies));
-  const requirementErrors = Object.values(content.technologies).flatMap((item: any) => technologyRequirementErrors(item.requires, knownIds));
-  if (requirementErrors.length) return NextResponse.json({ error: requirementErrors.join("; ") }, { status: 400 });
-  await writeFile(contentPath, stringify(content));
-  return NextResponse.json({ ok: true, id: newId });
+  return mutateContentResponse(async () => {
+    const doc = parseDocument(await readFile(contentPath, "utf8"));
+    const technology = parseDocument(definition);
+    const technologies: any = doc.get("technologies", true);
+    if (doc.errors.length || technology.errors.length || !technologies?.has(technologyId) || (newId !== technologyId && technologies.has(newId))) return NextResponse.json({ error: "Invalid YAML or duplicate technology id" }, { status: 400 });
+    const errors = unknownTechnologyFieldErrors(technology.toJS());
+    if (errors.length) return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
+    const content = replaceId(doc.toJS(), technologyId, newId);
+    content.technologies[newId] = replaceId(technology.toJS(), technologyId, newId);
+    if (newId !== technologyId) delete content.technologies[technologyId];
+    const knownIds = new Set(Object.keys(content.technologies));
+    const requirementErrors = Object.values(content.technologies).flatMap((item: any) => technologyRequirementErrors(item.requires, knownIds));
+    if (requirementErrors.length) return NextResponse.json({ error: requirementErrors.join("; ") }, { status: 400 });
+    await writeFile(contentPath, String(sortEntityDefinitions(new Document(content))));
+    return NextResponse.json({ ok: true, id: newId });
+  }, { base_revision, requested_by });
 }

@@ -137,7 +137,7 @@ export function completionHelp(text: string, start: number, end: number, kind: C
   const names = at.path.filter((key): key is string => typeof key === "string");
   const field = names.at(-1);
   const spawnReference = kind === "spawn" && (
-    (!at.key && ["type", "anchor_type", "planet_type", "starting_resources_recipient_type"].includes(field ?? ""))
+    (!at.key && ["type", "anchor_type", "planet_type", "inhabited_planet_type", "starting_resources_recipient_type"].includes(field ?? ""))
     || (at.key && ["sources", "weights", "resource_amounts", "loadouts"].includes(names.at(-2) ?? ""))
   );
   const references = spawnReference ? "entities" : at.key ? undefined

@@ -1,7 +1,8 @@
 "use client";
 
+import ContentNavigation from "./ContentNavigation";
+
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import YamlEditor from "./YamlEditor";
 
 export default function SpawnEditor() {
@@ -49,10 +50,7 @@ export default function SpawnEditor() {
   }
 
   return <main className="min-h-screen bg-slate-950 p-6 text-slate-100">
-    <nav className="mb-4 flex flex-wrap border-b border-slate-700" aria-label="Content">
-      {[["entities", "Entities"], ["techtree", "Techtree"], ["sprite-library", "Sprites"], ["sfx", "SFX"], ["scenarios", "Scenarios"], ["spawn", "Spawn"]].map(([path, label]) =>
-        <Link key={path} href={`/content/${path}`} aria-current={path === "spawn" ? "page" : undefined} className={`px-4 py-2 text-sm ${path === "spawn" ? "border-b-2 border-cyan-400 text-cyan-300" : "text-slate-400 hover:text-cyan-300"}`}>{label}</Link>)}
-    </nav>
+    <ContentNavigation active="spawn" />
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 className="text-xl font-semibold">Spawn configuration</h1>

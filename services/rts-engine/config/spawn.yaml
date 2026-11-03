@@ -4,7 +4,7 @@ max_raiders: 150
 loadouts:
   - worker: 3
     collector_solar: 0
-    habitat: 1
+    planet_blue_inhabitated: 1
     scout: 1
     processor: 0
     science_vessel: 0
@@ -15,37 +15,30 @@ global_neutral_fields:
     origin:
       - 0
       - 0
-    standard_deviation: 50000
+    standard_deviation: 200000
   - type: theta
-    count: 75
+    count: 25
     origin:
       - 0
       - 0
-    standard_deviation: 50000
-  - type: minerals
-    count: 100
-    origin:
-      - 0
-      - 0
-    standard_deviation: 50000
-  - type: asteroid
-    count: 75
-    origin:
-      - 0
-      - 0
-    standard_deviation: 50000
+    standard_deviation: 200000
 neutrals_near_spawn: []
 starting_resources:
-  food: 500
-  minerals: 500
+  food: 1500
+  minerals: 1500
   energy: 700
-starting_resources_recipient_type: habitat
+starting_resources_recipient_type: planet_blue_inhabitated
 resource_amounts:
   minerals:
     average: 10000
     sd: 2000
     min: 6000
     max: 20000
+  asteroid:
+    average: 2000
+    sd: 500
+    min: 1000
+    max: 3000
   planet_blue:
     average: 10000
     sd: 2000
@@ -57,7 +50,7 @@ resource_amounts:
     min: 1000
     max: 1000
 exposure:
-  reference_distance: 3750
+  reference_distance: 7000
   minimum_distance: 300
   sources:
     star_yellow: 1
@@ -73,7 +66,7 @@ solar_systems:
       "4": 10
     placement:
       min_distance: 1800
-      max_distance: 8000
+      max_distance: 16000
       sampling: uniform_radius
       min_separation: 700
       max_attempts_per_object: 64
@@ -133,6 +126,7 @@ solar_systems:
         avoid_damaging_radiation: true
 player_starts:
   planet_type: planet_blue
+  inhabited_planet_type: planet_blue_inhabitated
   exposure:
     min: 0.7
     max: 1.6

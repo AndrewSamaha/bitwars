@@ -147,6 +147,7 @@ fn snapshot_inventory_is_preserved_and_changes_deterministic_state() {
     use prost::Message;
     use sim::pb::{Entity, ResourceAmount, ResourceInventory, ResourceDeposit, Snapshot, CollectorState};
     let snapshot = Snapshot {
+        content_revision: "a".repeat(64),
         entities: vec![Entity {
             id: 718,
             owner_player_id: "andrew".into(),
@@ -159,6 +160,7 @@ fn snapshot_inventory_is_preserved_and_changes_deterministic_state() {
         ..Default::default()
     };
     let state = sim::codec::from_snapshot_proto(&snapshot.encode_to_vec()).unwrap();
+    assert_eq!(state.content_revision, "a".repeat(64));
     assert_eq!(state.entities[0].resources["food"], 98.0);
     assert_eq!(state.entities[0].owner_player_id, "andrew");
     let restored = Entity::from(&state.entities[0]);

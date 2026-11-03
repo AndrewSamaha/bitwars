@@ -1,19 +1,18 @@
-type Observation = {
+export type EntityObservation = {
   id: string | number;
-  pos?: { x: number; y: number };
-  entity_type_id?: string;
-  owner_player_id?: string;
-};
-
-type RememberedEntity = Observation & {
+  entity_type_id: string;
+  owner_player_id: string;
   pos: { x: number; y: number };
-  remembered: { last_seen_at: number };
+  last_seen_tick: string | number;
 };
 
-/** Last authoritative sightings, separate from selectable world entities. */
+export type RememberedEntity = Omit<EntityObservation, "last_seen_tick"> & {
+  remembered: { last_seen_tick: string | number };
+};
+
+/** Server-owned observations, separate from selectable world entities and fog_memory policy. */
 export class MinimapMemory {
   private sightings = new Map<string, RememberedEntity>();
-  private owners = new Map<string, string>();
   private playerId: string | null = null;
   private runId = "";
 
@@ -23,32 +22,29 @@ export class MinimapMemory {
     this.runId = runId;
   }
 
-  observe(entity: Observation) {
-    if (!this.playerId) return;
-    const key = String(entity.id);
-    const previous = this.sightings.get(key);
-    const owner = entity.owner_player_id ?? this.owners.get(key);
-    if (owner !== undefined) this.owners.set(key, owner);
-    if (owner === this.playerId) {
+  replace(observations: readonly EntityObservation[]) {
+    this.clear();
+    for (const observation of observations) this.upsert(observation);
+  }
+
+  upsert(observation: EntityObservation) {
+    const key = String(observation.id);
+    if (!this.playerId || observation.owner_player_id === this.playerId) {
       this.sightings.delete(key);
       return;
     }
-    const pos = entity.pos ?? previous?.pos;
-    if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return;
     this.sightings.set(key, {
-      id: entity.id,
-      pos: { ...pos },
-      entity_type_id: entity.entity_type_id ?? previous?.entity_type_id,
-      owner_player_id: owner,
-      remembered: { last_seen_at: Date.now() },
+      id: observation.id,
+      entity_type_id: observation.entity_type_id,
+      owner_player_id: observation.owner_player_id,
+      pos: { ...observation.pos },
+      remembered: { last_seen_tick: observation.last_seen_tick },
     });
   }
 
-  forget(id: string | number) {
-    this.sightings.delete(String(id));
-    this.owners.delete(String(id));
-  }
-  clear() { this.sightings.clear(); this.owners.clear(); }
+  get(id: string | number) { return this.sightings.get(String(id)); }
+  forget(id: string | number) { this.sightings.delete(String(id)); }
+  clear() { this.sightings.clear(); }
   entries() { return this.sightings.values(); }
 }
 

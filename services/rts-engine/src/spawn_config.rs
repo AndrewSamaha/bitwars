@@ -242,6 +242,9 @@ pub struct StartFallback {
 #[serde(deny_unknown_fields)]
 pub struct PlayerStartsConfig {
     pub planet_type: String,
+    /// Replace the eligible neutral planet with this immobile depot from the loadout.
+    #[serde(default)]
+    pub inhabited_planet_type: Option<String>,
     pub exposure: ExposureRange,
     pub min_planet_food_fraction: f64,
     pub max_starts_per_planet: usize,
@@ -385,6 +388,12 @@ impl SpawnConfig {
             population.placement.validate()?;
         }
         let start = &self.player_starts;
+        if let Some(id) = &start.inhabited_planet_type {
+            anyhow::ensure!(
+                self.loadouts.iter().all(|loadout| loadout.get(id) == Some(&1)),
+                "inhabited starting planet must appear exactly once in every loadout"
+            );
+        }
         anyhow::ensure!(
             range(start.exposure.min, start.exposure.max)
                 && range(0.0, start.min_planet_food_fraction)
@@ -439,6 +448,7 @@ impl SpawnConfig {
         let mut ids: Vec<&str> = self.exposure.sources.keys().map(String::as_str).collect();
         ids.push(&self.solar_systems.anchor_type);
         ids.push(&self.player_starts.planet_type);
+        ids.extend(self.player_starts.inhabited_planet_type.as_deref());
         ids.extend(
             self.global_neutral_fields
                 .iter()
@@ -491,6 +501,13 @@ impl SpawnConfig {
             node.is_some_and(|n| n.resource_type == "food" && self.initial_resource_amount(&self.player_starts.planet_type, n).is_some_and(|a| a > 0.0)),
             "starting planet requires finite food"
         );
+        if let Some(id) = &self.player_starts.inhabited_planet_type {
+            let def = content.get(id).unwrap();
+            anyhow::ensure!(
+                def.depot && def.speed == 0.0 && def.resource_node.is_none(),
+                "inhabited starting planet must be an immobile depot without a resource node"
+            );
+        }
         for resource in self.starting_resources.keys() {
             anyhow::ensure!(
                 content.get_resource_type(resource).is_some(),
@@ -636,6 +653,40 @@ mod tests {
         config.resource_amounts.insert("worker".into(), config.resource_amounts["minerals"].clone());
         assert!(config.validate_content(&content).is_err());
     }
+    #[test]
+    fn inhabited_start_conversion_is_optional_and_requires_one_immobile_depot() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut content = crate::content::ContentPack::load(&root.join("../../packages/content/entities.yaml")).unwrap();
+        let config = SpawnConfig::load(&root.join("config/spawn.yaml")).unwrap();
+        let id = config.player_starts.inhabited_planet_type.as_ref().unwrap();
+        let original = content.get(id).unwrap().clone();
+        let deposit = content.entity_types["planet_blue"].resource_node.clone();
+        for case in 0..3 {
+            let def = content.entity_types.get_mut(id).unwrap();
+            match case {
+                0 => def.depot = false,
+                1 => def.speed = 1.0,
+                _ => def.resource_node = deposit.clone(),
+            }
+            assert!(config.validate_content(&content).is_err());
+            content.entity_types.insert(id.clone(), original.clone());
+        }
+        for count in [0, 2] {
+            let mut invalid = config.clone();
+            invalid.loadouts[0].insert(id.clone(), count);
+            assert!(invalid.validate().unwrap_err().to_string().contains("exactly once"));
+        }
+        let mut invalid = config.clone();
+        invalid.player_starts.inhabited_planet_type = Some("missing_planet".into());
+        invalid.loadouts[0].insert("missing_planet".into(), 1);
+        assert!(invalid.validate_content(&content).unwrap_err().to_string().contains("unknown spawn entity"));
+        let source = include_str!("../config/spawn.yaml").replace(
+            "  inhabited_planet_type: planet_blue_inhabitated\n", "",
+        );
+        let legacy: SpawnConfig = serde_yaml::from_str(&source).unwrap();
+        assert!(legacy.player_starts.inhabited_planet_type.is_none());
+        legacy.validate_content(&content).unwrap();
+    }
 
     #[test]
     fn resource_amount_distribution_validates_and_clamps_samples() {
@@ -667,13 +718,13 @@ mod tests {
         let source = include_str!("../config/spawn.yaml");
         let config: SpawnConfig = serde_yaml::from_str(source).unwrap();
         config.validate().unwrap();
-        let quoted = source.replace("      0: 15", "      \"0\": 15");
+        let quoted = source.replace("      \"0\": 15", "      0: 15");
         let quoted: SpawnConfig = serde_yaml::from_str(&quoted).unwrap();
         assert_eq!(
             quoted.solar_systems.planets.count_weights,
             config.solar_systems.planets.count_weights
         );
-        let duplicate = source.replace("      0: 15", "      0: 15\n      \"0\": 10");
+        let duplicate = source.replace("      \"0\": 15", "      0: 15\n      \"0\": 10");
         assert!(serde_yaml::from_str::<SpawnConfig>(&duplicate).is_err());
         let mut value: serde_yaml::Value = serde_yaml::from_str(source).unwrap();
         value
@@ -691,8 +742,8 @@ mod tests {
         config.solar_systems.populations[0].entity_type_id = "theta".into();
         assert!(config.validate().is_err());
         let invalid = source.replace(
-            "reference_distance: 3750",
-            "reference_distance: 3750\n  unexpected: true",
+            "reference_distance: 7000",
+            "reference_distance: 7000\n  unexpected: true",
         );
         assert!(serde_yaml::from_str::<SpawnConfig>(&invalid).is_err());
     }

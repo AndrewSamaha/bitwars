@@ -61,6 +61,7 @@ export const spawnConfigSchema = z.object({
   }).strict(),
   player_starts: z.object({
     planet_type: id,
+    inhabited_planet_type: id.optional(),
     exposure: exposureRange.describe("Inclusive Goldilocks interval for both start origin and planet."),
     min_planet_food_fraction: amount.max(1),
     max_starts_per_planet: positiveCount.describe("Historical reservation limit; disconnects do not release starts."),
@@ -86,6 +87,8 @@ export const spawnConfigSchema = z.object({
   if (localTypes.some(type => type in config.exposure.sources)) issue("exposure.sources", "Exposure sources cannot be planets, local populations or per-player neutrals");
   const points = systems.planets.type_weights.points;
   const start = config.player_starts;
+  if (start.inhabited_planet_type && config.loadouts.some(loadout => loadout[start.inhabited_planet_type!] !== 1)) issue("player_starts.inhabited_planet_type", "Inhabited starting planet must appear exactly once in every loadout");
+  if (!points.length) return; // The array schema already reports the missing table.
   const weight = (x: number) => {
     if (x <= points[0].exposure) return points[0].weights[start.planet_type] ?? 0;
     for (let i=1; i<points.length; i++) if (x <= points[i].exposure) {
@@ -99,9 +102,9 @@ export const spawnConfigSchema = z.object({
 
 export type SpawnConfig = z.infer<typeof spawnConfigSchema>;
 export type SpawnContent = { entity_types: Record<string, {
-  max_capacity?: Record<string, number>; speed?: number;
+  max_capacity?: Record<string, number>; speed?: number; depot?: boolean;
   collector?: { collects?: string[] };
-  resource_node?: { resource_type: string; amount?: number };
+  resource_node?: { resource_type: string; amount?: number; regeneration?: unknown };
 }>; resource_types?: Record<string, unknown> };
 
 export function validateSpawnContent(config: SpawnConfig, content: SpawnContent) {
@@ -110,9 +113,27 @@ export function validateSpawnContent(config: SpawnConfig, content: SpawnContent)
     ...config.global_neutral_fields.map(f => f.type), ...config.neutrals_near_spawn.map(f => f.type),
     ...config.solar_systems.populations.map(f => f.type), ...config.solar_systems.planets.type_weights.points.flatMap(p => Object.keys(p.weights)),
     ...Object.keys(config.resource_amounts), ...config.loadouts.flatMap(l => Object.keys(l))];
+  if (config.player_starts.inhabited_planet_type) refs.push(config.player_starts.inhabited_planet_type);
   for (const ref of refs) if (!types[ref]) throw new Error(`Unknown spawn entity ${ref}`);
+  const initialAmount = (id: string) => config.resource_amounts[id]?.average ?? types[id]?.resource_node?.amount;
+  for (const id of Object.keys(config.resource_amounts)) {
+    if (!types[id].resource_node) throw new Error(`Resource amount distribution requires a resource node: ${id}`);
+  }
+  for (const [id, type] of Object.entries(types)) {
+    const node = type.resource_node;
+    if (node?.regeneration != null) {
+      const distribution = config.resource_amounts[id];
+      const minimum = distribution ? distribution.sd === 0 ? distribution.average : distribution.min : node.amount;
+      if (!(minimum !== undefined && Number.isFinite(minimum) && minimum > 0)) throw new Error(`Renewable resource ${id} requires positive finite stock in resource_amounts`);
+    }
+  }
   const node = types[config.player_starts.planet_type].resource_node;
-  if (node?.resource_type !== "food" || !(node.amount! > 0)) throw new Error("Starting planet requires finite food");
+  const food = initialAmount(config.player_starts.planet_type);
+  if (node?.resource_type !== "food" || food === undefined || !Number.isFinite(food) || food <= 0) throw new Error("Starting planet requires finite food");
+  if (config.player_starts.inhabited_planet_type) {
+    const inhabited = types[config.player_starts.inhabited_planet_type];
+    if (!inhabited.depot || (inhabited.speed ?? 0) !== 0 || inhabited.resource_node) throw new Error("Inhabited starting planet must be an immobile depot without a resource node");
+  }
   for (const resource of Object.keys(config.starting_resources)) if (!(resource in (content.resource_types ?? {}))) throw new Error(`Unknown starting resource ${resource}`);
   for (const loadout of config.loadouts) {
     if (Object.keys(config.starting_resources).length) {
@@ -126,7 +147,7 @@ export function validateSpawnContent(config: SpawnConfig, content: SpawnContent)
     const node = types.minerals?.resource_node;
     const distribution = config.resource_amounts.minerals;
     const maximum = distribution ? distribution.sd === 0 ? distribution.average : distribution.max : node?.amount ?? 0;
-    if (node?.resource_type !== "minerals" || node.amount === undefined || maximum < config.player_starts.minerals.min_remaining) throw new Error("Mineral stock cannot meet start minimum");
+    if (node?.resource_type !== "minerals" || initialAmount("minerals") === undefined || !Number.isFinite(maximum) || maximum < config.player_starts.minerals.min_remaining) throw new Error("Mineral stock cannot meet start minimum");
   }
 }
 
@@ -166,7 +187,8 @@ export function renameSpawnEntity(config: SpawnConfig, oldId: string, newId: str
       planets: { ...config.solar_systems.planets, type_weights: { ...config.solar_systems.planets.type_weights,
         points: config.solar_systems.planets.type_weights.points.map(p => ({ ...p,weights: keys(p.weights) })) } },
       populations: config.solar_systems.populations.map(p => ({ ...p,type: rename(p.type) })) },
-    player_starts: { ...config.player_starts,planet_type: rename(config.player_starts.planet_type) },
+    player_starts: { ...config.player_starts, planet_type: rename(config.player_starts.planet_type),
+      ...(config.player_starts.inhabited_planet_type ? { inhabited_planet_type: rename(config.player_starts.inhabited_planet_type) } : {}) },
   };
 }
 
@@ -206,6 +228,7 @@ const fieldHelp: Record<string, string> = {
   probability: "Probability from zero to one that this population occurs in a system.",
   player_starts: "Safe, resource-supported starts selected near eligible planets, with persistent reservations.",
   planet_type: "Eligible starting planet type; must have finite food stock.",
+  inhabited_planet_type: "Optional immobile depot replacing the selected neutral planet in place; must occur exactly once in each loadout and cannot have a resource node.",
   min_planet_food_fraction: "Minimum remaining divided by sampled initial food stock; depleted planets are excluded.",
   max_starts_per_planet: "Maximum historical committed starts per planet, retained across disconnects and depletion.",
   min_distance_from_planet: "Minimum player-start radius from its associated planet.",

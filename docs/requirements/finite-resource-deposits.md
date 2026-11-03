@@ -47,7 +47,7 @@ replacement entity type on depletion:
 ```yaml
 regeneration:
   model: hill
-  max_rate_per_second: 7.529411764705882
+  max_rate_per_second: 2
   half_saturation_fraction: 0.5
   exponent: 4
 depleted_entity_type_id: dead_planet_blue
@@ -57,9 +57,8 @@ With `x = remaining / amount`, `a = half_saturation_fraction`, and `n = exponent
 the replenishment rate is `max_rate_per_second * x^n * (1 + a^n) / (x^n + a^n)`.
 The maximum rate is the rate at full stock. The underlying Hill factor is half
 saturated at `x = a`; normalization makes the rate there slightly greater than
-half the configured maximum rate. Blue planets use the settings above: 4 food/sec
-at 50% stock and approximately 7.529 food/sec at full stock. A worker actively
-harvests 8 food/sec; delivery trips reduce its average harvesting rate.
+half the configured maximum rate. Blue planets currently use the settings above:
+1.0625 food/sec at 50% stock and 2 food/sec at full stock.
 
 All three Hill parameters are required, finite, and positive; the half-saturation
 fraction must not exceed 1. Renewable nodes require positive finite stock from their spawn distribution
@@ -80,3 +79,39 @@ from the source type.
 Existing snapshots need no migration: regeneration uses the saved maximum and
 remaining stock. Already exhausted blue planets convert on their next collection
 tick. The ordinary entity-type and deposit deltas publish growth and conversion.
+
+## Regenerating spendable inventory
+
+Entity types can instead define `inventory_regeneration`, keyed by resource:
+
+```yaml
+max_capacity:
+  food: 3000
+inventory_regeneration:
+  food:
+    model: hill
+    max_rate_per_second: 2
+    half_saturation_fraction: 0.5
+    exponent: 4
+```
+
+This uses the same normalized Hill formula, with `x = stored / max_capacity`.
+Growth credits the entity's existing inventory directly each collection tick;
+there is no harvestable deposit or worker delivery step. Only living entities
+with positive stock regrow, growth stops at capacity, and spending down to zero
+requires an external delivery before regrowth can resume. Resource IDs must exist,
+their capacities must be positive, and the Hill parameters follow deposit rules.
+
+`planet_blue_inhabitated` combines this food growth with habitat storage,
+maintenance, energy collection, sensors, research, and worker/scout construction.
+It is attackable but has no attacks and cannot move. Its owned depot makes stored
+resources available under ordinary local funding rules within 4,000 world units;
+depot inventories do not merge.
+
+The default spawn configuration sets
+`player_starts.inhabited_planet_type: planet_blue_inhabitated`, includes exactly one
+in the loadout, and directs starting resources to it. Joining converts the selected
+eligible neutral blue planet in place, preserving its ID and position while clearing
+the old deposit. Other loadout units spawn nearby. Omitting this setting retains
+the ordinary separate-planet loadout behavior. Existing players' habitats are not
+converted; use a fresh world or a newly admitted player to exercise the new start.

@@ -1,4 +1,5 @@
-mod discovery;
+mod collection_routes;
+pub(crate) mod discovery;
 mod resupply;
 pub mod intent;
 mod logistics;
@@ -10,6 +11,11 @@ mod navigation;
 pub mod state;
 pub mod generation;
 mod scenario;
+mod content_reload;
+#[cfg(test)]
+mod initial_resources_tests;
+#[cfg(test)]
+mod collection_capacity_tests;
 
 use std::collections::{HashMap, HashSet};
 
@@ -39,9 +45,9 @@ use crate::physics::integrate;
 use crate::spatial::SpatialIndex;
 use crate::spawn_config::{is_player_owner, SpawnConfig, RAIDERS_OWNER, UNIVERSE_OWNER};
 use prost::Message;
-use state::{take_from_deposit, init_world, log_sample, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
+use state::{initial_resource_inventory, take_from_deposit, init_world, log_sample, resource_amount, resource_capacity, set_resource_amount, spawn_celestial_field, GameState};
 
-pub const ENGINE_PROTOCOL_MAJOR: u32 = 21;
+pub const ENGINE_PROTOCOL_MAJOR: u32 = 22;
 const TICK_TIMING_WINDOW_SECS: usize = 10;
 const DEDUPE_TTL_SECS: usize = 600;
 const DEPOSIT_DISTANCE: f32 = 80.0;
@@ -113,10 +119,11 @@ fn deposit_collection_inventory(
     );
 }
 
-fn collection_load(entity: &pb::Entity, def: &EntityTypeDef, preferred: &[&str]) -> Option<CollectionLoad> {
+fn collection_load<'a>(entity: &pb::Entity, def: &EntityTypeDef,
+    resources: impl IntoIterator<Item = &'a str>) -> Option<CollectionLoad> {
     let collector = def.collector.as_ref()?;
     if collector.transport_rate_per_second <= 0.0 { return None; }
-    preferred.iter().copied().chain(collector.collects.iter().map(String::as_str))
+    resources.into_iter()
         .filter(|resource| collector.collects.iter().any(|kind| kind == resource))
         .find_map(|resource| {
             let amount = collection_transferable_resource(entity, def, resource);
@@ -351,6 +358,72 @@ mod action_resource_tests {
     use super::*;
 
     #[test]
+    fn regenerated_planet_inventory_funds_nearby_actions_but_not_remote_consumers() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let planet = content.get("planet_blue_inhabitated").unwrap();
+        let make_entity = |id, kind: &str, x| pb::Entity {
+            id, entity_type_id: kind.into(), owner_player_id: "me".into(), health: 100.0,
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default()
+        };
+        let mut entities = vec![
+            make_entity(1, "planet_blue_inhabitated", 0.0),
+            make_entity(2, "scout", planet.depot_range),
+        ];
+        set_resource_amount(&mut entities[0], "food", 10.0);
+        let costs = HashMap::from([("food".into(), 11.0)]);
+        let source = logistics::funding_source(&entities, &content, 2, "me");
+        assert_eq!(source, Some(1));
+        assert!(!logistics::pay(&mut entities, source, &costs));
+        state::regenerate_inventory(&mut entities, &content, 1_000_000_000.0);
+        let grown = resource_amount(&entities[0], "food");
+        assert!(grown > 11.0);
+        assert!(logistics::pay(&mut entities, source, &costs));
+        assert_eq!(resource_amount(&entities[0], "food"), grown - 11.0);
+        assert_eq!(resource_amount(&entities[1], "food"), 0.0);
+        entities[1].pos.as_mut().unwrap().x = planet.depot_range + 1.0;
+        let source = logistics::funding_source(&entities, &content, 2, "me");
+        assert!(source.is_none());
+        let before = entities.clone();
+        assert!(!logistics::pay(&mut entities, source, &costs));
+        assert_eq!(entities, before);
+    }
+
+    #[test]
+    fn inhabited_planet_can_pay_upfront_for_worker_and_scout_construction() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let planet = content.get("planet_blue_inhabitated").unwrap();
+        for blueprint in ["worker", "scout"] {
+            assert!(planet.builds.iter().any(|option| option.entity_type_id == blueprint));
+            let costs = &content.get(blueprint).unwrap().build_cost;
+            let mut entities = vec![pb::Entity {
+                id: 1, entity_type_id: "planet_blue_inhabitated".into(),
+                owner_player_id: "me".into(), health: planet.health,
+                pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }), ..Default::default()
+            }];
+            for resource in costs.keys() {
+                set_resource_amount(&mut entities[0], resource, planet.max_capacity[resource] as f64);
+            }
+            let before = entities[0].clone();
+            let source = logistics::funding_source(&entities, &content, 1, "me");
+            assert_eq!(source, Some(1));
+            assert_eq!(logistics::charge_construction(
+                &mut entities, source, 1, costs, blueprint.as_bytes(), 0.5,
+            ), Some(true));
+            for (resource, amount) in costs {
+                assert_eq!(resource_amount(&entities[0], resource),
+                    resource_amount(&before, resource) - *amount as f64);
+            }
+            let paid = entities[0].resources.clone();
+            assert_eq!(logistics::charge_construction(
+                &mut entities, source, 1, costs, blueprint.as_bytes(), 1.0,
+            ), Some(false));
+            assert_eq!(entities[0].resources, paid);
+        }
+    }
+
+    #[test]
     fn upgrades_and_research_spend_local_inventories_atomically() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let content = ContentPack::load(&root.join("packages/content/entities.yaml")).unwrap();
@@ -415,7 +488,8 @@ mod wireless_collection_tests {
 
     #[test]
     fn moves_toward_radiation_source_even_when_wireless_depot_is_full() {
-        let (content, mut entities, node) = setup(2000.0);
+        let (content, mut entities, node) = setup(16000.0);
+        entities[1].pos.as_mut().unwrap().x = 17000.0;
         set_resource_amount(&mut entities[1], "energy", 1000.0);
         assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, 0.0, None));
         // The star is to the left; the receiving depot is to the right.
@@ -425,7 +499,7 @@ mod wireless_collection_tests {
 
     #[test]
     fn transmits_wirelessly_from_source_band_without_travel_or_cargo() {
-        let (content, mut entities, node) = setup(1393.0);
+        let (content, mut entities, node) = setup(10.0);
         let pos = entities[0].pos;
         let (activity, rate, recipient) = advance(&content, &mut entities, &node);
         assert_eq!(activity, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING);
@@ -439,17 +513,68 @@ mod wireless_collection_tests {
 
     #[test]
     fn full_or_unavailable_wireless_destination_waits_at_source_then_resumes() {
-        let (content, mut entities, node) = setup(1393.0);
+        let (content, mut entities, node) = setup(10.0);
         set_resource_amount(&mut entities[1], "energy", 1000.0);
         assert_eq!(advance(&content, &mut entities, &node), ("waiting_for_depot_capacity", 0.0, Some(2)));
         assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
-        entities[1].pos.as_mut().unwrap().x = 6000.0;
+        entities[1].pos.as_mut().unwrap().x = 5000.0;
         assert_eq!(advance(&content, &mut entities, &node), ("waiting_for_depot", 0.0, None));
         assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
         entities[1].pos.as_mut().unwrap().x = 3000.0;
         set_resource_amount(&mut entities[1], "energy", 990.0);
         assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING, 3.0, Some(2)));
         assert_eq!(resource_amount(&entities[1], "energy"), 993.0);
+    }
+
+    #[test]
+    fn proximity_falloff_credits_scaled_energy_and_stops_at_source_boundaries() {
+        for kind in ["collector_solar", "habitat", "planet_blue_inhabitated"] {
+            let (content, _, node) = setup(0.0);
+            let min = node.min_effective_distance;
+            let max = node.max_effective_distance;
+            for (distance, strength, activity) in [
+                (min - 1.0, 0.0, COLLECTOR_ACTIVITY_MOVING_TO_SOURCE),
+                (min, 1.0, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
+                ((min + max) / 2.0, 0.5, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
+                (max, 0.0, COLLECTOR_ACTIVITY_IDLE),
+                (max + 1.0, 0.0, COLLECTOR_ACTIVITY_MOVING_TO_SOURCE),
+            ] {
+                let (_, mut entities, _) = setup(distance);
+                entities[0].entity_type_id = kind.into();
+                entities[0].supply.as_mut().unwrap().delivery_depot_id = 0;
+                entities[1].pos.as_mut().unwrap().x = distance + 100.0;
+                let collector = CollectorSnapshot {
+                    id: 1, entity_type_id: kind.into(), owner_player_id: "me".into(),
+                    x: distance, y: 0.0,
+                };
+                let def = content.get(kind).unwrap();
+                let expected = def.collector.as_ref().unwrap().proximity_rate_per_second * strength;
+                let (actual_activity, rate, recipient) = Engine::advance_wireless_collection(
+                    &mut entities, &content, &collector, &node, def, 2.0);
+                assert_eq!(actual_activity, activity, "{kind} at {distance}");
+                assert!((rate - expected).abs() < 1e-6, "{kind} at {distance}: {rate}");
+                let target = if def.depot { 1 } else { 2 };
+                let total = resource_amount(&entities[0], "energy") + resource_amount(&entities[1], "energy");
+                assert!((total - expected as f64 * 2.0).abs() < 1e-6);
+                if strength > 0.0 {
+                    assert_eq!(recipient, Some(target));
+                } else {
+                    assert_eq!(recipient, None);
+                }
+                assert_eq!(entities[0].pos.unwrap().x, distance);
+                if def.speed == 0.0 {
+                    assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn zero_width_proximity_band_has_no_production() {
+        let (content, mut entities, mut node) = setup(10.0);
+        node.max_effective_distance = node.min_effective_distance;
+        assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_IDLE, 0.0, None));
+        assert_eq!(resource_amount(&entities[1], "energy"), 0.0);
     }
 }
 
@@ -593,11 +718,12 @@ mod transport_capacity_tests {
 
     #[test]
     fn collection_delivery_fills_capacity_and_retains_excess_without_reserves() {
-        let content = ContentPack::load(
+        let mut content = ContentPack::load(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../packages/content/entities.yaml"),
         )
         .unwrap();
+        content.entity_types.get_mut("habitat").unwrap().max_capacity.insert("minerals".into(), 1000.0);
         let mut depot = pb::Entity::default();
         let mut worker = pb::Entity::default();
         set_resource_amount(&mut depot, "minerals", 990.0);
@@ -698,11 +824,12 @@ mod transport_capacity_tests {
             max_simultaneous_collectors: Some(1), min_effective_distance: 20.0, max_effective_distance: 50.0 };
         let world = [node.clone(), ResourceNodeSnapshot { id: 11, x: 10.0, ..node }];
         let collects = vec!["minerals".into()];
+        let capacities = HashMap::from([("minerals".into(), 50.0)]);
         let (known, indexes) = discovered_resource_nodes(&world, &[10].into());
-        assert_eq!(Engine::pick_transport_node(&collector, &known, Some(11), &indexes, None, "minerals", false, &collects).unwrap().id, 10);
-        assert_eq!(Engine::pick_transport_node(&collector, &known, None, &indexes, None, "", true, &collects).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &known, Some(11), &indexes, None, "minerals", false, &collects, &capacities).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &known, None, &indexes, None, "", true, &collects, &capacities).unwrap().id, 10);
         let (empty, indexes) = discovered_resource_nodes(&world, &Default::default());
-        assert!(Engine::pick_transport_node(&collector, &empty, Some(11), &indexes, None, "minerals", false, &collects).is_none());
+        assert!(Engine::pick_transport_node(&collector, &empty, Some(11), &indexes, None, "minerals", false, &collects, &capacities).is_none());
         let proximity: Vec<_> = world.iter().cloned().map(|node| ResourceNodeSnapshot { mode: CollectionMode::Proximity, ..node }).collect();
         let (known, _) = discovered_resource_nodes(&proximity, &[10].into());
         assert_eq!(Engine::pick_best_node(&collector, &known, CollectionMode::Proximity, &collects).unwrap().id, 10);
@@ -729,9 +856,10 @@ mod transport_capacity_tests {
         };
         let nodes = [far.clone(), ResourceNodeSnapshot { id: 11, x: 10.0, ..far }];
         let collects = vec!["minerals".to_string()];
+        let capacities = HashMap::from([("minerals".into(), 50.0)]);
         let node_by_id = nodes.iter().enumerate().map(|(index, node)| (node.id, index)).collect();
-        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(10), &node_by_id, None, "minerals", false, &collects).unwrap().id, 10);
-        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(99), &node_by_id, None, "minerals", false, &collects).unwrap().id, 11);
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(10), &node_by_id, None, "minerals", false, &collects, &capacities).unwrap().id, 10);
+        assert_eq!(Engine::pick_transport_node(&collector, &nodes, Some(99), &node_by_id, None, "minerals", false, &collects, &capacities).unwrap().id, 11);
     }
 }
 
@@ -861,6 +989,8 @@ mod radiation_tests {
         entity_types.insert(
             "star_yellow".to_string(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -917,6 +1047,8 @@ mod radiation_tests {
         entity_types.insert(
             "collector_solar".to_string(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -952,6 +1084,8 @@ mod radiation_tests {
         entity_types.insert(
             "worker".to_string(),
             EntityTypeDef {
+                initial_resources: HashMap::new(),
+                inventory_regeneration: HashMap::new(),
                 max_capacity: HashMap::new(),
                 resource_reserves: HashMap::new(),
                 depot: false,
@@ -1494,6 +1628,7 @@ fn should_publish_delta(delta: &pb::Delta) -> bool {
         || !delta.sentry_order_removals.is_empty()
         || !delta.escort_order_updates.is_empty()
         || !delta.escort_order_removals.is_empty()
+        || !delta.player_knowledge_updates.is_empty()
 }
 
 fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<String> {
@@ -1617,19 +1752,24 @@ impl Engine {
             info!(dataset = t.dataset(), "axiom telemetry enabled");
         }
 
-        // M4: Load content pack if configured
-        let content = if !cfg.content_pack_path.is_empty() {
-            let pack = ContentPack::load(std::path::Path::new(&cfg.content_pack_path))?;
-            info!(
-                content_hash = %pack.content_hash,
-                entity_types = pack.entity_types.len(),
-                "loaded content pack"
-            );
-            Some(pack)
-        } else {
-            info!("no CONTENT_PACK_PATH set; using default entity stats");
-            None
-        };
+        // Restore the exact accepted manifest before consulting mutable disk content.
+        let content_path = std::path::Path::new(&cfg.content_pack_path);
+        let restored_revision = if cfg.restore_gamestate {
+            let revision = redis.snapshot_content_revision().await?;
+            if revision.as_deref() == Some("") {
+                warn!("legacy snapshot has no content revision; adopting current disk manifest once");
+            }
+            revision.filter(|revision| !revision.is_empty())
+        } else { None };
+        let startup_revision = if let Some(revision) = restored_revision {
+            anyhow::ensure!(redis.accepted_content_revision(&revision).await?,
+                "snapshot content revision {revision} has no retained accepted payload");
+            Some(crate::content_revision::Revision::load(
+                &crate::content_revision::revision_root(content_path), &revision)?)
+        } else if !cfg.content_pack_path.is_empty() {
+            Some(crate::content_revision::Revision::bootstrap(content_path)?)
+        } else { None };
+        let content = startup_revision.as_ref().map(|revision| revision.pack.clone());
 
         let default_stop_radius = cfg.default_stop_radius;
         let default_speed = cfg.default_entity_speed;
@@ -1642,7 +1782,7 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries, mut snapshot_escorts)) =
+            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries, mut snapshot_escorts, snapshot_collections)) =
                 redis.read_latest_snapshot().await?
             {
                 info!(
@@ -1825,7 +1965,7 @@ impl Engine {
                 }
 
                 let mut engine = Self {
-                    prev_state: state.clone(),
+                    prev_state: state.clone_for_delta(),
                     state,
                     last_delta_id: if boundary == "0-0" {
                         None
@@ -1919,13 +2059,14 @@ impl Engine {
                             player_id: String::new(),
                             resource_type_id: resource_type_id.clone(),
                             nearest_compatible,
+                            travel_plan: entry.collect_travel_plan.as_ref().map(|plan| plan.to_proto()),
                         })),
                     };
                     let metadata = IntentMetadata {
                         entity_id: 0,
                         intent_id: intent_id.into_bytes().to_vec(),
                         client_cmd_id: client_cmd_id.into_bytes().to_vec(),
-                        player_id: entry.player_id,
+                        player_id: entry.player_id.clone(),
                         protocol_version: ENGINE_PROTOCOL_MAJOR,
                         server_tick: entry.started_tick,
                         policy: pb::IntentPolicy::ReplaceActive,
@@ -1933,6 +2074,11 @@ impl Engine {
                     engine
                         .intents
                         .try_activate(intent, metadata.clone(), &entity_type_id);
+                    if let Some(saved) = collection_routes::restore_order(&entry, &snapshot_collections) {
+                        if let Some(active) = engine.intents.current_action.get_mut(&entry.entity_id) {
+                            active.action.exec = Some(pb::action_state::Exec::Collect(saved));
+                        }
+                    }
                     engine
                         .redis
                         .persist_active_intent(
@@ -1940,7 +2086,7 @@ impl Engine {
                             &metadata,
                             "collect",
                             None,
-                            Some((resource_type_id, nearest_compatible)),
+                            Some((resource_type_id, nearest_compatible, entry.collect_travel_plan.as_ref().map(|plan| plan.to_proto()))),
                             None,
                         )
                         .await?;
@@ -2000,39 +2146,23 @@ impl Engine {
                 engine.restore_sentries(snapshot_sentries).await?;
                 engine.restore_escorts(snapshot_escorts).await?;
                 engine.hydrate_entity_health_if_missing();
-                // Publish a fresh snapshot so newly connecting clients see current state
-                let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
-                engine
-                    .redis
-                    .publish_snapshot(
-                        &engine.state,
-                        &engine.resource_spend_total,
-                        &engine.resource_gain_total,
-                        snap_boundary,
-                        engine.collector_states_for_stream(),
-                        engine.combat_effect_states_for_stream(),
-                        engine.intents.convoys.clone(),
-                        engine.intents.move_orders_for_snapshot(),
-                        engine.intents.sentries.clone(),
-                        engine.intents.escorts.clone(),
-                    )
-                    .await?;
+                if let Some(revision) = startup_revision {
+                    engine.bootstrap_content_revision(revision).await?;
+                } else {
+                    let snap_boundary = engine.last_delta_id.as_deref().unwrap_or("0-0");
+                    engine.redis.publish_snapshot(
+                        &engine.state, &engine.resource_spend_total, &engine.resource_gain_total, snap_boundary,
+                        engine.collector_states_for_stream(), engine.combat_effect_states_for_stream(),
+                        engine.intents.convoys.clone(), engine.intents.move_orders_for_snapshot(),
+                        engine.intents.sentries.clone(), engine.intents.escorts.clone(),
+                        engine.intents.collection_orders_for_snapshot(),
+                    ).await?;
+                }
                 let build_progress = engine.construction_progress_for_snapshot();
                 engine
                     .redis
                     .checkpoint_construction_progress(&build_progress)
                     .await?;
-
-                // M4: Publish content hash + definitions in restore path too
-                if let Some(ref pack) = engine.content {
-                    engine
-                        .redis
-                        .publish_content_version(&pack.content_hash)
-                        .await?;
-                    let json = pack.to_json()?;
-                    engine.redis.publish_content_defs(&json).await?;
-                }
-
                 engine.initialize_runtime(true).await?;
                 return Ok(engine);
             }
@@ -2072,7 +2202,7 @@ impl Engine {
         );
 
         let mut engine = Self {
-            prev_state: state.clone(),
+            prev_state: state.clone_for_delta(),
             state,
             last_delta_id: None,
             content,
@@ -2103,21 +2233,12 @@ impl Engine {
             scenario_runtime: Default::default(),
             loaded_scenario: None,
         };
-        engine
-            .redis
-            .publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total, "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new())
-            .await?;
-
-        // M4: Publish content hash + definitions to Redis
-        if let Some(ref pack) = engine.content {
-            engine
-                .redis
-                .publish_content_version(&pack.content_hash)
-                .await?;
-            let json = pack.to_json()?;
-            engine.redis.publish_content_defs(&json).await?;
+        if let Some(revision) = startup_revision {
+            engine.bootstrap_content_revision(revision).await?;
+        } else {
+            engine.redis.publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total,
+                "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).await?;
         }
-
         engine.initialize_runtime(false).await?;
         Ok(engine)
     }
@@ -2275,7 +2396,7 @@ impl Engine {
                 health,
                 supply: None,
                 resource_deposit: None,
-                resources: None,
+                resources: initial_resource_inventory(definition),
             });
         }
         info!(
@@ -2599,7 +2720,7 @@ impl Engine {
                 health,
                 supply: None,
                 resource_deposit: None,
-                resources: None,
+                resources: initial_resource_inventory(product_def),
             });
             if let Some(metadata) = self.intents.finish(builder_id) {
                 let _ = self.redis.clear_active_intent(builder_id).await;
@@ -2788,7 +2909,7 @@ impl Engine {
                 entity.health = def.health.max(0.0);
             }
         }
-        self.prev_state = self.state.clone();
+        self.prev_state = self.state.clone_for_delta();
     }
 
     fn build_resource_node_snapshots(&self) -> Vec<ResourceNodeSnapshot> {
@@ -3585,6 +3706,9 @@ impl Engine {
         destructions: &[crate::combat::CombatDestruction],
     ) {
         for destruction in destructions {
+            if let Some(content) = self.content.as_ref() {
+                discovery::forget_destroyed(&mut self.state, content, &destruction.victim);
+            }
             let recipients = gameplay_event_recipients(
                 &destruction.victim.owner_player_id,
                 &destruction.attacker_owner_player_id,
@@ -3713,15 +3837,16 @@ impl Engine {
         assigned_resource_type: &str,
         nearest_compatible: bool,
         collects: &[String],
+        capacities: &HashMap<String, f32>,
     ) -> Option<&'a ResourceNodeSnapshot> {
         let eligible = |node: &&ResourceNodeSnapshot| {
             node.mode == CollectionMode::Transport
-                && if let Some(resource_type) = preferred_resource_type {
-                    node.resource_type == resource_type
-                } else if nearest_compatible {
-                    collects.contains(&node.resource_type)
-                } else {
+                && collects.contains(&node.resource_type)
+                && if !nearest_compatible {
                     node.resource_type == assigned_resource_type
+                } else {
+                    capacities.get(&node.resource_type).is_some_and(|capacity| *capacity > 0.0)
+                        && preferred_resource_type.is_none_or(|resource| node.resource_type == resource)
                 }
         };
         let bound_node = bound_id.and_then(|id| {
@@ -3886,7 +4011,13 @@ impl Engine {
         if distance < node.min_effective_distance || distance > node.max_effective_distance {
             return (COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, 0.0, None);
         }
-        let rate = def.collector.as_ref().map_or(0.0, |c| c.proximity_rate_per_second.max(0.0));
+        let efficiency = crate::content::proximity_collection_efficiency(
+            distance, node.min_effective_distance, node.max_effective_distance);
+        if efficiency == 0.0 {
+            return (COLLECTOR_ACTIVITY_IDLE, 0.0, None);
+        }
+        let rate = def.collector.as_ref().map_or(0.0, |c| c.proximity_rate_per_second.max(0.0))
+            * efficiency;
         let (amount, recipient) = logistics::collect_to_depot(entities, content,
             collector.id, node.id, &node.resource_type, (rate * dt) as f64);
         let activity = if recipient.is_none() {
@@ -3905,11 +4036,13 @@ impl Engine {
         }
         // Collection only changes entity fields, so vector indexes remain valid
         // until this call returns.
-        discovery::update(&mut self.state, self.content.as_ref().unwrap());
+        // The completed-tick observation pass refreshes discovery once for all
+        // players. Intent acceptance separately refreshes newly requested routes.
         let entity_by_id = collection_entity_index(&self.state.entities);
         state::initialize_fixed_resource_deposits(
             &mut self.state.entities, self.content.as_ref().unwrap(), &self.spawn_config);
         state::regenerate_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), dt as f64);
+        state::regenerate_inventory(&mut self.state.entities, self.content.as_ref().unwrap(), dt as f64);
         let collect_active_entities: HashSet<u64> = self
             .intents
             .active_intents()
@@ -3933,6 +4066,9 @@ impl Engine {
                 _ => None,
             })
             .collect();
+        let upgrading: HashSet<_> = self.intents.active_intents().iter()
+            .filter(|(_, active)| matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Upgrade(_))))
+            .map(|(id, _)| *id).collect();
         let mut collectors = self.build_collector_snapshots();
         // Existing producers keep their spot. Waiting transport collectors go
         // next in arrival order, then new arrivals in entity-ID order.
@@ -3947,6 +4083,11 @@ impl Engine {
         let mut operating_collectors = HashSet::new();
         let mut gathering_by_node = HashMap::new();
         let nodes = self.build_resource_node_snapshots();
+        // A newly joined player (or a legacy checkpoint) has no completed-tick
+        // history yet. Bootstrap it once before collection indexes by owner.
+        if collectors.iter().any(|collector| !self.state.discovered_entities.contains_key(&collector.owner_player_id)) {
+            discovery::update(&mut self.state, self.content.as_ref().unwrap());
+        }
         // Share each player's discovered source list across all of their workers.
         let nodes_by_owner: HashMap<_, _> = self.state.discovered_entities.iter()
             .map(|(owner, known)| (owner.clone(), discovered_resource_nodes(&nodes, known))).collect();
@@ -3979,11 +4120,24 @@ impl Engine {
             };
             let (nodes, node_by_id) = &nodes_by_owner[&collector.owner_player_id];
             let speed = def.speed.max(0.0);
+            let planned = self.intents.current_action.get(&collector.id).is_some_and(|active|
+                matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Collect(state)) if state.travel_plan.is_some()));
             let previous_resource = self.collector_ui_state_by_entity.get(&collector.id)
                 .map(|view| view.resource_type.as_str()).unwrap_or("");
-            let assigned_resource = collection_assignments.get(&collector.id).map(|(resource, _)| resource.as_str()).unwrap_or("");
-            let load_snapshot = collection_entity(&self.state.entities, collector.id, &entity_by_id)
-                .and_then(|entity| collection_load(entity, &def, &[previous_resource, assigned_resource]));
+            let load_snapshot = if planned { None } else {
+                collection_entity(&self.state.entities, collector.id, &entity_by_id)
+                    .and_then(|entity| {
+                        if let Some((resource, false)) = collection_assignments.get(&collector.id) {
+                            // An explicit order owns only its requested resource, even
+                            // when a previous order was delivering something else.
+                            collection_load(entity, &def, [resource.as_str()])
+                        } else {
+                            collection_load(entity, &def, [previous_resource].into_iter()
+                                .chain(collector_def.collects.iter().map(String::as_str))
+                                .filter(|resource| def.max_capacity.get(*resource).is_some_and(|capacity| *capacity > 0.0)))
+                        }
+                    })
+            };
 
             // M8 (collect-intent model): autonomous collection only runs while
             // a maintained Collect intent is active for this entity.
@@ -4008,19 +4162,39 @@ impl Engine {
             else {
                 continue;
             };
+            if planned {
+                let content = self.content.as_ref().unwrap();
+                let active = self.intents.current_action.get_mut(&collector.id).unwrap();
+                let Some(pb::action_state::Exec::Collect(state)) = active.action.exec.as_mut() else { unreachable!() };
+                let (activity, rate) = collection_routes::advance(&mut self.state.entities, &entity_by_id, content,
+                    &self.state.discovered_entities[&collector.owner_player_id], &upgrading, state, &mut gathering_by_node, dt);
+                let resource = state.travel_plan.as_ref()
+                    .and_then(|plan| collection_entity(&self.state.entities, plan.source_entity_id, &entity_by_id))
+                    .and_then(|entity| content.get(&entity.entity_type_id))
+                    .and_then(|def| def.resource_node.as_ref()).map(|node| node.resource_type.clone())
+                    .unwrap_or_else(|| assigned_resource_type.clone());
+                if activity == COLLECTOR_ACTIVITY_WAITING_FOR_TURN {
+                    self.transport_wait_since_tick_by_entity.entry(collector.id).or_insert(self.state.tick);
+                } else {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
+                }
+                self.set_collector_ui_state(collector.id, activity, &resource, rate);
+                continue;
+            }
 
             // Finish delivery trips before gathering again, including partial unloads.
             if let Some(ref carry) = load_snapshot {
                 let inventory_is_full = collection_entity(&self.state.entities, collector.id, &entity_by_id)
                     .is_some_and(|entity| resource_amount(entity, &carry.resource_type)
                         >= def.max_capacity.get(&carry.resource_type).copied().unwrap_or(0.0) as f64 - f64::EPSILON);
-                let source_depleted = self.transport_node_by_entity.get(&collector.id)
-                    .is_some_and(|id| !nodes.iter().any(|node| node.id == *id));
+                let source_depleted = previous_resource == carry.resource_type
+                    && self.transport_node_by_entity.get(&collector.id)
+                        .is_some_and(|id| !nodes.iter().any(|node| node.id == *id));
                 let no_source = !nodes.iter().any(|node| node.mode == CollectionMode::Transport && node.resource_type == carry.resource_type);
                 let delivery_in_progress = self.collector_ui_state_by_entity.get(&collector.id).is_some_and(|state|
-                    matches!(state.activity.as_str(), COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF | COLLECTOR_ACTIVITY_DELIVERING | "waiting_for_dropoff"));
-                if carry.amount > 0.0 && (inventory_is_full || source_depleted || no_source || delivery_in_progress
-                    || (!nearest_compatible && carry.resource_type != *assigned_resource_type)) {
+                    state.resource_type == carry.resource_type
+                        && matches!(state.activity.as_str(), COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF | COLLECTOR_ACTIVITY_DELIVERING | "waiting_for_dropoff"));
+                if carry.amount > 0.0 && (inventory_is_full || source_depleted || no_source || delivery_in_progress) {
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
                     if let Some(refinery) = Self::pick_collection_depot(
                         &collector,
@@ -4097,8 +4271,17 @@ impl Engine {
                 assigned_resource_type,
                 *nearest_compatible,
                 &collector_def.collects,
+                &def.max_capacity,
             );
             if let Some(node) = node {
+                if def.max_capacity.get(&node.resource_type).copied().unwrap_or(0.0) <= 0.0 {
+                    self.transport_wait_since_tick_by_entity.remove(&collector.id);
+                    self.set_collector_ui_state(collector.id, "waiting_for_capacity", &node.resource_type, 0.0);
+                    if let Some(entity) = collection_entity_mut(&mut self.state.entities, collector.id, &entity_by_id) {
+                        entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+                    }
+                    continue;
+                }
                 if self.transport_node_by_entity.get(&collector.id) != Some(&node.id) {
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
                 }
@@ -4473,6 +4656,11 @@ impl Engine {
             .cloned()
             .collect();
         let radiation_dead_entity_ids = self.remove_zero_health_entities();
+        if let Some(content) = self.content.as_ref() {
+            for victim in &radiation_victims {
+                discovery::forget_destroyed(&mut self.state, content, victim);
+            }
+        }
         self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
         self.cancel_destroyed_intents(&radiation_dead_entity_ids)
             .await;
@@ -4483,6 +4671,9 @@ impl Engine {
         }
         self.publish_script_debug().await;
         self.state.tick += 1;
+        if let Some(content) = self.content.as_ref() {
+            discovery::observe(&mut self.state, content);
+        }
 
         let mut delta = compute_delta(
             &self.prev_state,
@@ -4499,12 +4690,14 @@ impl Engine {
         self.intents.append_move_order_changes(&mut delta);
         self.intents.append_sentry_changes(&mut delta);
         self.intents.append_escort_changes(&mut delta);
+        self.state.discovered_entities.append_changes(&mut delta);
         if should_publish_delta(&delta) {
             if let Ok(id) = self.redis.publish_delta(&delta).await {
                 self.last_delta_id = Some(id);
                 self.intents.acknowledge_move_order_changes(&delta);
                 self.intents.acknowledge_sentry_changes(&delta);
                 self.intents.acknowledge_escort_changes(&delta);
+                self.state.discovered_entities.acknowledge_changes();
             }
         }
         let _ = self.publish_build_progress_if_due().await;
@@ -4526,6 +4719,7 @@ impl Engine {
                     self.intents.move_orders_for_snapshot(),
                     self.intents.sentries.clone(),
                     self.intents.escorts.clone(),
+                    self.intents.collection_orders_for_snapshot(),
                 )
                 .await
                 .is_ok()
@@ -4542,7 +4736,7 @@ impl Engine {
         if self.state.tick % (self.cfg.tps as u64) == 0 {
             log_sample(&self.state);
         }
-        self.prev_state = self.state.clone();
+        self.prev_state = self.state.clone_for_delta();
         self.finish_scenario_tick().await?;
         self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
         self.prev_combat_effect_ui_state_by_entity = self.combat_effect_ui_state_by_entity.clone();
@@ -4573,6 +4767,8 @@ impl Engine {
 
         loop {
             ticker.tick().await;
+            // Reload is a tick-boundary control operation, including while paused.
+            self.process_content_reload().await?;
             if !self.process_scenario_controls().await? { continue; }
             let raider_ai_spatial_index_enabled = self
                 .cfg
@@ -4770,6 +4966,11 @@ impl Engine {
                 .cloned()
                 .collect();
             let radiation_dead_entity_ids = self.remove_zero_health_entities();
+            if let Some(content) = self.content.as_ref() {
+                for victim in &radiation_victims {
+                    discovery::forget_destroyed(&mut self.state, content, victim);
+                }
+            }
             self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
             self.cancel_destroyed_intents(&radiation_dead_entity_ids)
                 .await;
@@ -4792,6 +4993,9 @@ impl Engine {
                 &mut phase_started,
             );
             self.state.tick += 1;
+            if let Some(content) = self.content.as_ref() {
+                discovery::observe(&mut self.state, content);
+            }
 
             // Delta
             let mut delta = compute_delta(
@@ -4809,6 +5013,7 @@ impl Engine {
             self.intents.append_move_order_changes(&mut delta);
             self.intents.append_sentry_changes(&mut delta);
             self.intents.append_escort_changes(&mut delta);
+            self.state.discovered_entities.append_changes(&mut delta);
             if should_publish_delta(&delta) {
                 match self.redis.publish_delta(&delta).await {
                     Ok(id) => {
@@ -4816,6 +5021,7 @@ impl Engine {
                         self.intents.acknowledge_move_order_changes(&delta);
                         self.intents.acknowledge_sentry_changes(&delta);
                         self.intents.acknowledge_escort_changes(&delta);
+                        self.state.discovered_entities.acknowledge_changes();
                     },
                     Err(e) => error!(?e, "delta publish failed"),
                 }
@@ -4849,6 +5055,7 @@ impl Engine {
                         self.intents.move_orders_for_snapshot(),
                         self.intents.sentries.clone(),
                         self.intents.escorts.clone(),
+                        self.intents.collection_orders_for_snapshot(),
                     )
                     .await
                 {
@@ -4873,7 +5080,7 @@ impl Engine {
                 log_sample(&self.state);
             }
 
-            self.prev_state = self.state.clone();
+            self.prev_state = self.state.clone_for_delta();
             self.finish_scenario_tick().await?;
             self.prev_collector_ui_state_by_entity = self.collector_ui_state_by_entity.clone();
             self.prev_combat_effect_ui_state_by_entity =
@@ -5115,6 +5322,9 @@ impl Engine {
         let mut payload_intent = match envelope.payload {
             Some(intent_envelope::Payload::SelfDestruct(order)) => {
                 let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
+                if let Some(content) = self.content.as_ref() {
+                    discovery::forget_self_destruct(&mut self.state, content, &player_id, order.entity_id);
+                }
                 if let Err(reason) = self_destruct_entity(&mut self.state.entities, &player_id, order.entity_id) {
                     self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
                     return Err(anyhow!("invalid self-destruct target"));
@@ -5122,6 +5332,20 @@ impl Engine {
                 self.emit_lifecycle_event(&metadata, pb::LifecycleState::Accepted, pb::LifecycleReason::None, accept_tick).await?;
                 self.clear_fractional_for_entity(order.entity_id);
                 self.cancel_destroyed_intents(&[order.entity_id]).await;
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished, pb::LifecycleReason::None, accept_tick).await?;
+                return Ok(());
+            }
+            Some(intent_envelope::Payload::JettisonCargo(order)) => {
+                let metadata = IntentMetadata { entity_id: order.entity_id, ..metadata };
+                let result = self.content.as_ref().ok_or(pb::LifecycleReason::InvalidTarget)
+                    .and_then(|content| logistics::jettison_cargo(&mut self.state.entities, content,
+                        &player_id, order.entity_id));
+                if let Err(reason) = result {
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
+                    return Err(anyhow!("invalid jettison cargo target"));
+                }
+                // CollectionLoad is derived from inventory on each update; no cargo balance is cached.
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Accepted, pb::LifecycleReason::None, accept_tick).await?;
                 self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished, pb::LifecycleReason::None, accept_tick).await?;
                 return Ok(());
             }
@@ -5312,7 +5536,20 @@ impl Engine {
                 return Err(anyhow!("collector cannot collect requested resource type"));
             }
 
-
+            if let Some(plan) = collect.travel_plan.as_ref() {
+                discovery::update(&mut self.state, content);
+                let upgrading: HashSet<_> = self.intents.active_intents().iter()
+                    .filter(|(_, active)| matches!(active.action.exec.as_ref(), Some(pb::action_state::Exec::Upgrade(_))))
+                    .map(|(id, _)| *id).collect();
+                let empty = std::collections::BTreeSet::new();
+                let known = self.state.discovered_entities.get(&player_id).unwrap_or(&empty);
+                if !collection_routes::valid(&self.state.entities, &collection_entity_index(&self.state.entities),
+                    content, known, &upgrading, collect.entity_id, &collect.resource_type_id, collect.nearest_compatible, plan) {
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                        pb::LifecycleReason::InvalidTarget, accept_tick).await?;
+                    return Err(anyhow!("invalid collection travel plan"));
+                }
+            }
         }
 
         // Production is entirely content-driven and always revalidated by the
@@ -5597,7 +5834,7 @@ impl Engine {
             Some(pb::intent::Kind::Collect(collect)) => (
                 "collect",
                 None,
-                Some((collect.resource_type_id.clone(), collect.nearest_compatible)),
+                Some((collect.resource_type_id.clone(), collect.nearest_compatible, collect.travel_plan.clone())),
                 None,
             ),
             Some(pb::intent::Kind::Repair(_)) => ("repair", None, None, None),
@@ -5894,6 +6131,61 @@ impl Engine {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod jettison_tests {
+    use super::*;
+
+    #[test]
+    fn jettison_publishes_empty_inventory_and_preserves_collection_assignment() {
+        let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let def = content.get("worker").unwrap();
+        let mut worker = pb::Entity {
+            id: 1, entity_type_id: "worker".into(), owner_player_id: "me".into(), health: 100.0,
+            pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }), ..Default::default()
+        };
+        set_resource_amount(&mut worker, "food", 50.0);
+        let source = pb::Entity {
+            id: 2, entity_type_id: "planet_blue".into(), health: 100.0,
+            resource_deposit: Some(pb::ResourceDeposit { amount: 100.0, remaining: 100.0 }),
+            ..Default::default()
+        };
+        let previous = GameState {
+            entities: vec![worker, source], tick: 0, discovered_entities: Default::default(),
+            generation: Default::default(), technologies: HashMap::new()
+        };
+        let mut current = previous.clone();
+        let mut intents = IntentManager::new(content.entity_types.clone(), 1.0, 10.0);
+        let metadata = IntentMetadata {
+            entity_id: 1, intent_id: vec![1; 16], client_cmd_id: vec![2; 16], player_id: "me".into(),
+            protocol_version: ENGINE_PROTOCOL_MAJOR, server_tick: 0, policy: pb::IntentPolicy::ReplaceActive
+        };
+        let order = pb::Intent { kind: Some(pb::intent::Kind::Collect(pb::CollectIntent {
+            entity_id: 1, resource_type_id: "food".into(), ..Default::default()
+        })) };
+        assert!(intents.try_activate(order, metadata.clone(), "worker").started.is_some());
+        let assignment = intents.active_collect_assignment(1);
+        assert!(collection_load(&current.entities[0], def, ["food"]).is_some());
+        logistics::jettison_cargo(&mut current.entities, &content, "me", 1).unwrap();
+        assert!(collection_load(&current.entities[0], def, ["food"]).is_none());
+        assert_eq!(intents.active_collect_assignment(1), assignment);
+        assert_eq!(intents.active_intents()[&1].metadata.intent_id, metadata.intent_id);
+        let delta = compute_delta(&previous, &current,
+            &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(),
+            0.0, 0.0, &HashMap::new(), &HashSet::new());
+        let decoded = pb::Delta::decode(delta.encode_to_vec().as_slice()).unwrap();
+        let update = decoded.updates.iter().find(|update| update.id == 1).unwrap();
+        assert!(update.resources.as_ref().unwrap().resources.is_empty());
+        assert!(decoded.removed_entity_ids.is_empty());
+        assert!(should_publish_delta(&delta));
+        let by_id = collection_entity_index(&current.entities);
+        assert_eq!(gather_transport_inventory(&mut current.entities, 1, 2, def, "food", 5.0, &by_id), 5.0);
+        assert_eq!(resource_amount(&current.entities[0], "food"), 5.0);
+        assert_eq!(current.entities[1].resource_deposit.as_ref().unwrap().remaining, 95.0);
+        assert_eq!(intents.active_collect_assignment(1), assignment);
     }
 }
 

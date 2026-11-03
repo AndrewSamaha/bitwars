@@ -15,7 +15,7 @@ describe("fog memory", () => {
     const remembered = game.world.add({
       pos: { x: 0, y: 0 },
       vel: { x: 10, y: 0 },
-      remembered: { last_seen_at: 1 },
+      remembered: { last_seen_tick: 1 },
     });
     added.push(live, remembered);
 

@@ -22,6 +22,7 @@ import {
   createGameEntityVisual,
   createGameWorldContainer,
   loadGameEntityTextures,
+  gameEntityBundleKey,
   setGameEntityVisualType,
   updateGameEntityVisual,
   type EntityVisual,
@@ -34,13 +35,12 @@ import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog"
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
 import { selectEntitiesOfTypeInView } from "@/features/pixijs/utils/typeSelection";
 import { minimapOffsetToWorld, worldToMinimapOffset } from "@/features/pixijs/utils/minimap";
+import { readCameraView, saveCameraView } from "@/features/pixijs/utils/cameraSession";
 import {
   CELL_SIZE,
   SEED,
-  SAMPLE_SPACING,
-  EDGE_THRESHOLD_SQ,
-  BORDER_COLOR,
-  getVoronoiDistancesAt,
+  getStarCountForCell,
+  getStarForCell,
   getViewportWorldAABB,
 } from "@/features/pixijs/utils/proceduralBackground";
 
@@ -61,7 +61,7 @@ const MINIMAP_NEUTRAL_COLOR = 0x88_88_88;
 const MINIMAP_STAR_YELLOW_COLOR = 0xff_dd_22;
 const MINIMAP_PLANET_BLUE_COLOR = 0x44_cc_66;
 const BUILD_PROGRESS_SCAN_MS = 500;
-const FOG_COLOR = 0x67_6b_73;
+const FOG_COLOR = 0x40_44_4b;
 const FOG_ALPHA = 0.20;
 const FOG_ZOOM_SETTLE_MS = 150;
 const FOG_ZOOM_UPDATE_INTERVAL_MS = 1000 / 30;
@@ -95,7 +95,6 @@ export default function GameStage() {
   // M6: Current player id for ownership gating and visuals (ref so initWorld closure sees latest)
   const myPlayerIdRef = useRef<string | null>(null);
   myPlayerIdRef.current = effectivePlayerId;
-  const recenterRequestedRef = useRef<boolean>(true);
   // M5.1: Pan keys currently held (KeyW, KeyA, ...); ticker reads this and applies pan
   const panKeysRef = useRef<Set<string>>(new Set());
 
@@ -114,6 +113,9 @@ export default function GameStage() {
       const payload =
         params.kind === "SelfDestruct"
           ? { type: "SelfDestruct", entity_id: params.entityId,
+              client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
+          : params.kind === "JettisonCargo"
+          ? { type: "JettisonCargo", entity_id: params.entityId,
               client_cmd_id: params.clientCmdId, client_seq: params.clientSeq, policy: params.policy }
           : params.kind === "Resupply"
           ? { type: "Resupply", entity_id: params.entityId, depot_id: params.depotId, target_amounts: params.targetAmounts,
@@ -146,6 +148,13 @@ export default function GameStage() {
               ...(params.nearestCompatible
                 ? { nearest_compatible: true }
                 : { resource_type_id: params.resourceTypeId }),
+              ...(params.travelPlan ? { travel_plan: {
+                source_entity_id: params.travelPlan.sourceEntityId,
+                depot_entity_id: params.travelPlan.depotEntityId,
+                waypoint_ids: params.travelPlan.waypointIds,
+                initial_waypoint_ids: params.travelPlan.initialWaypointIds,
+                initial_to_depot: params.travelPlan.initialToDepot,
+              } } : {}),
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,
@@ -198,23 +207,31 @@ export default function GameStage() {
 
     let cancelled = false;
     const initWorld = async () => {
-        const textureCache = await loadGameEntityTextures();
-        if (cancelled) return;
+        let renderContent = contentManager.getContent();
+        if (!renderContent) throw new Error("Renderer requires accepted content");
+        let textureCache = await loadGameEntityTextures(renderContent);
+        if (cancelled) { textureCache.release(); return; }
         const updateMoveDebug = (message: string, payload?: Record<string, unknown>) => {
           if (!DEBUG_MOVE_INPUT) return;
           const suffix = payload ? ` ${JSON.stringify(payload)}` : "";
           setMoveDebug(`${message}${suffix}`);
         };
         const app = new Application();
-        await app.init({
-            background: BACKGROUND_APP_COLOR,
-            resizeTo: window,
-            antialias: true,
-            resolution: window.devicePixelRatio || 1,
-            autoDensity: true,
-        });
+        try {
+          await app.init({
+              background: BACKGROUND_APP_COLOR,
+              resizeTo: window,
+              antialias: true,
+              resolution: window.devicePixelRatio || 1,
+              autoDensity: true,
+          });
+        } catch (error) {
+          textureCache.release();
+          throw error;
+        }
         if (cancelled) {
           app.destroy({ removeView: true }, { children: true, texture: false });
+          textureCache.release();
           return;
         }
         setApp(app);
@@ -362,11 +379,23 @@ export default function GameStage() {
           }
         };
 
-        const requestRecenter = () => {
-          recenterRequestedRef.current = true;
+        let cameraRunId = "";
+        let cameraPlayerId: string | null = null;
+        let cameraInitialized = false;
+        const saveCamera = () => {
+          if (!cameraInitialized || !cameraRunId || !cameraPlayerId) return;
+          const zoom = worldContainer.scale.x;
+          saveCameraView(cameraRunId, cameraPlayerId, {
+            x: (app.screen.width / 2 - worldContainer.position.x) / zoom,
+            y: (app.screen.height / 2 - worldContainer.position.y) / zoom,
+            zoom,
+          });
         };
-        window.addEventListener("bitwars:stream-open", requestRecenter as EventListener);
-        window.addEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
+        const onVisibilityChange = () => {
+          if (document.visibilityState === "hidden") saveCamera();
+        };
+        window.addEventListener("pagehide", saveCamera);
+        document.addEventListener("visibilitychange", onVisibilityChange);
         const onCenterCameraOnEntity = (event: Event) => {
           const entity = findLiveEntityById((event as CustomEvent<string>).detail);
           if (!entity?.pos) return;
@@ -403,11 +432,12 @@ export default function GameStage() {
           return true;
         };
 
-        // M5.2: Voronoi border overlay in screen space (sample grid → edge test → draw dots)
+        // World-space starfield follows the camera every frame, behind entities.
         const voronoiBorderGraphics = new Graphics();
-        (voronoiBorderGraphics as any).label = "voronoiBorders";
+        voronoiBorderGraphics.label = "starfield";
         voronoiBorderGraphics.eventMode = "none";
-        app.stage.addChild(voronoiBorderGraphics);
+        voronoiBorderGraphics.zIndex = -2_000_000;
+        worldContainer.addChild(voronoiBorderGraphics);
 
         // The fog is rendered to a fixed, viewport-sized texture. This keeps
         // its allocation and origin stable as sensor circles grow/shrink with
@@ -431,51 +461,30 @@ export default function GameStage() {
         app.stage.addChild(fogSprite);
 
         let lastVoronoiUpdate = -1000;
-        let lastCamX = worldContainer.position.x;
-        let lastCamY = worldContainer.position.y;
-        let lastCamScale = worldContainer.scale.x;
         const VORONOI_UPDATE_INTERVAL_MS = 100;
-        const VORONOI_CAMERA_MOVE_THRESHOLD = 25;
-        const VORONOI_ZOOM_REDRAW_THRESHOLD = 0.05;
-        const VORONOI_OVERSCAN_PX = VORONOI_CAMERA_MOVE_THRESHOLD + SAMPLE_SPACING;
-        const BORDER_DOT_SIZE = 2;
 
         function updateVoronoiBorders() {
-          // This redraw samples in the current screen coordinate system. Reset
-          // the inexpensive frame-by-frame camera transform before replacing it.
-          voronoiBorderGraphics.position.set(0, 0);
-          voronoiBorderGraphics.scale.set(1);
           voronoiBorderGraphics.clear();
-          const w = app.screen.width;
-          const h = app.screen.height;
-          for (let sy = -VORONOI_OVERSCAN_PX; sy <= h + VORONOI_OVERSCAN_PX; sy += SAMPLE_SPACING) {
-            for (let sx = -VORONOI_OVERSCAN_PX; sx <= w + VORONOI_OVERSCAN_PX; sx += SAMPLE_SPACING) {
-              const pWorld = worldContainer.toLocal({ x: sx, y: sy });
-              const { d1Sq, d2Sq } = getVoronoiDistancesAt(pWorld.x, pWorld.y, CELL_SIZE, SEED);
-              const edge = d2Sq - d1Sq;
-              if (edge < EDGE_THRESHOLD_SQ) {
-                voronoiBorderGraphics
-                  .rect(sx, sy, BORDER_DOT_SIZE, BORDER_DOT_SIZE)
-                  .fill({ color: BORDER_COLOR });
+          const zoom = worldContainer.scale.x;
+          if (zoom < 0.04) return;
+          const dotSize = 6;
+          const worldBounds = getViewportWorldAABB(worldContainer, app.screen.width, app.screen.height, CELL_SIZE);
+          const minCellX = Math.floor(worldBounds.minX / CELL_SIZE);
+          const maxCellX = Math.floor(worldBounds.maxX / CELL_SIZE);
+          const minCellY = Math.floor(worldBounds.minY / CELL_SIZE);
+          const maxCellY = Math.floor(worldBounds.maxY / CELL_SIZE);
+          for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
+            for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+              const count = getStarCountForCell(cellX, cellY, SEED);
+              for (let index = 0; index < count; index++) {
+                const star = getStarForCell(cellX, cellY, index, CELL_SIZE, SEED);
+                voronoiBorderGraphics.rect(star.x, star.y, dotSize, dotSize).fill({ color: 0xffffff });
               }
             }
           }
-          lastCamX = worldContainer.position.x;
-          lastCamY = worldContainer.position.y;
-          lastCamScale = worldContainer.scale.x;
         }
 
-        function syncVoronoiCameraTransform() {
-          // Move and scale the cached graphics with the camera every frame.
-          // This is much cheaper than re-sampling the Voronoi grid, while the
-          // periodic redraw below keeps the cached result accurate.
-          const scaleRatio = worldContainer.scale.x / lastCamScale;
-          voronoiBorderGraphics.scale.set(scaleRatio);
-          voronoiBorderGraphics.position.set(
-            worldContainer.position.x - lastCamX * scaleRatio,
-            worldContainer.position.y - lastCamY * scaleRatio,
-          );
-        }
+
 
         // Camera-centered Poincaré-style minimap — screen space, top-right.
         // Space is compressed radially, so the map always represents the
@@ -519,7 +528,6 @@ export default function GameStage() {
         // Adversary dots stay above both visible and remembered entity dots.
         const minimapAdversaryGraphics = new Graphics();
         minimapAdversaryGraphics.label = "minimapAdversaries";
-        minimapAdversaryGraphics.eventMode = "none";
         minimapContainer.addChild(minimapAdversaryGraphics);
         const minimapViewportGraphics = new Graphics();
         minimapViewportGraphics.eventMode = "none";
@@ -528,6 +536,39 @@ export default function GameStage() {
         minimapNotificationGraphics.eventMode = "none";
         minimapContainer.addChild(minimapViewportGraphics, minimapNotificationGraphics);
         app.stage.addChild(minimapContainer);
+        const scaleBarWidth = MINIMAP_SIZE_PX * 0.9;
+        const scaleBar = new Graphics();
+        scaleBar.label = "worldScaleBar";
+        scaleBar.eventMode = "none";
+        const scaleText = new Text({
+          text: "",
+          style: { fontSize: 12, fill: 0xffffff },
+        });
+        scaleText.label = "worldScaleDistance";
+        scaleText.anchor.set(0.5, 0);
+        scaleText.eventMode = "none";
+        app.stage.addChild(scaleBar, scaleText);
+
+        const updateScaleBar = () => {
+          const centerX = app.screen.width - MINIMAP_MARGIN - MINIMAP_SIZE_PX / 2;
+          const left = centerX - scaleBarWidth / 2;
+          const top = MINIMAP_MARGIN + MINIMAP_SIZE_PX + 12;
+          // Powers of two keep the moving tick between half and full width.
+          // This measures the linear world view, not the compressed minimap.
+          const distance = 2 ** Math.floor(Math.log2(scaleBarWidth / worldContainer.scale.x));
+          const tickX = distance * worldContainer.scale.x;
+          scaleBar.position.set(left, top);
+          scaleBar.clear()
+            .moveTo(0, 0).lineTo(scaleBarWidth, 0)
+            .moveTo(0, -4).lineTo(0, 4)
+            .moveTo(tickX, -4).lineTo(tickX, 4)
+            .stroke({ width: 1, color: 0xffffff });
+          scaleText.text = `${distance.toLocaleString()} units`;
+          scaleText.position.set(centerX, top + 7);
+        };
+        updateScaleBar();
+
+        app.renderer.on("resize", updateScaleBar);
 
         const selectionBoxGraphics = new Graphics();
         selectionBoxGraphics.label = "selectionBox";
@@ -895,6 +936,7 @@ export default function GameStage() {
             pointer.y - worldPoint.y * nextZoom,
           );
           fogRefreshAfterZoomAt = performance.now() + FOG_ZOOM_SETTLE_MS;
+          updateScaleBar();
         };
         app.canvas.addEventListener("wheel", onWheel, { passive: false });
 
@@ -1037,17 +1079,17 @@ export default function GameStage() {
               (e as any).hover = false;
               setHovered(null);
             }
-            if (typeId !== ref.lastEntityTypeId) {
+            if (typeId !== ref.lastEntityTypeId || ref.lastAssetKey !== gameEntityBundleKey(textureCache, typeId)) {
               setGameEntityVisualType(ref, textureCache, typeId);
             }
             if (!remembered) updateGameEntityVisual(ref, nowMs);
             // Position: proto pos (already advanced by world.tick)
             container.position.set(e.pos.x, e.pos.y);
             const scale = (e as any).scale ?? 1;
-            const visual = contentManager.getEntityType(typeId)?.visual;
+            const visual = renderContent?.entity_types[typeId]?.visual;
             const visualScale = visual?.scale ?? 1;
             container.scale.set(gameEntityScale(scale, visualScale));
-            container.zIndex = contentManager.getEntityType(typeId)?.z_index ?? 0;
+            container.zIndex = renderContent?.entity_types[typeId]?.z_index ?? 0;
             container.alpha = remembered ? 0.45 : 1;
 
             // Rotation: if we have proto velocity, rotate to face direction of travel
@@ -1404,11 +1446,10 @@ export default function GameStage() {
               const actor = findLiveEntityById(id);
               const def = contentManager.getEntityType(actor?.entity_type_id ?? "");
               const amounts = Object.fromEntries(Object.entries(def?.max_capacity ?? {}).filter(([, capacity]) => capacity > 0));
-              return { id, actor, def, amounts };
+              return { id, actor, amounts };
             });
-            if (!orders.every(({ actor, def, amounts }) => actor && !actor.remembered && actor.health > 0
-              && actor.owner_player_id === myPlayerIdRef.current && (def?.speed ?? 0) > 0
-              && (def?.collector?.transport_rate_per_second ?? 0) > 0 && Object.keys(amounts).length > 0
+            if (!orders.every(({ actor, amounts }) => actor && !actor.remembered && actor.health > 0
+              && actor.owner_player_id === myPlayerIdRef.current && Object.keys(amounts).length > 0
               && Object.keys(amounts).every(resource => (depotDef.max_capacity?.[resource] ?? 0) > 0))) return;
             for (const { id, amounts } of orders) {
               intentQueue.handleResupplyCommand(Number(id), Number(targetId), amounts, shift || ctrl, ctrl);
@@ -1632,6 +1673,24 @@ export default function GameStage() {
         app.stage.on("pointerup", onPointerUp);
         app.stage.on("pointerupoutside", onPointerUp);
 
+        const unregisterContentRenderer = contentManager.registerRenderer(async (content, isCurrent) => {
+          const nextTextures = await loadGameEntityTextures(content);
+          if (cancelled || !isCurrent()) {
+            nextTextures.release();
+            return {};
+          }
+          const previousTextures = textureCache;
+          textureCache = nextTextures;
+          renderContent = content;
+          // One synchronous projection swaps base art, masks, colors and visual
+          // definitions together, including existing entities of the same type.
+          render();
+          updateVisibilityFog();
+          updateMinimap(true);
+          previousTextures.release();
+          return nextTextures.assetBundles;
+        });
+
         app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
             if (!game.ready || !gameConnection.check()) {
@@ -1639,9 +1698,24 @@ export default function GameStage() {
               panKeysRef.current.clear();
               return;
             }
-            if (recenterRequestedRef.current) {
-              const centered = centerCameraOnOwnedEntities();
-              if (centered) recenterRequestedRef.current = false;
+            const playerId = myPlayerIdRef.current;
+            if (game.runId && playerId && (cameraRunId !== game.runId || cameraPlayerId !== playerId)) {
+              saveCamera();
+              cameraRunId = game.runId;
+              cameraPlayerId = playerId;
+              const view = readCameraView(cameraRunId, cameraPlayerId, MIN_ZOOM, MAX_ZOOM);
+              worldContainer.scale.set(view?.zoom ?? 1);
+              cameraInitialized = view !== null;
+              if (view) {
+                worldContainer.position.set(
+                  app.screen.width / 2 - view.x * view.zoom,
+                  app.screen.height / 2 - view.y * view.zoom,
+                );
+              }
+              updateScaleBar();
+            }
+            if (!cameraInitialized && game.runId && playerId) {
+              cameraInitialized = centerCameraOnOwnedEntities();
             }
             // M5.1: Apply camera pan from WASD/arrows (delta-time so speed is frame-rate independent)
             const keys = panKeysRef.current;
@@ -1660,20 +1734,12 @@ export default function GameStage() {
                 worldContainer.position.y += (dy * norm * PAN_SPEED * dt);
               }
             }
-            // M5.2: Transform the cached border every frame, then redraw only
-            // when its sampling basis is old enough or has drifted materially.
+            // Refresh visible star cells periodically; the camera transform moves
+            // cached world-space stars every frame without regenerating them.
             const now = performance.now();
             refreshBuildProgressIds(now);
-            const camX = worldContainer.position.x;
-            const camY = worldContainer.position.y;
-            const camScale = worldContainer.scale.x;
-            syncVoronoiCameraTransform();
-            if (
-              now - lastVoronoiUpdate > VORONOI_UPDATE_INTERVAL_MS ||
-              Math.abs(camX - lastCamX) > VORONOI_CAMERA_MOVE_THRESHOLD ||
-              Math.abs(camY - lastCamY) > VORONOI_CAMERA_MOVE_THRESHOLD ||
-              Math.abs(camScale / lastCamScale - 1) > VORONOI_ZOOM_REDRAW_THRESHOLD
-            ) {
+            voronoiBorderGraphics.visible = worldContainer.scale.x >= 0.04;
+            if (now - lastVoronoiUpdate > VORONOI_UPDATE_INTERVAL_MS) {
               updateVoronoiBorders();
               lastVoronoiUpdate = now;
             }
@@ -1704,6 +1770,10 @@ export default function GameStage() {
         return () => {
           if (destroyed) return;
           destroyed = true;
+          unregisterContentRenderer();
+          saveCamera();
+          window.removeEventListener("pagehide", saveCamera);
+          document.removeEventListener("visibilitychange", onVisibilityChange);
           buildProgressStore.removeSource(buildProgressSource);
           app.canvas.removeEventListener("dblclick", onDoubleClick);
           app.canvas.removeEventListener("wheel", onWheel);
@@ -1711,8 +1781,6 @@ export default function GameStage() {
           for (const id of Array.from(renderById.keys())) {
             destroyRenderRef(id);
           }
-          window.removeEventListener("bitwars:stream-open", requestRecenter as EventListener);
-          window.removeEventListener("bitwars:snapshot-applied", requestRecenter as EventListener);
           window.removeEventListener(CENTER_CAMERA_ON_ENTITY_EVENT, onCenterCameraOnEntity);
           window.removeEventListener("bitwars:laser-shot", onLaserShot);
           window.removeEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
@@ -1724,6 +1792,7 @@ export default function GameStage() {
           if ((app as unknown as { renderer: unknown | null }).renderer) {
             app.destroy({ removeView: true }, { children: true, texture: false });
           }
+          textureCache.release();
           clearApp(app);
           window.removeEventListener("keydown", onKeyDown);
           window.removeEventListener("keyup", onKeyUp);
@@ -1733,7 +1802,10 @@ export default function GameStage() {
     (async () => {
       cleanup = await initWorld();
       if (cancelled && cleanup) cleanup();
-    })().catch((error) => console.error("Failed to initialize game renderer", error));
+    })().catch((error) => {
+      if (!cancelled) contentManager.reportRendererFailure(error);
+      console.error("Failed to initialize game renderer", error);
+    });
     return () => {
       cancelled = true;
       if (cleanup) cleanup();

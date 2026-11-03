@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import ContentNavigation from "./ContentNavigation";
+
 import { useState } from "react";
 import { SpriteFrontChoices, SpriteSizeChoices, type SpriteFrontChoice } from "@/features/content/components/SpriteReviewChoices";
 import { PLAYER_PALETTES, type PlayerPalette } from "@/lib/playerPalettes";
@@ -109,14 +110,7 @@ export default function SpriteCatalog({ sprites, initialPath, assetVersion }: { 
       <header className="mb-[18px]">
         <p className="text-sm font-medium tracking-[0.24em] text-cyan-400 uppercase">BitWars Content Editor</p>
       </header>
-      <nav aria-label="Content type" className="mb-3 flex gap-1 border-b border-slate-700">
-        <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/entities">Entities</Link>
-        <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/techtree">Techtree</Link>
-        <Link className="border-b-2 border-cyan-400 px-4 py-2 text-sm font-medium text-cyan-300" href="/content/sprite-library">Sprites</Link>
-        <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/sfx">SFX</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/scenarios">Scenarios</Link>
-          <Link className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-cyan-300" href="/content/spawn">Spawn</Link>
-      </nav>
+      <ContentNavigation active="sprite-library" />
       <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900/60 shadow-2xl shadow-black/20">
         <div className="max-h-[calc(100vh-11rem)] overflow-auto">
           <table className="w-full border-collapse text-left text-sm">

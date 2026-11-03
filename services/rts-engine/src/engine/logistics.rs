@@ -3,6 +3,22 @@ use super::{pb, resource_amount, set_resource_amount, EntityTypeDef};
 use crate::content::ContentPack;
 use std::collections::HashMap;
 
+/// Discard physical inventory without changing orders, motion, or depot assignments.
+pub(super) fn jettison_cargo(
+    entities: &mut [pb::Entity], content: &ContentPack, player: &str, actor_id: u64,
+) -> Result<(), pb::LifecycleReason> {
+    let actor = entities.iter_mut().find(|e| e.id == actor_id && e.health > 0.0)
+        .ok_or(pb::LifecycleReason::InvalidTarget)?;
+    if actor.owner_player_id != player { return Err(pb::LifecycleReason::NotOwned); }
+    let def = content.get(&actor.entity_type_id).ok_or(pb::LifecycleReason::InvalidTarget)?;
+    if def.depot || def.speed <= 0.0 || !def.max_capacity.values().any(|capacity| *capacity > 0.0) {
+        return Err(pb::LifecycleReason::InvalidTarget);
+    }
+    // Preserve presence: an empty inventory must serialize as an explicit delta clear.
+    actor.resources.get_or_insert_with(Default::default).resources.clear();
+    Ok(())
+}
+
 pub(super) fn eligible_depot(
     actor: &pb::Entity,
     depot: &pb::Entity,
@@ -293,14 +309,26 @@ pub(super) fn operate(
         } else {
             operating_costs(def, dt)
         };
-        let source = operating_depot_id(entities, content, entity, &costs);
+        let depot = operating_depot_id(entities, content, entity, &costs);
+        // Preserve expedition reserves while a depot can cover the full bill.
+        // Otherwise pay atomically from onboard supplies, including outside coverage.
+        let source = if missing_resources(
+            depot.and_then(|id| entities.iter().find(|e| e.id == id)),
+            &costs,
+        ).is_empty() {
+            depot
+        } else if depot.is_none() || missing_resources(Some(entity), &costs).is_empty() {
+            Some(entity.id)
+        } else {
+            depot
+        };
         let missing = missing_resources(
             source.and_then(|id| entities.iter().find(|e| e.id == id)),
             &costs,
         );
         let paid = pay(entities, source, &costs);
         let status = entities[index].supply.get_or_insert_with(Default::default);
-        status.depot_id = source.unwrap_or(0);
+        status.depot_id = depot.unwrap_or(0);
         status.operational = paid;
         status.missing_resources = missing;
         status.waiting_for = if paid {
@@ -334,6 +362,53 @@ mod tests {
             pos: Some(pb::Vec2 { x, y: 0.0 }),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn jettison_validates_ownership_alive_mobility_capacity_and_non_depot() {
+        let mut c = content();
+        let mut es = vec![entity(1, "worker", 0.0)];
+        set_resource_amount(&mut es[0], "food", 25.0);
+        let original = es.clone();
+        assert_eq!(jettison_cargo(&mut es, &c, "enemy", 1), Err(pb::LifecycleReason::NotOwned));
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 99), Err(pb::LifecycleReason::InvalidTarget));
+        assert_eq!(es, original);
+        es[0].health = 0.0;
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Err(pb::LifecycleReason::InvalidTarget));
+        assert_eq!(resource_amount(&es[0], "food"), 25.0);
+        es[0].health = 100.0;
+        for (speed, depot, capacity) in [(0.0, false, 50.0), (10.0, true, 50.0), (10.0, false, 0.0)] {
+            let def = c.entity_types.get_mut("worker").unwrap();
+            def.speed = speed;
+            def.depot = depot;
+            def.max_capacity = HashMap::from([("food".into(), capacity)]);
+            assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Err(pb::LifecycleReason::InvalidTarget));
+            assert_eq!(resource_amount(&es[0], "food"), 25.0);
+        }
+        es[0].entity_type_id = "unknown".into();
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Err(pb::LifecycleReason::InvalidTarget));
+    }
+
+    #[test]
+    fn jettison_clears_every_resource_without_refund_or_other_state_changes() {
+        let c = content();
+        let mut es = vec![entity(1, "worker", 0.0), entity(2, "habitat", 100.0)];
+        es[0].vel = Some(pb::Vec2 { x: 2.0, y: 3.0 });
+        es[0].supply = Some(pb::DepotSupply {
+            depot_id: 2, delivery_depot_id: 2, paid_intent_id: vec![1; 16],
+            construction_progress: 0.5, ..Default::default()
+        });
+        for resource in ["food", "energy", "minerals", "unknown_cargo"] {
+            set_resource_amount(&mut es[0], resource, 20.0);
+            set_resource_amount(&mut es[1], resource, 30.0);
+        }
+        let mut expected = es.clone();
+        expected[0].resources.as_mut().unwrap().resources.clear();
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Ok(()));
+        assert_eq!(es, expected);
+        assert!(es[0].resources.as_ref().unwrap().resources.is_empty());
+        assert_eq!(jettison_cargo(&mut es, &c, "player", 1), Ok(()));
+        assert_eq!(es, expected);
     }
     #[test]
     fn association_sticks_until_invalid_and_never_hops_for_stock() {
@@ -396,6 +471,51 @@ mod tests {
 mod operation_tests {
     use super::*;
     #[test]
+    fn scout_uses_onboard_supplies_outside_coverage_and_resumes_at_hub() {
+        let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let hub = content.entity_types.get_mut("habitat").unwrap();
+        hub.maintenance_cost_per_minute.clear();
+        hub.sensor.as_mut().unwrap().cost_per_minute.clear();
+        // Include a separate sensor cost in the same atomic operating payment.
+        content.entity_types.get_mut("scout").unwrap().sensor.as_mut().unwrap()
+            .cost_per_minute = HashMap::from([("energy".into(), 1.0)]);
+        let entity = |id, kind: &str| pb::Entity {
+            id, entity_type_id: kind.into(), owner_player_id: "me".into(), health: 60.0,
+            pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }), ..Default::default()
+        };
+        let mut es = vec![entity(1, "habitat"), entity(2, "scout")];
+        for resource in ["energy", "food", "minerals"] {
+            set_resource_amount(&mut es[0], resource, 100.0);
+            set_resource_amount(&mut es[1], resource, 50.0);
+        }
+        operate(&mut es, &content, 60.0, &Default::default());
+        assert_eq!(resource_amount(&es[1], "energy"), 50.0);
+        assert_eq!(resource_amount(&es[0], "energy"), 98.0);
+        es[1].pos.as_mut().unwrap().x = 10000.0;
+        operate(&mut es, &content, 60.0, &Default::default());
+        let status = es[1].supply.as_ref().unwrap();
+        assert!(status.operational);
+        assert_eq!(status.depot_id, 0);
+        assert!(status.missing_resources.is_empty());
+        assert_eq!(status.waiting_for, "");
+        assert_eq!(resource_amount(&es[1], "energy"), 48.0);
+        assert_eq!(resource_amount(&es[1], "food"), 49.0);
+        assert_eq!(resource_amount(&es[1], "minerals"), 50.0);
+        assert_eq!(resource_amount(&es[0], "energy"), 98.0);
+        set_resource_amount(&mut es[1], "food", 0.0);
+        operate(&mut es, &content, 60.0, &Default::default());
+        assert!(!es[1].supply.as_ref().unwrap().operational);
+        assert_eq!(es[1].supply.as_ref().unwrap().missing_resources, vec!["food"]);
+        assert_eq!(resource_amount(&es[1], "energy"), 48.0);
+        es[1].pos.as_mut().unwrap().x = 0.0;
+        operate(&mut es, &content, 60.0, &Default::default());
+        assert!(es[1].supply.as_ref().unwrap().operational);
+        assert!(es[1].supply.as_ref().unwrap().missing_resources.is_empty());
+        assert_eq!(resource_amount(&es[1], "energy"), 48.0);
+    }
+
+    #[test]
     fn shortage_is_atomic_does_not_damage_and_resumes_after_delivery() {
         let mut content = ContentPack::load(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -444,6 +564,7 @@ mod operation_tests {
             def.sensor.as_mut().unwrap().cost_per_minute.clear();
         }
         let factory = content.entity_types.get_mut("military_factory").unwrap();
+        factory.maintenance_cost_per_minute.clear();
         factory.sensor.as_mut().unwrap().cost_per_minute = HashMap::from([("energy".into(), 60.0)]);
         let entity = |id, kind: &str, x| pb::Entity {
             id, entity_type_id: kind.into(), owner_player_id: "me".into(), health: 100.0,
@@ -494,7 +615,7 @@ mod operation_tests {
     }
 
     #[test]
-    fn mobile_fleet_operates_without_depots_or_cargo() {
+    fn mobile_fleet_pauses_without_depots_or_cargo() {
         let content = ContentPack::load(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../packages/content/entities.yaml"),
@@ -522,7 +643,7 @@ mod operation_tests {
         .collect();
         operate(&mut es, &content, 60.0, &Default::default());
         for e in es {
-            assert!(e.supply.unwrap().operational, "{}", e.entity_type_id);
+            assert!(!e.supply.unwrap().operational, "{}", e.entity_type_id);
             assert!(e.resources.is_none());
         }
     }

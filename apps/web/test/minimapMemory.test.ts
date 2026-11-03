@@ -1,43 +1,53 @@
 import { expect, it } from "vitest";
-import { MinimapMemory } from "../src/features/gamestate/minimapMemory";
+import { MinimapMemory, type EntityObservation } from "../src/features/gamestate/minimapMemory";
 
-it("retains last reported positions for universe, raider, and other-player sightings", () => {
-  const memory = new MinimapMemory();
-  memory.setContext("me", "world-1");
-  for (const [index, owner] of ["universe", "raiders", "other", "me"].entries()) {
-    const pos = { x: index * 10, y: 20 };
-    memory.observe({ id: index, pos, owner_player_id: owner, entity_type_id: "ship" });
-    pos.x = 999; // Local movement prediction must not move a remembered sighting.
-  }
-  expect([...memory.entries()].map(entity => [entity.id, entity.pos.x])).toEqual([[0, 0], [1, 10], [2, 20]]);
-  // A reconnect snapshot only contains currently visible entities.
-  memory.setContext("me", "world-1");
-  memory.observe({ id: 9, pos: { x: 0, y: 0 }, owner_player_id: "me" });
-  memory.observe({ id: 9, pos: { x: 10, y: 0 } });
-  expect([...memory.entries()]).toHaveLength(3);
+const sighting = (id: number | string, owner = "universe", tick: number | string = 42): EntityObservation => ({
+  id, entity_type_id: "ship", owner_player_id: owner, pos: { x: 10, y: 20 }, last_seen_tick: tick,
 });
 
-it("merges sparse observations and replaces the position on reacquisition", () => {
+it("hydrates non-owned observations and preserves server ticks without local movement prediction", () => {
   const memory = new MinimapMemory();
   memory.setContext("me", "world-1");
-  memory.observe({ id: 1, pos: { x: 10, y: 20 }, owner_player_id: "raiders", entity_type_id: "ship" });
-  memory.observe({ id: "1", pos: { x: 30, y: 40 } });
-  expect([...memory.entries()]).toMatchObject([{ entity_type_id: "ship", owner_player_id: "raiders", pos: { x: 30, y: 40 } }]);
-  memory.observe({ id: 1, owner_player_id: "me" });
+  const observations = ["universe", "raiders", "other", "me"].map((owner, index) => sighting(index, owner, "9007199254740993"));
+  memory.replace(observations);
+  observations[0]!.pos.x = 999;
+  expect([...memory.entries()].map(entity => [entity.id, entity.pos.x, entity.remembered.last_seen_tick]))
+    .toEqual([[0, 10, "9007199254740993"], [1, 10, "9007199254740993"], [2, 10, "9007199254740993"]]);
+});
+
+it("replaces complete reconnect knowledge instead of retaining stale browser discoveries", () => {
+  const memory = new MinimapMemory();
+  memory.setContext("me", "world-1");
+  memory.replace([sighting(1), sighting(2)]);
+  memory.setContext("me", "world-1");
+  memory.replace([sighting(2)]);
+  expect([...memory.entries()].map(entity => entity.id)).toEqual([2]);
+  memory.replace([]);
   expect([...memory.entries()]).toEqual([]);
 });
 
-it("forgets reported destructions and clears discoveries when player or world changes", () => {
+it("applies complete authoritative upserts and removes observations now owned by the player", () => {
   const memory = new MinimapMemory();
   memory.setContext("me", "world-1");
-  const sighting = { id: 1, pos: { x: 10, y: 20 }, owner_player_id: "universe" };
-  memory.observe(sighting);
+  memory.upsert(sighting(1, "raiders"));
+  memory.upsert({ ...sighting("1", "other", 43), pos: { x: 30, y: 40 }, entity_type_id: "station" });
+  expect([...memory.entries()]).toEqual([{
+    id: "1", entity_type_id: "station", owner_player_id: "other", pos: { x: 30, y: 40 }, remembered: { last_seen_tick: 43 },
+  }]);
+  memory.upsert(sighting(1, "me"));
+  expect([...memory.entries()]).toEqual([]);
+});
+
+it("forgets server-invalidated knowledge and clears it when the player or run changes", () => {
+  const memory = new MinimapMemory();
+  memory.setContext("me", "world-1");
+  memory.upsert(sighting(1));
   memory.forget("1");
   expect([...memory.entries()]).toEqual([]);
-  memory.observe(sighting);
+  memory.upsert(sighting(1));
   memory.setContext("other", "world-1");
   expect([...memory.entries()]).toEqual([]);
-  memory.observe(sighting);
+  memory.upsert(sighting(1));
   memory.setContext("other", "world-2");
   expect([...memory.entries()]).toEqual([]);
 });

@@ -4,7 +4,7 @@ import { selectEntitiesOfTypeInView } from "@/features/pixijs/utils/typeSelectio
 describe("double-click type selection", () => {
   it("selects owned entities of the same type in view, including partially visible sprites", () => {
     const candidate = (id: number, minX: number, minY = 10, type = "worker", owner = "me", remembered = false) => ({
-      entity: { id, entity_type_id: type, owner_player_id: owner, ...(remembered ? { remembered: { last_seen_at: 1 } } : {}) },
+      entity: { id, entity_type_id: type, owner_player_id: owner, ...(remembered ? { remembered: { last_seen_tick: 1 } } : {}) },
       bounds: { minX, minY, maxX: minX + 20, maxY: minY + 20 },
     });
     const ids = selectEntitiesOfTypeInView([

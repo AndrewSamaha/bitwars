@@ -73,6 +73,8 @@ pub struct EntityActiveIntent {
     pub collect_resource_type_id: Option<String>,
     #[serde(default)]
     pub collect_nearest_compatible: Option<bool>,
+    #[serde(default)]
+    pub collect_travel_plan: Option<CollectionTravelPlan>,
     /// Placement point for an in-progress build.
     #[serde(default)]
     pub build_location: Option<IntentPoint>,
@@ -80,6 +82,25 @@ pub struct EntityActiveIntent {
     pub transfer_route: Option<TransferRoute>,
     #[serde(default)]
     pub resupply: Option<ResupplyOrder>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionTravelPlan {
+    pub source_entity_id: u64,
+    pub depot_entity_id: u64,
+    pub waypoint_ids: Vec<u64>,
+    pub initial_waypoint_ids: Vec<u64>,
+    pub initial_to_depot: bool,
+}
+
+impl CollectionTravelPlan {
+    pub fn to_proto(&self) -> pb::CollectionTravelPlan {
+        pb::CollectionTravelPlan {
+            source_entity_id: self.source_entity_id, depot_entity_id: self.depot_entity_id,
+            waypoint_ids: self.waypoint_ids.clone(), initial_waypoint_ids: self.initial_waypoint_ids.clone(),
+            initial_to_depot: self.initial_to_depot,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,6 +213,8 @@ pub struct RedisClient {
     pub game_id: String,
     pub run_id: String,
     pub scenario_mode: bool,
+    /// Accepted revision stamped on every authoritative checkpoint.
+    pub content_revision: String,
     conn: redis::aio::MultiplexedConnection,
 }
 
@@ -275,8 +298,7 @@ impl RedisClient {
         format!("rts:match:{}:active_intents", self.game_id)
     }
 
-    /// M8b: Hash holding per-entity collector telemetry JSON blobs.
-    /// M4: Key holding the content hash (xxh3 hex string).
+    /// Compact accepted-revision index polled by live SSE connections.
     fn content_version_key(&self) -> String {
         format!("rts:match:{}:content_version", self.game_id)
     }
@@ -322,7 +344,7 @@ impl RedisClient {
         let client = redis::Client::open(url.to_string())?;
         let conn = client.get_multiplexed_async_connection().await?;
         info!("Connected to Redis at {}", url);
-        Ok(Self { game_id, conn, run_id: String::new(), scenario_mode: false })
+        Ok(Self { game_id, conn, run_id: String::new(), scenario_mode: false, content_revision: String::new() })
     }
 
     pub async fn publish_delta(&mut self, delta: &Delta) -> anyhow::Result<String> {
@@ -425,6 +447,28 @@ impl RedisClient {
         move_orders: Vec<pb::MoveOrderState>,
         sentry_orders: Vec<pb::SentryOrderState>,
         escort_orders: Vec<pb::EscortOrderState>,
+        collection_orders: Vec<pb::CollectionOrderState>,
+    ) -> anyhow::Result<()> {
+        self.publish_snapshot_with_content(state, resource_spend_total, resource_gain_total, boundary_stream_id,
+            collector_states, combat_effect_states, convoys, move_orders, sentry_orders, escort_orders, collection_orders, None).await
+    }
+
+    /// Optional accepted content and checkpoint commit together; restart cannot roll
+    /// an advertised revision back to an older periodic snapshot.
+    pub async fn publish_snapshot_with_content(
+        &mut self,
+        state: &GameState,
+        resource_spend_total: &HashMap<(String, String), f64>,
+        resource_gain_total: &HashMap<(String, String), f64>,
+        boundary_stream_id: &str,
+        collector_states: Vec<CollectorState>,
+        combat_effect_states: Vec<CombatEffectState>,
+        convoys: Vec<pb::ConvoyOrderState>,
+        move_orders: Vec<pb::MoveOrderState>,
+        sentry_orders: Vec<pb::SentryOrderState>,
+        escort_orders: Vec<pb::EscortOrderState>,
+        collection_orders: Vec<pb::CollectionOrderState>,
+        content: Option<(&serde_json::Value, &serde_json::Value)>,
     ) -> anyhow::Result<()> {
         let mut inventory_totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
         for entity in &state.entities {
@@ -475,6 +519,9 @@ impl RedisClient {
         player_technologies.sort_by(|a, b| a.player_id.cmp(&b.player_id));
 
         let snap = Snapshot {
+            player_knowledge: state.discovered_entities.knowledge_for_snapshot(),
+            content_revision: content.and_then(|(payload, _)| payload["content_revision"].as_str())
+                .unwrap_or(&self.content_revision).to_string(),
             discovered_entities_json: serde_json::to_string(&state.discovered_entities)?,
             generation_state_json: serde_json::to_string(&state.generation)?,
             economy_version: 1,
@@ -482,6 +529,7 @@ impl RedisClient {
             move_orders,
             sentry_orders,
             escort_orders,
+            collection_orders,
             tick: state.tick as i64,
             entities: state.entities.clone(),
             player_ledgers,
@@ -499,7 +547,8 @@ impl RedisClient {
             .unwrap()
             .as_millis() as i64;
 
-        let _: () = redis::pipe().atomic()
+        let mut transaction = redis::pipe();
+        transaction.atomic()
             .cmd("SET").arg(&snap_key).arg(&bytes).ignore()
             .cmd("HSET").arg(&meta_key)
             .arg("tick")
@@ -509,9 +558,14 @@ impl RedisClient {
             .arg("run_id")
             .arg(&self.run_id)
             .arg("updated_at_ms")
-            .arg(now_ms).ignore()
-            .query_async(&mut self.conn)
-            .await?;
+            .arg(now_ms).ignore();
+        if let Some((payload, operation)) = content {
+            self.append_content_publication(&mut transaction, payload, operation)?;
+        }
+        let _: () = transaction.query_async(&mut self.conn).await?;
+        if let Some((payload, _)) = content {
+            self.content_revision = payload["content_revision"].as_str().unwrap().to_string();
+        }
 
         debug!(
             "SET {} (tick={}), HSET {} boundary_stream_id={}",
@@ -767,7 +821,7 @@ impl RedisClient {
     /// Returns state, boundary stream ID, and collector state or None if absent.
     pub async fn read_latest_snapshot(
         &mut self,
-    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>, Vec<pb::SentryOrderState>, Vec<pb::EscortOrderState>)>> {
+    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>, Vec<pb::SentryOrderState>, Vec<pb::EscortOrderState>, Vec<pb::CollectionOrderState>)>> {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
@@ -783,6 +837,7 @@ impl RedisClient {
         let snapshot = Snapshot::decode(snap_bytes.as_slice())
             .map_err(|e| anyhow::anyhow!("failed to decode snapshot: {}", e))?;
 
+        self.content_revision = snapshot.content_revision.clone();
         // Read boundary_stream_id from metadata hash
         let boundary: String = redis::cmd("HGET")
             .arg(&meta_key)
@@ -795,6 +850,7 @@ impl RedisClient {
         let move_orders = snapshot.move_orders.clone();
         let sentry_orders = snapshot.sentry_orders.clone();
         let escort_orders = snapshot.escort_orders.clone();
+        let collection_orders = snapshot.collection_orders.clone();
         anyhow::ensure!(snapshot.economy_version == 1 || !snapshot.entities.iter().any(|e| crate::spawn_config::is_player_owner(&e.owner_player_id)),
             "this match predates depot logistics; archive it and run game:reset before restarting the upgraded engine");
         let (state, collector_states) = restore_snapshot(snapshot)?;
@@ -807,7 +863,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary, collector_states, convoys, move_orders, sentry_orders, escort_orders)))
+        Ok(Some((state, boundary, collector_states, convoys, move_orders, sentry_orders, escort_orders, collection_orders)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.
@@ -1018,7 +1074,7 @@ impl RedisClient {
         metadata: &IntentMetadata,
         intent_kind: &str,
         move_target: Option<IntentPoint>,
-        collect_assignment: Option<(String, bool)>,
+        collect_assignment: Option<(String, bool, Option<pb::CollectionTravelPlan>)>,
         construction: Option<(String, Option<IntentPoint>, f32)>,
     ) -> anyhow::Result<()> {
         let entry = EntityActiveIntent {
@@ -1036,8 +1092,13 @@ impl RedisClient {
             snapshot_progress: construction.as_ref().map(|(_, _, progress)| *progress),
             collect_resource_type_id: collect_assignment
                 .as_ref()
-                .map(|(resource, _)| resource.clone()),
-            collect_nearest_compatible: collect_assignment.map(|(_, nearest)| nearest),
+                .map(|(resource, _, _)| resource.clone()),
+            collect_nearest_compatible: collect_assignment.as_ref().map(|(_, nearest, _)| *nearest),
+            collect_travel_plan: collect_assignment.and_then(|(_, _, plan)| plan.map(|plan| CollectionTravelPlan {
+                source_entity_id: plan.source_entity_id, depot_entity_id: plan.depot_entity_id,
+                waypoint_ids: plan.waypoint_ids, initial_waypoint_ids: plan.initial_waypoint_ids,
+                initial_to_depot: plan.initial_to_depot,
+            })),
             build_location: construction.and_then(|(_, location, _)| location),
             transfer_route: None,
             resupply: None,
@@ -1053,6 +1114,7 @@ impl RedisClient {
             .query_async(&mut self.conn).await?;
         Ok(())
     }
+
 
     pub async fn persist_resupply(&mut self, entity_id: u64, intent: &pb::ResupplyIntent) -> anyhow::Result<()> {
         let key = self.active_intents_key();
@@ -1246,37 +1308,95 @@ impl RedisClient {
         })
     }
 
-    // ── M4: Content version ────────────────────────────────────────────────
+    fn content_reload_key(&self, suffix: &str) -> String {
+        format!("rts:match:{}:content_reload:{suffix}", self.game_id)
+    }
 
-    /// Publish the content hash so the reconnect handshake and content
-    /// endpoint can verify client-server content alignment.
-    pub async fn publish_content_version(&mut self, hash: &str) -> anyhow::Result<()> {
-        let key = self.content_version_key();
-        self.conn.set::<_, _, ()>(&key, hash).await?;
-        info!(key = %key, hash = %hash, "published content_version to Redis");
+    /// Peek rather than destructively dequeue: a crash retries the durable operation.
+    pub async fn next_content_reload(&mut self) -> anyhow::Result<Option<serde_json::Value>> {
+        let raw: Option<String> = self.conn.lindex(self.content_reload_key("queue"), 0).await?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into)).transpose()
+    }
+
+    pub async fn acknowledge_content_reload(&mut self) -> anyhow::Result<()> {
+        let _: Option<String> = self.conn.lpop(self.content_reload_key("queue"), None).await?;
         Ok(())
     }
 
-    /// M4: Key holding the full content definitions as canonical JSON.
-    fn content_defs_key(&self) -> String {
-        format!("rts:match:{}:content_defs", self.game_id)
+    pub async fn content_reload_operation(&mut self, id: &str) -> anyhow::Result<Option<serde_json::Value>> {
+        let raw: Option<String> = self.conn.hget(self.content_reload_key("operations"), id).await?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into)).transpose()
     }
 
-    /// Publish the full entity type definitions as canonical JSON so the
-    /// `/api/v2/content` endpoint can serve them to clients.
-    pub async fn publish_content_defs(&mut self, json: &str) -> anyhow::Result<()> {
-        let key = self.content_defs_key();
-        self.conn.set::<_, _, ()>(&key, json).await?;
-        info!(key = %key, bytes = json.len(), "published content_defs to Redis");
+    pub async fn interrupted_content_reload_operations(&mut self) -> anyhow::Result<Vec<serde_json::Value>> {
+        let operations: HashMap<String, String> = self.conn.hgetall(self.content_reload_key("operations")).await?;
+        let queue: Vec<String> = self.conn.lrange(self.content_reload_key("queue"), 0, -1).await?;
+        let queued: HashSet<String> = queue.iter().filter_map(|request| {
+            serde_json::from_str::<serde_json::Value>(request).ok()
+                .and_then(|value| value["reload_id"].as_str().map(str::to_owned))
+        }).collect();
+        let mut interrupted = Vec::new();
+        for (id, raw) in operations {
+            let operation: serde_json::Value = serde_json::from_str(&raw)?;
+            if matches!(operation["status"].as_str(), Some("validating" | "ready" | "activating"))
+                || (operation["status"] == "staged" && !queued.contains(&id)) {
+                interrupted.push(operation);
+            }
+        }
+        Ok(interrupted)
+    }
+
+    pub async fn active_content_payload(&mut self) -> anyhow::Result<Option<serde_json::Value>> {
+        let raw: Option<String> = self.conn.get(self.content_reload_key("active")).await?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(Into::into)).transpose()
+    }
+
+    pub async fn save_content_reload_operation(&mut self, operation: &serde_json::Value, new: bool) -> anyhow::Result<()> {
+        let id = operation["reload_id"].as_str().ok_or_else(|| anyhow::anyhow!("reload operation has no ID"))?;
+        let mut pipe = redis::pipe();
+        pipe.atomic().cmd("HSET").arg(self.content_reload_key("operations")).arg(id)
+            .arg(serde_json::to_string(operation)?).ignore();
+        if new {
+            pipe.cmd("LPUSH").arg(self.content_reload_key("history")).arg(id).ignore()
+                .cmd("LTRIM").arg(self.content_reload_key("history")).arg(0).arg(99).ignore();
+        }
+        let _: () = pipe.query_async(&mut self.conn).await?;
         Ok(())
     }
 
-    /// Read the content hash (returns empty string if not set).
-    pub async fn read_content_version(&mut self) -> anyhow::Result<String> {
-        let key = self.content_version_key();
-        let val: Option<String> = self.conn.get(&key).await?;
-        Ok(val.unwrap_or_default())
+    /// All consumers observe one coherent accepted payload, including legacy handshake keys.
+    /// The lifecycle is committed with the payload, before notification can fail.
+    fn append_content_publication(&self, transaction: &mut redis::Pipeline, payload: &serde_json::Value, operation: &serde_json::Value) -> anyhow::Result<()> {
+        let revision = payload["content_revision"].as_str().ok_or_else(|| anyhow::anyhow!("missing content revision"))?;
+        let id = operation["reload_id"].as_str().ok_or_else(|| anyhow::anyhow!("missing reload ID"))?;
+        let bytes = serde_json::to_string(payload)?;
+        transaction
+            .cmd("SET").arg(self.content_reload_key("active")).arg(&bytes).ignore()
+            .cmd("SET").arg(self.content_reload_key(&format!("revision:{revision}"))).arg(&bytes).ignore()
+            .cmd("SET").arg(self.content_version_key()).arg(revision).ignore()
+            .cmd("HSET").arg(self.content_reload_key("operations")).arg(id).arg(serde_json::to_string(operation)?).ignore();
+        Ok(())
     }
+
+
+    pub async fn notify_content_revision(&mut self, payload: &serde_json::Value) -> anyhow::Result<()> {
+        let event = serde_json::json!({"type": "content_changed", "reload_id": payload["reload_id"],
+            "content_revision": payload["content_revision"], "activated_tick": payload["activated_tick"]});
+        let _: String = redis::cmd("XADD").arg(self.content_reload_key("events"))
+            .arg("MAXLEN").arg("~").arg(1000).arg("*").arg("payload").arg(serde_json::to_string(&event)?)
+            .query_async(&mut self.conn).await?;
+        Ok(())
+    }
+
+    pub async fn accepted_content_revision(&mut self, revision: &str) -> anyhow::Result<bool> {
+        self.conn.exists(self.content_reload_key(&format!("revision:{revision}"))).await.map_err(Into::into)
+    }
+
+    pub async fn snapshot_content_revision(&mut self) -> anyhow::Result<Option<String>> {
+        let bytes: Option<Vec<u8>> = self.conn.get(self.snapshot_key()).await?;
+        bytes.map(|bytes| Snapshot::decode(bytes.as_slice()).map(|snapshot| snapshot.content_revision).map_err(Into::into)).transpose()
+    }
+
 
     // ── M6: Spawn on join ───────────────────────────────────────────────────
 
@@ -1330,11 +1450,12 @@ fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<Co
     } else {
         serde_json::from_str(&snapshot.generation_state_json)?
     };
-    let discovered_entities = if snapshot.discovered_entities_json.is_empty() {
+    let mut discovered_entities: crate::engine::discovery::Discoveries = if snapshot.discovered_entities_json.is_empty() {
         Default::default()
     } else {
         serde_json::from_str(&snapshot.discovered_entities_json)?
     };
+    discovered_entities.restore_knowledge(snapshot.player_knowledge, snapshot.tick as u64);
     Ok((GameState {
         discovered_entities,
         generation,
@@ -1401,9 +1522,47 @@ mod inventory_restore_tests {
         let discoveries: std::collections::BTreeMap<String, std::collections::BTreeSet<u64>> = [("alice".into(), [42, u64::MAX].into())].into();
         let snapshot = Snapshot { discovered_entities_json: serde_json::to_string(&discoveries).unwrap(), ..Default::default() };
         let (state, _) = restore_snapshot(Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
-        assert_eq!(state.discovered_entities, discoveries);
+        assert_eq!(*state.discovered_entities, discoveries);
         assert!(restore_snapshot(Snapshot::default()).unwrap().0.discovered_entities.is_empty());
         assert!(restore_snapshot(Snapshot { discovered_entities_json: "invalid".into(), ..Default::default() }).is_err());
+    }
+
+    #[test]
+    fn observation_checkpoint_restore_keeps_last_seen_values_not_hidden_live_state() {
+        let remembered = pb::EntityObservation {
+            entity_id: u64::MAX, entity_type_id: "worker".into(),
+            owner_player_id: "bob".into(), pos: Some(pb::Vec2 { x: 100.0, y: 20.0 }),
+            last_seen_tick: 8,
+        };
+        let knowledge = vec![pb::PlayerKnowledge {
+            player_id: "alice".into(), observations: vec![remembered],
+        }];
+        let snapshot = Snapshot {
+            tick: 10,
+            entities: vec![pb::Entity {
+                id: u64::MAX, entity_type_id: "habitat".into(),
+                owner_player_id: "carol".into(), pos: Some(pb::Vec2 { x: 99_999.0, y: -50.0 }),
+                ..Default::default()
+            }],
+            player_knowledge: knowledge.clone(),
+            ..Default::default()
+        };
+        let (state, _) = restore_snapshot(Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(state.discovered_entities.knowledge_for_snapshot(), knowledge);
+        assert!(state.discovered_entities["alice"].contains(&u64::MAX));
+        let mut delta = pb::Delta::default();
+        state.discovered_entities.append_changes(&mut delta);
+        assert!(delta.player_knowledge_updates.is_empty());
+        let saved = Snapshot {
+            tick: state.tick as i64, entities: state.entities.clone(),
+            discovered_entities_json: serde_json::to_string(&state.discovered_entities).unwrap(),
+            player_knowledge: state.discovered_entities.knowledge_for_snapshot(),
+            ..Default::default()
+        };
+        let (again, _) = restore_snapshot(Snapshot::decode(saved.encode_to_vec().as_slice()).unwrap()).unwrap();
+        assert_eq!(again.discovered_entities.knowledge_for_snapshot(), knowledge);
+        assert!(restore_snapshot(Snapshot::default()).unwrap().0
+            .discovered_entities.knowledge_for_snapshot().is_empty());
     }
 
     #[test]

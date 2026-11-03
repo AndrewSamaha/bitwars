@@ -1,22 +1,6 @@
-/**
- * Client-Side Content Manager (M4)
- *
- * Manages entity type definitions on the client.  The content lifecycle:
- *
- * 1. **Build-time bundle** — At build time, `entities.json` is generated from
- *    `packages/content/entities.yaml` and imported statically.  This gives
- *    zero-latency access on first load.
- *
- * 2. **Connect-time validation** — On every SSE open (initial + reconnect),
- *    the reconnect handshake returns `content_version` (xxh3 hex hash).
- *    If it matches our local hash, we're good.  If not, we fetch fresh
- *    definitions from `GET /api/v2/content`.
- *
- * 3. **localStorage cache** — After fetching, we persist to localStorage so
- *    subsequent page loads use the cached copy (validated again on connect).
- *
- * The content manager is a singleton, like `intentQueue` and `game`.
- */
+import { v4 as uuid } from "uuid";
+
+/** Live definitions and renderer acknowledgements share one revision lifecycle. */
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -56,6 +40,15 @@ export type EntityTypeDef = {
   build_cost?: Record<string, number>;
   /** Physical depot stock or carrier cargo capacity, per resource. */
   max_capacity?: Record<string, number>;
+  /** Spendable inventory granted once at creation, never on restore or content reload. */
+  initial_resources?: Record<string, number>;
+  /** Regrows spendable stock up to max_capacity; empty inventories do not regrow. */
+  inventory_regeneration?: Record<string, {
+    model: "hill";
+    max_rate_per_second: number;
+    half_saturation_fraction: number;
+    exponent: number;
+  }>;
   /** Enables local spending from this physical stockpile. */
   depot?: boolean;
   /** Local service radius; depot inventories never merge. */
@@ -162,163 +155,274 @@ export type ResourceTypeDef = {
   order?: number;
 };
 
-export type ContentData = {
-  content_version: string;
-  entity_types: Record<string, EntityTypeDef>;
-  /** M7: Resource type definitions (id → display_name, order). */
-  resource_types?: Record<string, ResourceTypeDef>;
-  technologies?: Record<string, TechnologyDef>;
+export type EntityContentHashes = {
+  definition_hash: string;
+  asset_hash: string | null;
+  files: Record<string, string>;
 };
 
-// ── Storage key ────────────────────────────────────────────────────────────
+export type ContentData = {
+  content_version: string;
+  content_revision: string;
+  entity_types: Record<string, EntityTypeDef>;
+  resource_types?: Record<string, ResourceTypeDef>;
+  technologies?: Record<string, TechnologyDef>;
+  entities: Record<string, EntityContentHashes>;
+  reload_id?: string;
+  activated_tick?: number;
+};
 
+export type ContentSyncErrorDetail = {
+  stage: string;
+  code: string;
+  message: string;
+  entity_id?: string;
+  url?: string;
+  expected_hash?: string;
+};
+
+export class ContentSyncError extends Error {
+  constructor(readonly detail: ContentSyncErrorDetail) {
+    super(detail.message);
+    this.name = "ContentSyncError";
+  }
+}
+
+export type ContentSyncState = {
+  advertised_revision: string;
+  definitions_revision: string;
+  asset_bundles: Record<string, string>;
+  reload_id?: string;
+  status: "synchronized" | "loading" | "failed";
+  last_applied_at?: number;
+  error?: ContentSyncErrorDetail;
+};
+
+type Renderer = (content: ContentData, isCurrent: () => boolean) => Promise<Record<string, string>>;
+type Advertisement = { reload_id?: string; activated_tick?: number };
 const STORAGE_KEY = "bitwars:content";
+const HASH = /^[a-f0-9]{64}$/;
 
-// ── Manager ────────────────────────────────────────────────────────────────
+export function assertContentData(data: ContentData, expectedRevision = data.content_revision): void {
+  if (!HASH.test(data.content_revision) || data.content_revision !== expectedRevision
+    || data.content_version !== data.content_revision || !data.entity_types || !data.entities) {
+    throw new ContentSyncError({ stage: "definitions", code: "revision_mismatch",
+      message: `Expected content revision ${expectedRevision}, received ${data.content_revision ?? "(missing)"}`,
+      expected_hash: expectedRevision });
+  }
+  for (const id of Object.keys(data.entity_types)) {
+    const entry = data.entities[id];
+    if (!entry || !HASH.test(entry.definition_hash) || (entry.asset_hash !== null && !HASH.test(entry.asset_hash))) {
+      throw new ContentSyncError({ stage: "definitions", code: "invalid_entity_hashes",
+        message: `Invalid content manifest entry for ${id}`, entity_id: id });
+    }
+  }
+}
 
-class ContentManager {
+export class ContentManager {
   private data: ContentData | null = null;
   private listeners = new Set<() => void>();
+  private syncListeners = new Set<() => void>();
+  private renderers = new Set<Renderer>();
+  private generation = 0;
+  private advertisedTick = -1;
+  private pending: { revision: string; promise: Promise<boolean> } | null = null;
+  private clientId: string | undefined;
+  private reportQueue: Promise<void> = Promise.resolve();
+  private heartbeat: ReturnType<typeof setInterval> | undefined;
+  private state: ContentSyncState = {
+    advertised_revision: "", definitions_revision: "", asset_bundles: {}, status: "loading",
+  };
 
   constructor() {
-    // Try to restore from localStorage on init
     this.restoreFromStorage();
   }
 
-  // ── Public API ──────────────────────────────────────────────────────────
+  getContent = (): ContentData | null => this.data;
+  getContentVersion = (): string => this.data?.content_revision ?? "";
+  getSyncState = (): ContentSyncState => this.state;
+  getSyncGeneration = (): number => this.generation;
 
-  /** Get the currently loaded content data, or null if none. */
-  getContent(): ContentData | null {
-    return this.data;
+  beginWorld(): void {
+    ++this.generation;
+    this.advertisedTick = -1;
+    this.pending = null;
+    this.updateState({ advertised_revision: "", status: "loading", error: undefined });
   }
 
-  /** Get the content version hash, or empty string if not loaded. */
-  getContentVersion(): string {
-    return this.data?.content_version ?? "";
+  startReporting(): () => void {
+    if (!this.heartbeat && typeof window !== "undefined") {
+      this.heartbeat = setInterval(() => this.report(), 30_000);
+    }
+    return () => {
+      clearInterval(this.heartbeat);
+      this.heartbeat = undefined;
+    };
   }
 
-  /** Look up an entity type definition by id. */
   getEntityType(entityTypeId: string): EntityTypeDef | undefined {
     return this.data?.entity_types[entityTypeId];
   }
 
-  /** M7: Look up a resource type definition by id. */
   getResourceType(resourceTypeId: string): ResourceTypeDef | undefined {
     return this.data?.resource_types?.[resourceTypeId];
   }
 
-  /**
-   * Validate local content against the server's content_version.
-   * If mismatched, fetch fresh content from the server.
-   *
-   * Call this on every SSE open event with the content_version from
-   * the reconnect handshake.
-   *
-   * Returns true if content is now valid, false if fetch failed.
-   */
-  async validateAndSync(serverContentVersion: string): Promise<boolean> {
-    if (!serverContentVersion) {
-      // Server has no content pack — clear local data
-      this.data = null;
-      this.clearStorage();
-      this.notify();
-      return true;
+  /** Exact accepted revision fetch; obsolete requests may finish but cannot commit. */
+  validateAndSync(revision: string, advertisement: Advertisement = {}): Promise<boolean> {
+    if (!revision) return Promise.resolve(false);
+    if (advertisement.activated_tick !== undefined && advertisement.activated_tick < this.advertisedTick) {
+      return Promise.resolve(true);
     }
-
-    if (this.data?.content_version === serverContentVersion) {
-      // Already in sync
-      return true;
+    if (advertisement.activated_tick !== undefined) this.advertisedTick = advertisement.activated_tick;
+    if (this.state.advertised_revision === revision && advertisement.reload_id) {
+      this.updateState({ reload_id: advertisement.reload_id });
     }
-
-    // Version mismatch — fetch from server
-    console.log(
-      `[ContentManager] version mismatch: local=${this.data?.content_version ?? "(none)"} server=${serverContentVersion}; fetching...`,
-    );
-
-    try {
-      const resp = await fetch("/api/v2/content");
-      if (!resp.ok) {
-        console.warn("[ContentManager] fetch failed:", resp.status);
-        return false;
-      }
-
-      const payload: ContentData = await resp.json();
-      this.data = payload;
+    if (this.data?.content_revision === revision && (advertisement.reload_id || advertisement.activated_tick !== undefined)) {
+      this.data = { ...this.data, reload_id: advertisement.reload_id || this.data.reload_id,
+        activated_tick: advertisement.activated_tick ?? this.data.activated_tick };
       this.persistToStorage();
-      this.notify();
+    }
+    if (this.pending?.revision === revision && this.state.advertised_revision === revision) return this.pending.promise;
+    if (revision === this.state.advertised_revision && this.state.status === "synchronized") return Promise.resolve(true);
+    const generation = ++this.generation;
+    this.updateState({ advertised_revision: revision, reload_id: advertisement.reload_id || undefined,
+      status: "loading", error: undefined });
+    const promise = this.sync(revision, generation);
+    this.pending = { revision, promise };
+    void promise.finally(() => {
+      if (this.pending?.promise === promise) this.pending = null;
+    });
+    return promise;
+  }
 
-      console.log(
-        `[ContentManager] synced: version=${payload.content_version}, types=${Object.keys(payload.entity_types).length}`,
-      );
-      return true;
-    } catch (err) {
-      console.warn("[ContentManager] fetch error:", err);
+  private async sync(revision: string, generation: number): Promise<boolean> {
+    try {
+      if (this.data?.content_revision !== revision) {
+        const url = `/api/v2/content?revision=${encodeURIComponent(revision)}`;
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) throw new ContentSyncError({ stage: "definitions", code: "fetch_failed",
+          message: `Content request failed: HTTP ${response.status}`, url, expected_hash: revision });
+        const payload = await response.json() as ContentData;
+        assertContentData(payload, revision);
+        if (generation !== this.generation) return false;
+        this.advertisedTick = Math.max(this.advertisedTick, payload.activated_tick ?? -1);
+        this.data = { ...payload, reload_id: this.state.reload_id || payload.reload_id,
+          activated_tick: this.advertisedTick >= 0 ? this.advertisedTick : undefined };
+        this.persistToStorage();
+        this.notify();
+      }
+      if (generation !== this.generation || !this.data) return false;
+      this.updateState({ definitions_revision: revision, reload_id: this.state.reload_id || this.data.reload_id || undefined });
+      await this.applyRenderers(this.data, generation);
+      return generation === this.generation && this.state.status !== "failed";
+    } catch (error) {
+      if (generation === this.generation) this.reportRendererFailure(error);
       return false;
     }
   }
 
-  /**
-   * Load content data directly (e.g. from a build-time bundle).
-   * Skips the fetch; useful for static imports.
-   */
-  loadBundle(data: ContentData) {
+  /** Initial gate load; remains loading until the mounted renderer acknowledges. */
+  loadBundle(data: ContentData): void {
+    assertContentData(data);
+    ++this.generation;
+    this.advertisedTick = data.activated_tick ?? -1;
     this.data = data;
     this.persistToStorage();
+    this.updateState({ advertised_revision: data.content_revision, definitions_revision: data.content_revision,
+      reload_id: data.reload_id || undefined, status: "loading", error: undefined });
     this.notify();
+    void this.applyRenderers(data, this.generation);
   }
 
-  /** Subscribe to content changes. Returns unsubscribe. */
-  subscribe(listener: () => void): () => void {
-    this.listeners.add(listener);
+  /** A renderer must stage off-screen and check isCurrent before its atomic swap. */
+  registerRenderer(renderer: Renderer): () => void {
+    this.renderers.add(renderer);
+    if (this.data) {
+      this.updateState({ status: "loading", error: undefined });
+      void this.applyRenderers(this.data, this.generation, [renderer]);
+    }
     return () => {
-      this.listeners.delete(listener);
+      this.renderers.delete(renderer);
+      if (!this.renderers.size) this.updateState({ status: "loading" });
     };
   }
 
-  // ── Internal ────────────────────────────────────────────────────────────
-
-  private notify() {
-    for (const listener of this.listeners) {
-      try {
-        listener();
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  private persistToStorage() {
+  private async applyRenderers(data: ContentData, generation: number, renderers = [...this.renderers]): Promise<void> {
+    if (!renderers.length || data.content_revision !== this.state.advertised_revision) return;
     try {
-      if (typeof localStorage === "undefined") return;
-      if (this.data) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
-      }
-    } catch {
-      /* SSR guard / quota exceeded */
+      const applied = await Promise.all(renderers.map(renderer =>
+        renderer(data, () => generation === this.generation && this.renderers.has(renderer)
+          && data.content_revision === this.state.advertised_revision)));
+      if (generation !== this.generation || data.content_revision !== this.state.advertised_revision
+        || renderers.some(renderer => !this.renderers.has(renderer))) return;
+      this.updateState({ status: "synchronized", asset_bundles: Object.assign({}, ...applied),
+        last_applied_at: Date.now(), error: undefined });
+    } catch (error) {
+      if (generation === this.generation) this.reportRendererFailure(error);
     }
   }
 
-  private restoreFromStorage() {
+  reportRendererFailure(error: unknown): void {
+    const detail = error instanceof ContentSyncError ? error.detail : {
+      stage: "renderer", code: "apply_failed", message: error instanceof Error ? error.message : String(error),
+    };
+    this.updateState({ status: "failed", error: detail });
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  };
+
+  subscribeSyncState = (listener: () => void): (() => void) => {
+    this.syncListeners.add(listener);
+    return () => { this.syncListeners.delete(listener); };
+  };
+
+  private updateState(update: Partial<ContentSyncState>): void {
+    this.state = { ...this.state, ...update };
+    for (const listener of this.syncListeners) listener();
+    this.report();
+  }
+
+  private report(): void {
+    if (typeof window === "undefined") return;
+    if (!this.clientId) {
+      try {
+        this.clientId = sessionStorage.getItem("bitwars:content-client") ?? uuid();
+        sessionStorage.setItem("bitwars:content-client", this.clientId);
+      } catch { this.clientId = uuid(); }
+    }
+    const report = { client_id: this.clientId, ...this.state };
+    // Preserve lifecycle ordering at the diagnostics endpoint, even on slow links.
+    this.reportQueue = this.reportQueue.then(async () => {
+      const response = await fetch("/api/v2/content/report", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(report), keepalive: true });
+      if (!response.ok) throw new Error(`Content report failed: HTTP ${response.status}`);
+    }).catch(error => { console.warn("[ContentManager] report failed", error); });
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) listener();
+  }
+
+  private persistToStorage(): void {
+    try {
+      if (typeof localStorage !== "undefined" && this.data) localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+    } catch { /* Storage is optional; the accepted revision remains authoritative. */ }
+  }
+
+  private restoreFromStorage(): void {
     try {
       if (typeof localStorage === "undefined") return;
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as ContentData;
-      if (parsed?.content_version && parsed?.entity_types) {
-        this.data = { ...parsed, resource_types: parsed.resource_types ?? {} };
-      }
-    } catch {
-      /* ignore corrupted data */
-    }
-  }
-
-  private clearStorage() {
-    try {
-      if (typeof localStorage === "undefined") return;
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* SSR guard */
-    }
+      assertContentData(parsed);
+      this.data = parsed;
+      this.state = { ...this.state, definitions_revision: parsed.content_revision };
+    } catch { /* Ignore legacy or corrupt cached content. */ }
   }
 }
 

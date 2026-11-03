@@ -39,6 +39,15 @@ direct Redis dependency.
 
 Expose a small, typed MCP tool surface:
 
+For agent play, prefer `move_entity(handle, entity_id, x, y)`,
+`build_entity(handle, entity_id, blueprint_id)`, and
+`collect_resource(handle, entity_id, resource_type_id)`. These flat tools use
+the same gateway as `send_intent` and accept an optional `policy` (default
+`REPLACE_ACTIVE`). Every submission receipt includes `submitted_intent`, the
+normalized intent sent to the game, alongside its command ID and HTTP result.
+HTTP acceptance still requires lifecycle/state verification. Restart the MCP
+server connection after updating to discover the new tools.
+
 | Operation | Responsibility |
 | --- | --- |
 | `connect_player` | Bind a provisioned test identity, open its SSE stream, perform the handshake, and return an opaque handle plus readiness state. |
@@ -124,7 +133,7 @@ above over local MCP stdio, uses the existing game HTTP/SSE endpoints, and
 has mocked game-endpoint and MCP protocol tests. A deterministic MCP client is
 also implemented there. The [scripted bot runner](bot-runner.md) launches
 multiple isolated MCP clients; live disposable-match validation remains.
-The current gateway creates/logs in a `loadtest-*` account when
+The current gateway creates/logs in a `loadtest-*` or `agent-*` account when
 `connect_player` is called; a future runner iteration should provision accounts
 before the timed window and establish how to isolate or retire them afterward.
 
