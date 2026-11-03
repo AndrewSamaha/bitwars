@@ -582,7 +582,7 @@ export default function GameStage() {
           style: { fontFamily: "monospace", fontSize: 14, fontWeight: "bold", fill: 0xffffff,
             stroke: { color: 0x111827, width: 4 } },
         });
-        measureLabel.anchor.set(0.5, 1);
+        measureLabel.anchor.set(1, 1);
         measureLabel.eventMode = "none";
         app.stage.addChild(measureGraphics, measureLabel);
         let measurePointer: { x: number; y: number } | null = null;
@@ -991,7 +991,7 @@ export default function GameStage() {
           measureGraphics.moveTo(start.x, start.y).lineTo(end.x, end.y)
             .stroke({ width: 2, color: 0xffd166, alpha: 0.95 });
           measureLabel.text = `${distance.toFixed(1)} units`;
-          measureLabel.position.set((start.x + end.x) / 2, (start.y + end.y) / 2 - 8);
+          measureLabel.position.set(end.x - 8, end.y - 8);
           measureLabel.visible = true;
         };
 
