@@ -109,8 +109,10 @@ export default function LifecycleToasts() {
       const capacityStatus = collectionCapacityStatus(entity.resources, capacities, detail.resourceTypeId);
       if (capacityStatus === "unavailable") {
         showToast("Collection blocked", `Worker ${detail.entityId} has no capacity for ${detail.resourceTypeId} and cannot collect it.`, String(detail.entityId), `Worker ${detail.entityId}`);
-      } else if (capacityStatus === "full") {
-        showToast("Cargo bay full", `Worker ${detail.entityId}'s ${detail.resourceTypeId} storage is full. It must deliver ${detail.resourceTypeId} before collecting more. If dropoff storage is full, spend stored resources or provide dropoff capacity.`, String(detail.entityId), `Worker ${detail.entityId}`);
+      } else if (capacityStatus === "full" && detail.depotEntityId) {
+        const depot = game.world.entities.find((candidate) => Number(candidate.id) === detail.depotEntityId);
+        const target = `${depot?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${detail.depotEntityId}`;
+        showToast("Delivering cargo", `Worker ${detail.entityId} delivering its ${detail.resourceTypeId} to ${target} before going to collecting more.`, String(detail.entityId), `Worker ${detail.entityId}`);
       }
     };
     const onTransferEndpointLost = (event: Event) => {

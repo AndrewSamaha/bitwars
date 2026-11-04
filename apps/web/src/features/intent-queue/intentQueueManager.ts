@@ -455,6 +455,11 @@ export class IntentQueueManager {
       }));
     }
     const send = (travelPlan?: TravelPlan) => {
+      if (travelPlan?.initialToDepot && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent<CollectCommandDetail>(COLLECT_COMMAND_EVENT, {
+          detail: { entityId, ...assignment, depotEntityId: travelPlan.depotEntityId },
+        }));
+      }
       this.sendCollectNow(entityId, uuidv7(), assignment, policy, travelPlan);
     };
     if (this.collectionRouter) this.collectionRouter.request(entityId, assignment, send);

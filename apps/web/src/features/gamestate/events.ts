@@ -23,7 +23,7 @@ export type MinimumDistanceViolationDetail = {
   actualDistance: number;
 };
 export type CollectionWaitingDetail = { collectorEntityId: string };
-export type CollectCommandDetail = { entityId: number; resourceTypeId?: string; nearestCompatible: boolean };
+export type CollectCommandDetail = { entityId: number; resourceTypeId?: string; nearestCompatible: boolean; depotEntityId?: number };
 
 export function collectionCapacityStatus(
   resources: Entity["resources"],
