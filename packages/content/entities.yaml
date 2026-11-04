@@ -284,6 +284,12 @@ entity_types:
     fog_memory: forget_when_hidden
     health: 400
     hull_radius: 90
+    inventory_regeneration:
+      food:
+        exponent: 4
+        half_saturation_fraction: 0.2
+        max_rate_per_second: 2
+        model: hill
     maintenance_cost_per_minute:
       energy: 10
       food: 10
