@@ -157,6 +157,7 @@ class CollectionRouting implements CollectionRouter {
     this.statuses.clear();
     for (const listener of this.listeners) listener();
     this.runId = game.runId;
+    this.live = gameConnection.getSnapshot() === "live";
   }
 
   private suspend() {
@@ -170,7 +171,7 @@ class CollectionRouting implements CollectionRouter {
   }
 
   private refresh() {
-    if (this.runId !== game.runId) { this.reset(); this.runId = game.runId; }
+    if (this.runId !== game.runId) this.reset();
     if (!this.live || !this.playerId || !game.ready || gameConnection.getSnapshot() !== "live") return;
     const definitions = contentManager.getContent()?.entity_types;
     if (!definitions) return;
@@ -256,7 +257,7 @@ class CollectionRouting implements CollectionRouter {
         if (worker?.pos) {
           order.holding = true;
           this.holdingEntity = pending.entityId;
-          try { intentQueue.handleMoveCommand(pending.entityId, { ...worker.pos }, { shift: false, ctrl: false }); }
+          try { intentQueue.handleMoveCommand(pending.entityId, { ...worker.pos }, { shift: false, ctrl: false }, []); }
           finally { this.holdingEntity = null; }
           const holdClientCmdId = intentQueue.getEntityState(pending.entityId).active?.clientCmdId;
           if (holdClientCmdId && this.playerId) intentQueue.setCollectionRoutingHold(pending.entityId,

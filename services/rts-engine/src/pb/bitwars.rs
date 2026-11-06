@@ -414,6 +414,9 @@ pub struct MoveToLocationIntent {
     #[deprecated]
     #[prost(string, tag = "4")]
     pub player_id: ::prost::alloc::string::String,
+    /// intermediate world-space destinations before target
+    #[prost(message, repeated, tag = "5")]
+    pub via: ::prost::alloc::vec::Vec<Vec2>,
 }
 /// Attack intent payload (authoritative server-side).
 #[derive(Clone, PartialEq, ::prost::Message)]

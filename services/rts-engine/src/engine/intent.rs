@@ -140,7 +140,34 @@ impl IntentManager {
             };
         };
 
-        let has_active = self.current_action.contains_key(&entity_id);
+        if self.current_action.contains_key(&entity_id)
+            && matches!(metadata.policy, pb::IntentPolicy::Append | pb::IntentPolicy::ClearThenAppend)
+        {
+            return ActivationOutcome {
+                canceled: vec![],
+                started: None,
+                rejected_busy: true,
+            };
+        }
+
+        // Construct and validate the entire route before replacing any active order.
+        let move_route = if metadata.entity_id == 0 {
+            if let Some(pb::intent::Kind::Move(mov)) = intent.kind.as_ref() {
+                match mov.target.and_then(|target| pb::NavigationRoute::move_via(&mov.via, target).ok()) {
+                    Some(route) => Some(route),
+                    None => return ActivationOutcome {
+                        canceled: vec![],
+                        started: None,
+                        rejected_busy: false,
+                    },
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut canceled = Vec::new();
 
         match metadata.policy {
@@ -151,33 +178,27 @@ impl IntentManager {
                     canceled.push((entity_id, active.metadata));
                 }
             }
-            pb::IntentPolicy::Append | pb::IntentPolicy::ClearThenAppend => {
-                if has_active {
-                    // Entity is busy; client should not have sent this
-                    return ActivationOutcome {
-                        canceled: vec![],
-                        started: None,
-                        rejected_busy: true,
-                    };
-                }
-            }
+            pb::IntentPolicy::Append | pb::IntentPolicy::ClearThenAppend => {}
         }
 
         // Group actions use the shared formation mover, not individual routes.
         self.move_routes.remove(&entity_id);
         self.move_route_last_cmd.remove(&entity_id);
-        if metadata.entity_id == 0 {
-            if let Some(pb::intent::Kind::Move(mov)) = intent.kind.as_ref() {
-                if let Some(target) = mov.target {
-                    self.move_route_last_cmd.insert(entity_id, metadata.client_cmd_id.clone());
-                    self.move_routes.insert(entity_id, pb::NavigationRoute::move_to(target));
-                    self.changed_move_routes.insert(entity_id);
-                }
-            }
+        if let Some(route) = move_route {
+            self.move_route_last_cmd.insert(entity_id, metadata.client_cmd_id.clone());
+            self.move_routes.insert(entity_id, route);
+            self.changed_move_routes.insert(entity_id);
         }
         // Start the intent (M4: per-entity-type stop_radius)
         let stop_radius = self.resolve_stop_radius(entity_type_id);
-        let action = make_action_state_from_intent(intent, stop_radius);
+        let mut action = make_action_state_from_intent(intent, stop_radius);
+        if let (Some(route), Some(pb::action_state::Exec::Move(mov))) =
+            (self.move_routes.get(&entity_id), action.exec.as_mut())
+        {
+            if let Some(motion) = mov.target.as_mut() {
+                motion.target = route.destination();
+            }
+        }
         log_start(&metadata, &action, entity_id);
         let started_meta = metadata.clone();
         self.current_action
@@ -516,6 +537,7 @@ mod tests {
                     x: target.0,
                     y: target.1,
                 }),
+                via: Vec::new(),
                 client_cmd_id: String::new(),
                 player_id: String::new(),
             })),

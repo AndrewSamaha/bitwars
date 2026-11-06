@@ -87,6 +87,23 @@ it("does not submit a stale result after a newer command, disconnect, or world r
   expect(send).not.toHaveBeenCalled();
 });
 
+it("can issue collection after a run change while the connection remains live", async () => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  const planner = new CollectionPlanner();
+  cleanup = collectionRouting.start("me");
+  env.game.runId = "world-2";
+  window.dispatchEvent(new Event("bitwars:gamestate-updated"));
+  vi.advanceTimersByTime(200);
+
+  const send = vi.fn();
+  collectionRouting.request(1, { resourceTypeId: "minerals", nearestCompatible: false }, send);
+  const worker = env.workers.at(-1)!;
+  expect(worker).toBeDefined();
+  const message = worker.postMessage.mock.calls.at(-1)![0];
+  worker.onmessage!({ data: { id: message.id, result: planner.plan(message.request) } });
+  expect(send).toHaveBeenCalledWith(plan);
+});
+
 it("holds accepted routes once when a new hazard leaves no safe local waypoint route", async () => {
   const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
   cleanup = collectionRouting.start("me");

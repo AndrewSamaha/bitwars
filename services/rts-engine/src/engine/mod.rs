@@ -1494,6 +1494,7 @@ mod integration_tests {
             target: entity.pos.clone(),
             client_cmd_id: String::new(),
             player_id: String::new(),
+            via: Vec::new(),
         };
 
         let envelope = pb::IntentEnvelope {
@@ -5816,7 +5817,7 @@ impl Engine {
         let (intent_kind, move_target, collect_assignment, construction) = match payload_intent.kind.as_ref() {
             Some(pb::intent::Kind::Move(m)) => (
                 "move",
-                m.target.as_ref().map(|t| IntentPoint { x: t.x, y: t.y }),
+                m.via.first().or(m.target.as_ref()).map(|t| IntentPoint { x: t.x, y: t.y }),
                 None,
                 None,
             ),
@@ -5854,14 +5855,14 @@ impl Engine {
             _ => None,
         };
         if let Some(pb::intent::Kind::Move(mov)) = payload_intent.kind.as_ref() {
-            let valid_target = mov.target.is_some_and(|point| point.x.is_finite() && point.y.is_finite());
-            if !valid_target {
+            let valid_target = navigation::validate_move_destinations(&mov.via, mov.target);
+            if valid_target.is_err() {
                 self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
                     pb::LifecycleReason::InvalidTarget, accept_tick).await?;
                 return Err(anyhow!("invalid Move destination"));
             }
             if matches!(policy, pb::IntentPolicy::Append | pb::IntentPolicy::ClearThenAppend) {
-                if let Some(result) = self.intents.edit_move_route(entity_id, mov.target.unwrap(), policy) {
+                if let Some(result) = self.intents.edit_move_route(entity_id, mov.target.unwrap(), &mov.via, policy) {
                     if let Err(error) = result {
                         let reason = if error == navigation::RouteEditError::Busy {
                             pb::LifecycleReason::EntityBusy

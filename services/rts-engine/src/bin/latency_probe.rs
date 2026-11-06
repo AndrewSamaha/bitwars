@@ -162,6 +162,7 @@ async fn main() -> Result<()> {
             target: Some(Vec2 { x: 1.0, y: 1.0 }),
             client_cmd_id: String::new(),
             player_id: String::new(),
+            via: Vec::new(),
         };
         let envelope = IntentEnvelope {
             client_cmd_id: client_cmd_id.clone(),

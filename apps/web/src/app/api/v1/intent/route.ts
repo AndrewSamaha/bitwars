@@ -22,6 +22,7 @@ const POLICY_MAP: Record<string, IntentPolicy> = {
     //   "type": "Move" | "Collect" | "Build",
     //   "entity_id": 1,
     //   "target": { "x": 50.0, "y": 75.0 }, // Move only
+    //   "via": [{ "x": 40.0, "y": 60.0 }], // optional Move intermediates
     //   "client_cmd_id": "uuidv7-...",
     //   "client_seq": 1,
     //   "policy": "REPLACE_ACTIVE" | "APPEND" | "CLEAR_THEN_APPEND"   (optional, default REPLACE_ACTIVE)
@@ -71,6 +72,13 @@ export async function POST(req: NextRequest) {
     }
     if (t === "Move" && (target?.x === undefined || target?.y === undefined)) {
       return NextResponse.json({ error: "missing required fields for Move: target.x, target.y" }, { status: 400 });
+    }
+    if (t === "Move" && (!Number.isFinite(target.x) || !Number.isFinite(target.y)
+      || (body.via !== undefined && (!Array.isArray(body.via) || body.via.length > 255
+        || body.via.some((point: unknown) => !point || typeof point !== "object"
+          || !("x" in point) || typeof point.x !== "number" || !Number.isFinite(point.x)
+          || !("y" in point) || typeof point.y !== "number" || !Number.isFinite(point.y)))))) {
+      return NextResponse.json({ error: "Move requires a finite target and at most 255 finite intermediate destinations" }, { status: 400 });
     }
     if (t === "Build" && !String(body?.blueprint_id ?? "").trim()) {
       return NextResponse.json({ error: "missing required field for Build: blueprint_id" }, { status: 400 });
@@ -208,6 +216,7 @@ export async function POST(req: NextRequest) {
       const move = create(MoveToLocationIntentSchema, {
         entityId,
         target: targetMsg,
+        via: (body.via ?? []).map((point: { x: number; y: number }) => create(Vec2Schema, point)),
       });
       const envelope = create(IntentEnvelopeSchema, {
         clientCmdId: clientCmdBytes,

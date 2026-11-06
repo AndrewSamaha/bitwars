@@ -12,6 +12,23 @@ pub enum RouteEditError {
     Limit,
 }
 
+pub fn validate_move_destinations(
+    via: &[pb::Vec2],
+    target: Option<pb::Vec2>,
+) -> Result<pb::Vec2, RouteEditError> {
+    let target = target.ok_or(RouteEditError::InvalidTarget)?;
+    if via.len() >= MAX_ROUTE_WAYPOINTS {
+        return Err(RouteEditError::Limit);
+    }
+    if !target.x.is_finite()
+        || !target.y.is_finite()
+        || via.iter().any(|point| !point.x.is_finite() || !point.y.is_finite())
+    {
+        return Err(RouteEditError::InvalidTarget);
+    }
+    Ok(target)
+}
+
 impl pb::NavigationRoute {
     pub fn move_to(target: pb::Vec2) -> Self {
         Self {
@@ -20,6 +37,19 @@ impl pb::NavigationRoute {
             direction: 1,
             traversal: pb::RouteTraversal::FinishAtEnd as i32,
         }
+    }
+
+    pub fn move_via(via: &[pb::Vec2], target: pb::Vec2) -> Result<Self, RouteEditError> {
+        validate_move_destinations(via, Some(target))?;
+        let mut waypoints = Vec::with_capacity(via.len() + 1);
+        waypoints.extend_from_slice(via);
+        waypoints.push(target);
+        Ok(Self {
+            waypoints,
+            next_waypoint_index: 0,
+            direction: 1,
+            traversal: pb::RouteTraversal::FinishAtEnd as i32,
+        })
     }
 
     pub fn destination(&self) -> Option<pb::Vec2> {
@@ -72,8 +102,9 @@ impl pb::NavigationRoute {
 
     /// Preserve the active destination when clearing future waypoints. All
     /// validation happens before mutation, so rejected edits leave routes intact.
-    pub fn edit(&mut self, target: pb::Vec2, clear_future: bool) -> Result<(), RouteEditError> {
-        if !target.x.is_finite() || !target.y.is_finite() || !self.valid() {
+    pub fn edit(&mut self, via: &[pb::Vec2], target: pb::Vec2, clear_future: bool) -> Result<(), RouteEditError> {
+        validate_move_destinations(via, Some(target))?;
+        if !self.valid() {
             return Err(RouteEditError::InvalidTarget);
         }
         let retained = if clear_future {
@@ -81,10 +112,11 @@ impl pb::NavigationRoute {
         } else {
             self.waypoints.len()
         };
-        if retained >= MAX_ROUTE_WAYPOINTS {
+        if via.len() + 1 > MAX_ROUTE_WAYPOINTS - retained {
             return Err(RouteEditError::Limit);
         }
         self.waypoints.truncate(retained);
+        self.waypoints.extend_from_slice(via);
         self.waypoints.push(target);
         Ok(())
     }
@@ -97,6 +129,7 @@ impl IntentManager {
         &mut self,
         entity_id: u64,
         target: pb::Vec2,
+        via: &[pb::Vec2],
         policy: pb::IntentPolicy,
     ) -> Option<Result<(), RouteEditError>> {
         let active = self.current_action.get(&entity_id)?;
@@ -108,7 +141,7 @@ impl IntentManager {
         let Some(route) = self.move_routes.get_mut(&entity_id) else {
             return Some(Err(RouteEditError::Busy));
         };
-        let result = route.edit(target, policy == pb::IntentPolicy::ClearThenAppend);
+        let result = route.edit(via, target, policy == pb::IntentPolicy::ClearThenAppend);
         if result.is_ok() {
             self.changed_move_routes.insert(entity_id);
         }
@@ -384,7 +417,7 @@ mod tests {
     #[test]
     fn finite_route_finishes_after_the_last_destination() {
         let mut route = pb::NavigationRoute::move_to(point(1.0));
-        route.edit(point(2.0), false).unwrap();
+        route.edit(&[], point(2.0), false).unwrap();
         assert!(route.advance());
         assert_eq!(route.destination(), Some(point(2.0)));
         assert!(!route.advance());
@@ -411,15 +444,15 @@ mod tests {
         let mut route = pb::NavigationRoute::move_to(point(1.0));
         let before = route.clone();
         assert_eq!(
-            route.edit(point(f32::NAN), true),
+            route.edit(&[], point(f32::NAN), true),
             Err(RouteEditError::InvalidTarget)
         );
         assert_eq!(route, before);
         route.waypoints = vec![point(1.0); MAX_ROUTE_WAYPOINTS];
         let full = route.clone();
-        assert_eq!(route.edit(point(2.0), false), Err(RouteEditError::Limit));
+        assert_eq!(route.edit(&[], point(2.0), false), Err(RouteEditError::Limit));
         assert_eq!(route, full);
-        route.edit(point(3.0), true).unwrap();
+        route.edit(&[], point(3.0), true).unwrap();
         assert_eq!(route.waypoints, vec![point(1.0), point(3.0)]);
     }
 
@@ -428,7 +461,7 @@ mod tests {
         let (mut manager, mut state) = fixture();
         let root = manager.active_intents()[&1].metadata.intent_id.clone();
         assert_eq!(
-            manager.edit_move_route(1, point(20.0), pb::IntentPolicy::Append),
+            manager.edit_move_route(1, point(20.0), &[], pb::IntentPolicy::Append),
             Some(Ok(()))
         );
         assert!(manager.follow_targets(&mut state, 10.0, 1.0).is_empty());
@@ -445,15 +478,15 @@ mod tests {
     fn clear_future_keeps_the_current_leg_and_replaces_later_destinations() {
         let (mut manager, _) = fixture();
         manager
-            .edit_move_route(1, point(20.0), pb::IntentPolicy::Append)
+            .edit_move_route(1, point(20.0), &[], pb::IntentPolicy::Append)
             .unwrap()
             .unwrap();
         manager
-            .edit_move_route(1, point(30.0), pb::IntentPolicy::Append)
+            .edit_move_route(1, point(30.0), &[], pb::IntentPolicy::Append)
             .unwrap()
             .unwrap();
         manager
-            .edit_move_route(1, point(40.0), pb::IntentPolicy::ClearThenAppend)
+            .edit_move_route(1, point(40.0), &[], pb::IntentPolicy::ClearThenAppend)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -467,7 +500,7 @@ mod tests {
     fn replacement_and_death_remove_the_entire_route() {
         let (mut manager, _) = fixture();
         manager
-            .edit_move_route(1, point(20.0), pb::IntentPolicy::Append)
+            .edit_move_route(1, point(20.0), &[], pb::IntentPolicy::Append)
             .unwrap()
             .unwrap();
         let metadata = manager.active_intents()[&1].metadata.clone();
@@ -484,7 +517,7 @@ mod tests {
         );
         assert!(manager.move_routes.is_empty());
         assert_eq!(
-            manager.edit_move_route(1, point(30.0), pb::IntentPolicy::Append),
+            manager.edit_move_route(1, point(30.0), &[], pb::IntentPolicy::Append),
             Some(Err(RouteEditError::Busy))
         );
         let (mut manager, _) = fixture();
@@ -503,7 +536,7 @@ mod tests {
             .entity_id = 1;
         let before = manager.move_routes[&1].clone();
         assert_eq!(
-            manager.edit_move_route(1, point(20.0), pb::IntentPolicy::Append),
+            manager.edit_move_route(1, point(20.0), &[], pb::IntentPolicy::Append),
             Some(Err(RouteEditError::Busy))
         );
         assert_eq!(manager.move_routes[&1], before);
@@ -513,11 +546,11 @@ mod tests {
     fn duplicate_waypoints_advance_only_once_per_tick() {
         let (mut manager, mut state) = fixture();
         manager
-            .edit_move_route(1, point(10.0), pb::IntentPolicy::Append)
+            .edit_move_route(1, point(10.0), &[], pb::IntentPolicy::Append)
             .unwrap()
             .unwrap();
         manager
-            .edit_move_route(1, point(20.0), pb::IntentPolicy::Append)
+            .edit_move_route(1, point(20.0), &[], pb::IntentPolicy::Append)
             .unwrap()
             .unwrap();
         assert!(manager.follow_targets(&mut state, 10.0, 1.0).is_empty());
@@ -531,7 +564,7 @@ mod tests {
         use prost::Message;
         let (mut manager, mut state) = fixture();
         manager
-            .edit_move_route(1, point(20.0), pb::IntentPolicy::Append)
+            .edit_move_route(1, point(20.0), &[], pb::IntentPolicy::Append)
             .unwrap()
             .unwrap();
         manager.follow_targets(&mut state, 10.0, 1.0);
@@ -552,5 +585,99 @@ mod tests {
             1
         );
         assert_eq!(decoded.move_orders[0].intent_id, vec![1; 16]);
+    }
+
+    #[test]
+    fn multi_leg_move_starts_at_first_via_and_keeps_one_root_order() {
+        let (mut manager, mut state) = fixture();
+        let metadata = manager.active_intents()[&1].metadata.clone();
+        let outcome = manager.try_activate(
+            pb::Intent {
+                kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
+                    entity_id: 1,
+                    via: vec![point(10.0), point(20.0)],
+                    target: Some(point(30.0)),
+                    ..Default::default()
+                })),
+            },
+            metadata.clone(),
+            "",
+        );
+        assert_eq!(outcome.canceled.len(), 1);
+        assert_eq!(manager.move_routes[&1].waypoints, vec![point(10.0), point(20.0), point(30.0)]);
+        let pb::action_state::Exec::Move(mov) = manager.active_intents()[&1].action.exec.as_ref().unwrap() else {
+            panic!("expected Move action");
+        };
+        assert_eq!(mov.target.as_ref().unwrap().target, Some(point(10.0)));
+        for (index, next) in [(1, point(20.0)), (2, point(30.0))] {
+            assert!(manager.follow_targets(&mut state, 10.0, 1.0).is_empty());
+            assert_eq!(manager.move_routes[&1].next_waypoint_index, index);
+            assert_eq!(manager.move_routes[&1].destination(), Some(next));
+            assert_eq!(manager.active_intents()[&1].metadata.intent_id, metadata.intent_id);
+        }
+        assert_eq!(manager.follow_targets(&mut state, 10.0, 1.0)[0].1.intent_id, metadata.intent_id);
+        assert!(manager.move_routes.is_empty());
+    }
+
+    #[test]
+    fn multi_leg_edits_keep_active_destination_and_root_identity() {
+        let (mut manager, mut state) = fixture();
+        let original = manager.move_orders_for_snapshot()[0].clone();
+        assert_eq!(manager.edit_move_route(1, point(40.0), &[point(20.0), point(30.0)],
+            pb::IntentPolicy::Append), Some(Ok(())));
+        manager.follow_targets(&mut state, 10.0, 1.0);
+        assert_eq!(manager.move_routes[&1].next_waypoint_index, 1);
+        assert_eq!(manager.edit_move_route(1, point(70.0), &[point(50.0), point(60.0)],
+            pb::IntentPolicy::ClearThenAppend), Some(Ok(())));
+        let updated = &manager.move_orders_for_snapshot()[0];
+        assert_eq!(updated.route.as_ref().unwrap().waypoints,
+            vec![point(10.0), point(20.0), point(50.0), point(60.0), point(70.0)]);
+        assert_eq!(updated.route.as_ref().unwrap().next_waypoint_index, 1);
+        assert_eq!(updated.intent_id, original.intent_id);
+        assert_eq!(updated.client_cmd_id, original.client_cmd_id);
+        assert_eq!(manager.move_routes[&1].destination(), Some(point(20.0)));
+    }
+
+    #[test]
+    fn malformed_or_oversized_multi_leg_routes_do_not_partially_replace_or_edit() {
+        let (mut manager, _) = fixture();
+        let original = manager.move_orders_for_snapshot()[0].clone();
+        let metadata = manager.active_intents()[&1].metadata.clone();
+        for via in [vec![point(2.0), point(f32::INFINITY)], vec![point(2.0); MAX_ROUTE_WAYPOINTS]] {
+            let outcome = manager.try_activate(pb::Intent {
+                kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
+                    entity_id: 1, via: via.clone(), target: Some(point(3.0)), ..Default::default()
+                })),
+            }, metadata.clone(), "");
+            assert!(outcome.started.is_none());
+            assert!(outcome.canceled.is_empty());
+            assert_eq!(manager.move_orders_for_snapshot()[0], original);
+            assert_eq!(manager.edit_move_route(1, point(3.0), &via, pb::IntentPolicy::ClearThenAppend),
+                Some(Err(if via.len() == MAX_ROUTE_WAYPOINTS { RouteEditError::Limit } else {
+                    RouteEditError::InvalidTarget
+                })));
+            assert_eq!(manager.move_orders_for_snapshot()[0], original);
+        }
+        let max_via = vec![point(2.0); MAX_ROUTE_WAYPOINTS - 1];
+        assert!(pb::NavigationRoute::move_via(&max_via, point(3.0)).is_ok());
+        assert_eq!(manager.edit_move_route(1, point(3.0), &max_via,
+            pb::IntentPolicy::ClearThenAppend), Some(Err(RouteEditError::Limit)));
+        assert_eq!(manager.move_orders_for_snapshot()[0], original);
+        assert_eq!(manager.edit_move_route(1, point(f32::INFINITY), &[],
+            pb::IntentPolicy::Append), Some(Err(RouteEditError::InvalidTarget)));
+        assert_eq!(manager.move_orders_for_snapshot()[0], original);
+        assert_eq!(manager.edit_move_route(1, point(3.0), &[point(f32::NAN)],
+            pb::IntentPolicy::Append), Some(Err(RouteEditError::InvalidTarget)));
+        assert_eq!(manager.move_orders_for_snapshot()[0], original);
+        let valid_via = vec![point(2.0); MAX_ROUTE_WAYPOINTS - 2];
+        assert_eq!(manager.edit_move_route(1, point(3.0), &valid_via,
+            pb::IntentPolicy::Append), Some(Ok(())));
+        let full = manager.move_orders_for_snapshot()[0].clone();
+        assert_eq!(manager.edit_move_route(1, point(4.0), &[point(3.0)],
+            pb::IntentPolicy::Append), Some(Err(RouteEditError::Limit)));
+        assert_eq!(manager.move_orders_for_snapshot()[0], full);
+        assert_eq!(manager.edit_move_route(1, point(4.0), &[],
+            pb::IntentPolicy::ClearThenAppend), Some(Ok(())));
+        assert_eq!(manager.move_routes[&1].waypoints, vec![point(10.0), point(4.0)]);
     }
 }

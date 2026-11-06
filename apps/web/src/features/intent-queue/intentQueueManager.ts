@@ -10,6 +10,12 @@ export type CollectionRouter = {
   cargoChanged(entityId: number): void;
   reset(): void;
 };
+export type MoveRouter = {
+  request(entityId: number, target: { x: number; y: number }, modifiers: { shift: boolean; ctrl: boolean },
+    send: (via: Array<{ x: number; y: number }>) => void): void;
+  cancel(entityId: number): void;
+  reset(): void;
+};
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -19,6 +25,7 @@ export type PendingMoveCommand = {
   clientCmdId: string;
   entityId: number;
   target: { x: number; y: number };
+  via?: Array<{ x: number; y: number }>;
   policy: IntentPolicyName;
   createdAt: number;
   finished?: boolean;
@@ -135,6 +142,7 @@ export type SendIntentParams =
       kind: "Move";
       entityId: number;
       target: { x: number; y: number };
+      via?: Array<{ x: number; y: number }>;
       clientCmdId: string;
       clientSeq: number;
       policy: IntentPolicyName;
@@ -237,6 +245,7 @@ export class IntentQueueManager {
   private storageKey: string;
   private sendCallback: SendCallback | null = null;
   private collectionRouter: CollectionRouter | null = null;
+  private moveRouter: MoveRouter | null = null;
   private listeners = new Set<StateChangeListener>();
   private cmdToEntity = new Map<string, number>();
   private cmdToKind = new Map<string, "escort" | "sentry" | "convoy" | "move" | "collect" | "build" | "upgrade" | "repair" | "research" | "deliver" | "transport" | "resupply">();
@@ -251,6 +260,7 @@ export class IntentQueueManager {
     this.runId = runId ?? "";
     this.worldGeneration++;
     this.collectionRouter?.reset();
+    this.moveRouter?.reset();
     this.clientSeq = 0;
     this.entities.clear();
     this.sentryOrders.clear();
@@ -272,6 +282,9 @@ export class IntentQueueManager {
 
   setCollectionRouter(router: CollectionRouter | null) {
     this.collectionRouter = router;
+  }
+  setMoveRouter(router: MoveRouter | null) {
+    this.moveRouter = router;
   }
 
   /** Subscribe to state changes (for React re-renders). Returns unsubscribe. */
@@ -417,12 +430,16 @@ export class IntentQueueManager {
     this.persist(); this.notify();
   }
 
-  /** Send every waypoint mutation immediately; the server owns execution. */
+  /** Send each Move (including planned intermediate legs) as one server-owned route mutation. */
   handleMoveCommand(entityId: number, target: { x: number; y: number },
-    modifiers: { shift: boolean; ctrl: boolean }) {
+    modifiers: { shift: boolean; ctrl: boolean }, via?: Array<{ x: number; y: number }>) {
     const existing = this.getOrCreate(entityId);
     if ((modifiers.shift || modifiers.ctrl) && (existing.active?.kind !== "move" || existing.queuedOrders?.length)
       && this.deferOrder(entityId, { kind: "Move", target }, modifiers.ctrl)) return;
+    if (via === undefined && this.moveRouter) {
+      this.moveRouter.request(entityId, target, modifiers, plannedVia => this.handleMoveCommand(entityId, target, modifiers, plannedVia));
+      return;
+    }
     const policy: IntentPolicyName = modifiers.ctrl ? "CLEAR_THEN_APPEND"
       : modifiers.shift ? "APPEND" : "REPLACE_ACTIVE";
     const clientCmdId = uuidv7();
@@ -432,11 +449,11 @@ export class IntentQueueManager {
       state.queuedOrders = []; state.queuedAfter = undefined;
       state.active = { clientCmdId, entityId, kind: "move", target };
     }
-    state.pendingMoves.push({ clientCmdId, entityId, target, policy, createdAt: Date.now() });
+    state.pendingMoves.push({ clientCmdId, entityId, target, via, policy, createdAt: Date.now() });
     this.cmdToEntity.set(clientCmdId, entityId);
     this.cmdToKind.set(clientCmdId, "move");
     this.clientSeq++;
-    void this.submit({ kind: "Move", entityId, target, clientCmdId, clientSeq: this.clientSeq, policy });
+    void this.submit({ kind: "Move", entityId, target, via, clientCmdId, clientSeq: this.clientSeq, policy });
     this.persist(); this.notify();
   }
 
@@ -449,6 +466,7 @@ export class IntentQueueManager {
     assignment: { resourceTypeId?: string; nearestCompatible: boolean },
     policy: IntentPolicyName = "REPLACE_ACTIVE",
   ) {
+    this.moveRouter?.cancel(entityId);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent<CollectCommandDetail>(COLLECT_COMMAND_EVENT, {
         detail: { entityId, ...assignment },
@@ -805,6 +823,10 @@ export class IntentQueueManager {
       const ids = (params.kind === "Escort" || params.kind === "Convoy" || params.kind === "Sentry") ? params.entityIds : [params.entityId];
       for (const id of ids) this.collectionRouter?.cancel(id);
     }
+    if (params.kind !== "Move" && params.kind !== "Assign" && params.kind !== "JettisonCargo") {
+      const ids = (params.kind === "Escort" || params.kind === "Convoy" || params.kind === "Sentry") ? params.entityIds : [params.entityId];
+      for (const id of ids) this.moveRouter?.cancel(id);
+    }
     const generation = this.worldGeneration;
     const commandIds = (params.kind === "Escort" || params.kind === "Convoy" || params.kind === "Sentry") ? params.entityIds : [params.entityId];
     for (const id of commandIds) if (this.getOrCreate(id).collectionRoutingHold) this.setCollectionRoutingHold(id, undefined);
@@ -884,6 +906,7 @@ export class IntentQueueManager {
           points = origin ? [{ ...origin, active: current === origin }] : [];
           if (current && current !== origin) points.push(current);
         }
+        for (const via of item.via ?? []) points.push({ ...via, active: points.length === 0, pending: true });
         points.push({ ...item.target, active: points.length === 0, pending: true });
       }
       return points;
@@ -898,6 +921,7 @@ export class IntentQueueManager {
     for (const command of state.pendingMoves) {
       if (command.policy === "REPLACE_ACTIVE") out = [];
       else if (command.policy === "CLEAR_THEN_APPEND") out = out.slice(0, 1);
+      for (const via of command.via ?? []) out.push({ ...via, active: out.length === 0, pending: true });
       out.push({ ...command.target, active: out.length === 0, pending: true });
     }
     return out;

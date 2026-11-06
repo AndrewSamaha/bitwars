@@ -31,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
             target: Some(pb::Vec2 { x, y }),
             client_cmd_id: String::new(),
             player_id: String::new(),
+            via: Vec::new(),
         };
 
         let client_cmd_uuid = Uuid::parse_str(&client_cmd_id).unwrap_or_else(|_| Uuid::now_v7());

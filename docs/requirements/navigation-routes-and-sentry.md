@@ -60,6 +60,11 @@ saves the interrupted collection assignment. Removing the last eligible
 waypoint permits direct travel again. New player commands supersede the saved
 assignment. Offline workers continue accepted routes but cannot discover new
 safe detours.
+
+On a run change while the game connection remains live, the browser clears
+old collection plans and immediately permits new collection orders; it does
+not wait for a second connection-state transition to re-enable the planner.
+
 Routing status appears in the entity detail panel; this is environmental
 radiation avoidance, not avoidance of moving enemies or collision pathfinding.
 
@@ -69,6 +74,32 @@ and an isolated production-engine smoke covering collection, return, checkpoint
 serialization, and waypoint disappearance. The live game was not modified.
 
 
+## Automatic user Move routing
+
+An individual browser-issued Move uses the same radiation graph as transport
+collection. It normally plans in a Web Worker; if that Worker fails to start or
+crashes, the browser uses the same planner on the main thread rather than
+dismissing the Move. For each requested leg, currently visible, living owned
+waypoints within `max(1500, 0.25 * direct distance)` of the leg enable safe
+routing. Remembered radiation sources remain hazards, but remembered-only
+waypoints cannot be used. Worker shielding and the 100-unit margin apply.
+Safe direct legs use no intermediates. With no eligible waypoint network,
+ordinary direct movement remains available even through known radiation.
+Otherwise, an unsafe leg requires a safe detour no longer than 1.5 times its
+direct length and at most 255 intermediate destinations; if none exists the
+browser does not send that Move and reports why.
+
+The browser sends intermediate waypoint **coordinates**, followed by the
+player's requested final coordinate, in one Move intent. The engine validates
+all coordinates and its 256-destination route limit before replacing or
+editing an order. It executes and checkpoints the complete route without a
+browser connection. Shift plans from the end of the active route; Ctrl keeps
+the current leg, discards future legs, and plans from that current destination.
+Subsequent clicks are planned in order per entity; a newer replacement or
+different action cancels pending plans. Unlike maintained collection, a Move
+does not replan after acceptance when hazards or waypoint positions change.
+This does not apply to Convoy, Sentry, or autonomous movement.
+
 ## Existing implementation
 
 - `engine/intent.rs`: one active action per entity, Move steering and completion.
@@ -76,7 +107,8 @@ serialization, and waypoint disappearance. The live game was not modified.
 - `engine/mod.rs`: command ingestion, both tick paths, combat eligibility, recovery.
 - `combat.rs`: deterministic acquisition, pursuit, range, cooldowns, damage.
 - `io/redis.rs`: active tracking, reconnect summaries and world checkpoints.
-- `intentQueueManager.ts`: browser waypoint execution and localStorage persistence.
+- `intentQueueManager.ts`: browser command submission, pending previews, and
+  server-owned route reconciliation.
 - `GameStage.tsx`: click/keyboard handling, destination assignment, route rendering.
 
 Active player actions currently suppress autonomous combat entirely. Convoy writes
@@ -106,12 +138,12 @@ cause an unbounded loop within a tick.
 ### Command semantics
 
 - Click / `REPLACE_ACTIVE`: replace the selected entity's current order with a new
-  Move route whose first destination is the clicked point.
-- Shift-click / `APPEND`: append immediately to an active Move route; start a new
-  Move route if idle. Reject `ENTITY_BUSY` if another kind of order is active.
+  Move route ending at the clicked point, after any planned intermediates.
+- Shift-click / `APPEND`: append a planned leg to an active Move route; start a
+  new Move route if idle. Reject `ENTITY_BUSY` if another kind of order is active.
 - Ctrl-click / `CLEAR_THEN_APPEND`: on an active Move route, retain the current leg,
-  discard later destinations, and append the clicked point. If idle, start a new
-  Move route. Reject when another kind of order is active.
+  discard later destinations, and append the planned leg ending at the clicked
+  point. If idle, start a new Move route. Reject when another kind of order is active.
 - Multi-selection retains independent Move routes and existing destination
   assignment. Convoy remains an explicit separate command.
 

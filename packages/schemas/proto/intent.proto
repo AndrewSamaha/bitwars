@@ -50,6 +50,7 @@ message MoveToLocationIntent {
   Vec2   target        = 2; // desired destination
   string client_cmd_id = 3 [deprecated = true]; // client-generated id for idempotency
   string player_id     = 4 [deprecated = true]; // issuing player
+  repeated Vec2 via = 5; // intermediate world-space destinations before target
 }
 
 // Attack intent payload (authoritative server-side).

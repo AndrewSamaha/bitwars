@@ -138,6 +138,7 @@ export default function GameStage() {
               type: "Move",
               entity_id: params.entityId,
               target: params.target,
+              ...(params.via?.length ? { via: params.via } : {}),
               client_cmd_id: params.clientCmdId,
               client_seq: params.clientSeq,
               policy: params.policy,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EntityTypeDef } from "../src/features/content/contentManager";
-import { CollectionPlanner, type PlanRequest, type RouteEntity } from "../src/features/collection-routing/planner";
+import { CollectionPlanner, MovePlanner, type PlanRequest, type RouteEntity } from "../src/features/collection-routing/planner";
 
 const base: EntityTypeDef = { fog_memory: "retain_last_known", speed: 0, stop_radius: 0, mass: 1, health: 100 };
 function fixture(): PlanRequest {
@@ -26,6 +26,38 @@ const detour: RouteEntity[] = [
   { id: 4, entity_type_id: "waypoint", owner_player_id: "me", pos: { x: -1000, y: 1400 } },
   { id: 5, entity_type_id: "waypoint", owner_player_id: "me", pos: { x: 1000, y: 1400 } },
 ];
+
+describe("user Move routing", () => {
+  it("uses owned corridor waypoints to detour around remembered radiation", () => {
+    const request = fixture();
+    request.entities.push({ ...star, remembered: true }, ...detour);
+    expect(new MovePlanner().plan({
+      entityId: 1, playerId: "me", entities: request.entities, definitions: request.definitions,
+      start: { x: -2000, y: 0 }, target: { x: 2000, y: 0 },
+    })).toEqual({ kind: "planned", via: [detour[0]!.pos, detour[1]!.pos] });
+  });
+  it("keeps direct Move when safe or when no owned local waypoint network exists", () => {
+    const request = fixture();
+    const move = { entityId: 1, playerId: "me", entities: request.entities, definitions: request.definitions,
+      start: { x: -2000, y: 0 }, target: { x: 2000, y: 0 } };
+    const planner = new MovePlanner();
+    expect(planner.plan(move)).toEqual({ kind: "planned", via: [] });
+    request.entities.push(star, { ...detour[0]!, owner_player_id: "enemy" });
+    expect(planner.plan(move)).toEqual({ kind: "planned", via: [] });
+    request.entities.push(detour[0]!, detour[1]!);
+    request.definitions.worker!.radiation_shielding = { heat: { damage_multiplier: 0 } };
+    expect(planner.plan(move)).toEqual({ kind: "planned", via: [] });
+  });
+  it("blocks unsafe Move when a local network cannot supply a short safe detour", () => {
+    const request = fixture();
+    request.entities.push(star, detour[0]!);
+    const result = new MovePlanner().plan({
+      entityId: 1, playerId: "me", entities: request.entities, definitions: request.definitions,
+      start: { x: -2000, y: 0 }, target: { x: 2000, y: 0 },
+    });
+    expect(result).toMatchObject({ kind: "blocked", reason: expect.stringContaining("1.5x") });
+  });
+});
 
 describe("collection routing", () => {
   it("retains an unchanged collection contract when an unrelated depot moves or cargo phase changes", () => {

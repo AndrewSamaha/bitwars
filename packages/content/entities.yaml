@@ -305,7 +305,7 @@ entity_types:
       cost_per_minute:
         energy: 5
       range: 4000
-    speed: 60
+    speed: 80
     stop_radius: 0.5
     visual:
       scale: 2

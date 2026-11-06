@@ -16,6 +16,7 @@ import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 import { minimapMemory, type EntityObservation } from "@/features/gamestate/minimapMemory";
 import { reconcileRememberedEntity } from "../entityMemory";
 import { collectionRouting } from "@/features/collection-routing/collectionRouting";
+import { moveRouting } from "@/features/collection-routing/moveRouting";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -163,6 +164,7 @@ export default function GameStateStreamBridge() {
     const streamUrl = `/api/v2/gamestate/stream?${streamParams}`;
     gameConnection.begin();
     const stopCollectionRouting = collectionRouting.start(currentPlayerIdRef.current);
+    const stopMoveRouting = moveRouting.start(currentPlayerIdRef.current);
     const watchdog = setInterval(() => gameConnection.check(), 250);
     const stopContentReporting = contentManager.startReporting();
     const es = new EventSource(streamUrl);
@@ -780,6 +782,7 @@ export default function GameStateStreamBridge() {
 
     return () => {
       stopCollectionRouting();
+      stopMoveRouting();
       stopContentReporting();
       clearInterval(watchdog);
       clearTimeout(reconciliationRetry);
