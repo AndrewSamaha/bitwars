@@ -19,6 +19,48 @@ pub(super) fn jettison_cargo(
     Ok(())
 }
 
+fn container_resource(kind: &str) -> Option<&'static str> {
+    match kind {
+        "food_storage_container" => Some("food"),
+        "mineral_storage_container" => Some("minerals"),
+        _ => None,
+    }
+}
+
+fn is_hub(entity: &pb::Entity, content: &ContentPack) -> bool {
+    content.get(&entity.entity_type_id).is_some_and(|def| def.depot)
+        && container_resource(&entity.entity_type_id).is_none()
+}
+
+fn linked_container(
+    hub: &pb::Entity, container: &pb::Entity, content: &ContentPack, resource: &str,
+) -> bool {
+    if container_resource(&container.entity_type_id) != Some(resource)
+        || !content.get(&container.entity_type_id).is_some_and(|def| def.depot)
+        || container.health <= 0.0 || container.owner_player_id != hub.owner_player_id
+    {
+        return false;
+    }
+    let (Some(h), Some(c), Some(range)) = (hub.pos, container.pos,
+        content.get(&hub.entity_type_id).map(|def| def.depot_range)) else { return false; };
+    (h.x - c.x).powi(2) + (h.y - c.y).powi(2) <= range.powi(2)
+}
+
+/// Physical stock remains in containers until a hub pays a bill.
+pub(super) fn available(
+    entities: &[pb::Entity], content: &ContentPack, source: Option<u64>, resource: &str,
+) -> f64 {
+    let Some(hub) = source.and_then(|id| entities.iter().find(|e| e.id == id && e.health > 0.0)) else {
+        return 0.0;
+    };
+    let own = resource_amount(hub, resource);
+    if !matches!(resource, "food" | "minerals") || !is_hub(hub, content) { return own; }
+    own + entities.iter()
+        .filter(|e| linked_container(hub, e, content, resource))
+        .map(|e| resource_amount(e, resource))
+        .sum::<f64>()
+}
+
 pub(super) fn eligible_depot(
     actor: &pb::Entity,
     depot: &pb::Entity,
@@ -44,24 +86,17 @@ pub(super) fn depot_id(
     if content.get(&actor.entity_type_id).is_some_and(|d| d.depot) && actor.health > 0.0 {
         return Some(actor.id);
     }
-    if let Some(id) = actor
-        .supply
-        .as_ref()
-        .map(|s| s.depot_id)
-        .filter(|id| *id != 0)
-    {
-        if entities
-            .iter()
-            .any(|d| d.id == id && eligible_depot(actor, d, content))
-        {
-            return Some(id);
+    if let Some(id) = actor.supply.as_ref().map(|s| s.depot_id).filter(|id| *id != 0) {
+        if let Some(depot) = entities.iter().find(|d| d.id == id && eligible_depot(actor, d, content)) {
+            if is_hub(depot, content) || !entities.iter().any(|d| eligible_depot(actor, d, content) && is_hub(d, content)) {
+                return Some(id);
+            }
         }
     }
     if !crate::spawn_config::is_player_owner(&actor.owner_player_id) { return None; }
     let pos = actor.pos?;
-    entities
-        .iter()
-        .filter(|d| eligible_depot(actor, d, content))
+    let hubs = entities.iter().any(|d| eligible_depot(actor, d, content) && is_hub(d, content));
+    entities.iter().filter(|d| eligible_depot(actor, d, content) && (!hubs || is_hub(d, content)))
         .min_by(|a, b| {
             let distance = |e: &pb::Entity| {
                 e.pos.map_or(f32::INFINITY, |p| {
@@ -85,14 +120,14 @@ fn operating_depot_id(
 ) -> Option<u64> {
     let current = depot_id(entities, content, actor);
     if content.get(&actor.entity_type_id).is_some_and(|def| def.depot)
-        || missing_resources(current.and_then(|id| entities.iter().find(|e| e.id == id)), costs).is_empty()
+        || missing_resources(entities, content, current, costs).is_empty()
     {
         return current;
     }
     let pos = actor.pos?;
     entities.iter()
         .filter(|depot| eligible_depot(actor, depot, content)
-            && missing_resources(Some(depot), costs).is_empty())
+            && missing_resources(entities, content, Some(depot.id), costs).is_empty())
         .min_by(|a, b| {
             let distance = |depot: &pb::Entity| {
                 let p = depot.pos.unwrap();
@@ -139,38 +174,59 @@ pub(super) fn funding_source(
 }
 
 pub(super) fn missing_resources(
-    entity: Option<&pb::Entity>,
+    entities: &[pb::Entity],
+    content: &ContentPack,
+    source: Option<u64>,
     costs: &HashMap<String, f32>,
 ) -> Vec<String> {
     let mut missing: Vec<_> = costs
         .iter()
-        .filter(|(r, n)| {
-            **n > 0.0 && entity.map_or(0.0, |e| resource_amount(e, r)) + 1e-9 < **n as f64
-        })
+        .filter(|(r, n)| **n > 0.0 && available(entities, content, source, r) + 1e-9 < **n as f64)
         .map(|(r, _)| r.clone())
         .collect();
     missing.sort();
     missing
 }
 
+/// Preflight the whole bill before touching any inventory. Debits are deterministic
+/// and never exceed the physical stock held by a hub or its linked containers.
 pub(super) fn pay(
     entities: &mut [pb::Entity],
+    content: &ContentPack,
     source: Option<u64>,
     costs: &HashMap<String, f32>,
 ) -> bool {
-    if costs.values().any(|n| !n.is_finite() || *n < 0.0) {
+    if costs.values().any(|n| !n.is_finite() || *n < 0.0)
+        || !missing_resources(entities, content, source, costs).is_empty()
+    {
         return false;
     }
-    let index = source.and_then(|id| entities.iter().position(|e| e.id == id));
-    if !missing_resources(index.map(|i| &entities[i]), costs).is_empty() {
-        return false;
-    }
-    let Some(index) = index else {
+    let Some(index) = source.and_then(|id| entities.iter().position(|e| e.id == id && e.health > 0.0)) else {
         return costs.values().all(|n| *n == 0.0);
     };
-    for (r, amount) in costs {
-        let remaining = (resource_amount(&entities[index], r) - *amount as f64).max(0.0);
-        set_resource_amount(&mut entities[index], r, remaining);
+    let hub = &entities[index];
+    let linked = if is_hub(hub, content) && costs.iter().any(|(r, n)|
+        matches!(r.as_str(), "food" | "minerals") && *n as f64 > resource_amount(hub, r))
+    {
+        let mut indices: Vec<_> = entities.iter().enumerate()
+            .filter(|(_, e)| ["food", "minerals"].iter().any(|r| linked_container(hub, e, content, r)))
+            .map(|(i, _)| i).collect();
+        indices.sort_unstable_by_key(|i| entities[*i].id);
+        indices
+    } else { Vec::new() };
+    for (resource, cost) in costs {
+        if *cost == 0.0 { continue; }
+        let stock = resource_amount(&entities[index], resource);
+        let mut remaining = (*cost as f64 - stock).max(0.0);
+        set_resource_amount(&mut entities[index], resource, (stock - *cost as f64).max(0.0));
+        for &i in &linked {
+            if remaining <= 0.0 { break; }
+            if container_resource(&entities[i].entity_type_id) != Some(resource) { continue; }
+            let on_hand = resource_amount(&entities[i], resource);
+            let taken = remaining.min(on_hand);
+            if taken > 0.0 { set_resource_amount(&mut entities[i], resource, on_hand - taken); }
+            remaining -= taken;
+        }
     }
     true
 }
@@ -243,6 +299,7 @@ pub(super) fn collect_to_depot(
 /// Returns whether this tick made the upfront payment. The checkpoint travels with stock.
 pub(super) fn charge_construction(
     entities: &mut [pb::Entity],
+    content: &ContentPack,
     source: Option<u64>,
     actor_id: u64,
     costs: &HashMap<String, f32>,
@@ -254,11 +311,8 @@ pub(super) fn charge_construction(
         .supply
         .as_ref()
         .is_some_and(|s| s.paid_intent_id == intent_id);
-    if !already_paid && !pay(entities, source, costs) {
-        let missing = missing_resources(
-            source.and_then(|id| entities.iter().find(|e| e.id == id)),
-            costs,
-        );
+    if !already_paid && !pay(entities, content, source, costs) {
+        let missing = missing_resources(entities, content, source, costs);
         let status = entities[index].supply.get_or_insert_with(Default::default);
         status.missing_resources = missing;
         status.waiting_for = "construction".into();
@@ -312,21 +366,15 @@ pub(super) fn operate(
         let depot = operating_depot_id(entities, content, entity, &costs);
         // Preserve expedition reserves while a depot can cover the full bill.
         // Otherwise pay atomically from onboard supplies, including outside coverage.
-        let source = if missing_resources(
-            depot.and_then(|id| entities.iter().find(|e| e.id == id)),
-            &costs,
-        ).is_empty() {
+        let source = if missing_resources(entities, content, depot, &costs).is_empty() {
             depot
-        } else if depot.is_none() || missing_resources(Some(entity), &costs).is_empty() {
+        } else if depot.is_none() || missing_resources(entities, content, Some(entity.id), &costs).is_empty() {
             Some(entity.id)
         } else {
             depot
         };
-        let missing = missing_resources(
-            source.and_then(|id| entities.iter().find(|e| e.id == id)),
-            &costs,
-        );
-        let paid = pay(entities, source, &costs);
+        let missing = missing_resources(entities, content, source, &costs);
+        let paid = pay(entities, content, source, &costs);
         let status = entities[index].supply.get_or_insert_with(Default::default);
         status.depot_id = depot.unwrap_or(0);
         status.operational = paid;
@@ -445,13 +493,89 @@ mod tests {
         let costs = HashMap::from([("minerals".into(), 60.0), ("energy".into(), 10.0)]);
         let before = es.clone();
         let source = funding_source(&es, &c, 1, "player");
-        assert!(!pay(&mut es, source, &costs));
+        assert!(!pay(&mut es, &c, source, &costs));
         assert_eq!(es, before);
         set_resource_amount(&mut es[1], "minerals", 60.0);
-        assert!(pay(&mut es, source, &costs));
-        assert!(!pay(&mut es, source, &costs));
+        assert!(pay(&mut es, &c, source, &costs));
+        assert!(!pay(&mut es, &c, source, &costs));
         assert_eq!(resource_amount(&es[0], "minerals"), 50.0);
     }
+    #[test]
+    fn every_hub_draws_specialized_stock_without_moving_or_double_spending_it() {
+        let c = content();
+        for kind in ["habitat", "processor", "planet_blue_inhabitated"] {
+            let mut es = vec![
+                entity(1, kind, 0.0),
+                entity(2, "food_storage_container", 100.0),
+                entity(3, "mineral_storage_container", 100.0),
+                entity(4, "worker", 200.0),
+            ];
+            set_resource_amount(&mut es[0], "food", 3.0);
+            set_resource_amount(&mut es[1], "food", 8.0);
+            set_resource_amount(&mut es[2], "minerals", 9.0);
+            set_resource_amount(&mut es[1], "energy", 100.0);
+            assert_eq!(funding_source(&es, &c, 4, "player"), Some(1));
+            let costs = HashMap::from([
+                ("food".into(), 10.0), ("minerals".into(), 7.0), ("energy".into(), 1.0),
+            ]);
+            let before = es.clone();
+            assert!(!pay(&mut es, &c, Some(1), &costs));
+            assert_eq!(es, before);
+            set_resource_amount(&mut es[0], "energy", 1.0);
+            assert!(pay(&mut es, &c, Some(1), &costs));
+            assert_eq!(resource_amount(&es[0], "food"), 0.0);
+            assert_eq!(resource_amount(&es[1], "food"), 1.0);
+            assert_eq!(resource_amount(&es[2], "minerals"), 2.0);
+            assert_eq!(resource_amount(&es[1], "energy"), 100.0);
+            let after = es.clone();
+            assert!(!pay(&mut es, &c, Some(1), &costs));
+            assert_eq!(es, after);
+        }
+    }
+
+    #[test]
+    fn hub_draw_obeys_range_owner_health_and_has_no_container_chain() {
+        let c = content();
+        let range = c.get("processor").unwrap().depot_range;
+        let mut es = vec![
+            entity(1, "processor", 0.0),
+            entity(2, "food_storage_container", range),
+            entity(3, "food_storage_container", range + 1.0),
+        ];
+        set_resource_amount(&mut es[1], "food", 5.0);
+        set_resource_amount(&mut es[2], "food", 50.0);
+        let costs = HashMap::from([("food".into(), 6.0)]);
+        assert!(!pay(&mut es, &c, Some(1), &costs));
+        set_resource_amount(&mut es[0], "food", 1.0);
+        assert!(pay(&mut es, &c, Some(1), &costs));
+        assert_eq!(resource_amount(&es[2], "food"), 50.0);
+        for change in [0, 1, 2] {
+            set_resource_amount(&mut es[1], "food", 5.0);
+            match change {
+                0 => es[1].owner_player_id = "enemy".into(),
+                1 => { es[1].owner_player_id = "player".into(); es[1].health = 0.0; },
+                _ => { es[1].health = 100.0; es[1].pos.as_mut().unwrap().x = range + 1.0; },
+            }
+            assert_eq!(available(&es, &c, Some(1), "food"), 0.0);
+            assert_eq!(available(&es, &c, Some(2), "food"), if change == 1 { 0.0 } else { 5.0 });
+        }
+    }
+
+    #[test]
+    fn competing_hubs_debit_shared_container_once_in_entity_order() {
+        let c = content();
+        let mut es = vec![
+            entity(1, "processor", -100.0),
+            entity(2, "habitat", 100.0),
+            entity(3, "mineral_storage_container", 0.0),
+        ];
+        set_resource_amount(&mut es[2], "minerals", 10.0);
+        let bill = HashMap::from([("minerals".into(), 7.0)]);
+        assert!(pay(&mut es, &c, Some(1), &bill));
+        assert!(!pay(&mut es, &c, Some(2), &bill));
+        assert_eq!(resource_amount(&es[2], "minerals"), 3.0);
+    }
+
     #[test]
     fn association_survives_protobuf_restore_and_depot_does_not_borrow() {
         use prost::Message;
@@ -555,7 +679,45 @@ mod operation_tests {
         assert_eq!(resource_amount(&es[1], "energy"), 0.0);
     }
     #[test]
-    fn operating_shortage_pivots_to_stocked_depot_and_keeps_new_association() {
+    fn processor_operates_and_funds_neighbor_from_linked_storage() {
+        let mut c = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        for kind in ["processor", "food_storage_container", "mineral_storage_container"] {
+            let def = c.entity_types.get_mut(kind).unwrap();
+            def.maintenance_cost_per_minute.clear();
+            def.sensor.as_mut().unwrap().cost_per_minute.clear();
+        }
+        let def = c.entity_types.get_mut("processor").unwrap();
+        def.maintenance_cost_per_minute = HashMap::from([
+            ("food".into(), 60.0), ("minerals".into(), 60.0),
+        ]);
+        let factory = c.entity_types.get_mut("factory").unwrap();
+        factory.maintenance_cost_per_minute = HashMap::from([("food".into(), 60.0)]);
+        factory.sensor.as_mut().unwrap().cost_per_minute.clear();
+        let entity = |id, kind: &str, x| pb::Entity {
+            id, entity_type_id: kind.into(), owner_player_id: "player".into(), health: 100.0,
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default()
+        };
+        let mut es = vec![
+            entity(1, "processor", 0.0), entity(2, "food_storage_container", 100.0),
+            entity(3, "mineral_storage_container", 100.0), entity(4, "factory", 200.0),
+        ];
+        set_resource_amount(&mut es[1], "food", 3.0);
+        set_resource_amount(&mut es[2], "minerals", 2.0);
+        operate(&mut es, &c, 1.0, &Default::default());
+        assert!(es[0].supply.as_ref().unwrap().operational);
+        assert!(es[3].supply.as_ref().unwrap().operational);
+        assert_eq!(es[3].supply.as_ref().unwrap().depot_id, 1);
+        assert_eq!(resource_amount(&es[1], "food"), 1.0);
+        assert_eq!(resource_amount(&es[2], "minerals"), 1.0);
+        assert_eq!(resource_amount(&es[0], "food"), 0.0);
+        let bill = HashMap::from([("food".into(), 1.0)]);
+        assert_eq!(charge_construction(&mut es, &c, Some(1), 4, &bill, b"build", 0.1), Some(true));
+        assert_eq!(resource_amount(&es[1], "food"), 0.0);
+    }
+
+    #[test]
+    fn operating_prefers_hub_over_nearer_storage_depot() {
         let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();
         for kind in ["habitat", "food_storage_container"] {
@@ -573,7 +735,7 @@ mod operation_tests {
         let mut es = vec![entity(896, "military_factory", 0.0),
             entity(893, "food_storage_container", 392.0), entity(716, "habitat", 626.0)];
         refresh_associations(&mut es, &content);
-        assert_eq!(es[0].supply.as_ref().unwrap().depot_id, 893);
+        assert_eq!(es[0].supply.as_ref().unwrap().depot_id, 716);
         set_resource_amount(&mut es[2], "energy", 10.0);
         operate(&mut es, &content, 1.0, &Default::default());
         let status = es[0].supply.as_ref().unwrap();
@@ -724,7 +886,7 @@ mod construction_tests {
         set_resource_amount(&mut es[0], "minerals", 100.0);
         let costs = HashMap::from([("minerals".into(), 60.0)]);
         assert_eq!(
-            charge_construction(&mut es, Some(1), 1, &costs, b"first", 0.1),
+            charge_construction(&mut es, &content, Some(1), 1, &costs, b"first", 0.1),
             Some(true)
         );
         let saved = pb::Snapshot {
@@ -741,12 +903,12 @@ mod construction_tests {
         );
         operate(&mut restored, &content, 0.01, &Default::default());
         assert_eq!(
-            charge_construction(&mut restored, Some(1), 1, &costs, b"first", 0.2),
+            charge_construction(&mut restored, &content, Some(1), 1, &costs, b"first", 0.2),
             Some(false)
         );
         assert!(resource_amount(&restored[0], "minerals") < 40.00001);
         assert_eq!(
-            charge_construction(&mut restored, Some(1), 1, &costs, b"replacement", 0.1),
+            charge_construction(&mut restored, &content, Some(1), 1, &costs, b"replacement", 0.1),
             None
         );
         assert_eq!(

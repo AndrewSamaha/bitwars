@@ -7,9 +7,9 @@ import { contentManager } from "@/features/content/contentManager";
 import { CollectionAssignment } from "./CollectionAssignment";
 import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableAction";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
-import { GAMESTATE_UPDATED_EVENT, type GameStateUpdatedDetail } from "@/features/gamestate/events";
+import { GAMESTATE_UPDATED_EVENT } from "@/features/gamestate/events";
 import { transferableResourceAmount } from "@/features/hud/resourceInventory";
-import { canAffordAction } from "@/features/hud/actionResources";
+import { actionResourceSource, canAffordAction, spendableResourceAmount } from "@/features/hud/actionResources";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 import { buildProgressMetrics } from "@/features/build-state/buildProgressMetrics";
 import { useSession } from "@/features/users/components/identity/SessionContext";
@@ -84,11 +84,8 @@ export default function EntityDetailPanel() {
       lastRefreshAt = performance.now();
       forceRerender((n) => (n + 1) % 1_000_000);
     };
-    const onGameStateUpdated = (event: Event) => {
-      const changedIds = (event as CustomEvent<GameStateUpdatedDetail>).detail?.entityIds;
+    const onGameStateUpdated = () => {
       if (selectedEntities.length === 0) return;
-      const selectedDepotChanged = changedIds && Array.from(game.world.with("id")).some(entity => selectedEntities.includes(String(entity.id)) && (changedIds.includes(String(entity.supply?.depot_id)) || changedIds.includes(String(entity.supply?.delivery_depot_id))));
-      if (changedIds && !selectedDepotChanged && !buildMenuOpen && !upgradeMenuOpen && !researchMenuOpen && !selectedEntities.some((id) => changedIds.includes(id)) && !(donorId && changedIds.includes(donorId))) return;
       const remaining = GAMESTATE_UI_REFRESH_INTERVAL_MS - (performance.now() - lastRefreshAt);
       if (remaining <= 0) {
         refresh();
@@ -243,6 +240,7 @@ export default function EntityDetailPanel() {
   const resupplySelection = typeof selectedAction === "object" && selectedAction?.kind === "Resupply" ? selectedAction : null;
   const deliverySelection = typeof selectedAction === "object" && selectedAction?.kind !== "Resupply" ? selectedAction : null;
   const entities = Array.from(game.world.with("id"));
+  const entityTypes = contentManager.getContent()?.entity_types ?? {};
   const canSelfDestruct = !!effectivePlayerId && selectedEntities.length > 0 && selectedEntities.every(id => {
     const entity = entities.find(e => String(e.id) === id);
     return entity?.owner_player_id === effectivePlayerId && entity.remembered === undefined && (entity.health ?? 0) > 0;
@@ -431,7 +429,7 @@ export default function EntityDetailPanel() {
   // mirrors the option-key ordering used by build and upgrade menus.
   const collectKeys = "qwetasdfgzxcvb";
   const canAffordCosts = (entityId: string, costs: Record<string, number>) =>
-    canAffordAction(entityId, Array.from(game.world.with("id")), contentManager.getContent()?.entity_types ?? {}, costs);
+    canAffordAction(entityId, entities, entityTypes, costs);
   const canAfford = (entityTypeId: string, entityIds = selectedEntities) => {
     const costs = contentManager.getEntityType(entityTypeId)?.build_cost ?? {};
     return entityIds.length > 0 && entityIds.every((id) => canAffordCosts(id, costs));
@@ -622,7 +620,7 @@ export default function EntityDetailPanel() {
                 const maxHealth = entityDef?.health;
                 const selected = entities.find(e => String(e.id) === id);
                 const supply = selected?.supply;
-                const source = supply?.depot_id ? entities.find(e => String(e.id) === String(supply.depot_id)) : undefined;
+                const source = actionResourceSource(id, entities, entityTypes);
                 const activeIntent = idToActiveIntent.get(id);
                 const collectorState = idToCollectorState.get(id);
                 const buildState = buildStateById[id];
@@ -641,8 +639,12 @@ export default function EntityDetailPanel() {
                     <span className="font-mono">id: {id}</span>
                     <MaintenanceCosts entityTypeId={entityTypeId} />
                     <span className="font-mono text-muted-foreground">
-                      {entityDef?.depot ? `depot · service radius ${entityDef.depot_range}` : `depot: ${supply?.depot_id || "none"}`}
+                      {entityDef?.depot ? `depot · service radius ${entityDef.depot_range}` : `depot: ${source?.id ?? "none"}`}
                       {source ? ` · stock: ${(source.resources ?? []).map(r => `${r.resource_type} ${r.amount.toFixed(1)}`).join(", ")}` : ""}
+                      {source && entityTypes[source.entity_type_id ?? ""]?.depot && source.entity_type_id !== "food_storage_container" && source.entity_type_id !== "mineral_storage_container"
+                        ? ` · spendable: ${["food", "minerals", "energy"].map(resource =>
+                          `${resource} ${spendableResourceAmount(source, resource, entities, entityTypes).toFixed(1)}`).join(", ")}`
+                        : ""}
                     </span>
                     {selected && <CollectionAssignment entity={selected} />}
                     {supply?.waiting_for && <span className="font-mono text-amber-300">{supply.waiting_for} paused: missing {supply.missing_resources.join(", ")}{!supply.depot_id ? " · no depot in range" : ""}</span>}

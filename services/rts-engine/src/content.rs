@@ -49,7 +49,7 @@ pub struct EntityTypeDef {
     /// Enables a physical stockpile that nearby friendly consumers may spend from.
     #[serde(default)]
     pub depot: bool,
-    /// Service radius; required and positive when depot is true. Never links depot inventories.
+    /// Service radius; required and positive when depot is true. Hubs draw from specialized storage within this radius.
     #[serde(default)]
     pub depot_range: f32,
     /// DEPRECATED: ignored by depot logistics. Cargo has no protected upkeep reserve.
@@ -100,11 +100,11 @@ pub struct EntityTypeDef {
     /// Shielding keyed by radiation type ID. Missing types use zero distance offset and a damage multiplier of 1.
     #[serde(default)]
     pub radiation_shielding: HashMap<String, RadiationShieldingDef>,
-    /// Total construction or upgrade cost, paid upfront from one depot or remote carrier cargo.
+    /// Total construction or upgrade cost, paid upfront from one depot (and its linked storage) or remote carrier cargo.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub build_cost: HashMap<String, f32>,
     /// Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.
-    /// Paid atomically from the associated depot. Shortage pauses powered capabilities without damage or debt.
+    /// Paid atomically from the associated depot and, for hubs, linked storage. Shortage pauses powered capabilities without damage or debt.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub maintenance_cost_per_minute: HashMap<String, f32>,
     /// Optional area sensor. Its depot-paid operating costs are charged continuously; unpaid sensors pause.

@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { AudioToggle } from "@/features/audio/components/AudioToggle";
-import {
-  GAMESTATE_UPDATED_EVENT,
-  type GameStateUpdatedDetail,
-} from "@/features/gamestate/events";
+import { GAMESTATE_UPDATED_EVENT } from "@/features/gamestate/events";
+import { contentManager } from "@/features/content/contentManager";
 import { game } from "@/features/gamestate/world";
+import { actionResourceSource, spendableResourceAmount } from "@/features/hud/actionResources";
 import { useHUD } from "@/features/hud/components/HUDContext";
-
 const HUD_BASE =
   "pointer-events-none absolute left-1/2 top-4 z-50 -translate-x-1/2 rounded bg-black/70 px-3 py-2 font-sans text-sm";
 const RESOURCE_KEYS = ["food", "minerals", "energy"] as const;
@@ -21,9 +19,7 @@ export function ResourceHUD() {
   useEffect(() => {
     if (selectedId === null) return;
     let pendingRefresh: number | undefined;
-    const onGameStateUpdated = (event: Event) => {
-      const changedIds = (event as CustomEvent<GameStateUpdatedDetail>).detail?.entityIds;
-
+    const onGameStateUpdated = () => {
       if (pendingRefresh !== undefined) return;
       pendingRefresh = window.setTimeout(() => {
         pendingRefresh = undefined;
@@ -37,21 +33,25 @@ export function ResourceHUD() {
     };
   }, [selectedId]);
 
-  const entity = selectedId === null
-    ? undefined
-    : Array.from(game.world.with("id")).find((entry) => String(entry.id) === selectedId);
-  const depot = entity?.supply?.depot_id ? Array.from(game.world.with("id")).find(e => String(e.id) === String(entity.supply!.depot_id)) : undefined;
-  const source = entity?.resources?.length ? entity : depot ?? entity;
-  const amounts = RESOURCE_KEYS.map((key) => {
-    if (!entity || entity.remembered) return "—";
-    const amount = source?.resources?.find((entry) => entry.resource_type === key)?.amount ?? 0;
-    return String(Math.round(amount));
-  });
+  const entities = selectedId === null ? [] : Array.from(game.world.with("id"));
+  const entity = selectedId === null ? undefined : entities.find(entry => String(entry.id) === selectedId);
+  const entityTypes = contentManager.getContent()?.entity_types ?? {};
+  const source = selectedId === null ? undefined : actionResourceSource(selectedId, entities, entityTypes);
+  const stock = source ?? entity;
+  const visible = !!entity && !entity.remembered && (entity.health === undefined || entity.health > 0);
+  const amounts = RESOURCE_KEYS.map(key => visible
+    ? String(Math.round(stock?.resources?.find(entry => entry.resource_type === key)?.amount ?? 0))
+    : "—");
+  const hasHub = !!source && !!entityTypes[source.entity_type_id ?? ""]?.depot
+    && source.entity_type_id !== "food_storage_container" && source.entity_type_id !== "mineral_storage_container";
+  const spendable = hasHub
+    ? RESOURCE_KEYS.map(key => String(Math.round(spendableResourceAmount(source, key, entities, entityTypes))))
+    : undefined;
 
   return (
     <div className={`${HUD_BASE} flex items-center gap-2`}>
       <AudioToggle />
-      <span className="text-white/60">{source === depot && depot ? `Depot ${depot.id}` : "Stock / cargo"}</span>
+      <span className="text-white/60">{source && source !== entity ? `Depot ${source.id} stock` : "Stock / cargo"}</span>
       <output
         className="flex items-center gap-3"
         aria-label={`Resources: ${RESOURCE_KEYS.map((key, index) => `${key} ${amounts[index]}`).join(", ")}`}
@@ -63,6 +63,11 @@ export function ResourceHUD() {
           </span>
         ))}
       </output>
+      {spendable && (
+        <span className="text-white/80" aria-label={`Spendable: ${RESOURCE_KEYS.map((key, index) => `${key} ${spendable[index]}`).join(", ")}`}>
+          Spendable: {RESOURCE_KEYS.map((key, index) => `${key} ${spendable[index]}`).join(", ")}
+        </span>
+      )}
     </div>
   );
 }

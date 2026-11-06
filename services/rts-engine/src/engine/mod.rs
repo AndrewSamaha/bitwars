@@ -265,7 +265,7 @@ fn repair_tick(repair: &RepairDef, dt: f32, missing_health: f32) -> (f32, HashMa
     (restored, costs)
 }
 
-/// Exactly one depot, or the carrier's own cargo when outside coverage.
+/// Exactly one depot (with its linked storage when a hub), or remote carrier cargo.
 fn resource_donor_ids(
     entities: &[pb::Entity],
     content: Option<&ContentPack>,
@@ -279,13 +279,13 @@ fn resource_donor_ids(
 }
 fn pay_resources_from_donors(
     entities: &mut [pb::Entity],
+    content: Option<&ContentPack>,
     donor_ids: &[u64],
     costs: &HashMap<String, f32>,
 ) -> bool {
-    if donor_ids.len() > 1 {
-        return false;
-    }
-    logistics::pay(entities, donor_ids.first().copied(), costs)
+    if donor_ids.len() > 1 { return false; }
+    let Some(content) = content else { return false; };
+    logistics::pay(entities, content, donor_ids.first().copied(), costs)
 }
 
 #[cfg(test)]
@@ -308,7 +308,7 @@ mod repair_tests {
         let (health, costs) = repair_tick(repair, 1.0, 323.0);
         let donors = resource_donor_ids(&entities, Some(&content), 2, "me");
         assert_eq!(donors, vec![1]);
-        assert!(pay_resources_from_donors(&mut entities, &donors, &costs));
+        assert!(pay_resources_from_donors(&mut entities, Some(&content), &donors, &costs));
         assert_eq!(health, 1.0);
         assert_eq!(resource_amount(&entities[1], "energy"), 4.0);
         assert_eq!(resource_amount(&entities[1], "minerals"), 4.0);
@@ -319,7 +319,7 @@ mod repair_tests {
         let donors = resource_donor_ids(&entities, Some(&content), 2, "me");
         assert_eq!(donors, vec![2]);
         let before = entities.clone();
-        assert!(!pay_resources_from_donors(&mut entities, &donors, &costs));
+        assert!(!pay_resources_from_donors(&mut entities, Some(&content), &donors, &costs));
         assert_eq!(entities, before);
         entities[1].pos.as_mut().unwrap().x = 114.0;
         entities[1].owner_player_id = "other".into();
@@ -328,7 +328,7 @@ mod repair_tests {
         set_resource_amount(&mut entities[1], "minerals", 0.0);
         let donors = resource_donor_ids(&entities, Some(&content), 2, "me");
         let before = entities.clone();
-        assert!(!pay_resources_from_donors(&mut entities, &donors, &costs));
+        assert!(!pay_resources_from_donors(&mut entities, Some(&content), &donors, &costs));
         assert_eq!(entities, before);
     }
 
@@ -374,18 +374,18 @@ mod action_resource_tests {
         let costs = HashMap::from([("food".into(), 11.0)]);
         let source = logistics::funding_source(&entities, &content, 2, "me");
         assert_eq!(source, Some(1));
-        assert!(!logistics::pay(&mut entities, source, &costs));
+        assert!(!logistics::pay(&mut entities, &content, source, &costs));
         state::regenerate_inventory(&mut entities, &content, 1_000_000_000.0);
         let grown = resource_amount(&entities[0], "food");
         assert!(grown > 11.0);
-        assert!(logistics::pay(&mut entities, source, &costs));
+        assert!(logistics::pay(&mut entities, &content, source, &costs));
         assert_eq!(resource_amount(&entities[0], "food"), grown - 11.0);
         assert_eq!(resource_amount(&entities[1], "food"), 0.0);
         entities[1].pos.as_mut().unwrap().x = planet.depot_range + 1.0;
         let source = logistics::funding_source(&entities, &content, 2, "me");
         assert!(source.is_none());
         let before = entities.clone();
-        assert!(!logistics::pay(&mut entities, source, &costs));
+        assert!(!logistics::pay(&mut entities, &content, source, &costs));
         assert_eq!(entities, before);
     }
 
@@ -409,7 +409,7 @@ mod action_resource_tests {
             let source = logistics::funding_source(&entities, &content, 1, "me");
             assert_eq!(source, Some(1));
             assert_eq!(logistics::charge_construction(
-                &mut entities, source, 1, costs, blueprint.as_bytes(), 0.5,
+                &mut entities, &content, source, 1, costs, blueprint.as_bytes(), 0.5,
             ), Some(true));
             for (resource, amount) in costs {
                 assert_eq!(resource_amount(&entities[0], resource),
@@ -417,7 +417,7 @@ mod action_resource_tests {
             }
             let paid = entities[0].resources.clone();
             assert_eq!(logistics::charge_construction(
-                &mut entities, source, 1, costs, blueprint.as_bytes(), 1.0,
+                &mut entities, &content, source, 1, costs, blueprint.as_bytes(), 1.0,
             ), Some(false));
             assert_eq!(entities[0].resources, paid);
         }
@@ -438,20 +438,20 @@ mod action_resource_tests {
             set_resource_amount(&mut entities[1], "minerals", 1000.0);
             let costs = HashMap::from([("energy".into(), 1.5), ("minerals".into(), 2.5)]);
             let donors = resource_donor_ids(&entities, Some(&content), 2, "me");
-            assert!(pay_resources_from_donors(&mut entities, &donors, &costs));
+            assert!(pay_resources_from_donors(&mut entities, Some(&content), &donors, &costs));
             assert_eq!(resource_amount(&entities[1], "energy"), 998.5);
             assert_eq!(resource_amount(&entities[1], "minerals"), 997.5);
             assert_eq!(resource_amount(&entities[0], "energy"), 50.0);
 
             set_resource_amount(&mut entities[1], "minerals", 0.0);
             let before = entities.clone();
-            assert!(!pay_resources_from_donors(&mut entities, &donors, &costs));
+            assert!(!pay_resources_from_donors(&mut entities, Some(&content), &donors, &costs));
             assert_eq!(entities, before);
 
             entities[1].pos.as_mut().unwrap().x = 4001.0;
             let donors = resource_donor_ids(&entities, Some(&content), 2, "me");
             assert!(donors.is_empty());
-            assert!(!pay_resources_from_donors(&mut entities, &donors, &costs));
+            assert!(!pay_resources_from_donors(&mut entities, Some(&content), &donors, &costs));
         }
     }
 }
@@ -2454,16 +2454,18 @@ impl Engine {
     }
 
     fn available_action_resource(&self, actor_id: u64, player_id: &str, resource: &str) -> f64 {
-        let donor_ids = self.action_donor_ids(actor_id, player_id);
-        self.state.entities.iter().filter(|entity| donor_ids.binary_search(&entity.id).is_ok())
-            .map(|entity| resource_amount(entity, resource)).sum()
+        self.content.as_ref().map_or(0.0, |content|
+            logistics::available(&self.state.entities, content,
+                self.action_donor_ids(actor_id, player_id).first().copied(), resource))
     }
 
     fn spend_action_resources(&mut self, actor_id: u64, player_id: &str, costs: &HashMap<String, f32>) -> bool {
         if self.state.entities.iter().find(|e| e.id == actor_id).and_then(|e| e.supply.as_ref()).is_some_and(|s| !s.operational) { return false; }
         let donor_ids = self.action_donor_ids(actor_id, player_id);
-        let missing = logistics::missing_resources(donor_ids.first().and_then(|id| self.state.entities.iter().find(|e| e.id == *id)), costs);
-        if !pay_resources_from_donors(&mut self.state.entities, &donor_ids, costs) {
+        let missing = self.content.as_ref().map(|content|
+            logistics::missing_resources(&self.state.entities, content, donor_ids.first().copied(), costs))
+            .unwrap_or_else(|| costs.keys().cloned().collect());
+        if !pay_resources_from_donors(&mut self.state.entities, self.content.as_ref(), &donor_ids, costs) {
             if let Some(entity) = self.state.entities.iter_mut().find(|e| e.id == actor_id) {
                 let status = entity.supply.get_or_insert_with(Default::default);
                 status.missing_resources = missing;
@@ -2608,7 +2610,7 @@ impl Engine {
             // Cancellation/destruction after payment does not refund construction materials.
             let intent_id = self.intents.active_intents().get(&entity_id).unwrap().metadata.intent_id.clone();
             let source = self.action_donor_ids(entity_id, &player_id).first().copied();
-            let Some(paid_now) = logistics::charge_construction(&mut self.state.entities, source, entity_id, &costs, &intent_id, new_progress) else { continue; };
+            let Some(paid_now) = logistics::charge_construction(&mut self.state.entities, self.content.as_ref().unwrap(), source, entity_id, &costs, &intent_id, new_progress) else { continue; };
             if paid_now { for (resource, amount) in &costs { self.record_resource_spend(&player_id, resource, *amount); } }
             if let Some(active) = self.intents.active_intents_mut().get_mut(&entity_id) {
                 match active.action.exec.as_mut() {

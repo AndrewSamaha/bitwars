@@ -257,10 +257,10 @@ mod tests {
         let source = super::super::logistics::funding_source(&entities, &content, 1, "me");
         assert_eq!(source, Some(1));
         let costs = &content.get("waypoint").unwrap().build_cost;
-        assert!(super::super::logistics::pay(&mut entities, source, costs));
-        assert!(super::super::logistics::pay(&mut entities, source, costs));
+        assert!(super::super::logistics::pay(&mut entities, &content, source, costs));
+        assert!(super::super::logistics::pay(&mut entities, &content, source, costs));
         let before = entities.clone();
-        assert!(!super::super::logistics::pay(&mut entities, source, costs));
+        assert!(!super::super::logistics::pay(&mut entities, &content, source, costs));
         assert_eq!(entities, before);
         assert_eq!(resource_amount(&entities[0], "energy"), 0.0);
         assert_eq!(resource_amount(&entities[0], "minerals"), 10.0);

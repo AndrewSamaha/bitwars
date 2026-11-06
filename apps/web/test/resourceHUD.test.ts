@@ -6,6 +6,11 @@ import { ResourceHUD } from "@/features/hud/components/ResourceHUD";
 const hud = vi.hoisted(() => ({ selectedId: null as string | null }));
 const world = vi.hoisted(() => ({ entities: [] as Array<{
   id: number;
+  entity_type_id?: string;
+  owner_player_id?: string;
+  pos?: { x: number; y: number };
+  health?: number;
+  supply?: { depot_id: number; operational: boolean; missing_resources: string[]; waiting_for: string };
   resources?: Array<{ resource_type: string; amount: number }>;
   remembered?: { last_seen_tick: string | number };
 }> }));
@@ -14,6 +19,16 @@ vi.mock("@/features/hud/components/HUDContext", () => ({
 }));
 vi.mock("@/features/gamestate/world", () => ({ game: { world: { with: () => world.entities } } }));
 vi.mock("@/features/audio/components/AudioToggle", () => ({ AudioToggle: () => null }));
+vi.mock("@/features/content/contentManager", () => ({
+  contentManager: {
+    getContent: () => ({ entity_types: {
+      processor: { depot: true, depot_range: 2000 },
+      planet_blue_inhabitated: { depot: true, depot_range: 4000 },
+      food_storage_container: { depot: true, depot_range: 2000 },
+      worker: { collector: { transport_rate_per_second: 8 } },
+    } }),
+  },
+}));
 
 // The app uses Next's automatic JSX runtime; Vitest uses the classic runtime.
 vi.stubGlobal("React", React);
@@ -53,5 +68,41 @@ describe("selected entity resource banner", () => {
     hud.selectedId = "2";
     world.entities = [{ id: 2, remembered: { last_seen_tick: 1 }, resources: [{ resource_type: "food", amount: 900 }] }];
     expect(render()).toContain('aria-label="Resources: food —, minerals —, energy —"');
+  });
+
+  it("shows separate physical and spendable hub stock, updating from live linked containers", () => {
+    hud.selectedId = "1";
+    world.entities = [
+      { id: 1, entity_type_id: "processor", owner_player_id: "me", pos: { x: 0, y: 0 },
+        resources: [{ resource_type: "food", amount: 5 }, { resource_type: "energy", amount: 10 }] },
+      { id: 2, entity_type_id: "food_storage_container", owner_player_id: "me", pos: { x: 200, y: 0 },
+        resources: [{ resource_type: "food", amount: 30 }, { resource_type: "energy", amount: 100 }] },
+    ];
+    expect(render()).toContain('aria-label="Resources: food 5, minerals 0, energy 10"');
+    expect(render()).toContain('aria-label="Spendable: food 35, minerals 0, energy 10"');
+    world.entities[1].resources = [{ resource_type: "food", amount: 7 }];
+    expect(render()).toContain('aria-label="Spendable: food 12, minerals 0, energy 10"');
+    world.entities[1].health = 0;
+    expect(render()).toContain('aria-label="Spendable: food 5, minerals 0, energy 10"');
+  });
+
+  it("shows the selected consumer's associated hub rather than its own cargo or a closer container", () => {
+    hud.selectedId = "3";
+    world.entities = [
+      { id: 1, entity_type_id: "planet_blue_inhabitated", owner_player_id: "me", pos: { x: 0, y: 0 },
+        resources: [{ resource_type: "food", amount: 5 }] },
+      { id: 2, entity_type_id: "food_storage_container", owner_player_id: "me", pos: { x: 200, y: 0 },
+        resources: [{ resource_type: "food", amount: 30 }] },
+      { id: 3, entity_type_id: "worker", owner_player_id: "me", pos: { x: 201, y: 0 },
+        resources: [{ resource_type: "food", amount: 100 }],
+        supply: { depot_id: 2, operational: true, missing_resources: [], waiting_for: "" } },
+    ];
+    expect(render()).toContain("Depot 1 stock");
+    expect(render()).toContain('aria-label="Resources: food 5, minerals 0, energy 0"');
+    expect(render()).toContain('aria-label="Spendable: food 35, minerals 0, energy 0"');
+    world.entities[1].pos = { x: 3900, y: 0 };
+    world.entities[2].pos = { x: 4100, y: 0 };
+    expect(render()).toContain("Depot 2 stock");
+    expect(render()).not.toContain('aria-label="Spendable: food 35, minerals 0, energy 0"');
   });
 });

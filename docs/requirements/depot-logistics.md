@@ -12,14 +12,15 @@ This proposes a replacement for the sharing and spending model in [Localized Res
 ## Core model
 
 - A depot holds an authoritative inventory. Friendly entities within its service radius may spend from it.
-- Each consumer uses exactly one depot. Overlapping coverage does not merge inventories or combine balances for a payment.
-- Depots never automatically redistribute resources to other depots. Overlapping service areas cannot form an instant empire-wide supply network.
-- Resources move between depots aboard physical ships. Loading debits the source, transit holds cargo on the carrier, and unloading credits the destination.
-- Destroying a carrier destroys its cargo. Destroying a depot destroys its inventory.
+- Each consumer uses exactly one depot. Any non-storage depot is a hub: it may pay from its own stock plus food in nearby `food_storage_container` entities and minerals in nearby `mineral_storage_container` entities. Other nearby depots and carrier cargo are not pooled.
+- A hub can draw only from living, same-owner containers within **the hub's** `depot_range`. The consumer must remain in that hub's service radius. Containers do not extend coverage, relay stock, or borrow from other containers.
+- Withdrawal happens only when an entire operating or action bill is affordable. Debit hub stock first, then eligible containers by entity ID; an unaffordable bill changes no inventory. No resources are deposited into the hub or automatically redistributed between depots.
+- Resources otherwise move between depots aboard physical ships. Loading debits the source, transit holds cargo on the carrier, and unloading credits the destination.
+- Destroying a carrier destroys its cargo. Destroying a depot or container destroys its inventory.
 - Ordinary consumers do not need local resource inventories, refill thresholds, priorities, overflow policies, or operating reserves.
 - Workers and freighters retain inventories for cargo. Cargo is not simultaneously treated as an upkeep buffer.
 
-The player resource HUD may report aggregate holdings, but that total never authorizes spending. Entity UI must identify the actual depot or cargo funding an action.
+The player resource HUD may report aggregate holdings, but that total never authorizes spending. Entity UI must distinguish a hub's physical stock from the available stock it can draw from nearby linked containers; the server remains authoritative when stock or range changes.
 
 ## Entity schema
 
@@ -37,7 +38,7 @@ habitat:
     minerals: 1000
 ```
 
-`depot: true` means nearby same-owner entities may spend resources stored on this entity. A positive, finite `depot_range` is required for a depot. Depot status alone does not enable gathering, transport, construction, research, or repair; existing capabilities continue to define those actions.
+`depot: true` means nearby same-owner entities may spend resources stored on this entity. All non-storage depots, including habitats, processors, and inhabited planets, can also draw from nearby specialized storage containers when paying bills. A positive, finite `depot_range` is required for a depot. Depot status alone does not enable gathering, transport, construction, research, or repair; existing capabilities continue to define those actions.
 
 ### Initial inventory
 
@@ -73,11 +74,11 @@ Workers can [Resupply](./resupply.md) physical cargo at a depot for remote const
 
 ## Depot association and local distribution
 
-Automatically associate a consumer with a nearby same-owner depot when needed. Keep the association while the depot remains alive, friendly, in range, and able to cover the consumer's operating bill. Show the association and coverage in the UI.
+Automatically associate a consumer with a nearby same-owner depot when needed. Prefer a hub over a storage container when both cover the consumer, then keep the hub association while valid. Outside hub coverage, storage containers remain independent depots. Show the association and coverage in the UI.
 
-Use a deterministic nearest-depot choice, with entity ID breaking distance ties. For operating costs, if the associated depot cannot cover the entire bill, switch to the nearest eligible depot that can, with entity ID breaking distance ties. Persist the new association. If no depot can cover the full bill, keep the current association and report the shortage; never combine stock from multiple depots. Depots fund their own operation rather than borrowing from neighboring depots. Reassociate when the current depot becomes invalid. Manual collection destination assignment is available as described below; spending associations still use automatic selection.
+Use a deterministic nearest-depot choice, with entity ID breaking distance ties. For operating costs, if the associated depot and its eligible linked containers cannot cover the entire bill, switch to the nearest eligible depot that can, with entity ID breaking distance ties. Persist the new association. If no depot can cover the full bill, keep the current association and report the shortage. Depots fund their own operation; hubs can draw from nearby specialized storage containers but not other hubs. Reassociate when the current depot becomes invalid. Manual collection destination assignment is available as described below; spending associations still use automatic selection.
 
-Check range when spending or contributing resources. Moving a depot changes its service coverage. There is no stock transfer into a consumer merely because it enters coverage.
+Check range when spending or contributing resources. Moving a depot or container changes its service or linked-storage coverage. There is no stock transfer into a consumer or hub merely because it enters coverage.
 
 Solar collectors move into the radiation source's collection band and transmit energy wirelessly to their collection destination; they never travel to a depot to unload. A full destination reports `waiting_for_depot_capacity`; a missing or out-of-range destination reports `waiting_for_depot`. Both states hold position at the source and resume when wireless delivery is possible. Source approach movement still runs when the destination is full.
 
@@ -140,13 +141,13 @@ The authenticated intent endpoint accepts `type: "JettisonCargo"` and a positive
 
 ## Spending and shortages
 
-Construction, upgrades, research, and repair use one eligible funding source. Never combine several depots or split a single payment across depot stock and worker cargo.
+Construction, upgrades, research, and repair use one eligible funding source: one depot or remote carrier cargo. A hub's eligible containers extend its available balance, but payments cannot combine unrelated depots or cargo.
 
-- Inside depot coverage, a worker's construction is funded by its associated depot.
+- Inside hub coverage, a worker's construction is funded by its associated hub and its eligible linked storage containers.
 - Outside depot coverage, a worker may build using its own cargo if it carries the entire required cost.
 - Pay construction costs upfront when construction starts; construction still takes time. Separate build duration from the old progressive resource-spending behavior.
 - A factory pauses before starting work it cannot fund. Research and repair pause when their required payment cannot be made.
-- Retained operating costs debit the associated depot directly. An unaffordable payment does not partially debit its resource types or create debt.
+- Retained operating costs debit the associated depot and, if it is a hub, its linked storage directly. An unaffordable payment does not partially debit any inventory or create debt.
 - Remove automatic starvation damage. Shortages produce visible operational states instead of health loss.
 - Remove food and energy upkeep inventories from workers, freighters, and fighters in the initial version. Their movement and basic operation must not require cargo reserves.
 
@@ -211,7 +212,7 @@ If extended fleet operations need direct logistical limits later, consider one e
 ## Acceptance criteria
 
 - A consumer cannot spend from a distant depot, a player-wide total, or a chain of overlapping depot ranges.
-- Each payment is atomic across resource types and uses one eligible funding source.
+- Each payment is atomic across resource types and uses one eligible hub with its linked specialized storage, one independent storage depot, or one carrier's cargo.
 - Multiple consumers cannot spend the same stock; processing order is deterministic.
 - Loading, transit, partial unloading, waiting, cancellation, and destruction preserve the stated resource accounting.
 - Nearby consumers work without per-entity refill policies or upkeep inventories.
@@ -231,7 +232,7 @@ If extended fleet operations need direct logistical limits later, consider one e
 - Build and upgrade options now declare `duration_seconds`. Existing rates were converted into equivalent durations. Costs are paid once when simulation work first starts, with no cancellation or destruction refund. Payment identity and progress are checkpointed in the same entity snapshot as inventories to prevent duplicate charges after restore.
 - Research continues to charge atomically as work progresses. Research and upgrade progress can be restored along with construction.
 - Solar collection without a valid depot pauses resource intake; full depots also stop intake. There is no solar collector buffer. Positive depot capacity determines accepted resources.
-- Depot selection uses nearest distance, then entity ID; a valid association stays fixed while it can fund operating costs; otherwise the consumer switches to the nearest eligible depot that can cover the entire operating bill. Depot service is local and never links other depot inventories. Spending associations remain automatic. Collection destinations can be assigned independently using the Assign command.
+- Depot selection prefers hubs over storage depots, then nearest distance and entity ID; a valid hub association stays fixed while it can fund operating costs, otherwise the consumer switches to the nearest eligible depot that can cover the entire operating bill. Hub withdrawals link only nearby specialized storage, never other hubs; spending associations remain automatic. Collection destinations can be assigned independently using the Assign command.
 - Freight routes select one resource. One-trip delivery can select several held resources. Existing convoy formation and leashed escort orders are reused.
 - Depots retain current movement capabilities. Destruction loses their stock; upgrades retain inventory under the existing entity transformation behavior. No new capture mechanic is introduced.
 - Authoritative and client intent protocol versions are now 19. Snapshots use `economy_version: 1`. The upgraded engine refuses to restore an older populated player match, rather than silently discarding consumer stock or misinterpreting partially paid construction.
