@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { completionHelp, hoverHelp, type ContentKind } from "../src/lib/content/editorHelp";
-import { initialResourceErrors, resourceSharingPolicyErrors, resourceReserveErrors, unknownEntityFieldErrors } from "../src/lib/content/schemaValidation";
+import { initialResourceErrors, resourceSharingPolicyErrors, resourceReserveErrors, shareableWithHubErrors, unknownEntityFieldErrors } from "../src/lib/content/schemaValidation";
 
 function hover(source: string, kind: ContentKind = "entity") {
   const offset = source.indexOf("|");
@@ -61,6 +61,24 @@ describe("content editor help", () => {
       expect(initialResourceErrors({ max_capacity: { food: capacity }, initial_resources: { food: 0 } }).length).toBeGreaterThan(0);
     }
     expect(unknownEntityFieldErrors(entity(5))).toEqual([]);
+  });
+
+  it("validates configurable hub-sharing resources against depot and capacity", () => {
+    const resources = new Set(["food", "energy", "crystals"]);
+    const entity = { depot: true, depot_range: 100, max_capacity: { food: 50, energy: 10, crystals: 25 },
+      shareable_with_hub: ["food", "energy", "crystals"] };
+    expect(shareableWithHubErrors(entity, resources)).toEqual([]);
+    expect(shareableWithHubErrors({ ...entity, shareable_with_hub: [] }, resources)).toEqual([]);
+    expect(shareableWithHubErrors({ ...entity, depot: false }, resources).join(" ")).toContain("depot=true");
+    expect(shareableWithHubErrors({ ...entity, shareable_with_hub: ["food", "food"] }, resources).join(" ")).toContain("duplicate");
+    expect(shareableWithHubErrors({ ...entity, shareable_with_hub: ["unknown"] }, resources).join(" ")).toContain("unknown resource");
+    expect(shareableWithHubErrors({ ...entity, shareable_with_hub: "food" }, resources).join(" ")).toContain("array");
+    expect(shareableWithHubErrors({ ...entity, shareable_with_hub: [42] }, resources).join(" ")).toContain("resource ID");
+    expect(shareableWithHubErrors({ ...entity, depot: false, shareable_with_hub: [] }, resources)).toEqual([]);
+    for (const capacity of [undefined, 0, -1, NaN, Infinity]) {
+      expect(shareableWithHubErrors({ ...entity, max_capacity: { food: capacity }, shareable_with_hub: ["food"] }, resources).join(" ")).toContain("positive finite max_capacity");
+    }
+    expect(shareableWithHubErrors({ depot: true, depot_range: 100 }, resources)).toEqual([]);
   });
 
 

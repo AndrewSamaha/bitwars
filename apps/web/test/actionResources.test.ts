@@ -49,8 +49,8 @@ const storageTypes = {
   ...entityTypes,
   processor: { depot: true, depot_range: 2000 },
   planet_blue_inhabitated: { depot: true, depot_range: 4000 },
-  food_storage_container: { depot: true, depot_range: 2000 },
-  mineral_storage_container: { depot: true, depot_range: 2000 },
+  food_storage_container: { depot: true, depot_range: 2000, shareable_with_hub: ["food"] },
+  mineral_storage_container: { depot: true, depot_range: 2000, shareable_with_hub: ["minerals"] },
 };
 const hub: Entity = {
   id: 10, entity_type_id: "processor", owner_player_id: "me", pos: { x: 0, y: 0 },
@@ -124,4 +124,31 @@ it("retains direct container spending beyond all hub coverage without importing 
   expect(canAffordAction("13", [hub, distantContainer, distantWorker], storageTypes, { food: 30 })).toBe(true);
   expect(canAffordAction("13", [hub, distantContainer, distantWorker], storageTypes, { food: 31 })).toBe(false);
   expect(canAffordAction("11", [hub, distantContainer], storageTypes, { food: 30 })).toBe(true);
+});
+
+it("shares multiple configured resources from an arbitrarily named storage depot only with its own nearby hub", () => {
+  const customTypes = {
+    ...storageTypes,
+    vault: { depot: true, depot_range: 10, shareable_with_hub: ["energy", "crystals"] },
+  };
+  const vault: Entity = {
+    ...foodStorage, id: 20, entity_type_id: "vault", pos: { x: 1900, y: 0 },
+    resources: [{ resource_type: "energy", amount: 40 }, { resource_type: "crystals", amount: 25 }, { resource_type: "food", amount: 100 }],
+  };
+  const entities = [hub, vault, worker];
+  expect(linkedStorageAmount(hub, "food", entities, customTypes)).toBe(0);
+  expect(linkedStorageAmount(hub, "energy", entities, customTypes)).toBe(40);
+  expect(canAffordAction("13", entities, customTypes, { energy: 49, crystals: 25 })).toBe(true);
+  expect(canAffordAction("13", entities, customTypes, { food: 6 })).toBe(false);
+  expect(canAffordAction("20", entities, customTypes, { food: 100, energy: 40 })).toBe(true);
+  expect(linkedStorageAmount(vault, "energy", entities, customTypes)).toBe(0);
+  expect(linkedStorageAmount(hub, "energy", [hub, { ...vault, owner_player_id: "other" }], customTypes)).toBe(0);
+  expect(linkedStorageAmount(hub, "energy", [hub, { ...vault, pos: { x: 2000.1, y: 0 } }], customTypes)).toBe(0);
+  expect(linkedStorageAmount(hub, "energy", [hub, { ...vault, health: 0 }], customTypes)).toBe(0);
+});
+
+it("does not share unlisted energy even when a storage depot physically holds it", () => {
+  expect(spendableResourceAmount(hub, "energy", [hub, foodStorage], storageTypes)).toBe(9);
+  const types = { ...storageTypes, food_storage_container: { ...storageTypes.food_storage_container, shareable_with_hub: ["food", "energy"] } };
+  expect(spendableResourceAmount(hub, "energy", [hub, foodStorage], types)).toBe(609);
 });

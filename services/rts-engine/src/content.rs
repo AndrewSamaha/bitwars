@@ -49,9 +49,13 @@ pub struct EntityTypeDef {
     /// Enables a physical stockpile that nearby friendly consumers may spend from.
     #[serde(default)]
     pub depot: bool,
-    /// Service radius; required and positive when depot is true. Hubs draw from specialized storage within this radius.
+    /// Service radius; required and positive when depot is true. Hubs draw from shareable storage within this radius.
     #[serde(default)]
     pub depot_range: f32,
+    /// Resource IDs whose stock this depot makes available to nearby same-owner hubs.
+    /// Empty means this depot is itself a hub.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shareable_with_hub: Vec<String>,
     /// DEPRECATED: ignored by depot logistics. Cargo has no protected upkeep reserve.
     #[schemars(extend("deprecated" = true))]
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
@@ -731,6 +735,18 @@ fn validate_resource_content(
         if def.max_capacity.keys().any(|resource| !resource_types.contains_key(resource)) {
             anyhow::bail!("entity type {id} max_capacity contains an unknown resource");
         }
+        if !def.shareable_with_hub.is_empty() && !def.depot {
+            anyhow::bail!("entity type {id} shareable_with_hub requires depot=true");
+        }
+        let mut shared = HashSet::new();
+        for resource in &def.shareable_with_hub {
+            if !resource_types.contains_key(resource)
+                || !shared.insert(resource)
+                || !def.max_capacity.get(resource).is_some_and(|capacity| capacity.is_finite() && *capacity > 0.0)
+            {
+                anyhow::bail!("entity type {id} shareable_with_hub.{resource} requires a distinct known resource with positive finite max_capacity");
+            }
+        }
         for duration in def.builds.iter().map(|o| o.duration_seconds).chain(def.upgrades.iter().map(|o| o.duration_seconds)) {
             if duration.is_some_and(|d| !d.is_finite() || d <= 0.0) {
                 anyhow::bail!("entity type {id} duration_seconds must be positive and finite");
@@ -1090,6 +1106,42 @@ mod tests {
     }
 
     #[test]
+    fn shareable_storage_requires_depot_unique_known_resources_and_positive_capacity() {
+        let resources = HashMap::from([
+            ("quartz".into(), ResourceTypeDef { display_name: "Quartz".into(), order: 0 }),
+            ("water".into(), ResourceTypeDef { display_name: "Water".into(), order: 1 }),
+        ]);
+        let mut def: EntityTypeDef = serde_yaml::from_str(
+            "fog_memory: forget_when_hidden\nspeed: 0\nstop_radius: 1\nmass: 1\nhealth: 1\n",
+        ).unwrap();
+        let validate = |def: &EntityTypeDef| validate_resource_content(
+            &HashMap::from([("vault".into(), def.clone())]), &resources);
+        assert!(def.shareable_with_hub.is_empty());
+        assert!(serde_json::to_value(&def).unwrap().get("shareable_with_hub").is_none());
+        def.depot = true;
+        def.depot_range = 100.0;
+        def.max_capacity = HashMap::from([("quartz".into(), 50.0), ("water".into(), 80.0)]);
+        def.shareable_with_hub = vec!["quartz".into(), "water".into()];
+        assert!(validate(&def).is_ok());
+        let json = serde_json::to_value(&def).unwrap();
+        assert_eq!(json["shareable_with_hub"], serde_json::json!(["quartz", "water"]));
+        assert_eq!(serde_json::from_value::<EntityTypeDef>(json).unwrap().shareable_with_hub, def.shareable_with_hub);
+        def.depot = false;
+        assert!(validate(&def).unwrap_err().to_string().contains("depot=true"));
+        def.depot = true;
+        def.shareable_with_hub.push("quartz".into());
+        assert!(validate(&def).unwrap_err().to_string().contains("distinct"));
+        def.shareable_with_hub = vec!["unknown".into()];
+        assert!(validate(&def).unwrap_err().to_string().contains("known resource"));
+        def.shareable_with_hub = vec!["quartz".into()];
+        for capacity in [None, Some(0.0), Some(-1.0), Some(f32::NAN), Some(f32::INFINITY)] {
+            def.max_capacity.remove("quartz");
+            if let Some(capacity) = capacity { def.max_capacity.insert("quartz".into(), capacity); }
+            assert!(validate(&def).is_err());
+        }
+    }
+
+    #[test]
     fn inventory_regeneration_validates_resources_capacity_and_hill_parameters() {
         let content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();
@@ -1208,6 +1260,7 @@ mod tests {
                 resource_reserves: HashMap::new(),
                 depot: false,
                 depot_range: 0.0,
+                shareable_with_hub: Vec::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
@@ -1245,6 +1298,7 @@ mod tests {
                 resource_reserves: HashMap::new(),
                 depot: false,
                 depot_range: 0.0,
+                shareable_with_hub: Vec::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
@@ -1294,6 +1348,7 @@ mod tests {
                 resource_reserves: HashMap::new(),
                 depot: false,
                 depot_range: 0.0,
+                shareable_with_hub: Vec::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,
@@ -1331,6 +1386,7 @@ mod tests {
                 resource_reserves: HashMap::new(),
                 depot: false,
                 depot_range: 0.0,
+                shareable_with_hub: Vec::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
@@ -1370,6 +1426,7 @@ mod tests {
                 resource_reserves: HashMap::new(),
                 depot: false,
                 depot_range: 0.0,
+                shareable_with_hub: Vec::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 140.0,
@@ -1407,6 +1464,7 @@ mod tests {
                 resource_reserves: HashMap::new(),
                 depot: false,
                 depot_range: 0.0,
+                shareable_with_hub: Vec::new(),
                 resource_sharing: None,
                 fog_memory: FogMemory::ForgetWhenHidden,
                 speed: 90.0,

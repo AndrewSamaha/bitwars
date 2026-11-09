@@ -53,7 +53,7 @@
       "default": false
     },
     "depot_range": {
-      "description": "Service radius; required and positive when depot is true. Hubs draw from specialized storage within this radius.",
+      "description": "Service radius; required and positive when depot is true. Hubs draw from shareable storage within this radius.",
       "type": "number",
       "format": "float",
       "default": 0.0
@@ -210,6 +210,13 @@
           "type": "null"
         }
       ]
+    },
+    "shareable_with_hub": {
+      "description": "Resource IDs whose stock this depot makes available to nearby same-owner hubs.\nEmpty means this depot is itself a hub.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "speed": {
       "description": "Maximum movement speed in world units per second.",

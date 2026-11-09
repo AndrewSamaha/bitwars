@@ -53,6 +53,8 @@ export type EntityTypeDef = {
   depot?: boolean;
   /** Local service radius; depot inventories never merge. */
   depot_range?: number;
+  /** Resources this storage depot shares with same-owner hubs in their service radius. */
+  shareable_with_hub?: string[];
   /** @deprecated Ignored by depot logistics. */
   resource_reserves?: Record<string, number>;
   /** @deprecated Ignored. Use depot and depot_range. */

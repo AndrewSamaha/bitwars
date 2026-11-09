@@ -196,6 +196,33 @@ export function entityCombatRangeWarnings(value: unknown): EntityCombatRangeWarn
   return warnings;
 }
 
+/** Cross-field constraints for storage depots, shared by editor and content writes. */
+export function shareableWithHubErrors(value: unknown, knownResources?: Set<string>): string[] {
+  if (!value || typeof value !== "object") return [];
+  const entity = value as { depot?: unknown; shareable_with_hub?: unknown; max_capacity?: Record<string, unknown> };
+  const shared = entity.shareable_with_hub;
+  if (shared === undefined) return [];
+  if (!Array.isArray(shared)) return ["shareable_with_hub: must be an array of resource IDs"];
+  const errors: string[] = [];
+  if (shared.length && entity.depot !== true) errors.push("shareable_with_hub: requires depot=true");
+  const seen = new Set<string>();
+  shared.forEach((resource, index) => {
+    const field = `shareable_with_hub[${index}]`;
+    if (typeof resource !== "string") {
+      errors.push(`${field}: must be a resource ID`);
+      return;
+    }
+    if (seen.has(resource)) errors.push(`${field}: duplicate resource ${resource}`);
+    seen.add(resource);
+    if (knownResources && !knownResources.has(resource)) errors.push(`${field}: unknown resource ${resource}`);
+    const capacity = entity.max_capacity?.[resource];
+    if (typeof capacity !== "number" || !Number.isFinite(capacity) || capacity <= 0) {
+      errors.push(`${field}: requires positive finite max_capacity for ${resource}`);
+    }
+  });
+  return errors;
+}
+
 /** Depot cross-field validation, shared by editor and content writes. */
 export function depotErrors(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];

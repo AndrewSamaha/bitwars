@@ -11,7 +11,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 - Persisted server-owned fog-of-war observations across refreshes, reconnects, and world checkpoint restoration. Player-scoped snapshot/delta delivery restores world and minimap sightings without exposing hidden changes; revisiting an empty last-known location clears stale markers. Removed browser-owned sightings and the separate localStorage hazard cache.
-- Hubs (all non-storage depots) now withdraw food and minerals from nearby friendly storage containers when paying construction, research, repair, and operating costs; stock stays in the containers until an atomic payment, with no automatic deposits or cross-hub pooling.
+- Hubs (depots without `shareable_with_hub`) now withdraw configured resource types from nearby friendly storage depots when paying construction, research, repair, and operating costs; food and mineral containers declare their respective resource in the new array field. Stock stays in storage until an atomic payment, with no automatic deposits or cross-hub pooling.
 - Added optional per-entity `initial_resources` with capacity/resource validation and creation-only grants. Workers and scouts now spawn and complete construction with 50 energy, 50 food, and 50 minerals each; restoration, content reload, and upgrades preserve existing inventory.
 - Added configurable per-resource inventory regeneration using normalized Hill growth, including capacity limits and zero-stock exhaustion.
 - Added the immobile, non-attacking `planet_blue_inhabitated` hub with directly spendable food regrowth, habitat depot services, and worker/scout construction. Default player starts now convert their selected blue planet instead of spawning a separate habitat.

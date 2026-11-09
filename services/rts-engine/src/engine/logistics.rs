@@ -19,24 +19,16 @@ pub(super) fn jettison_cargo(
     Ok(())
 }
 
-fn container_resource(kind: &str) -> Option<&'static str> {
-    match kind {
-        "food_storage_container" => Some("food"),
-        "mineral_storage_container" => Some("minerals"),
-        _ => None,
-    }
-}
-
 fn is_hub(entity: &pb::Entity, content: &ContentPack) -> bool {
-    content.get(&entity.entity_type_id).is_some_and(|def| def.depot)
-        && container_resource(&entity.entity_type_id).is_none()
+    content.get(&entity.entity_type_id)
+        .is_some_and(|def| def.depot && def.shareable_with_hub.is_empty())
 }
 
 fn linked_container(
     hub: &pb::Entity, container: &pb::Entity, content: &ContentPack, resource: &str,
 ) -> bool {
-    if container_resource(&container.entity_type_id) != Some(resource)
-        || !content.get(&container.entity_type_id).is_some_and(|def| def.depot)
+    if !content.get(&container.entity_type_id)
+        .is_some_and(|def| def.depot && def.shareable_with_hub.iter().any(|id| id.as_str() == resource))
         || container.health <= 0.0 || container.owner_player_id != hub.owner_player_id
     {
         return false;
@@ -54,7 +46,7 @@ pub(super) fn available(
         return 0.0;
     };
     let own = resource_amount(hub, resource);
-    if !matches!(resource, "food" | "minerals") || !is_hub(hub, content) { return own; }
+    if !is_hub(hub, content) { return own; }
     own + entities.iter()
         .filter(|e| linked_container(hub, e, content, resource))
         .map(|e| resource_amount(e, resource))
@@ -206,10 +198,12 @@ pub(super) fn pay(
     };
     let hub = &entities[index];
     let linked = if is_hub(hub, content) && costs.iter().any(|(r, n)|
-        matches!(r.as_str(), "food" | "minerals") && *n as f64 > resource_amount(hub, r))
+        *n as f64 > resource_amount(hub, r))
     {
         let mut indices: Vec<_> = entities.iter().enumerate()
-            .filter(|(_, e)| ["food", "minerals"].iter().any(|r| linked_container(hub, e, content, r)))
+            .filter(|(_, e)| costs.iter().any(|(resource, cost)|
+                *cost as f64 > resource_amount(hub, resource)
+                    && linked_container(hub, e, content, resource)))
             .map(|(i, _)| i).collect();
         indices.sort_unstable_by_key(|i| entities[*i].id);
         indices
@@ -221,7 +215,8 @@ pub(super) fn pay(
         set_resource_amount(&mut entities[index], resource, (stock - *cost as f64).max(0.0));
         for &i in &linked {
             if remaining <= 0.0 { break; }
-            if container_resource(&entities[i].entity_type_id) != Some(resource) { continue; }
+            if !content.get(&entities[i].entity_type_id).is_some_and(|def|
+                def.shareable_with_hub.iter().any(|id| id == resource)) { continue; }
             let on_hand = resource_amount(&entities[i], resource);
             let taken = remaining.min(on_hand);
             if taken > 0.0 { set_resource_amount(&mut entities[i], resource, on_hand - taken); }
@@ -577,6 +572,62 @@ mod tests {
     }
 
     #[test]
+    fn configurable_multi_resource_storage_shares_only_declared_stock_with_hubs() {
+        let mut c = content();
+        for (order, id) in ["quartz", "water"].into_iter().enumerate() {
+            c.resource_types.insert(id.into(), crate::content::ResourceTypeDef {
+                display_name: id.into(), order: order as i32,
+            });
+        }
+        let mut vault = c.get("food_storage_container").unwrap().clone();
+        vault.shareable_with_hub = vec!["quartz".into(), "water".into()];
+        vault.max_capacity.insert("quartz".into(), 100.0);
+        vault.max_capacity.insert("water".into(), 100.0);
+        c.entity_types.insert("vault".into(), vault);
+        let mut es = vec![
+            entity(4, "worker", 20.0),
+            entity(20, "vault", 300.0),
+            entity(1, "processor", 0.0),
+            entity(10, "vault", 150.0),
+        ];
+        es[0].supply = Some(pb::DepotSupply { depot_id: 20, ..Default::default() });
+        assert_eq!(depot_id(&es, &c, &es[0]), Some(1));
+        refresh_associations(&mut es, &c);
+        assert_eq!(es[0].supply.as_ref().unwrap().depot_id, 1);
+        set_resource_amount(&mut es[2], "quartz", 2.0);
+        set_resource_amount(&mut es[3], "quartz", 8.0);
+        set_resource_amount(&mut es[3], "water", 3.0);
+        set_resource_amount(&mut es[1], "quartz", 4.0);
+        set_resource_amount(&mut es[1], "water", 2.0);
+        set_resource_amount(&mut es[1], "energy", 90.0);
+        let bill = HashMap::from([
+            ("quartz".into(), 10.0), ("water".into(), 6.0),
+        ]);
+        assert_eq!(available(&es, &c, Some(1), "quartz"), 14.0);
+        assert_eq!(available(&es, &c, Some(1), "water"), 5.0);
+        assert_eq!(available(&es, &c, Some(1), "energy"), 0.0);
+        let before = es.clone();
+        assert!(!pay(&mut es, &c, Some(1), &bill));
+        assert_eq!(es, before);
+        set_resource_amount(&mut es[1], "water", 3.0);
+        assert!(pay(&mut es, &c, Some(1), &bill));
+        assert_eq!(resource_amount(&es[2], "quartz"), 0.0);
+        assert_eq!(resource_amount(&es[3], "quartz"), 0.0);
+        assert_eq!(resource_amount(&es[1], "quartz"), 4.0);
+        assert_eq!(resource_amount(&es[3], "water"), 0.0);
+        assert_eq!(resource_amount(&es[1], "water"), 0.0);
+        assert_eq!(resource_amount(&es[1], "energy"), 90.0);
+        assert!(!pay(&mut es, &c, Some(1), &HashMap::from([("energy".into(), 1.0)])));
+        assert_eq!(available(&es, &c, Some(20), "quartz"), 4.0);
+        assert!(pay(&mut es, &c, Some(20), &HashMap::from([
+            ("quartz".into(), 4.0), ("energy".into(), 5.0),
+        ])));
+        assert_eq!(resource_amount(&es[1], "energy"), 85.0);
+        assert_eq!(resource_amount(&es[1], "quartz"), 0.0);
+        assert_eq!(available(&es, &c, Some(20), "quartz"), 0.0);
+    }
+
+    #[test]
     fn association_survives_protobuf_restore_and_depot_does_not_borrow() {
         use prost::Message;
         let c = content();
@@ -844,7 +895,8 @@ mod collection_tests {
         );
         assert_eq!(es[2].resource_deposit.unwrap().remaining, 10.0);
         es[1].pos.as_mut().unwrap().x = 1000.0;
-        set_resource_amount(&mut es[1], "energy", 999.0);
+        let capacity = content.get("habitat").unwrap().max_capacity["energy"] as f64;
+        set_resource_amount(&mut es[1], "energy", capacity - 1.0);
         assert_eq!(
             collect_to_depot(&mut es, &content, 1, 3, "energy", 8.0),
             (1.0, Some(2))

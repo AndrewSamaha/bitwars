@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { parseDocument } from "yaml";
-import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, initialResourceErrors, depotErrors } from "@/lib/content/schemaValidation";
+import { unknownEntityFieldErrors, resourceSharingPolicyErrors, resourceReserveErrors, initialResourceErrors, depotErrors, shareableWithHubErrors } from "@/lib/content/schemaValidation";
 
 import { sortEntityDefinitions, stringifyEntityDefinition } from "@/lib/content/entityYaml";
 import { mutateContentResponse } from "@/lib/content/contentRevisions";
@@ -41,8 +41,9 @@ export async function POST(request: Request) {
     const child = parseDocument(definition);
     if (doc.errors.length || child.errors.length) return NextResponse.json({ error: "Invalid YAML" }, { status: 400 });
     const normalizedDefinition = omitNulls(child.toJS());
-    const validationErrors = [...depotErrors(normalizedDefinition), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))), ...resourceReserveErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {})))];
-    validationErrors.push(...initialResourceErrors(normalizedDefinition, new Set(Object.keys(doc.toJS().resource_types ?? {}))));
+    const knownResources = new Set<string>(Object.keys(doc.toJS().resource_types ?? {}));
+    const validationErrors = [...depotErrors(normalizedDefinition), ...shareableWithHubErrors(normalizedDefinition, knownResources), ...unknownEntityFieldErrors(normalizedDefinition), ...resourceSharingPolicyErrors(normalizedDefinition, knownResources), ...resourceReserveErrors(normalizedDefinition, knownResources)];
+    validationErrors.push(...initialResourceErrors(normalizedDefinition, knownResources));
     if (validationErrors.length) return NextResponse.json({ error: validationErrors.join("; ") }, { status: 400 });
     const types: any = doc.get("entity_types", true);
     if (!types?.has(parentId) || types.has(childId)) return NextResponse.json({ error: "Invalid parent or duplicate child" }, { status: 400 });

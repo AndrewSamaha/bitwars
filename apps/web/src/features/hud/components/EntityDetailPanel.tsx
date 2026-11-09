@@ -9,7 +9,7 @@ import AvailableAction, { ActionDef } from "@/features/hud/components/AvailableA
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { GAMESTATE_UPDATED_EVENT } from "@/features/gamestate/events";
 import { transferableResourceAmount } from "@/features/hud/resourceInventory";
-import { actionResourceSource, canAffordAction, spendableResourceAmount } from "@/features/hud/actionResources";
+import { actionResourceSource, canAffordAction, isHubDepot, resourceDisplayKeys, spendableResourceAmount } from "@/features/hud/actionResources";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 import { buildProgressMetrics } from "@/features/build-state/buildProgressMetrics";
 import { useSession } from "@/features/users/components/identity/SessionContext";
@@ -641,8 +641,8 @@ export default function EntityDetailPanel() {
                     <span className="font-mono text-muted-foreground">
                       {entityDef?.depot ? `depot · service radius ${entityDef.depot_range}` : `depot: ${source?.id ?? "none"}`}
                       {source ? ` · stock: ${(source.resources ?? []).map(r => `${r.resource_type} ${r.amount.toFixed(1)}`).join(", ")}` : ""}
-                      {source && entityTypes[source.entity_type_id ?? ""]?.depot && source.entity_type_id !== "food_storage_container" && source.entity_type_id !== "mineral_storage_container"
-                        ? ` · spendable: ${["food", "minerals", "energy"].map(resource =>
+                      {source && isHubDepot(entityTypes[source.entity_type_id ?? ""])
+                        ? ` · spendable: ${resourceDisplayKeys(source, entities, entityTypes, contentManager.getContent()?.resource_types ?? {}).map(resource =>
                           `${resource} ${spendableResourceAmount(source, resource, entities, entityTypes).toFixed(1)}`).join(", ")}`
                         : ""}
                     </span>

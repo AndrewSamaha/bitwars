@@ -898,6 +898,7 @@ entity_types:
     combat_targetable: true
     depot: true
     depot_range: 2000
+    shareable_with_hub: [food]
     fog_memory: forget_when_hidden
     health: 50
     hull_radius: 50
@@ -941,6 +942,7 @@ entity_types:
     combat_targetable: true
     depot: true
     depot_range: 2000
+    shareable_with_hub: [minerals]
     fog_memory: forget_when_hidden
     health: 50
     hull_radius: 50

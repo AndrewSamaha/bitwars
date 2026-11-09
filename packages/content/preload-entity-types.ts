@@ -206,7 +206,7 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {},
-    "definition": "build_cost:\n  energy: 100\n  minerals: 100\ncombat_targetable: true\ndepot: true\ndepot_range: 2000\nfog_memory: forget_when_hidden\nhealth: 50\nhull_radius: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nmass: 7\nmax_capacity:\n  energy: 100\n  food: 1000\n  minerals: 100\nsensor:\n  cost_per_minute:\n    energy: 0.1\n  range: 400\nspeed: 60\nstop_radius: 0.5\nvisual:\n  scale: 1.5"
+    "definition": "build_cost:\n  energy: 100\n  minerals: 100\ncombat_targetable: true\ndepot: true\ndepot_range: 2000\nshareable_with_hub: [food]\nfog_memory: forget_when_hidden\nhealth: 50\nhull_radius: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nmass: 7\nmax_capacity:\n  energy: 100\n  food: 1000\n  minerals: 100\nsensor:\n  cost_per_minute:\n    energy: 0.1\n  range: 400\nspeed: 60\nstop_radius: 0.5\nvisual:\n  scale: 1.5"
   },
   {
     "id": "dead_planet_blue",
@@ -222,7 +222,7 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {},
-    "definition": "build_cost:\n  energy: 100\n  minerals: 100\ncombat_targetable: true\ndepot: true\ndepot_range: 2000\nfog_memory: forget_when_hidden\nhealth: 50\nhull_radius: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nmass: 7\nmax_capacity:\n  energy: 100\n  food: 100\n  minerals: 1000\nsensor:\n  cost_per_minute:\n    energy: 0.1\n  range: 400\nspeed: 60\nstop_radius: 0.5\nvisual:\n  scale: 1.5"
+    "definition": "build_cost:\n  energy: 100\n  minerals: 100\ncombat_targetable: true\ndepot: true\ndepot_range: 2000\nshareable_with_hub: [minerals]\nfog_memory: forget_when_hidden\nhealth: 50\nhull_radius: 50\nmaintenance_cost_per_minute:\n  energy: 1\n  minerals: 1\nmass: 7\nmax_capacity:\n  energy: 100\n  food: 100\n  minerals: 1000\nsensor:\n  cost_per_minute:\n    energy: 0.1\n  range: 400\nspeed: 60\nstop_radius: 0.5\nvisual:\n  scale: 1.5"
   },
   {
     "id": "planet_ice",

@@ -466,6 +466,7 @@ mod tests {
             max_capacity: HashMap::new(),
             depot: false,
             depot_range: 0.0,
+            shareable_with_hub: Vec::new(),
             resource_sharing: None,
             fog_memory: Default::default(),
             speed: 10.0,
