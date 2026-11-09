@@ -24,6 +24,25 @@ fn is_hub(entity: &pb::Entity, content: &ContentPack) -> bool {
         .is_some_and(|def| def.depot && def.shareable_with_hub.is_empty())
 }
 
+/// Entity positions, ownership, and types are stable throughout one operation pass.
+/// Inventory is not: always read stock from `entities` when using these indices.
+type StorageCandidates = HashMap<String, HashMap<String, Vec<usize>>>;
+
+fn storage_candidates(entities: &[pb::Entity], content: &ContentPack) -> StorageCandidates {
+    let mut candidates = StorageCandidates::new();
+    for (index, entity) in entities.iter().enumerate() {
+        let Some(def) = content.get(&entity.entity_type_id).filter(|def| def.depot) else {
+            continue;
+        };
+        if def.shareable_with_hub.is_empty() { continue; }
+        let by_resource = candidates.entry(entity.owner_player_id.clone()).or_default();
+        for resource in &def.shareable_with_hub {
+            by_resource.entry(resource.clone()).or_default().push(index);
+        }
+    }
+    candidates
+}
+
 fn linked_container(
     hub: &pb::Entity, container: &pb::Entity, content: &ContentPack, resource: &str,
 ) -> bool {
@@ -42,15 +61,31 @@ fn linked_container(
 pub(super) fn available(
     entities: &[pb::Entity], content: &ContentPack, source: Option<u64>, resource: &str,
 ) -> f64 {
+    available_indexed(entities, content, source, resource, None)
+}
+
+fn available_indexed(
+    entities: &[pb::Entity], content: &ContentPack, source: Option<u64>, resource: &str,
+    candidates: Option<&StorageCandidates>,
+) -> f64 {
     let Some(hub) = source.and_then(|id| entities.iter().find(|e| e.id == id && e.health > 0.0)) else {
         return 0.0;
     };
     let own = resource_amount(hub, resource);
     if !is_hub(hub, content) { return own; }
-    own + entities.iter()
-        .filter(|e| linked_container(hub, e, content, resource))
-        .map(|e| resource_amount(e, resource))
-        .sum::<f64>()
+    let shared = if let Some(candidates) = candidates {
+        candidates.get(&hub.owner_player_id).and_then(|by_resource| by_resource.get(resource))
+            .into_iter().flatten()
+            .filter(|&&i| linked_container(hub, &entities[i], content, resource))
+            .map(|&i| resource_amount(&entities[i], resource))
+            .sum::<f64>()
+    } else {
+        entities.iter()
+            .filter(|e| linked_container(hub, e, content, resource))
+            .map(|e| resource_amount(e, resource))
+            .sum::<f64>()
+    };
+    own + shared
 }
 
 pub(super) fn eligible_depot(
@@ -109,17 +144,18 @@ fn operating_depot_id(
     content: &ContentPack,
     actor: &pb::Entity,
     costs: &HashMap<String, f32>,
+    candidates: Option<&StorageCandidates>,
 ) -> Option<u64> {
     let current = depot_id(entities, content, actor);
     if content.get(&actor.entity_type_id).is_some_and(|def| def.depot)
-        || missing_resources(entities, content, current, costs).is_empty()
+        || missing_resources_indexed(entities, content, current, costs, candidates).is_empty()
     {
         return current;
     }
     let pos = actor.pos?;
     entities.iter()
         .filter(|depot| eligible_depot(actor, depot, content)
-            && missing_resources(entities, content, Some(depot.id), costs).is_empty())
+            && missing_resources_indexed(entities, content, Some(depot.id), costs, candidates).is_empty())
         .min_by(|a, b| {
             let distance = |depot: &pb::Entity| {
                 let p = depot.pos.unwrap();
@@ -171,9 +207,19 @@ pub(super) fn missing_resources(
     source: Option<u64>,
     costs: &HashMap<String, f32>,
 ) -> Vec<String> {
+    missing_resources_indexed(entities, content, source, costs, None)
+}
+
+fn missing_resources_indexed(
+    entities: &[pb::Entity],
+    content: &ContentPack,
+    source: Option<u64>,
+    costs: &HashMap<String, f32>,
+    candidates: Option<&StorageCandidates>,
+) -> Vec<String> {
     let mut missing: Vec<_> = costs
         .iter()
-        .filter(|(r, n)| **n > 0.0 && available(entities, content, source, r) + 1e-9 < **n as f64)
+        .filter(|(r, n)| **n > 0.0 && available_indexed(entities, content, source, r, candidates) + 1e-9 < **n as f64)
         .map(|(r, _)| r.clone())
         .collect();
     missing.sort();
@@ -188,8 +234,18 @@ pub(super) fn pay(
     source: Option<u64>,
     costs: &HashMap<String, f32>,
 ) -> bool {
+    pay_indexed(entities, content, source, costs, None)
+}
+
+fn pay_indexed(
+    entities: &mut [pb::Entity],
+    content: &ContentPack,
+    source: Option<u64>,
+    costs: &HashMap<String, f32>,
+    candidates: Option<&StorageCandidates>,
+) -> bool {
     if costs.values().any(|n| !n.is_finite() || *n < 0.0)
-        || !missing_resources(entities, content, source, costs).is_empty()
+        || !missing_resources_indexed(entities, content, source, costs, candidates).is_empty()
     {
         return false;
     }
@@ -200,12 +256,26 @@ pub(super) fn pay(
     let linked = if is_hub(hub, content) && costs.iter().any(|(r, n)|
         *n as f64 > resource_amount(hub, r))
     {
-        let mut indices: Vec<_> = entities.iter().enumerate()
-            .filter(|(_, e)| costs.iter().any(|(resource, cost)|
-                *cost as f64 > resource_amount(hub, resource)
-                    && linked_container(hub, e, content, resource)))
-            .map(|(i, _)| i).collect();
-        indices.sort_unstable_by_key(|i| entities[*i].id);
+        let mut indices = Vec::new();
+        if let Some(candidates) = candidates {
+            if let Some(by_resource) = candidates.get(&hub.owner_player_id) {
+                for (resource, cost) in costs {
+                    if *cost as f64 <= resource_amount(hub, resource) { continue; }
+                    if let Some(storage) = by_resource.get(resource) {
+                        indices.extend(storage.iter().copied()
+                            .filter(|&i| linked_container(hub, &entities[i], content, resource)));
+                    }
+                }
+            }
+        } else {
+            indices.extend(entities.iter().enumerate()
+                .filter(|(_, e)| costs.iter().any(|(resource, cost)|
+                    *cost as f64 > resource_amount(hub, resource)
+                        && linked_container(hub, e, content, resource)))
+                .map(|(i, _)| i));
+        }
+        indices.sort_unstable_by_key(|&i| entities[i].id);
+        indices.dedup();
         indices
     } else { Vec::new() };
     for (resource, cost) in costs {
@@ -339,6 +409,7 @@ pub(super) fn operate(
     upgrading: &std::collections::HashSet<u64>,
 ) -> Vec<(String, String, f32)> {
     refresh_associations(entities, content);
+    let candidates = storage_candidates(entities, content);
     let mut ids: Vec<_> = entities
         .iter()
         .filter(|e| e.health > 0.0 && crate::spawn_config::is_player_owner(&e.owner_player_id))
@@ -358,18 +429,18 @@ pub(super) fn operate(
         } else {
             operating_costs(def, dt)
         };
-        let depot = operating_depot_id(entities, content, entity, &costs);
+        let depot = operating_depot_id(entities, content, entity, &costs, Some(&candidates));
         // Preserve expedition reserves while a depot can cover the full bill.
         // Otherwise pay atomically from onboard supplies, including outside coverage.
-        let source = if missing_resources(entities, content, depot, &costs).is_empty() {
+        let source = if missing_resources_indexed(entities, content, depot, &costs, Some(&candidates)).is_empty() {
             depot
-        } else if depot.is_none() || missing_resources(entities, content, Some(entity.id), &costs).is_empty() {
+        } else if depot.is_none() || missing_resources_indexed(entities, content, Some(entity.id), &costs, Some(&candidates)).is_empty() {
             Some(entity.id)
         } else {
             depot
         };
-        let missing = missing_resources(entities, content, source, &costs);
-        let paid = pay(entities, content, source, &costs);
+        let missing = missing_resources_indexed(entities, content, source, &costs, Some(&candidates));
+        let paid = pay_indexed(entities, content, source, &costs, Some(&candidates));
         let status = entities[index].supply.get_or_insert_with(Default::default);
         status.depot_id = depot.unwrap_or(0);
         status.operational = paid;
@@ -606,11 +677,18 @@ mod tests {
         assert_eq!(available(&es, &c, Some(1), "quartz"), 14.0);
         assert_eq!(available(&es, &c, Some(1), "water"), 5.0);
         assert_eq!(available(&es, &c, Some(1), "energy"), 0.0);
+        let mut indexed = es.clone();
+        let candidates = storage_candidates(&indexed, &c);
+        assert_eq!(available_indexed(&indexed, &c, Some(1), "quartz", Some(&candidates)), 14.0);
+        assert!(!pay_indexed(&mut indexed, &c, Some(1), &bill, Some(&candidates)));
         let before = es.clone();
         assert!(!pay(&mut es, &c, Some(1), &bill));
         assert_eq!(es, before);
         set_resource_amount(&mut es[1], "water", 3.0);
+        set_resource_amount(&mut indexed[1], "water", 3.0);
         assert!(pay(&mut es, &c, Some(1), &bill));
+        assert!(pay_indexed(&mut indexed, &c, Some(1), &bill, Some(&candidates)));
+        assert_eq!(indexed, es);
         assert_eq!(resource_amount(&es[2], "quartz"), 0.0);
         assert_eq!(resource_amount(&es[3], "quartz"), 0.0);
         assert_eq!(resource_amount(&es[1], "quartz"), 4.0);
@@ -768,6 +846,53 @@ mod operation_tests {
     }
 
     #[test]
+    fn operation_reuses_owner_resource_candidates_but_reads_depleted_stock() {
+        let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        for kind in ["processor", "food_storage_container", "power_storage_pod"] {
+            let def = content.entity_types.get_mut(kind).unwrap();
+            def.maintenance_cost_per_minute.clear();
+            def.sensor.as_mut().unwrap().cost_per_minute.clear();
+        }
+        let factory = content.entity_types.get_mut("factory").unwrap();
+        factory.maintenance_cost_per_minute = HashMap::from([
+            ("food".into(), 60.0), ("energy".into(), 60.0),
+        ]);
+        factory.sensor.as_mut().unwrap().cost_per_minute.clear();
+        let entity = |id, kind: &str, owner: &str, x| pb::Entity {
+            id, entity_type_id: kind.into(), owner_player_id: owner.into(), health: 100.0,
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default()
+        };
+        let mut es = vec![
+            entity(12, "factory", "player", 100.0),
+            entity(30, "food_storage_container", "player", 100.0),
+            entity(1, "processor", "player", 0.0),
+            entity(25, "food_storage_container", "enemy", 100.0),
+            entity(10, "factory", "player", 100.0),
+            entity(40, "power_storage_pod", "player", 100.0),
+            entity(50, "food_storage_container", "player", 5000.0),
+            entity(11, "factory", "player", 100.0),
+        ];
+        set_resource_amount(&mut es[1], "food", 2.0);
+        set_resource_amount(&mut es[3], "food", 50.0);
+        set_resource_amount(&mut es[5], "energy", 2.0);
+        set_resource_amount(&mut es[6], "food", 50.0);
+        operate(&mut es, &content, 1.0, &Default::default());
+        for id in [10, 11] {
+            let factory = es.iter().find(|e| e.id == id).unwrap();
+            assert!(factory.supply.as_ref().unwrap().operational);
+            assert_eq!(factory.supply.as_ref().unwrap().depot_id, 1);
+        }
+        let last = es.iter().find(|e| e.id == 12).unwrap();
+        assert!(!last.supply.as_ref().unwrap().operational);
+        assert_eq!(last.supply.as_ref().unwrap().missing_resources, vec!["energy", "food"]);
+        assert_eq!(resource_amount(&es[1], "food"), 0.0);
+        assert_eq!(resource_amount(&es[5], "energy"), 0.0);
+        assert_eq!(resource_amount(&es[3], "food"), 50.0);
+        assert_eq!(resource_amount(&es[6], "food"), 50.0);
+    }
+
+    #[test]
     fn operating_prefers_hub_over_nearer_storage_depot() {
         let mut content = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packages/content/entities.yaml")).unwrap();
@@ -820,11 +945,11 @@ mod operation_tests {
         es[3].owner_player_id = "enemy".into();
         es[5].health = 0.0;
         // Partial stocks, hostile, distant, and destroyed depots cannot supply the bill.
-        assert_eq!(operating_depot_id(&es, &content, &es[0], &costs), Some(2));
+        assert_eq!(operating_depot_id(&es, &content, &es[0], &costs, None), Some(2));
         set_resource_amount(&mut es[2], "food", 10.0);
-        assert_eq!(operating_depot_id(&es, &content, &es[0], &costs), Some(3));
+        assert_eq!(operating_depot_id(&es, &content, &es[0], &costs, None), Some(3));
         // Storage depots still pay from their own stock.
-        assert_eq!(operating_depot_id(&es, &content, &es[1], &costs), Some(2));
+        assert_eq!(operating_depot_id(&es, &content, &es[1], &costs, None), Some(2));
     }
 
     #[test]
