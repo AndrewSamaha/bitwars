@@ -29,13 +29,14 @@ use crate::combat::CombatSystem;
 use crate::config::GameConfig;
 use crate::content::{
     CollectionMode, ContentPack, EntityTypeDef, MinimumDistanceDef, RadiationShieldingDef,
-    RepairDef,
+    RepairDef, TechnologyRequirement,
 };
 use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::{
-    CollectorUiState, CombatEffectUiState, ConstructionProgressUpdate, GameplayEntityRef,
-    GameplayEvent, IntentPoint, RedisClient,
+    CollectorUiState, CombatEffectUiState, ConstructionProgressUpdate, GameplayBuildRejectionDetail,
+    GameplayBuildResourceShortfall, GameplayEntityRef, GameplayEvent, GameplayEventKind,
+    GameplayIntentRejection, IntentPoint, RedisClient,
 };
 use crate::io::telemetry::{summarize_tick_durations, Telemetry};
 use crate::io::host_metrics::HostSampler;
@@ -1589,6 +1590,133 @@ mod integration_tests {
 
         Ok(())
     }
+    #[tokio::test]
+    #[ignore = "requires Redis server (set TEST_REDIS_URL)"]
+    async fn rejected_build_publishes_lifecycle_and_player_history() -> Result<()> {
+        let redis_url = test_redis_url();
+        let game_id = format!("itest-build-rejection-{}", Uuid::now_v7());
+        let (spawn_path, content_path) = test_spawn_and_content_paths();
+        let mut cfg = GameConfig::default();
+        cfg.game_id = game_id.clone();
+        cfg.redis_url = redis_url.clone();
+        cfg.spawn_config_path = spawn_path;
+        cfg.content_pack_path = content_path;
+        let mut engine = Engine::new(cfg).await?;
+        let initial_entity_count = engine.state.entities.len();
+        let factory_id = 8001;
+        engine.state.entities.push(pb::Entity {
+            id: factory_id,
+            owner_player_id: "player-1".into(),
+            entity_type_id: "military_factory".into(),
+            pos: Some(pb::Vec2 { x: 30.0, y: 40.0 }),
+            health: 150.0,
+            ..Default::default()
+        });
+        engine.state.technologies.insert("player-1".into(), HashSet::from(["space_age".into()]));
+
+        let build_envelope = |seq, command: Uuid, intent: Uuid| pb::IntentEnvelope {
+            client_cmd_id: command.into_bytes().to_vec(),
+            intent_id: intent.into_bytes().to_vec(),
+            player_id: "player-1".into(),
+            client_seq: seq,
+            server_tick: 0,
+            protocol_version: ENGINE_PROTOCOL_MAJOR,
+            policy: pb::IntentPolicy::ReplaceActive as i32,
+            payload: Some(intent_envelope::Payload::Build(pb::BuildIntent {
+                entity_id: factory_id, blueprint_id: "battleship".into(),
+                location: Some(pb::Vec2 { x: 80.0, y: 90.0 }),
+                client_cmd_id: String::new(), player_id: String::new(),
+            })),
+        };
+        let tech_command = Uuid::now_v7();
+        let tech_intent = Uuid::now_v7();
+        assert!(engine.handle_envelope(build_envelope(1, tech_command, tech_intent)).await.is_err());
+        engine.state.technologies.get_mut("player-1").unwrap().insert("neutrino_sensors".into());
+        let resource_command = Uuid::now_v7();
+        let resource_intent = Uuid::now_v7();
+        assert!(engine.handle_envelope(build_envelope(2, resource_command, resource_intent)).await.is_err());
+        assert!(engine.intents.active_intents().is_empty());
+        assert_eq!(engine.state.entities.len(), initial_entity_count + 1);
+
+        let client = redis::Client::open(redis_url)?;
+        let mut conn = client.get_multiplexed_async_connection().await?;
+        let stream_payloads = |reply: RedisValue| {
+            let mut payloads = Vec::new();
+            if let RedisValue::Bulk(entries) = reply {
+                for entry in entries {
+                    if let RedisValue::Bulk(parts) = entry {
+                        if let Some(RedisValue::Bulk(fields)) = parts.get(1) {
+                            for pair in fields.chunks_exact(2) {
+                                if let [RedisValue::Data(field), RedisValue::Data(data)] = pair {
+                                    if field == b"data" { payloads.push(data.clone()); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            payloads
+        };
+        let lifecycle_reply: RedisValue = redis::cmd("XRANGE")
+            .arg(format!("rts:match:{game_id}:events")).arg("-").arg("+")
+            .query_async(&mut conn).await?;
+        let lifecycle: Vec<_> = stream_payloads(lifecycle_reply).iter()
+            .filter_map(|bytes| pb::EventsStreamRecord::decode(bytes.as_slice()).ok())
+            .filter_map(|record| match record.record {
+                Some(pb::events_stream_record::Record::Lifecycle(event))
+                    if event.state == pb::LifecycleState::Rejected as i32 => Some(event),
+                _ => None,
+            }).collect();
+        assert_eq!(lifecycle.len(), 2);
+        let history_reply: RedisValue = redis::cmd("XRANGE")
+            .arg(format!("rts:match:{game_id}:gameplay_events")).arg("-").arg("+")
+            .query_async(&mut conn).await?;
+        let history: Vec<serde_json::Value> = stream_payloads(history_reply).iter()
+            .map(|bytes| serde_json::from_slice(bytes)).collect::<std::result::Result<_, _>>()?;
+        assert_eq!(history.len(), 2);
+        for (index, (command, intent, reason)) in [
+            (tech_command, tech_intent, pb::LifecycleReason::MissingTechnology),
+            (resource_command, resource_intent, pb::LifecycleReason::InsufficientResources),
+        ].into_iter().enumerate() {
+            let event = &lifecycle[index];
+            let record = &history[index];
+            let detail = event.build_rejection.as_ref().expect("build detail");
+            assert_eq!(event.entity_id, factory_id);
+            assert_eq!(event.client_cmd_id.as_slice(), &command.as_bytes()[..]);
+            assert_eq!(event.intent_id.as_slice(), &intent.as_bytes()[..]);
+            assert_eq!(event.player_id, "player-1");
+            assert_eq!(event.reason, reason as i32);
+            assert_eq!(detail.blueprint_id, "battleship");
+            assert_eq!(detail.requested_location.as_ref().unwrap().x, 80.0);
+            assert_eq!(record["event_type"], "intent_rejected");
+            assert_eq!(record["recipients"], serde_json::json!(["player-1"]));
+            assert!(record.get("victim").is_none());
+            assert_eq!(record["server_tick"], event.server_tick);
+            assert_eq!(record["position"]["x"], 30.0);
+            assert_eq!(record["rejection"]["intent_id"], intent.to_string());
+            assert_eq!(record["rejection"]["client_cmd_id"], command.to_string());
+            assert_eq!(record["rejection"]["player_id"], event.player_id);
+            assert_eq!(record["rejection"]["entity_id"], factory_id);
+            assert_eq!(record["rejection"]["intent_type"], "build");
+            assert_eq!(record["rejection"]["state"], event.state);
+            assert_eq!(record["rejection"]["reason"], event.reason);
+            assert_eq!(record["rejection"]["protocol_version"], ENGINE_PROTOCOL_MAJOR);
+            assert_eq!(record["rejection"]["build_rejection"]["blueprint_id"], detail.blueprint_id);
+            assert_eq!(record["rejection"]["build_rejection"]["requested_location"]["x"], 80.0);
+            if index == 0 {
+                assert_eq!(detail.missing_technology_ids, ["neutrino_sensors"]);
+                assert_eq!(record["rejection"]["build_rejection"]["missing_technology_ids"],
+                    serde_json::json!(["neutrino_sensors"]));
+            } else {
+                assert_eq!(detail.resource_shortfalls.len(), 2);
+                assert!(detail.resource_shortfalls.iter().any(|s|
+                    s.resource_type_id == "minerals" && s.required == 2005.0 && s.available == 0.0));
+                assert_eq!(record["rejection"]["build_rejection"]["resource_shortfalls"][0]["available"], 0.0);
+            }
+        }
+        Ok(())
+    }
+
 }
 
 fn remove_zero_health_entities(entities: &mut Vec<pb::Entity>) -> Vec<u64> {
@@ -1643,6 +1771,44 @@ fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<St
         }
     }
     recipients
+}
+
+/// An `any` requirement reports one sufficient path rather than claiming that
+/// every alternative is mandatory.
+fn missing_build_technologies(requirement: &TechnologyRequirement, owned: &HashSet<String>) -> Vec<String> {
+    match requirement {
+        TechnologyRequirement::Technology(id) => {
+            if owned.contains(id) { Vec::new() } else { vec![id.clone()] }
+        }
+        TechnologyRequirement::All { all } => {
+            let mut missing: Vec<String> = all.iter()
+                .flat_map(|part| missing_build_technologies(part, owned))
+                .collect();
+            missing.sort();
+            missing.dedup();
+            missing
+        }
+        TechnologyRequirement::Any { any } => {
+            any.iter()
+                .map(|part| missing_build_technologies(part, owned))
+                .min_by_key(Vec::len)
+                .unwrap_or_default()
+        }
+    }
+}
+
+struct BuildPreflightFailure {
+    reason: pb::LifecycleReason,
+    message: String,
+    missing_technology_ids: Vec<String>,
+    resource_shortfalls: Vec<pb::BuildResourceShortfall>,
+}
+
+impl BuildPreflightFailure {
+    fn invalid(message: impl Into<String>) -> Self {
+        Self { reason: pb::LifecycleReason::InvalidTarget, message: message.into(),
+            missing_technology_ids: Vec::new(), resource_shortfalls: Vec::new() }
+    }
 }
 
 fn migrate_legacy_neutral_owners(entities: &mut [pb::Entity]) {
@@ -3723,24 +3889,25 @@ impl Engine {
                 continue;
             }
             let event = GameplayEvent {
-                event_type: "entity_destroyed".to_string(),
                 server_tick: self.state.tick,
                 occurred_at_ms: unix_time_ms(),
-                victim: gameplay_entity_ref(&destruction.victim),
-                attacker: Some(GameplayEntityRef {
-                    entity_id: destruction.attacker_id,
-                    entity_type_id: destruction.attacker_entity_type_id.clone(),
-                    owner_player_id: destruction.attacker_owner_player_id.clone(),
-                }),
-                cause: match destruction.cause {
-                    crate::content::AttackType::Laser => "laser".to_string(),
-                    crate::content::AttackType::Dismantle => "dismantle".to_string(),
-                },
-                damage_amount: None,
-                missing_resource_types: None,
-                source_entity_id: None,
-                position: entity_position(&destruction.victim),
                 recipients,
+                kind: GameplayEventKind::EntityDestroyed {
+                    victim: gameplay_entity_ref(&destruction.victim),
+                    attacker: Some(GameplayEntityRef {
+                        entity_id: destruction.attacker_id,
+                        entity_type_id: destruction.attacker_entity_type_id.clone(),
+                        owner_player_id: destruction.attacker_owner_player_id.clone(),
+                    }),
+                    cause: match destruction.cause {
+                        crate::content::AttackType::Laser => "laser".to_string(),
+                        crate::content::AttackType::Dismantle => "dismantle".to_string(),
+                    },
+                    damage_amount: None,
+                    missing_resource_types: None,
+                    source_entity_id: None,
+                    position: entity_position(&destruction.victim),
+                },
             };
             if let Err(error) = self.redis.publish_gameplay_event(&event).await {
                 warn!(
@@ -3763,17 +3930,18 @@ impl Engine {
                 continue;
             }
             let event = GameplayEvent {
-                event_type: "entity_destroyed".to_string(),
                 server_tick: self.state.tick,
                 occurred_at_ms: unix_time_ms(),
-                victim: gameplay_entity_ref(victim),
-                attacker: None,
-                cause: "radiation".to_string(),
-                damage_amount: None,
-                missing_resource_types: None,
-                source_entity_id: source_entity_ids.get(&victim.id).copied(),
-                position: entity_position(victim),
                 recipients,
+                kind: GameplayEventKind::EntityDestroyed {
+                    victim: gameplay_entity_ref(victim),
+                    attacker: None,
+                    cause: "radiation".to_string(),
+                    damage_amount: None,
+                    missing_resource_types: None,
+                    source_entity_id: source_entity_ids.get(&victim.id).copied(),
+                    position: entity_position(victim),
+                },
             };
             if let Err(error) = self.redis.publish_gameplay_event(&event).await {
                 warn!(
@@ -5201,6 +5369,64 @@ impl Engine {
         }
     }
 
+    fn check_build_preflight(
+        &self, build: &pb::BuildIntent, player_id: &str,
+    ) -> std::result::Result<(), BuildPreflightFailure> {
+        let builder_type = self.state.entities.iter()
+            .find(|entity| entity.id == build.entity_id)
+            .map(|entity| entity.entity_type_id.as_str())
+            .unwrap_or_default();
+        let content = self.content.as_ref()
+            .ok_or_else(|| BuildPreflightFailure::invalid("build unavailable without content pack"))?;
+        let builder = content.get(builder_type)
+            .ok_or_else(|| BuildPreflightFailure::invalid("unknown builder type"))?;
+        let option = builder.builds.iter()
+            .find(|option| option.entity_type_id == build.blueprint_id)
+            .ok_or_else(|| BuildPreflightFailure::invalid("builder cannot produce requested entity"))?;
+        let product = content.get(&build.blueprint_id)
+            .ok_or_else(|| BuildPreflightFailure::invalid("unknown build product"))?;
+        if let Some(requirement) = &product.requires_technologies {
+            let empty = HashSet::new();
+            let owned = self.state.technologies.get(player_id).unwrap_or(&empty);
+            if !requirement.is_satisfied_by(owned) {
+                return Err(BuildPreflightFailure {
+                    reason: pb::LifecycleReason::MissingTechnology,
+                    message: "missing required technology for build".into(),
+                    missing_technology_ids: missing_build_technologies(requirement, owned),
+                    resource_shortfalls: Vec::new(),
+                });
+            }
+        }
+        if product.build_cost.is_empty() {
+            return Err(BuildPreflightFailure::invalid("build product has no build_cost"));
+        }
+        let mut shortfalls = Vec::new();
+        for (resource, cost) in &product.build_cost {
+            let rate = option.spend_rates.get(resource).copied().unwrap_or(1.0);
+            if *cost <= 0.0 || !rate.is_finite() || rate <= 0.0 {
+                return Err(BuildPreflightFailure::invalid(format!("invalid build cost or spend rate for {resource}")));
+            }
+            let available = self.available_action_resource(build.entity_id, player_id, resource);
+            if available + f64::EPSILON < *cost as f64 {
+                shortfalls.push(pb::BuildResourceShortfall {
+                    resource_type_id: resource.clone(),
+                    required: *cost as f64,
+                    available,
+                });
+            }
+        }
+        if !shortfalls.is_empty() {
+            shortfalls.sort_by(|a, b| a.resource_type_id.cmp(&b.resource_type_id));
+            return Err(BuildPreflightFailure {
+                reason: pb::LifecycleReason::InsufficientResources,
+                message: "insufficient resources for build".into(),
+                missing_technology_ids: Vec::new(),
+                resource_shortfalls: shortfalls,
+            });
+        }
+        Ok(())
+    }
+
     async fn handle_envelope(&mut self, envelope: pb::IntentEnvelope) -> Result<()> {
         let accept_tick = self.state.tick;
         let player_id = envelope.player_id.clone();
@@ -5470,6 +5696,7 @@ impl Engine {
                 return Err(anyhow!("intent missing kind"));
             }
         };
+        let metadata = IntentMetadata { entity_id, ..metadata };
         let entity_owner = self
             .state
             .entities
@@ -5478,24 +5705,28 @@ impl Engine {
             .map(|e| e.owner_player_id.clone());
         match entity_owner {
             None => {
-                self.emit_lifecycle_event(
-                    &metadata,
-                    pb::LifecycleState::Rejected,
-                    pb::LifecycleReason::InvalidTarget,
-                    accept_tick,
-                )
-                .await?;
+                if let Some(pb::intent::Kind::Build(build)) = payload_intent.kind.as_ref() {
+                    self.emit_build_rejection(&metadata, build,
+                        &BuildPreflightFailure::invalid("entity not found"), accept_tick).await?;
+                } else {
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                        pb::LifecycleReason::InvalidTarget, accept_tick).await?;
+                }
                 warn!(entity_id = entity_id, player_id = %player_id, "rejected: entity not found");
                 return Err(anyhow!("entity not found"));
             }
             Some(owner) if owner != player_id => {
-                self.emit_lifecycle_event(
-                    &metadata,
-                    pb::LifecycleState::Rejected,
-                    pb::LifecycleReason::NotOwned,
-                    accept_tick,
-                )
-                .await?;
+                if let Some(pb::intent::Kind::Build(build)) = payload_intent.kind.as_ref() {
+                    self.emit_build_rejection(&metadata, build, &BuildPreflightFailure {
+                        reason: pb::LifecycleReason::NotOwned,
+                        message: "entity not owned".into(),
+                        missing_technology_ids: Vec::new(),
+                        resource_shortfalls: Vec::new(),
+                    }, accept_tick).await?;
+                } else {
+                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                        pb::LifecycleReason::NotOwned, accept_tick).await?;
+                }
                 warn!(
                     entity_id = entity_id,
                     player_id = %player_id,
@@ -5561,52 +5792,9 @@ impl Engine {
         // Production is entirely content-driven and always revalidated by the
         // server; the client-side disabled button is only a convenience.
         if let Some(pb::intent::Kind::Build(build)) = payload_intent.kind.as_ref() {
-            let builder_type = self
-                .state
-                .entities
-                .iter()
-                .find(|entity| entity.id == entity_id)
-                .map(|entity| entity.entity_type_id.as_str())
-                .unwrap_or_default();
-            let Some(content) = self.content.as_ref() else {
-                return Err(anyhow!("build unavailable without content pack"));
-            };
-            let Some(builder) = content.get(builder_type) else {
-                return Err(anyhow!("unknown builder type"));
-            };
-            let Some(option) = builder
-                .builds
-                .iter()
-                .find(|option| option.entity_type_id == build.blueprint_id)
-            else {
-                return Err(anyhow!("builder cannot produce requested entity"));
-            };
-            let Some(product) = content.get(&build.blueprint_id) else {
-                return Err(anyhow!("unknown build product"));
-            };
-            if let Some(requirement) = &product.requires_technologies {
-                let owned = self
-                    .state
-                    .technologies
-                    .get(&player_id)
-                    .cloned()
-                    .unwrap_or_default();
-                if !requirement.is_satisfied_by(&owned) {
-                    return Err(anyhow!("missing required technology for build"));
-                }
-            }
-            if product.build_cost.is_empty() {
-                return Err(anyhow!("build product has no build_cost"));
-            }
-            for (resource, cost) in &product.build_cost {
-                let rate = option.spend_rates.get(resource).copied().unwrap_or(1.0);
-                if *cost <= 0.0 || !rate.is_finite() || rate <= 0.0 {
-                    return Err(anyhow!("invalid build cost or spend rate for {resource}"));
-                }
-                let available = self.available_action_resource(entity_id, &player_id, resource);
-                if available + f64::EPSILON < *cost as f64 {
-                    return Err(anyhow!("insufficient {resource} for build"));
-                }
+            if let Err(failure) = self.check_build_preflight(build, &player_id) {
+                self.emit_build_rejection(&metadata, build, &failure, accept_tick).await?;
+                return Err(anyhow!(failure.message));
             }
         }
 
@@ -5904,13 +6092,24 @@ impl Engine {
 
         if outcome.rejected_busy {
             // M1: APPEND / CLEAR_THEN_APPEND when entity is busy -> REJECTED(ENTITY_BUSY)
-            self.emit_lifecycle_event(
-                &metadata,
-                pb::LifecycleState::Rejected,
-                pb::LifecycleReason::EntityBusy,
-                accept_tick,
-            )
-            .await?;
+            if intent_kind == "build" {
+                if let Some((blueprint_id, location, _)) = &construction {
+                    let build = pb::BuildIntent {
+                        entity_id, blueprint_id: blueprint_id.clone(),
+                        location: location.as_ref().map(|p| pb::Vec2 { x: p.x, y: p.y }),
+                        client_cmd_id: String::new(), player_id: String::new(),
+                    };
+                    self.emit_build_rejection(&metadata, &build, &BuildPreflightFailure {
+                        reason: pb::LifecycleReason::EntityBusy,
+                        message: "entity busy".into(),
+                        missing_technology_ids: Vec::new(),
+                        resource_shortfalls: Vec::new(),
+                    }, accept_tick).await?;
+                }
+            } else {
+                self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                    pb::LifecycleReason::EntityBusy, accept_tick).await?;
+            }
             warn!(
                 player_id = %player_id,
                 intent_id = %format_uuid(&metadata.intent_id),
@@ -6041,11 +6240,69 @@ impl Engine {
         self.handle_envelope(envelope).await
     }
 
+    async fn emit_build_rejection(
+        &mut self, metadata: &IntentMetadata, build: &pb::BuildIntent,
+        failure: &BuildPreflightFailure, tick: u64,
+    ) -> Result<()> {
+        let event_key = [metadata.intent_id.as_slice(), &metadata.entity_id.to_le_bytes()].concat();
+        if !self.lifecycle_emitted.insert((event_key, pb::LifecycleState::Rejected)) {
+            return Ok(());
+        }
+        let detail = pb::BuildRejectionDetail {
+            blueprint_id: build.blueprint_id.clone(),
+            missing_technology_ids: failure.missing_technology_ids.clone(),
+            resource_shortfalls: failure.resource_shortfalls.clone(),
+            requested_location: build.location.clone(),
+        };
+        self.emit_lifecycle_event_raw(
+            &metadata.intent_id, &metadata.client_cmd_id, &metadata.player_id,
+            pb::LifecycleState::Rejected, failure.reason, tick, metadata.protocol_version,
+            metadata.entity_id, false, None, Some(detail),
+        ).await?;
+        let event = GameplayEvent {
+            server_tick: tick,
+            occurred_at_ms: unix_time_ms(),
+            recipients: vec![metadata.player_id.clone()],
+            kind: GameplayEventKind::IntentRejected {
+                rejection: GameplayIntentRejection {
+                    intent_id: format_uuid(&metadata.intent_id),
+                    client_cmd_id: format_uuid(&metadata.client_cmd_id),
+                    player_id: metadata.player_id.clone(),
+                    entity_id: metadata.entity_id,
+                    intent_type: "build".to_string(),
+                    state: pb::LifecycleState::Rejected as i32,
+                    reason: failure.reason as i32,
+                    protocol_version: metadata.protocol_version,
+                    route_edit: false,
+                    build_rejection: GameplayBuildRejectionDetail {
+                        blueprint_id: build.blueprint_id.clone(),
+                        missing_technology_ids: failure.missing_technology_ids.clone(),
+                        resource_shortfalls: failure.resource_shortfalls.iter().map(|shortfall|
+                            GameplayBuildResourceShortfall {
+                                resource_type_id: shortfall.resource_type_id.clone(),
+                                required: shortfall.required,
+                                available: shortfall.available,
+                            }
+                        ).collect(),
+                        requested_location: build.location.as_ref().map(|point|
+                            IntentPoint { x: point.x, y: point.y }),
+                    },
+                },
+                position: self.state.entities.iter()
+                    .find(|entity| entity.id == metadata.entity_id && entity.owner_player_id == metadata.player_id)
+                    .and_then(|entity| entity.pos.as_ref().map(|_| entity_position(entity))),
+            },
+        };
+        self.redis.publish_gameplay_event(&event).await
+            .context("publish build rejection gameplay event")?;
+        Ok(())
+    }
+
     async fn emit_route_edit_event(&mut self, metadata: &IntentMetadata,
         state: pb::LifecycleState, reason: pb::LifecycleReason) -> Result<()> {
         self.emit_lifecycle_event_raw(&metadata.intent_id, &metadata.client_cmd_id,
             &metadata.player_id, state, reason, self.state.tick, metadata.protocol_version,
-            metadata.entity_id, true, None).await
+            metadata.entity_id, true, None, None).await
     }
 
     async fn emit_lifecycle_event(
@@ -6085,6 +6342,7 @@ impl Engine {
             metadata.entity_id,
             false,
             minimum_distance_violation,
+            None,
         )
         .await
     }
@@ -6101,6 +6359,7 @@ impl Engine {
         entity_id: u64,
         route_edit: bool,
         minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
+        build_rejection: Option<pb::BuildRejectionDetail>,
     ) -> Result<()> {
         let event = pb::LifecycleEvent {
             entity_id,
@@ -6113,6 +6372,7 @@ impl Engine {
             reason: reason as i32,
             protocol_version,
             minimum_distance_violation,
+            build_rejection,
         };
         self.redis
             .publish_lifecycle_event(&event)

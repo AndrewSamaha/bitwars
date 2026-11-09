@@ -35,15 +35,40 @@ export type CommandStatus = {
   updated_at_ms: number;
 };
 
-export type GameplayEvent = {
-  event_id: string;
-  event_type: string;
-  server_tick: number;
-  occurred_at_ms: number;
-  victim: { entity_id: number; entity_type_id: string; owner_player_id: string };
-  attacker?: { entity_id: number; entity_type_id: string; owner_player_id: string };
-  cause: string;
-};
+type GameplayEventCommon = { event_id: string; server_tick: number; occurred_at_ms: number };
+export type GameplayEvent = GameplayEventCommon & (
+  | {
+      event_type: "entity_destroyed";
+      victim: { entity_id: number; entity_type_id: string; owner_player_id: string };
+      attacker?: { entity_id: number; entity_type_id: string; owner_player_id: string };
+      cause: string;
+      damage_amount?: number;
+      missing_resource_types?: string[];
+      source_entity_id?: number;
+      position: { x: number; y: number };
+    }
+  | {
+      event_type: "intent_rejected";
+      rejection: {
+        intent_id: string;
+        client_cmd_id: string;
+        player_id: string;
+        entity_id: number;
+        intent_type?: string;
+        state: number;
+        reason: number;
+        protocol_version: number;
+        route_edit: boolean;
+        build_rejection?: {
+          blueprint_id: string;
+          missing_technology_ids: string[];
+          resource_shortfalls: { resource_type_id: string; required: number; available: number }[];
+          requested_location?: { x: number; y: number };
+        };
+      };
+      position?: { x: number; y: number };
+    }
+);
 
 export type GameplayEventBatch = { events: GameplayEvent[]; next_cursor: string; has_more: boolean };
 

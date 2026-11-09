@@ -6,6 +6,7 @@ export const ENTITY_EXPLODED_EVENT = "bitwars:entity-exploded";
 export const ENTITY_DETECTED_EVENT = "bitwars:entity-detected";
 export const BUILD_COMPLETED_EVENT = "bitwars:build-completed";
 export const MINIMUM_DISTANCE_VIOLATION_EVENT = "bitwars:minimum-distance-violation";
+export const BUILD_REJECTED_EVENT = "bitwars:build-rejected";
 export const TRANSFER_ENDPOINT_LOST_EVENT = "bitwars:transfer-endpoint-lost";
 export const COLLECTION_WAITING_EVENT = "bitwars:collection-waiting";
 export const COLLECTION_DROPOFF_BLOCKED_EVENT = "bitwars:collection-dropoff-blocked";
@@ -21,6 +22,13 @@ export type MinimumDistanceViolationDetail = {
   blockingEntityId: string;
   requiredDistance: number;
   actualDistance: number;
+};
+export type BuildRejectedDetail = {
+  actorEntityId: string;
+  reason: number;
+  blueprintId: string;
+  missingTechnologyIds: string[];
+  resourceShortfalls: { resourceTypeId: string; required: number; available: number }[];
 };
 export type CollectionWaitingDetail = { collectorEntityId: string };
 export type CollectCommandDetail = { entityId: number; resourceTypeId?: string; nearestCompatible: boolean; depotEntityId?: number };
@@ -89,6 +97,10 @@ export function dispatchBuildCompleted(entity: Entity) {
 
 export function dispatchMinimumDistanceViolation(detail: MinimumDistanceViolationDetail) {
   window.dispatchEvent(new CustomEvent<MinimumDistanceViolationDetail>(MINIMUM_DISTANCE_VIOLATION_EVENT, { detail }));
+}
+
+export function dispatchBuildRejected(detail: BuildRejectedDetail) {
+  window.dispatchEvent(new CustomEvent<BuildRejectedDetail>(BUILD_REJECTED_EVENT, { detail }));
 }
 
 export function dispatchCollectionWaiting(detail: CollectionWaitingDetail) {

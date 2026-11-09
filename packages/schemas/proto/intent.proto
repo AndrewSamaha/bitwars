@@ -36,6 +36,8 @@ enum LifecycleReason {
   MINIMUM_DISTANCE_VIOLATION = 9;
   TRANSFER_ENDPOINT_LOST = 10;
   ESCORT_TARGET_LOST = 11;
+  MISSING_TECHNOLOGY = 12;
+  INSUFFICIENT_RESOURCES = 13;
 }
 
 // Represents an in-flight destination for an entity (server-side).
@@ -206,6 +208,20 @@ message LifecycleEvent {
   uint64 entity_id = 9;
   // This command edited a route; its completion does not finish the root order.
   bool route_edit = 10;
+  BuildRejectionDetail build_rejection = 11;
+}
+
+message BuildRejectionDetail {
+  string blueprint_id = 1;
+  repeated string missing_technology_ids = 2;
+  repeated BuildResourceShortfall resource_shortfalls = 3;
+  Vec2 requested_location = 4;
+}
+
+message BuildResourceShortfall {
+  string resource_type_id = 1;
+  double required = 2;
+  double available = 3;
 }
 
 message MinimumDistanceViolation {

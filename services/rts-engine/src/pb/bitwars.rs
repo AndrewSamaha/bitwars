@@ -690,6 +690,28 @@ pub struct LifecycleEvent {
     /// This command edited a route; its completion does not finish the root order.
     #[prost(bool, tag = "10")]
     pub route_edit: bool,
+    #[prost(message, optional, tag = "11")]
+    pub build_rejection: ::core::option::Option<BuildRejectionDetail>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildRejectionDetail {
+    #[prost(string, tag = "1")]
+    pub blueprint_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub missing_technology_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, repeated, tag = "3")]
+    pub resource_shortfalls: ::prost::alloc::vec::Vec<BuildResourceShortfall>,
+    #[prost(message, optional, tag = "4")]
+    pub requested_location: ::core::option::Option<Vec2>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildResourceShortfall {
+    #[prost(string, tag = "1")]
+    pub resource_type_id: ::prost::alloc::string::String,
+    #[prost(double, tag = "2")]
+    pub required: f64,
+    #[prost(double, tag = "3")]
+    pub available: f64,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct MinimumDistanceViolation {
@@ -999,6 +1021,8 @@ pub enum LifecycleReason {
     MinimumDistanceViolation = 9,
     TransferEndpointLost = 10,
     EscortTargetLost = 11,
+    MissingTechnology = 12,
+    InsufficientResources = 13,
 }
 impl LifecycleReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1019,6 +1043,8 @@ impl LifecycleReason {
             Self::MinimumDistanceViolation => "MINIMUM_DISTANCE_VIOLATION",
             Self::TransferEndpointLost => "TRANSFER_ENDPOINT_LOST",
             Self::EscortTargetLost => "ESCORT_TARGET_LOST",
+            Self::MissingTechnology => "MISSING_TECHNOLOGY",
+            Self::InsufficientResources => "INSUFFICIENT_RESOURCES",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1036,6 +1062,8 @@ impl LifecycleReason {
             "MINIMUM_DISTANCE_VIOLATION" => Some(Self::MinimumDistanceViolation),
             "TRANSFER_ENDPOINT_LOST" => Some(Self::TransferEndpointLost),
             "ESCORT_TARGET_LOST" => Some(Self::EscortTargetLost),
+            "MISSING_TECHNOLOGY" => Some(Self::MissingTechnology),
+            "INSUFFICIENT_RESOURCES" => Some(Self::InsufficientResources),
             _ => None,
         }
     }

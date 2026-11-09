@@ -168,22 +168,67 @@ pub struct CombatEffectUiState {
 /// stream, these records are retained for offline/reconnect history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameplayEvent {
-    pub event_type: String,
     pub server_tick: u64,
     pub occurred_at_ms: i64,
-    pub victim: GameplayEntityRef,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub attacker: Option<GameplayEntityRef>,
-    pub cause: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub damage_amount: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub missing_resource_types: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_entity_id: Option<u64>,
-    pub position: IntentPoint,
     /// Internal delivery policy; the web API removes this before responding.
     pub recipients: Vec<String>,
+    #[serde(flatten)]
+    pub kind: GameplayEventKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event_type")]
+pub enum GameplayEventKind {
+    #[serde(rename = "entity_destroyed")]
+    EntityDestroyed {
+        victim: GameplayEntityRef,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        attacker: Option<GameplayEntityRef>,
+        cause: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        damage_amount: Option<f32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        missing_resource_types: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source_entity_id: Option<u64>,
+        position: IntentPoint,
+    },
+    #[serde(rename = "intent_rejected")]
+    IntentRejected {
+        rejection: GameplayIntentRejection,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        position: Option<IntentPoint>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameplayIntentRejection {
+    pub intent_id: String,
+    pub client_cmd_id: String,
+    pub player_id: String,
+    pub entity_id: u64,
+    pub intent_type: String,
+    pub state: i32,
+    pub reason: i32,
+    pub protocol_version: u32,
+    pub route_edit: bool,
+    pub build_rejection: GameplayBuildRejectionDetail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameplayBuildRejectionDetail {
+    pub blueprint_id: String,
+    pub missing_technology_ids: Vec<String>,
+    pub resource_shortfalls: Vec<GameplayBuildResourceShortfall>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_location: Option<IntentPoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameplayBuildResourceShortfall {
+    pub resource_type_id: String,
+    pub required: f64,
+    pub available: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

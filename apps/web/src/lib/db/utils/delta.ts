@@ -121,6 +121,23 @@ export async function emitEventFromBuffer(
               actualDistance: record.record.value.minimumDistanceViolation.actualDistance,
             }
           : undefined,
+        buildRejection: record.record.value.buildRejection
+          ? {
+              blueprintId: record.record.value.buildRejection.blueprintId,
+              missingTechnologyIds: record.record.value.buildRejection.missingTechnologyIds,
+              requestedLocation: record.record.value.buildRejection.requestedLocation
+                ? {
+                    x: record.record.value.buildRejection.requestedLocation.x,
+                    y: record.record.value.buildRejection.requestedLocation.y,
+                  }
+                : undefined,
+              resourceShortfalls: record.record.value.buildRejection.resourceShortfalls.map((shortfall) => ({
+                resourceTypeId: shortfall.resourceTypeId,
+                required: shortfall.required,
+                available: shortfall.available,
+              })),
+            }
+          : undefined,
       };
       await channel.write(sseFormat({ event: "lifecycle", id, data: payload }));
       break;

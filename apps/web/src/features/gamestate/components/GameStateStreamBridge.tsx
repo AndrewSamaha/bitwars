@@ -9,7 +9,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { syncContentChangedEvent } from "@/features/content/contentEvents";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
+import { dispatchBuildRejected, dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { COLLECTION_DROPOFF_BLOCKED_EVENT } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
@@ -564,6 +564,16 @@ export default function GameStateStreamBridge() {
               blockingEntityId: String(minimumDistanceViolation.blockingEntityId),
               requiredDistance: Number(minimumDistanceViolation.requiredDistance),
               actualDistance: Number(minimumDistanceViolation.actualDistance),
+            });
+          }
+          const buildRejection = payload.buildRejection;
+          if (state === LIFECYCLE_STATE_REJECTED && reason !== LIFECYCLE_REASON_MINIMUM_DISTANCE_VIOLATION && buildRejection && entityIdFromCmd != null) {
+            dispatchBuildRejected({
+              actorEntityId: String(entityIdFromCmd),
+              reason,
+              blueprintId: buildRejection.blueprintId,
+              missingTechnologyIds: buildRejection.missingTechnologyIds ?? [],
+              resourceShortfalls: buildRejection.resourceShortfalls ?? [],
             });
           }
           const isCompletedConstruction =

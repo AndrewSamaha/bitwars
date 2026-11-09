@@ -23,6 +23,7 @@ type VisibleEntities = { run_id?: string; ready: boolean; entities: GameEntity[]
 type ChangeBatch = { changes: PlayerChange[]; next_cursor: number; has_more: boolean; gap: boolean };
 type IntentReceipt = { accepted_http: boolean; status: number; client_cmd_id: string; result: unknown };
 type Point = { x: number; y: number };
+type DestructionEvent = Extract<GameplayEvent, { event_type: "entity_destroyed" }>;
 export type BuildJob = { commandId: string; builderId: number; blueprintId: string; priorIds: Set<string>; priorCount: number };
 
 type Failure = {
@@ -35,7 +36,7 @@ type Failure = {
   event_id?: string;
   cause?: string;
   attacker_player_id?: string;
-  attacker?: GameplayEvent["attacker"];
+  attacker?: DestructionEvent["attacker"];
   diagnostic_error?: string;
 };
 
@@ -171,7 +172,7 @@ export class ScriptedPlayer {
           return failure;
         }
         const batch = await call<GameplayEventBatch>(this.client, "get_gameplay_events", { handle: this.handle, after: cursor });
-        const destroyed = batch.events.find(event =>
+        const destroyed = batch.events.find((event): event is DestructionEvent =>
           event.event_type === "entity_destroyed" && event.victim.entity_id === entityId &&
           (!command?.server_tick || Number(event.server_tick) <= Number(command.server_tick)),
         );

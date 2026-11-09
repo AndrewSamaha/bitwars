@@ -8,21 +8,48 @@ import { getEnv } from "@/lib/utils";
 const DEFAULT_GAME_ID = "demo-001";
 const MAX_GAMEPLAY_EVENTS = 100;
 
-type StoredGameplayEvent = {
-  event_type: string;
-  server_tick: number;
-  occurred_at_ms: number;
-  victim: { entity_id: number; entity_type_id: string; owner_player_id: string };
-  attacker?: { entity_id: number; entity_type_id: string; owner_player_id: string };
-  cause: string;
-  damage_amount?: number;
-  missing_resource_types?: string[];
-  source_entity_id?: number;
-  position: { x: number; y: number };
-  recipients: string[];
+type GameplayActor = { entity_id: number; entity_type_id: string; owner_player_id: string };
+type BuildRejection = {
+  blueprint_id: string;
+  missing_technology_ids: string[];
+  resource_shortfalls: { resource_type_id: string; required: number; available: number }[];
+  requested_location?: { x: number; y: number };
 };
 
-export type GameplayEvent = Omit<StoredGameplayEvent, "recipients"> & { event_id: string };
+type StoredGameplayEvent = (
+  | {
+      event_type: "entity_destroyed";
+      victim: GameplayActor;
+      attacker?: GameplayActor;
+      cause: string;
+      damage_amount?: number;
+      missing_resource_types?: string[];
+      source_entity_id?: number;
+      position: { x: number; y: number };
+    }
+  | {
+      event_type: "intent_rejected";
+      rejection: {
+        intent_id: string;
+        client_cmd_id: string;
+        player_id: string;
+        entity_id: number;
+        intent_type?: string;
+        state: number;
+        reason: number;
+        protocol_version: number;
+        route_edit: boolean;
+        build_rejection?: BuildRejection;
+      };
+      position?: { x: number; y: number };
+    }
+) & { server_tick: number; occurred_at_ms: number; recipients: string[] };
+
+export type GameplayEvent = StoredGameplayEvent extends infer Event
+  ? Event extends StoredGameplayEvent
+    ? Omit<Event, "recipients"> & { event_id: string }
+    : never
+  : never;
 
 export function getGameId(): string {
   return getEnv("GAME_ID", DEFAULT_GAME_ID);

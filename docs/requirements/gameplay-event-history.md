@@ -38,6 +38,7 @@ occurrence/deduplication and retention rules before delivery to the UI.
 | Saved waypoints cleared | Browser intent-queue storage migration notice; `Saved waypoints cleared` toast | Local storage migration, not a match-world event; may not occur while offline. |
 | **We are under attack** | Owned entity health decreases with damage type other than resource starvation or radiation (including an untyped health decrease); `under-attack` audio, **no toast** | The server should identify hostile damage explicitly rather than relying on an untyped client fallback. The client currently plays once per entity per mounted stream bridge, rearming on a world change or bridge remount; define a meaningful repeat/incident policy before persisting. History inclusion does not imply adding a toast. |
 | Entity destroyed (already recorded) | Engine combat (`laser`, `dismantle`) or radiation death | Already in `gameplay_events` for victim/attacker owners (combat) or victim owner (radiation); retain and avoid duplicating it when adding attack events. |
+| Build intent rejected (already recorded) | Engine build preflight rejects a requested blueprint; live lifecycle produces a toast and Terminal `log` entry | The engine stores dashed command/intent IDs, builder ID, blueprint, requested location, machine-readable reason, and missing technology or resource details for the issuing player. The browser does not replay this history on reconnect. |
 
 The minimap ping list is the two listeners for `ENTITY_DETECTED_EVENT` and
 `BUILD_COMPLETED_EVENT` in `apps/web/src/features/pixijs/components/GameStage.tsx`.
@@ -68,12 +69,17 @@ history or stay local before building a client upload path.
 
 - `services/rts-engine/src/io/redis.rs` writes a match-scoped Redis Stream with
   approximate `MAXLEN ~ 100000`; scenario reset and clean start remove it.
-  The writer currently emits only `entity_destroyed` for combat or radiation.
+  The writer emits `entity_destroyed` for combat or radiation and
+  `intent_rejected` for rejected build requests. Rejections carry the dashed
+  intent and command UUIDs, issuing player ID, builder ID and position when
+  owned, blueprint ID, requested location, lifecycle reason and relevant
+  missing prerequisites or resource shortfalls. Destruction records retain
+  their existing victim/cause shape.
 - `GET /api/v2/gameplay-events?after=<stream-id>` filters the stream's recipient
   list for the authenticated player. It reads up to 100 **raw match records** per
   page; `next_cursor` advances past scanned records even if none belong to that
-  player. The current TypeScript record shape assumes a victim and cause, so
-  other event kinds need an explicit typed schema and compatible readers/MCP.
+  player. The TypeScript record shape distinguishes destruction from build
+  rejection; the browser does not read this endpoint on reconnect.
 - The live SSE stream (`rts:match:<game-id>:events`) is separate, trimmed more
   aggressively, and is not a substitute for offline notification history.
 - Cursor behavior across resets, trimmed history gaps, multi-tab reads, and

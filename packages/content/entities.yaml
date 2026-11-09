@@ -203,6 +203,8 @@ entity_types:
         entity_type_id: food_storage_container
       - duration_seconds: 100
         entity_type_id: mineral_storage_container
+      - duration_seconds: 100
+        entity_type_id: power_storage_pod
     collector:
       collects:
         - minerals
@@ -817,6 +819,8 @@ entity_types:
         entity_type_id: factory
       - duration_seconds: 166.66666666666669
         entity_type_id: military_factory
+      - duration_seconds: 100
+        entity_type_id: power_storage_pod
     collector:
       collects:
         - minerals
@@ -898,7 +902,6 @@ entity_types:
     combat_targetable: true
     depot: true
     depot_range: 2000
-    shareable_with_hub: [food]
     fog_memory: forget_when_hidden
     health: 50
     hull_radius: 50
@@ -914,6 +917,8 @@ entity_types:
       cost_per_minute:
         energy: 0.1
       range: 400
+    shareable_with_hub:
+      - food
     speed: 60
     stop_radius: 0.5
     visual:
@@ -939,10 +944,11 @@ entity_types:
     build_cost:
       energy: 100
       minerals: 100
+    builds:
+      - entity_type_id: power_storage_pod
     combat_targetable: true
     depot: true
     depot_range: 2000
-    shareable_with_hub: [minerals]
     fog_memory: forget_when_hidden
     health: 50
     hull_radius: 50
@@ -958,6 +964,8 @@ entity_types:
       cost_per_minute:
         energy: 0.1
       range: 400
+    shareable_with_hub:
+      - minerals
     speed: 60
     stop_radius: 0.5
     visual:
@@ -1050,3 +1058,33 @@ entity_types:
     visual:
       scale: 4
     z_index: -2
+  power_storage_pod:
+    build_cost:
+      energy: 100
+      minerals: 100
+    combat_targetable: true
+    depot: true
+    depot_range: 2000
+    fog_memory: forget_when_hidden
+    health: 50
+    hull_radius: 50
+    initial_resources:
+      energy: 10
+    maintenance_cost_per_minute:
+      energy: 1
+      minerals: 1
+    mass: 7
+    max_capacity:
+      energy: 500
+      food: 0
+      minerals: 0
+    sensor:
+      cost_per_minute:
+        energy: 0.1
+      range: 400
+    shareable_with_hub:
+      - energy
+    speed: 60
+    stop_radius: 0.5
+    visual:
+      scale: 1

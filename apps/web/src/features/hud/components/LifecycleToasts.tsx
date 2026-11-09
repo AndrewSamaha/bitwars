@@ -1,12 +1,15 @@
 "use client";
 
 import { AlertTriangle, X } from "lucide-react";
+import { LifecycleReason } from "@bitwars/shared/gen/intent_pb";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { game } from "@/features/gamestate/world";
 import {
+  BUILD_REJECTED_EVENT,
+  type BuildRejectedDetail,
   COLLECTION_WAITING_EVENT,
   COLLECTION_DROPOFF_BLOCKED_EVENT,
   COLLECT_COMMAND_EVENT,
@@ -85,6 +88,31 @@ export default function LifecycleToasts() {
       if (!detail) return;
       showToast("Collection blocked", `Collector ${detail.collectorEntityId} is ${Math.round(detail.actualDistance)} units from collector ${detail.blockingEntityId}; ${Math.round(detail.requiredDistance)} required. Click to focus it.`, detail.blockingEntityId);
     };
+    const onBuildRejected = (event: Event) => {
+      const detail = (event as CustomEvent<BuildRejectedDetail>).detail;
+      if (!detail) return;
+      const missingTech = detail.missingTechnologyIds.length
+        ? `Missing technology: ${detail.missingTechnologyIds.join(", ")}.`
+        : "";
+      const shortfalls = detail.resourceShortfalls.length
+        ? `Insufficient resources: ${detail.resourceShortfalls.map(({ resourceTypeId, required, available }) =>
+            `${resourceTypeId} (required ${required}, available ${available})`).join("; ")}.`
+        : "";
+      const explanation = [missingTech, shortfalls].filter(Boolean).join(" ")
+        || (detail.reason === LifecycleReason.INVALID_TARGET
+          ? "Invalid builder, blueprint, or build configuration."
+          : detail.reason === LifecycleReason.ENTITY_BUSY
+            ? "The builder is busy."
+            : detail.reason === LifecycleReason.NOT_OWNED
+              ? "You do not own this builder."
+              : "The build request was rejected.");
+      showToast(
+        "Build rejected",
+        `Builder ${detail.actorEntityId} cannot build ${detail.blueprintId}. ${explanation}`,
+        detail.actorEntityId,
+        `Builder ${detail.actorEntityId}`,
+      );
+    };
     const onCollectionWaiting = (event: Event) => {
       const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
       if (!detail) return;
@@ -141,6 +169,7 @@ export default function LifecycleToasts() {
     window.addEventListener(COLLECTION_DROPOFF_BLOCKED_EVENT, onDropoffBlocked);
     window.addEventListener(COLLECT_COMMAND_EVENT, onCollectCommand);
     window.addEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
+    window.addEventListener(BUILD_REJECTED_EVENT, onBuildRejected);
     window.addEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
     window.addEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
     window.addEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
@@ -151,6 +180,7 @@ export default function LifecycleToasts() {
       window.removeEventListener(COLLECTION_DROPOFF_BLOCKED_EVENT, onDropoffBlocked);
       window.removeEventListener(COLLECT_COMMAND_EVENT, onCollectCommand);
       window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
+      window.removeEventListener(BUILD_REJECTED_EVENT, onBuildRejected);
       window.removeEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
       window.removeEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
       window.removeEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
