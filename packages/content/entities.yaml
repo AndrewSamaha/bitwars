@@ -291,14 +291,14 @@ entity_types:
         max_rate_per_second: 2
         model: hill
     maintenance_cost_per_minute:
-      energy: 10
-      food: 10
-      minerals: 5
+      energy: 3
+      food: 3
+      minerals: 3
     mass: 4
     max_capacity:
-      energy: 1000
-      food: 3000
-      minerals: 1500
+      energy: 600
+      food: 600
+      minerals: 500
     researches:
       - neutrino_sensors
     sensor:

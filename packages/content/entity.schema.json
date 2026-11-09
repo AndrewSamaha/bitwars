@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "build_cost": {
-      "description": "Total construction or upgrade cost, paid upfront from one depot or remote carrier cargo.",
+      "description": "Total construction or upgrade cost, paid upfront from one depot (and its linked storage) or remote carrier cargo.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
@@ -53,7 +53,7 @@
       "default": false
     },
     "depot_range": {
-      "description": "Service radius; required and positive when depot is true. Never links depot inventories.",
+      "description": "Service radius; required and positive when depot is true. Hubs draw from specialized storage within this radius.",
       "type": "number",
       "format": "float",
       "default": 0.0
@@ -89,7 +89,7 @@
       }
     },
     "maintenance_cost_per_minute": {
-      "description": "Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.\nPaid atomically from the associated depot. Shortage pauses powered capabilities without damage or debt.",
+      "description": "Upkeep in resource units per minute, keyed by resource ID. Added to sensor operating costs.\nPaid atomically from the associated depot and, for hubs, linked storage. Shortage pauses powered capabilities without damage or debt.",
       "type": "object",
       "additionalProperties": {
         "type": "number",
