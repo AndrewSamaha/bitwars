@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Minimap sound pings now mark laser firing origins, explosions, and attacked units alongside existing discovery and construction pings; the red circle remains usable even when audio is muted.
 - Persisted server-owned fog-of-war observations across refreshes, reconnects, and world checkpoint restoration. Player-scoped snapshot/delta delivery restores world and minimap sightings without exposing hidden changes; revisiting an empty last-known location clears stale markers. Removed browser-owned sightings and the separate localStorage hazard cache.
 - Hubs (depots without `shareable_with_hub`) now withdraw configured resource types from nearby friendly storage depots when paying construction, research, repair, and operating costs; food and mineral containers declare their respective resource in the new array field. Stock stays in storage until an atomic payment, with no automatic deposits or cross-hub pooling.
 - Added optional per-entity `initial_resources` with capacity/resource validation and creation-only grants. Workers and scouts now spawn and complete construction with 50 energy, 50 food, and 50 minerals each; restoration, content reload, and upgrades preserve existing inventory.

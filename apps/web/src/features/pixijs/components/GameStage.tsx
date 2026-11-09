@@ -35,6 +35,7 @@ import { getOwnedSensorSources } from "@/features/pixijs/renderer/visibilityFog"
 import { spreadMoveTargets } from "@/features/pixijs/utils/moveTargets";
 import { selectEntitiesOfTypeInView } from "@/features/pixijs/utils/typeSelection";
 import { minimapOffsetToWorld, worldToMinimapOffset } from "@/features/pixijs/utils/minimap";
+import { subscribeToMinimapSoundPings } from "@/features/pixijs/utils/minimapSoundPings";
 import { readCameraView, saveCameraView } from "@/features/pixijs/utils/cameraSession";
 import {
   CELL_SIZE,
@@ -284,16 +285,19 @@ export default function GameStage() {
           startedAt: number;
         }> = [];
         let latestMinimapNotification: (typeof minimapNotifications)[number] | null = null;
-        const onEntityDetected = (event: Event) => {
-          const entity = (event as CustomEvent<Entity>).detail;
-          if (!entity?.pos) return;
+        const addMinimapNotification = (position: { x: number; y: number }, entityId?: number | string) => {
           const notification = {
-            entityId: entity.id === undefined ? null : String(entity.id),
-            position: { x: entity.pos.x, y: entity.pos.y },
+            entityId: entityId === undefined ? null : String(entityId),
+            position: { x: position.x, y: position.y },
             startedAt: performance.now(),
           };
           minimapNotifications.push(notification);
           latestMinimapNotification = notification;
+        };
+        const unsubscribeMinimapSoundPings = subscribeToMinimapSoundPings(addMinimapNotification);
+        const onEntityDetected = (event: Event) => {
+          const entity = (event as CustomEvent<Entity>).detail;
+          if (!entity?.pos) return;
           const graphics = new Graphics();
           graphics.eventMode = "none";
           sonarPingContainer.addChild(graphics);
@@ -369,7 +373,6 @@ export default function GameStage() {
           if (!entity) return;
           despawnExplosions.explode(entity);
         };
-        window.addEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
 
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
@@ -1787,6 +1790,7 @@ export default function GameStage() {
           window.removeEventListener(ENTITY_DETECTED_EVENT, onEntityDetected);
           window.removeEventListener(BUILD_COMPLETED_EVENT, onEntityDetected);
           window.removeEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
+          unsubscribeMinimapSoundPings();
           despawnExplosions.destroy();
           fogTexture.destroy(true);
           minimapFogTexture.destroy(true);
