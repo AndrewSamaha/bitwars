@@ -17,4 +17,6 @@ message CollectorState {
   string assigned_resource_type = 7;
   bool assigned_nearest_compatible = 8;
   optional uint64 receiving_entity_id = 9;
+  // Stable cause for a blocked maintained route; empty when not blocked.
+  optional string route_block_code = 10;
 }

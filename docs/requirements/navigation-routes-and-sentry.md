@@ -52,6 +52,11 @@ Missing/incompatible destinations or required waypoints stop motion and publish
 `routing_blocked`; there is no direct-path fallback or endpoint reselection.
 After a restart, a tracked plan without a matching position checkpoint also
 blocks until a client replans. Accepting a route does not force a world snapshot.
+If the current source depletes while the worker is carrying cargo on a valid
+depot-bound leg, the engine completes that saved leg (including partial
+unloads), then holds with `route_block_code: source_depleted` in collector
+telemetry. The browser can replace the route when connected; the engine never
+guesses a radiation-safe route to another source while offline.
 
 While connected, the browser replans on relevant world changes and blocked
 states. When eligible corridor waypoints exist but a newly known hazard leaves

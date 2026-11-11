@@ -86,6 +86,13 @@ Live lifecycle records are in the separate binary `:events` stream and have
 shorter retention. Game-query snapshots report current state, not past
 collection refusals.
 
+An already-accepted planned route reports source exhaustion through its
+collector state: `activity: routing_blocked` and
+`route_block_code: source_depleted` in snapshots/deltas after any valid
+depot-bound cargo delivery completes. This is not an intent rejection or a
+separate gameplay event. A connected client uses the code to replan to another
+discovered source; game-query snapshots show the current state only.
+
 ## Write endpoint
 
 The only current game-query write is Lua debug capture control:

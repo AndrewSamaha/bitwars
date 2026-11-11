@@ -17,7 +17,7 @@ export type RouteEntity = {
   resource_deposit?: { remaining: number } | null;
   resources?: Array<{ resource_type: string; amount: number }>;
   supply?: { depot_id?: number | string; delivery_depot_id?: number | string };
-  collector_state?: { activity: string; resource_type?: string };
+  collector_state?: { activity: string; resource_type?: string; route_block_code?: string };
 };
 export type Assignment = { resourceTypeId?: string; nearestCompatible: boolean };
 export type PlanRequest = {
@@ -27,6 +27,7 @@ export type PlanRequest = {
   definitions: Record<string, EntityTypeDef>;
   assignment: Assignment;
   pinned?: Pick<TravelPlan, "sourceEntityId">;
+  excludedSourceIds?: number[];
   currentPlan?: TravelPlan;
 };
 export type CollectionBlockCode =
@@ -186,13 +187,16 @@ export class CollectionPlanner {
     const sources = request.entities.filter(entity => {
       const node = request.definitions[entity.entity_type_id ?? ""]?.resource_node;
       return (entity.health ?? 1) > 0 && (entity.resource_deposit?.remaining ?? 1) > 0 && node?.collection_mode === "transport"
+        && !request.excludedSourceIds?.includes(entity.id)
         && collects.includes(node.resource_type) && hasCapacity(node.resource_type) && (resource === undefined || node.resource_type === resource);
     }).sort(nearest);
-    const source = request.pinned ? sources.find(entity => entity.id === request.pinned!.sourceEntityId) : sources[0];
+    const source = (request.pinned && sources.find(entity => entity.id === request.pinned!.sourceEntityId)) || sources[0];
     if (!source) return blocked("source_unavailable", "No compatible discovered transport source is available.", request.pinned?.sourceEntityId);
     const sourceResource = request.definitions[source.entity_type_id ?? ""]!.resource_node!.resource_type;
     const sourceCargo = cargo?.resource_type === sourceResource ? cargo : undefined;
     const initialToDepot = !!sourceCargo && (sourceCargo.amount >= definition.max_capacity![sourceResource]!
+      || (request.excludedSourceIds?.length ?? 0) > 0
+      || (request.pinned !== undefined && request.pinned.sourceEntityId !== source.id)
       || (worker.collector_state?.resource_type === sourceResource
         && ["moving_to_dropoff", "delivering", "waiting_for_dropoff"].includes(worker.collector_state.activity)));
     const assigned = Number(worker.supply?.delivery_depot_id ?? 0);
@@ -227,13 +231,28 @@ export class CollectionPlanner {
     const remaining = (entity: RouteEntity) => (depotDef(entity).max_capacity?.[sourceResource] ?? 0)
       - (entity.resources?.find(entry => entry.resource_type === sourceResource)?.amount ?? 0);
     const current = request.currentPlan;
+    const currentDepot = current?.sourceEntityId === source.id
+      ? group.find(entity => entity.id === current.depotEntityId) : undefined;
+    const currentRoom = currentDepot ? Math.max(0, remaining(currentDepot)) : 0;
+    // A partial unload may leave tiny recurring capacity from hub spending.
+    // While carrying the remainder, prefer a different depot that can take more.
+    const partialDropoff = worker.collector_state?.activity === "waiting_for_dropoff"
+      && !!sourceCargo && !!currentDepot && sourceCargo.amount > currentRoom + 1e-9;
     const available = group.filter(entity => remaining(entity) > 0).sort(nearest);
-    // An active destination stays fixed while it has room, regardless of new closer depots.
-    const preferred = current && current.sourceEntityId === source.id
-      ? available.find(entity => entity.id === current.depotEntityId) : undefined;
-    if (preferred) {
-      available.splice(available.indexOf(preferred), 1);
-      available.unshift(preferred);
+    if (currentDepot) {
+      const better = partialDropoff
+        ? available.filter(entity => entity.id !== currentDepot.id && remaining(entity) > currentRoom)
+        : undefined;
+      if (better?.length) {
+        available.length = 0;
+        available.push(...better, currentDepot);
+      } else {
+        const index = available.indexOf(currentDepot);
+        if (index >= 0) {
+          available.splice(index, 1);
+          available.unshift(currentDepot);
+        }
+      }
     }
     // Keep a full compatible endpoint as a waiting fallback if no open depot has
     // a safe route. This never replaces a usable candidate with a full one.

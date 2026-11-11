@@ -11,7 +11,8 @@ const env = vi.hoisted(() => {
     definitions: {
       worker: { ...base, collector: { collects: ["minerals"], transport_rate_per_second: 8 }, max_capacity: { minerals: 10 } },
       minerals: { ...base, resource_node: { resource_type: "minerals", collection_mode: "transport" } },
-      habitat: { ...base, depot: true, max_capacity: { minerals: 100 } },
+      habitat: { ...base, depot: true, depot_range: 1000, max_capacity: { minerals: 100 } },
+      storage: { ...base, depot: true, depot_range: 500, shareable_with_hub: ["minerals"], max_capacity: { minerals: 100 } },
       star: { ...base, radiation_sources: [{ radiation_type: "heat", damage_per_second: 10, max_effective_distance: 1200 }] },
     },
     game: { ready: true, runId: "world-1" },
@@ -222,4 +223,131 @@ it("keeps an accepted Collect order while its depot group is full and announces 
   expect(env.entities[0]!.supply?.delivery_depot_id).toBe(2);
   expect(destinationEvents).toEqual([{ entityId: 1, fromDepotId: 2, toDepotId: 4 }]);
   expect(send).toHaveBeenCalledTimes(2);
+});
+
+it("replans once when a partial unload enters waiting despite the hub retaining fractional room", async () => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  vi.stubGlobal("CustomEvent", class<T> extends Event {
+    detail: T;
+    constructor(name: string, options: { detail: T }) { super(name); this.detail = options.detail; }
+  });
+  env.entities[0]!.supply = { delivery_depot_id: 2 };
+  env.entities.push({ id: 4, entity_type_id: "storage", owner_player_id: "me", pos: { x: -1500, y: 0 } });
+  cleanup = collectionRouting.start("me");
+  const planner = new CollectionPlanner();
+  const send = vi.fn();
+  collectionRouting.request(1, { resourceTypeId: "minerals", nearestCompatible: false }, send);
+  const worker = env.workers[0]!;
+  const finish = () => {
+    const message = worker.postMessage.mock.calls.at(-1)![0];
+    worker.onmessage!({ data: { id: message.id, result: planner.plan(message.request) } });
+  };
+  finish();
+  expect(send).toHaveBeenCalledWith(expect.objectContaining({ depotEntityId: 2 }));
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "collect-command" } });
+  env.entities[0]!.resources = [{ resource_type: "minerals", amount: 6.4 }];
+  env.entities[0]!.collector_state = { activity: "waiting_for_dropoff", resource_type: "minerals" };
+  env.entities[1]!.resources = [{ resource_type: "minerals", amount: 99.995 }];
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  expect(worker.postMessage).toHaveBeenCalledTimes(2);
+  finish();
+  expect(send).toHaveBeenCalledWith(expect.objectContaining({ depotEntityId: 4, initialToDepot: true }));
+  expect(collectionRouting.getEffectiveDestinationId(1)).toBe(4);
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  expect(worker.postMessage).toHaveBeenCalledTimes(2);
+  expect(send).toHaveBeenCalledTimes(2);
+});
+
+it("skips a hidden depleted source after authoritative rejection and delivers partial cargo before trying another", async () => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  vi.stubGlobal("CustomEvent", class<T> extends Event {
+    detail: T;
+    constructor(name: string, options: { detail: T }) { super(name); this.detail = options.detail; }
+  });
+  env.entities[0]!.resources = [{ resource_type: "minerals", amount: 5 }];
+  env.entities[2]!.remembered = true;
+  env.memory.push({ id: 4, entity_type_id: "minerals", pos: { x: 4000, y: 0 }, remembered: true });
+  cleanup = collectionRouting.start("me");
+  const planner = new CollectionPlanner(), send = vi.fn();
+  collectionRouting.request(1, { resourceTypeId: "minerals", nearestCompatible: false }, send);
+  const worker = env.workers[0]!;
+  const finish = () => {
+    const message = worker.postMessage.mock.calls.at(-1)![0];
+    worker.onmessage!({ data: { id: message.id, result: planner.plan(message.request) } });
+  };
+  finish();
+  expect(send).toHaveBeenCalledWith(expect.objectContaining({ sourceEntityId: 3 }));
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "collect-command" } });
+  window.dispatchEvent(new CustomEvent("bitwars:collection-rejected", {
+    detail: { actorEntityId: "1", code: "source_depleted", sourceEntityId: "3" },
+  }));
+  const retry = worker.postMessage.mock.calls.at(-1)![0];
+  expect(retry.request.excludedSourceIds).toEqual([3]);
+  finish();
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ sourceEntityId: 4, initialToDepot: true }));
+  window.dispatchEvent(new CustomEvent("bitwars:collection-rejected", {
+    detail: { actorEntityId: "1", code: "source_depleted", sourceEntityId: "3" },
+  }));
+  expect(send).toHaveBeenCalledTimes(2);
+});
+
+it("replans a running route on typed source depletion, but leaves unrelated route blocks pinned", async () => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  const planner = new CollectionPlanner();
+  env.entities[2]!.remembered = true;
+  env.memory.push({ id: 4, entity_type_id: "minerals", pos: { x: 4000, y: 0 }, remembered: true });
+  cleanup = collectionRouting.start("me");
+  const send = vi.fn();
+  collectionRouting.request(1, { resourceTypeId: "minerals", nearestCompatible: false }, send);
+  const worker = env.workers[0]!;
+  const finish = () => {
+    const message = worker.postMessage.mock.calls.at(-1)![0];
+    worker.onmessage!({ data: { id: message.id, result: planner.plan(message.request) } });
+  };
+  finish();
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "collect-command" } });
+  env.entities[0]!.collector_state = { activity: "routing_blocked", route_block_code: "depot_unavailable" };
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  expect(worker.postMessage.mock.calls.at(-1)![0].request.pinned).toEqual({ sourceEntityId: 3 });
+  finish();
+  env.entities[0]!.collector_state = { activity: "gathering" };
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  finish();
+  env.entities[0]!.collector_state = { activity: "routing_blocked", route_block_code: "source_depleted" };
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  expect(worker.postMessage.mock.calls.at(-1)![0].request.excludedSourceIds).toEqual([3]);
+  finish();
+  expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ sourceEntityId: 4 }));
+});
+
+it("waits without retrying a depleted source when no replacement is known, then resumes on discovery", async () => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  vi.stubGlobal("CustomEvent", class<T> extends Event {
+    detail: T;
+    constructor(name: string, options: { detail: T }) { super(name); this.detail = options.detail; }
+  });
+  env.entities[2]!.remembered = true;
+  cleanup = collectionRouting.start("me");
+  const planner = new CollectionPlanner(), send = vi.fn();
+  collectionRouting.request(1, { resourceTypeId: "minerals", nearestCompatible: false }, send);
+  const worker = env.workers[0]!;
+  const finish = () => {
+    const message = worker.postMessage.mock.calls.at(-1)![0];
+    worker.onmessage!({ data: { id: message.id, result: planner.plan(message.request) } });
+  };
+  finish();
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "collect-command" } });
+  window.dispatchEvent(new CustomEvent("bitwars:collection-rejected", {
+    detail: { actorEntityId: "1", code: "source_depleted", sourceEntityId: "3" },
+  }));
+  finish();
+  expect(send).toHaveBeenCalledOnce();
+  expect(env.move).not.toHaveBeenCalled();
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  expect(worker.postMessage).toHaveBeenCalledTimes(2);
+  env.memory.push({ id: 4, entity_type_id: "minerals", pos: { x: 4000, y: 0 }, remembered: true });
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  finish();
+  expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ sourceEntityId: 4 }));
 });

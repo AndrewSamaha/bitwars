@@ -22,6 +22,7 @@ import { moveRouting } from "@/features/collection-routing/moveRouting";
 type Pos = { x: number; y: number };
 type CollectorStatePayload = {
   activity: string;
+  route_block_code?: string;
   resource_type: string;
   effective_rate_per_second: number;
   assigned_resource_type?: string;

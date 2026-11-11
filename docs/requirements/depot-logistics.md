@@ -114,11 +114,15 @@ Collection capacity is independent per resource. Explicit Collect orders gather 
 Changes to discovered hazards, resource sources, depots, or owned waypoints trigger
 route evaluation, not unconditional replacement of the active Collect intent.
 An unrelated moving habitat must not restart collectors whose existing routes
-remain valid. Cargo phase changes alone do not redefine the recurring route.
+remain valid. Ordinary cargo phase changes do not redefine the recurring route;
+entering `waiting_for_dropoff` after a partial unload triggers one reevaluation.
 
 The browser planner retains the active source/depot/waypoint contract while its
-geometry is valid and its effective drop-off still has room. A full drop-off
-triggers evaluation of other group members without changing the pinned source.
+geometry is valid and the current drop-off can unload the remaining cargo, or
+when no eligible alternative can take more. A full or partially insufficient
+drop-off triggers evaluation of other group members without changing the pinned
+source. A hub's small recurring free capacity from spending must not strand a
+worker carrying substantially more cargo.
 With a local waypoint network, retention requires safe recurring segments,
 the submitted initial approach, and every possible next leg from the worker.
 The server does not publish its exact collection waypoint cursor, so this is
@@ -133,6 +137,18 @@ collection enters a position hold once. Held or server-blocked collection must
 obtain a fresh plan before resuming. Only one planner request per collector is
 in flight; further updates mark it dirty and coalesce into a fresh evaluation
 before an obsolete result can issue commands.
+
+Source depletion is different from a full drop-off: a visible zero deposit,
+an authoritative `source_depleted` Collect rejection, or a running route's
+`route_block_code: source_depleted` excludes that source from the current order
+and selects another discovered compatible source. Hidden remembered sources have
+no known stock; if one is rejected, it is excluded rather than retried. A
+fresh, positive observation can restore an excluded source. Replacement plans
+use a depot-first initial leg when cargo remains aboard. If no candidate
+remains, collection waits without resubmitting the same failed source and
+reevaluates when discoveries change. A new explicit Collect resets these
+per-order exclusions. The browser must be connected to choose another
+radiation-safe route; a disconnected engine cannot select a new endpoint.
 
 ### Jettison cargo
 

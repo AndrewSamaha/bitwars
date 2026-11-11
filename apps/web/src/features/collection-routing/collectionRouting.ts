@@ -1,6 +1,6 @@
 import { contentManager } from "../content/contentManager";
 import { gameConnection } from "../gamestate/connection";
-import { dispatchCollectionDestinationChanged, dispatchCollectionRoutingBlocked, GAMESTATE_UPDATED_EVENT } from "../gamestate/events";
+import { COLLECTION_REJECTED_EVENT, dispatchCollectionDestinationChanged, dispatchCollectionRoutingBlocked, GAMESTATE_UPDATED_EVENT, type CollectionRejectedDetail } from "../gamestate/events";
 import { minimapMemory } from "../gamestate/minimapMemory";
 import { game } from "../gamestate/world";
 import { intentQueue, type CollectionRouter } from "../intent-queue/intentQueueManager";
@@ -10,12 +10,16 @@ type ManagedOrder = {
   assignment: Assignment;
   send: (plan?: TravelPlan) => void;
   plan?: TravelPlan;
+  /** Authoritatively failed sources remain excluded until observed with a changed, positive deposit. */
+  excludedSources?: Map<number, number | null>;
   accepted: boolean;
   pending: boolean;
   dirty?: boolean;
   revision: number;
   fingerprint: string;
   blockedActivity: boolean;
+  blockedReason?: string;
+  waitingDropoff?: boolean;
   blockedKey?: string;
   holding?: boolean;
   expectedDepotId?: number;
@@ -56,8 +60,8 @@ class CollectionRouting implements CollectionRouter {
   /** Accepted collection circuit for an active order; never expose a held or superseded plan. */
   getPlan(entityId: number): TravelPlan | undefined {
     const order = this.orders.get(entityId);
-    return order?.accepted && !order.holding && intentQueue.getEntityState(entityId).active?.kind === "collect"
-      ? order.plan : undefined;
+    return order?.accepted && !order.holding && !order.excludedSources?.has(order.plan?.sourceEntityId ?? 0)
+      && intentQueue.getEntityState(entityId).active?.kind === "collect" ? order.plan : undefined;
   }
   getEffectiveDestinationId(entityId: number): number {
     return this.getPlan(entityId)?.depotEntityId ?? 0;
@@ -87,11 +91,32 @@ class CollectionRouting implements CollectionRouter {
     })).catch(() => {});
   }
 
+  private excludeSource(order: ManagedOrder, sourceId: number) {
+    if (order.excludedSources?.has(sourceId)) return;
+    const source = Array.from(game.world.with("id")).find(entity => Number(entity.id) === sourceId);
+    (order.excludedSources ??= new Map()).set(sourceId, source?.resource_deposit?.remaining ?? null);
+    order.revision = ++this.serial;
+    order.pending = false;
+    order.fingerprint = "";
+  }
+
   start(playerId: string | null) {
     if (this.playerId !== playerId) this.reset();
     this.playerId = playerId;
     this.runId = game.runId;
     intentQueue.setCollectionRouter(this);
+    const onCollectionRejected = (event: Event) => {
+      const detail = (event as CustomEvent<CollectionRejectedDetail>).detail;
+      if (detail?.code !== "source_depleted") return;
+      const entityId = Number(detail.actorEntityId), sourceId = Number(detail.sourceEntityId);
+      const order = this.orders.get(entityId);
+      if (!Number.isSafeInteger(sourceId) || sourceId <= 0 || !order?.accepted || order.plan?.sourceEntityId !== sourceId) return;
+      // The rejected command has no active route to adopt during reconciliation.
+      // Keep this request pending until its replacement has been submitted.
+      order.accepted = false;
+      this.excludeSource(order, sourceId);
+      this.refresh();
+    };
     const update = () => {
       if (this.timer !== undefined) return;
       this.timer = window.setTimeout(() => { this.timer = undefined; this.refresh(); }, 200);
@@ -104,9 +129,11 @@ class CollectionRouting implements CollectionRouter {
       if (live) update();
     });
     window.addEventListener(GAMESTATE_UPDATED_EVENT, update);
+    window.addEventListener(COLLECTION_REJECTED_EVENT, onCollectionRejected);
     this.live = gameConnection.getSnapshot() === "live";
     update();
     return () => {
+      window.removeEventListener(COLLECTION_REJECTED_EVENT, onCollectionRejected);
       window.removeEventListener(GAMESTATE_UPDATED_EVENT, update);
       unsubscribeContent(); unsubscribeConnection();
       clearTimeout(this.timer); this.timer = undefined;
@@ -229,21 +256,41 @@ class CollectionRouting implements CollectionRouter {
       order.expectedDepotId = undefined;
       const active = intentQueue.getEntityState(id).active;
       if (order.accepted && !order.holding && active && active.kind !== "collect") { this.cancel(id); continue; }
+      for (const [sourceId, previousRemaining] of order.excludedSources ?? []) {
+        const source = entities.get(sourceId);
+        if (!source?.remembered && source?.resource_deposit && source.resource_deposit.remaining > 0
+          && source.resource_deposit.remaining !== previousRemaining) {
+          order.excludedSources!.delete(sourceId);
+          order.fingerprint = "";
+        }
+      }
+      const currentSource = order.plan && entities.get(order.plan.sourceEntityId);
       const blocked = worker.collector_state?.activity === "routing_blocked";
+      const blockCode = blocked ? worker.collector_state?.route_block_code : undefined;
+      const becameDepleted = blockCode === "source_depleted" && order.blockedReason !== "source_depleted";
+      if (order.accepted && order.plan && !order.excludedSources?.has(order.plan.sourceEntityId)
+        && ((!currentSource?.remembered && currentSource?.resource_deposit?.remaining === 0) || becameDepleted)) {
+        this.excludeSource(order, order.plan.sourceEntityId);
+      }
+      order.blockedReason = blockCode;
+      const waitingDropoff = worker.collector_state?.activity === "waiting_for_dropoff";
+      const becameWaiting = waitingDropoff && !order.waitingDropoff;
+      order.waitingDropoff = waitingDropoff;
       const orderFingerprint = `${fingerprint}:${worker.entity_type_id}:${worker.supply?.delivery_depot_id ?? 0}`;
       const changed = order.fingerprint !== orderFingerprint;
       const becameBlocked = blocked && !order.blockedActivity;
       order.blockedActivity = blocked;
       if (order.pending) {
-        if (changed || becameBlocked) order.dirty = true;
+        if (changed || becameBlocked || becameWaiting) order.dirty = true;
         continue;
       }
-      if (!changed && !becameBlocked && !order.dirty) continue;
+      if (!changed && !becameBlocked && !becameWaiting && !order.dirty) continue;
       order.dirty = false;
       order.fingerprint = orderFingerprint;
       const request: PlanRequest = { workerId: id, playerId: this.playerId, entities: [...entities.values()], definitions, assignment: order.assignment,
-        pinned: order.plan ? { sourceEntityId: order.plan.sourceEntityId } : undefined,
-        currentPlan: order.accepted && !order.holding && !blocked ? order.plan : undefined };
+        pinned: order.plan && !order.excludedSources?.has(order.plan.sourceEntityId) ? { sourceEntityId: order.plan.sourceEntityId } : undefined,
+        currentPlan: order.accepted && !order.holding && !blocked && !order.excludedSources?.has(order.plan?.sourceEntityId ?? 0) ? order.plan : undefined,
+        excludedSourceIds: order.excludedSources?.size ? [...order.excludedSources.keys()] : undefined };
       if (!this.worker) {
         try {
           this.worker = new Worker(new URL("./planner.worker.ts", import.meta.url), { type: "module" });
@@ -292,7 +339,7 @@ class CollectionRouting implements CollectionRouter {
       return;
     }
     if (result.kind === "blocked") {
-      if (order.accepted && !order.holding && result.reasonCode !== "depot_group_full") {
+      if (order.accepted && !order.holding && result.reasonCode !== "depot_group_full" && result.reasonCode !== "source_unavailable") {
         const worker = Array.from(game.world.with("id", "pos")).find(entity => Number(entity.id) === pending.entityId);
         if (worker?.pos) {
           order.holding = true;

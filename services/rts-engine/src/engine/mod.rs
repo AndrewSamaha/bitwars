@@ -2280,6 +2280,7 @@ impl Engine {
                             assigned_resource_type: view.assigned_resource_type.clone(),
                             assigned_nearest_compatible: view.assigned_nearest_compatible,
                             receiving_entity_id: view.receiving_entity_id, updated_tick: engine.state.tick,
+                            route_block_code: view.route_block_code.clone().unwrap_or_default(),
                         });
                     }
                 }
@@ -3155,6 +3156,7 @@ impl Engine {
                 assigned_resource_type,
                 assigned_nearest_compatible,
                 receiving_entity_id: None,
+                route_block_code: String::new(),
                 updated_tick: self.state.tick,
             },
         );
@@ -4439,19 +4441,35 @@ impl Engine {
                 let content = self.content.as_ref().unwrap();
                 let active = self.intents.current_action.get_mut(&collector.id).unwrap();
                 let Some(pb::action_state::Exec::Collect(state)) = active.action.exec.as_mut() else { unreachable!() };
-                let (activity, rate) = collection_routes::advance(&mut self.state.entities, &entity_by_id, content,
-                    &self.state.discovered_entities[&collector.owner_player_id], &upgrading, state, &mut gathering_by_node, dt);
-                let resource = state.travel_plan.as_ref()
-                    .and_then(|plan| collection_entity(&self.state.entities, plan.source_entity_id, &entity_by_id))
-                    .and_then(|entity| content.get(&entity.entity_type_id))
-                    .and_then(|def| def.resource_node.as_ref()).map(|node| node.resource_type.clone())
-                    .unwrap_or_else(|| assigned_resource_type.clone());
+                let (activity, rate, block_code) = collection_routes::advance(&mut self.state.entities, &entity_by_id, content,
+                    &self.state.discovered_entities[&collector.owner_player_id], &upgrading, state, &mut gathering_by_node,
+                    if previous_resource.is_empty() { assigned_resource_type } else { previous_resource }, dt);
+                let resource = if !state.resource_type_id.is_empty() {
+                    state.resource_type_id.clone()
+                } else if state.initial_leg_complete && !previous_resource.is_empty() {
+                    previous_resource.to_string()
+                } else {
+                    state.travel_plan.as_ref()
+                        .and_then(|plan| collection_entity(&self.state.entities, plan.source_entity_id, &entity_by_id))
+                        .and_then(|entity| content.get(&entity.entity_type_id))
+                        .and_then(|def| def.resource_node.as_ref()).map(|node| node.resource_type.clone())
+                        .unwrap_or_else(|| assigned_resource_type.clone())
+                };
                 if activity == COLLECTOR_ACTIVITY_WAITING_FOR_TURN {
                     self.transport_wait_since_tick_by_entity.entry(collector.id).or_insert(self.state.tick);
                 } else {
                     self.transport_wait_since_tick_by_entity.remove(&collector.id);
                 }
+                let previous_block_code = self.collector_ui_state_by_entity.get_mut(&collector.id)
+                    .map(|ui| std::mem::take(&mut ui.route_block_code)).unwrap_or_default();
                 self.set_collector_ui_state(collector.id, activity, &resource, rate);
+                if let Some(ui) = self.collector_ui_state_by_entity.get_mut(&collector.id) {
+                    ui.route_block_code = if previous_block_code == block_code {
+                        previous_block_code
+                    } else {
+                        block_code.to_string()
+                    };
+                }
                 continue;
             }
 
@@ -4732,6 +4750,7 @@ impl Engine {
                 assigned_resource_type: state.assigned_resource_type.clone(),
                 assigned_nearest_compatible: state.assigned_nearest_compatible,
                 receiving_entity_id: state.receiving_entity_id,
+                route_block_code: (!state.route_block_code.is_empty()).then(|| state.route_block_code.clone()),
             })
             .collect();
         states.sort_by_key(|state| state.entity_id);

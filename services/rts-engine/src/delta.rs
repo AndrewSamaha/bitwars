@@ -132,6 +132,7 @@ pub fn compute_delta(
                         || previous.assigned_resource_type != state.assigned_resource_type
                         || previous.assigned_nearest_compatible != state.assigned_nearest_compatible
                         || previous.receiving_entity_id != state.receiving_entity_id
+                        || previous.route_block_code != state.route_block_code
                 })
                 .unwrap_or(true)
         })
@@ -145,6 +146,7 @@ pub fn compute_delta(
             assigned_resource_type: state.assigned_resource_type.clone(),
             assigned_nearest_compatible: state.assigned_nearest_compatible,
             receiving_entity_id: state.receiving_entity_id,
+            route_block_code: (!state.route_block_code.is_empty()).then(|| state.route_block_code.clone()),
         })
         .collect();
     collector_state_updates.sort_by_key(|state| state.entity_id);
@@ -256,6 +258,7 @@ mod tests {
             assigned_resource_type: "minerals".to_string(),
             assigned_nearest_compatible: false,
             receiving_entity_id: None,
+            route_block_code: String::new(),
             updated_tick: 10,
         };
         let previous = HashMap::from([(4, collector.clone())]);
@@ -300,5 +303,12 @@ mod tests {
         assert_eq!(changed.collector_state_updates.len(), 1);
         assert_eq!(changed.collector_state_updates[0].entity_id, 4);
         assert_eq!(changed.collector_state_updates[0].resource_type, "food");
+
+        current.get_mut(&4).unwrap().resource_type = "minerals".into();
+        current.get_mut(&4).unwrap().route_block_code = "source_depleted".into();
+        let blocked = compute_delta(&state, &state, &previous, &current,
+            &combat_states, &combat_states, 0.01, 0.01, &HashMap::new(), &HashSet::new());
+        assert_eq!(blocked.collector_state_updates.len(), 1);
+        assert_eq!(blocked.collector_state_updates[0].route_block_code.as_deref(), Some("source_depleted"));
     }
 }

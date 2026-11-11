@@ -152,6 +152,8 @@ pub struct CollectorUiState {
     #[serde(default)]
     pub receiving_entity_id: Option<u64>,
     #[serde(default)]
+    pub route_block_code: String,
+    #[serde(default)]
     pub updated_tick: u64,
 }
 

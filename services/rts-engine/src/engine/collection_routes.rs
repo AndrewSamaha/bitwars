@@ -98,6 +98,22 @@ pub(super) fn diagnose(
     nearest_compatible: bool,
     plan: &pb::CollectionTravelPlan,
 ) -> Result<(), RouteRejection> {
+    diagnose_with_source(entities, by_id, content, known, upgrading, entity_id,
+        resource_type_id, nearest_compatible, plan, None)
+}
+
+fn diagnose_with_source(
+    entities: &[pb::Entity],
+    by_id: &HashMap<u64, usize>,
+    content: &ContentPack,
+    known: &BTreeSet<u64>,
+    upgrading: &HashSet<u64>,
+    entity_id: u64,
+    resource_type_id: &str,
+    nearest_compatible: bool,
+    plan: &pb::CollectionTravelPlan,
+    depleted_node: Option<&crate::content::ResourceNodeDef>,
+) -> Result<(), RouteRejection> {
     let source_id = if known.contains(&plan.source_entity_id) { plan.source_entity_id } else { 0 };
     let actor = collection_entity(entities, entity_id, by_id);
     let depot_id = actor.and_then(|actor| collection_entity(entities, plan.depot_entity_id, by_id)
@@ -115,7 +131,8 @@ pub(super) fn diagnose(
     let Some(source) = collection_entity(entities, source_id, by_id).filter(|e| positioned(e)) else {
         return Err(reject("source_unavailable"));
     };
-    let Some(node) = content.get(&source.entity_type_id).and_then(|d| d.resource_node.as_ref()) else {
+    let Some(node) = depleted_node.or_else(|| content.get(&source.entity_type_id)
+        .and_then(|def| def.resource_node.as_ref())) else {
         return Err(reject("source_incompatible"));
     };
     let Some(depot) = collection_entity(entities, plan.depot_entity_id, by_id)
@@ -139,7 +156,7 @@ pub(super) fn diagnose(
     if actor_def.speed <= 0.0 { return Err(reject("collector_incompatible")); }
     if upgrading.contains(&source.id) { return Err(reject("source_unavailable")); }
     if node.collection_mode != CollectionMode::Transport { return Err(reject("source_incompatible")); }
-    if !source.resource_deposit.is_none_or(|deposit| deposit.remaining > f64::EPSILON) {
+    if depleted_node.is_none() && !source.resource_deposit.is_none_or(|deposit| deposit.remaining > f64::EPSILON) {
         return Err(reject("source_depleted"));
     }
     if !collector.collects.contains(&node.resource_type)
@@ -197,38 +214,69 @@ pub(super) fn advance(
     upgrading: &HashSet<u64>,
     state: &mut pb::CollectState,
     gathering_by_node: &mut HashMap<u64, u32>,
+    resource_hint: &str,
     dt: f32,
-) -> (&'static str, f32) {
-    let valid_route = state.travel_plan.as_ref().is_some_and(|plan| valid(entities, by_id, content, known, upgrading,
-        state.entity_id, &state.resource_type_id, state.nearest_compatible, plan));
-    if state.route_checkpoint_missing || !valid_route {
+) -> (&'static str, f32, &'static str) {
+    let Some(plan) = state.travel_plan.as_ref() else {
         if let Some(actor) = collection_entity_mut(entities, state.entity_id, by_id) { hold(actor); }
-        return (BLOCKED, 0.0);
+        return (BLOCKED, 0.0, "");
+    };
+    let source = collection_entity(entities, plan.source_entity_id, by_id);
+    let current_node = source.and_then(|source| content.get(&source.entity_type_id))
+        .and_then(|def| def.resource_node.as_ref());
+    // A depleted replacement retains the source ID but can become a node for
+    // another resource. Keep unloading the old resource on the saved route.
+    let prior_resource = if state.resource_type_id.is_empty() { resource_hint } else { &state.resource_type_id };
+    let depleted_node = source.and_then(|source| {
+        if source.resource_deposit.is_some_and(|deposit| deposit.remaining <= f64::EPSILON) {
+            current_node
+        } else if !prior_resource.is_empty()
+            && current_node.is_none_or(|node| node.resource_type != prior_resource)
+            && (!state.resource_type_id.is_empty() || state.initial_leg_complete
+                || collection_entity(entities, state.entity_id, by_id)
+                    .is_some_and(|actor| resource_amount(actor, prior_resource) > f64::EPSILON))
+        {
+            content.entity_types.values().filter_map(|def| def.resource_node.as_ref())
+                .find(|node| node.collection_mode == CollectionMode::Transport
+                    && node.resource_type == prior_resource
+                    && node.depleted_entity_type_id.as_deref() == Some(source.entity_type_id.as_str()))
+        } else { None }
+    });
+    let route_valid = diagnose_with_source(entities, by_id, content, known, upgrading,
+        state.entity_id, &state.resource_type_id, state.nearest_compatible, plan, depleted_node).is_ok();
+    let to_depot = if state.initial_leg_complete { state.returning_to_depot } else { plan.initial_to_depot };
+    let node = depleted_node.or(current_node);
+    let carrying = node.is_some_and(|node| collection_entity(entities, state.entity_id, by_id)
+        .is_some_and(|actor| resource_amount(actor, &node.resource_type) > f64::EPSILON));
+    if state.route_checkpoint_missing || !route_valid || (depleted_node.is_some() && !(to_depot && carrying)) {
+        if let Some(actor) = collection_entity_mut(entities, state.entity_id, by_id) { hold(actor); }
+        let code = if !state.route_checkpoint_missing && route_valid && depleted_node.is_some() {
+            "source_depleted"
+        } else { "" };
+        return (BLOCKED, 0.0, code);
     }
-    let plan = state.travel_plan.as_ref().unwrap();
     let actor_index = by_id[&state.entity_id];
     let source_index = by_id[&plan.source_entity_id];
     let depot_index = by_id[&plan.depot_entity_id];
     let actor_def = content.get(&entities[actor_index].entity_type_id).unwrap();
     let collector = actor_def.collector.as_ref().unwrap();
-    let node = content.get(&entities[source_index].entity_type_id).unwrap().resource_node.as_ref().unwrap();
-    let to_depot = if state.initial_leg_complete { state.returning_to_depot } else { plan.initial_to_depot };
+    let node = node.unwrap();
     let waypoints = if state.initial_leg_complete { &plan.waypoint_ids } else { &plan.initial_waypoint_ids };
     let moving = if to_depot { COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF } else { COLLECTOR_ACTIVITY_MOVING_TO_SOURCE };
     if state.next_waypoint_index as usize > waypoints.len() {
         hold(&mut entities[actor_index]);
-        return (BLOCKED, 0.0);
+        return (BLOCKED, 0.0, "");
     }
     while (state.next_waypoint_index as usize) < waypoints.len() {
         let index = state.next_waypoint_index as usize;
         let id = if state.initial_leg_complete && to_depot { waypoints[waypoints.len() - index - 1] } else { waypoints[index] };
         let target = entities[by_id[&id]].pos.unwrap();
-        if !approach(&mut entities[actor_index], actor_def.speed, target, 0.0, dt) { return (moving, 0.0); }
+        if !approach(&mut entities[actor_index], actor_def.speed, target, 0.0, dt) { return (moving, 0.0, ""); }
         state.next_waypoint_index += 1;
     }
     if to_depot {
         let destination = entities[depot_index].pos.unwrap();
-        if !approach(&mut entities[actor_index], actor_def.speed, destination, DEPOSIT_DISTANCE, dt) { return (moving, 0.0); }
+        if !approach(&mut entities[actor_index], actor_def.speed, destination, DEPOSIT_DISTANCE, dt) { return (moving, 0.0, ""); }
         // Split borrows instead of cloning the actor inventory every delivery tick.
         let (actor, depot) = if actor_index < depot_index {
             let (left, right) = entities.split_at_mut(depot_index);
@@ -240,10 +288,10 @@ pub(super) fn advance(
         let depot_def = content.get(&depot.entity_type_id).unwrap();
         deposit_collection_inventory(actor, actor_def, depot, depot_def, &node.resource_type);
         if resource_amount(actor, &node.resource_type) > f64::EPSILON {
-            return ("waiting_for_dropoff", 0.0);
+            return ("waiting_for_dropoff", 0.0, "");
         }
         next_leg(state, false);
-        return (COLLECTOR_ACTIVITY_DELIVERING, 0.0);
+        return (COLLECTOR_ACTIVITY_DELIVERING, 0.0, "");
     }
     let source_position = entities[source_index].pos.unwrap();
     let position = entities[actor_index].pos.unwrap();
@@ -255,24 +303,27 @@ pub(super) fn advance(
             Engine::drive_velocity_to_band(&mut entities[actor_index], actor_def.speed.min((node.min_effective_distance - distance) / dt),
                 source_position.x, source_position.y, node.min_effective_distance, node.max_effective_distance);
         } else { hold(&mut entities[actor_index]); }
-        return (moving, 0.0);
+        return (moving, 0.0, "");
     }
-    if !approach(&mut entities[actor_index], actor_def.speed, source_position, node.max_effective_distance, dt) { return (moving, 0.0); }
+    if !approach(&mut entities[actor_index], actor_def.speed, source_position, node.max_effective_distance, dt) { return (moving, 0.0, ""); }
     let current = resource_amount(&entities[actor_index], &node.resource_type);
     let capacity = actor_def.max_capacity[&node.resource_type] as f64;
     if current >= capacity - f64::EPSILON {
         next_leg(state, true);
-        return (COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF, 0.0);
+        return (COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF, 0.0, "");
     }
     let gathering = gathering_by_node.entry(plan.source_entity_id).or_default();
     if node.max_simultaneous_collectors.is_some_and(|limit| *gathering >= limit) {
-        return (COLLECTOR_ACTIVITY_WAITING_FOR_TURN, 0.0);
+        return (COLLECTOR_ACTIVITY_WAITING_FOR_TURN, 0.0, "");
     }
     *gathering += 1;
     let gathered = gather_transport_inventory(entities, state.entity_id, plan.source_entity_id, actor_def, &node.resource_type,
         collector.transport_rate_per_second.max(0.0) as f64 * dt.max(0.0) as f64, by_id);
-    if resource_amount(&entities[actor_index], &node.resource_type) >= capacity - f64::EPSILON { next_leg(state, true); }
-    (COLLECTOR_ACTIVITY_GATHERING, if dt > 0.0 { (gathered / dt as f64) as f32 } else { 0.0 })
+    let exhausted = entities[source_index].resource_deposit.is_some_and(|deposit| deposit.remaining <= f64::EPSILON);
+    if resource_amount(&entities[actor_index], &node.resource_type) >= capacity - f64::EPSILON || exhausted {
+        next_leg(state, true);
+    }
+    (COLLECTOR_ACTIVITY_GATHERING, if dt > 0.0 { (gathered / dt as f64) as f32 } else { 0.0 }, "")
 }
 
 /// Pair the cursor with the exact position/cargo checkpoint, not a newer Redis
@@ -485,15 +536,23 @@ mod tests {
             &HashSet::new(), state.entity_id, &state.resource_type_id, state.nearest_compatible, plan))
     }
 
-    fn step(content: &ContentPack, entities: &mut [pb::Entity], state: &mut pb::CollectState, known: &BTreeSet<u64>) -> &'static str {
+    fn step_with_block(
+        content: &ContentPack, entities: &mut [pb::Entity], state: &mut pb::CollectState,
+        known: &BTreeSet<u64>, resource_hint: &str,
+    ) -> (&'static str, &'static str) {
         let indexes = collection_entity_index(entities);
-        let activity = advance(entities, &indexes, content, known, &HashSet::new(), state,
-            &mut HashMap::new(), 1.0).0;
+        let (activity, _, block_code) = advance(entities, &indexes, content, known, &HashSet::new(), state,
+            &mut HashMap::new(), resource_hint, 1.0);
         let velocity = entities[0].vel.unwrap_or_default();
         let position = entities[0].pos.as_mut().unwrap();
         position.x += velocity.x;
         position.y += velocity.y;
-        activity
+        (activity, block_code)
+    }
+
+    fn step(content: &ContentPack, entities: &mut [pb::Entity], state: &mut pb::CollectState, known: &BTreeSet<u64>) -> &'static str {
+        let resource_hint = state.resource_type_id.clone();
+        step_with_block(content, entities, state, known, &resource_hint).0
     }
 
     fn tracking(state: &pb::CollectState) -> EntityActiveIntent {
@@ -746,6 +805,115 @@ mod tests {
             assert_eq!(changed[0].vel, Some(pb::Vec2 { x: 0.0, y: 0.0 }));
             assert_eq!(changed[0].pos, before);
             assert_eq!(order.travel_plan, state.travel_plan);
+        }
+    }
+
+    #[test]
+    fn depleted_source_after_partial_pickup_returns_by_saved_waypoints_and_then_blocks() {
+        let (content, mut entities, mut state, known) = fixture();
+        entities[1].entity_type_id = "planet_blue".into();
+        entities[1].resource_deposit = Some(pb::ResourceDeposit { amount: 3.0, remaining: 3.0 });
+        state.resource_type_id.clear();
+        state.nearest_compatible = true;
+        state.travel_plan.as_mut().unwrap().initial_waypoint_ids.clear();
+        entities[0].pos = Some(pb::Vec2 { x: 960.0, y: 0.0 });
+        assert_eq!(step_with_block(&content, &mut entities, &mut state, &known, "food"),
+            (COLLECTOR_ACTIVITY_GATHERING, ""));
+        assert_eq!(resource_amount(&entities[0], "food"), 3.0);
+        assert_eq!(entities[1].resource_deposit.unwrap().remaining, 0.0);
+        assert!(state.initial_leg_complete && state.returning_to_depot);
+        crate::engine::state::transform_depleted_resource_nodes(&mut entities, &content, None);
+        assert_eq!(entities[1].entity_type_id, "dead_planet_blue");
+        assert_eq!(step_with_block(&content, &mut entities, &mut state, &known, "food"),
+            (COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF, ""));
+        let velocity = entities[0].vel.unwrap();
+        let waypoint = entities[4].pos.unwrap();
+        let position = entities[0].pos.unwrap();
+        assert!(velocity.x * (waypoint.x - position.x) + velocity.y * (waypoint.y - position.y) > 0.0);
+        let mut delivered = false;
+        for _ in 0..1000 {
+            let (activity, code) = step_with_block(&content, &mut entities, &mut state, &known, "food");
+            assert_eq!(code, "");
+            if activity == COLLECTOR_ACTIVITY_DELIVERING { delivered = true; break; }
+        }
+        assert!(delivered);
+        assert_eq!(resource_amount(&entities[2], "food"), 3.0);
+        assert_eq!(resource_amount(&entities[0], "food"), 0.0);
+        assert_eq!(step_with_block(&content, &mut entities, &mut state, &known, "food"),
+            (BLOCKED, "source_depleted"));
+        assert_eq!(entities[0].vel, Some(pb::Vec2 { x: 0.0, y: 0.0 }));
+    }
+
+    #[test]
+    fn depleted_source_allows_full_cargo_and_partial_depot_unload_without_direct_fallback() {
+        let (content, mut entities, mut state, known) = fixture();
+        state.initial_leg_complete = true;
+        state.returning_to_depot = true;
+        state.next_waypoint_index = 1;
+        entities[0].pos = entities[4].pos;
+        set_resource_amount(&mut entities[0], "minerals", 50.0);
+        entities[1].resource_deposit = Some(pb::ResourceDeposit { amount: 100.0, remaining: 0.0 });
+        let depot_capacity = content.get("habitat").unwrap().max_capacity["minerals"] as f64;
+        set_resource_amount(&mut entities[2], "minerals", depot_capacity - 12.0);
+        assert_eq!(step_with_block(&content, &mut entities, &mut state, &known, "minerals"),
+            (COLLECTOR_ACTIVITY_MOVING_TO_DROPOFF, ""));
+        assert_eq!(state.next_waypoint_index, 1);
+        let next = entities[3].pos.unwrap();
+        let velocity = entities[0].vel.unwrap();
+        assert!(velocity.x * (next.x - entities[0].pos.unwrap().x) + velocity.y * (next.y - entities[0].pos.unwrap().y) > 0.0);
+        let mut waiting = false;
+        for _ in 0..500 {
+            let (activity, code) = step_with_block(&content, &mut entities, &mut state, &known, "minerals");
+            assert_eq!(code, "");
+            if activity == "waiting_for_dropoff" { waiting = true; break; }
+        }
+        assert!(waiting);
+        assert_eq!(resource_amount(&entities[2], "minerals"), depot_capacity);
+        assert_eq!(resource_amount(&entities[0], "minerals"), 38.0);
+        set_resource_amount(&mut entities[2], "minerals", 0.0);
+        assert_eq!(step_with_block(&content, &mut entities, &mut state, &known, "minerals"),
+            (COLLECTOR_ACTIVITY_DELIVERING, ""));
+        assert_eq!(resource_amount(&entities[2], "minerals"), 38.0);
+        assert_eq!(step_with_block(&content, &mut entities, &mut state, &known, "minerals"),
+            (BLOCKED, "source_depleted"));
+    }
+
+    #[test]
+    fn transformed_source_before_pickup_reports_depletion_for_explicit_resource() {
+        let (content, mut entities, mut state, known) = fixture();
+        state.resource_type_id = "food".into();
+        entities[1].entity_type_id = "dead_planet_blue".into();
+        entities[1].resource_deposit = Some(pb::ResourceDeposit { amount: 1000.0, remaining: 1000.0 });
+        assert_eq!(step_with_block(&content, &mut entities, &mut state, &known, "food"),
+            (BLOCKED, "source_depleted"));
+        assert_eq!(entities[0].vel, Some(pb::Vec2 { x: 0.0, y: 0.0 }));
+    }
+
+    #[test]
+    fn depleted_source_never_bypasses_invalid_depot_waypoints_or_missing_checkpoint() {
+        let (content, entities, state, known) = fixture();
+        for invalid in ["waypoint", "depot", "assignment", "checkpoint", "source"] {
+            let mut entities = entities.clone();
+            let mut state = state.clone();
+            state.initial_leg_complete = true;
+            state.returning_to_depot = true;
+            set_resource_amount(&mut entities[0], "minerals", 20.0);
+            entities[1].resource_deposit = Some(pb::ResourceDeposit { amount: 20.0, remaining: 0.0 });
+            match invalid {
+                "waypoint" => entities[3].owner_player_id = "bob".into(),
+                "depot" => entities[2].owner_player_id = "bob".into(),
+                "assignment" => entities[0].supply = Some(pb::DepotSupply {
+                    delivery_depot_id: 999, ..Default::default()
+                }),
+                "source" => entities[1].entity_type_id = "star_yellow".into(),
+                _ => state.route_checkpoint_missing = true,
+            }
+            let before = entities[0].pos;
+            assert_eq!(step_with_block(&content, &mut entities, &mut state, &known, "minerals"),
+                (BLOCKED, ""), "{invalid}");
+            assert_eq!(entities[0].pos, before);
+            assert_eq!(entities[0].vel, Some(pb::Vec2 { x: 0.0, y: 0.0 }));
+            assert_eq!(resource_amount(&entities[0], "minerals"), 20.0);
         }
     }
 

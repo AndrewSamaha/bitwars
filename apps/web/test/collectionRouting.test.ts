@@ -96,6 +96,22 @@ describe("collection routing", () => {
     request.entities.find(entity => entity.id === 5)!.health = 0;
     expect(planner.plan(request).kind).toBe("blocked");
   });
+  it("uses another source when the pinned source depletes and unloads partial cargo before collecting again", () => {
+    const request = fixture();
+    request.entities.push({ id: 4, entity_type_id: "minerals", pos: { x: 4000, y: 0 }, remembered: true });
+    request.pinned = { sourceEntityId: 3 };
+    request.currentPlan = { sourceEntityId: 3, depotEntityId: 2, waypointIds: [], initialWaypointIds: [], initialToDepot: false };
+    request.entities[2]!.resource_deposit = { remaining: 0 };
+    request.entities[0]!.resources = [{ resource_type: "minerals", amount: 5 }];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({
+      kind: "planned", travelPlan: { sourceEntityId: 4, depotEntityId: 2, initialToDepot: true },
+    });
+    request.entities[2]!.resource_deposit = undefined;
+    request.excludedSourceIds = [3];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({
+      kind: "planned", travelPlan: { sourceEntityId: 4, depotEntityId: 2, initialToDepot: true },
+    });
+  });
   it("uses a safe direct segment without inventing waypoints", () => {
     expect(new CollectionPlanner().plan(fixture())).toEqual({ kind: "planned", travelPlan: {
       sourceEntityId: 3, depotEntityId: 2, waypointIds: [], initialWaypointIds: [], initialToDepot: false,
@@ -224,7 +240,7 @@ describe("collection routing", () => {
     request.definitions.worker!.max_capacity!.minerals = 0;
     expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
   });
-  it("keeps manual standalone assignment waiting at a full depot and pins only the source", () => {
+  it("keeps manual standalone assignment waiting at a full depot", () => {
     const request = fixture(); request.entities[0]!.supply = { delivery_depot_id: 9 };
     expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "assigned_depot_unavailable", sourceEntityId: 3, depotEntityId: 9 });
     request.entities[0]!.supply = { delivery_depot_id: 2 };
@@ -235,8 +251,6 @@ describe("collection routing", () => {
     if (result.kind !== "planned") throw new Error("Expected waiting route");
     request.currentPlan = result.travelPlan;
     expect(planner.plan(request)).toEqual({ kind: "retained" });
-    request.pinned = { sourceEntityId: 99 };
-    expect(planner.plan(request)).toMatchObject({ kind: "blocked", reasonCode: "source_unavailable", resourceTypeId: "minerals", sourceEntityId: 99 });
   });
   it("breaks equal-distance failover ties by depot ID", () => {
     const request = groupFixture();
@@ -274,6 +288,23 @@ describe("collection routing", () => {
     expect(planner.plan(request)).toEqual({ kind: "retained" });
     request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
     expect(planner.plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 11 } });
+  });
+  it("finishes a partial cargo drop at linked storage despite small recurring hub capacity", () => {
+    const request = groupFixture();
+    request.entities[0]!.supply = { delivery_depot_id: 2 };
+    request.entities[0]!.resources = [{ resource_type: "minerals", amount: 6.4 }];
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 99.995 }];
+    request.currentPlan = { sourceEntityId: 3, depotEntityId: 2, waypointIds: [], initialWaypointIds: [], initialToDepot: true };
+    const planner = new CollectionPlanner();
+    request.entities[0]!.collector_state = { activity: "moving_to_dropoff", resource_type: "minerals" };
+    expect(planner.plan(request)).toEqual({ kind: "retained" });
+    request.entities[0]!.collector_state = { activity: "waiting_for_dropoff", resource_type: "minerals" };
+    expect(planner.plan(request)).toMatchObject({ kind: "planned", travelPlan: {
+      sourceEntityId: 3, depotEntityId: 11, initialToDepot: true,
+    } });
+    request.entities.find(entity => entity.id === 10)!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.find(entity => entity.id === 11)!.resources = [{ resource_type: "minerals", amount: 100 }];
+    expect(planner.plan(request)).toEqual({ kind: "retained" });
   });
   it("accepts its assigned container even if that container is not shareable with its hub", () => {
     const request = groupFixture();
@@ -367,17 +398,6 @@ describe("collection routing", () => {
     request.entities.push({ ...star, pos: { x: -1700, y: 700 } },
       { id: 30, entity_type_id: "waypoint", owner_player_id: "me", pos: { x: 0, y: 400 } });
     expect(new CollectionPlanner().plan(request)).toEqual({ kind: "retained" });
-  });
-  it("identifies a depleted pinned source even when another discovered source remains viable", () => {
-    const request = fixture();
-    request.entities.push({ id: 8, entity_type_id: "minerals", pos: { x: 3000, y: 0 }, resource_deposit: { remaining: 100 } });
-    request.entities[2]!.resource_deposit = { remaining: 0 };
-    request.pinned = { sourceEntityId: 3 };
-    expect(new CollectionPlanner().plan(request)).toMatchObject({
-      kind: "blocked", reasonCode: "source_unavailable", resourceTypeId: "minerals", sourceEntityId: 3,
-    });
-    request.pinned = undefined;
-    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { sourceEntityId: 8 } });
   });
   it("resolves source distance ties by entity ID and ignores incompatible/depleted sources", () => {
     const request = fixture(); request.assignment = { nearestCompatible: true };

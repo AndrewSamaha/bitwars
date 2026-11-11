@@ -33,15 +33,18 @@ export function CollectionAssignment({ entity, tooltip = false }: { entity: Enti
   const effectiveText = effectiveDestinationId && String(effectiveDestinationId) !== String(destinationId)
     ? `; delivering to ${effectiveDestination?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${effectiveDestinationId}` : "";
   const destinationText = `${destinationLabel} (${manual ? "assigned" : "automatic"})${effectiveText}`;
+  const routeText = routingStatus || (state?.route_block_code === "source_depleted"
+    ? "Source depleted; waiting for another discovered source."
+    : "Routing blocked: waypoint, source, or depot is unavailable.");
   if (tooltip) return <>
     <div><b>collecting:</b> {resource || "not selected"}</div>
     <div><b>collection destination:</b> {destinationText}</div>
-    {(routingStatus || state?.activity === "routing_blocked") && <div role="status"><b>route:</b> {routingStatus || "Routing blocked: waypoint, source, or depot is unavailable."}</div>}
+    {(routingStatus || state?.activity === "routing_blocked") && <div role="status"><b>route:</b> {routeText}</div>}
   </>;
 
   return <>
     <span className="font-mono text-muted-foreground">collecting: {resource || "not selected"}</span>
     <span className="font-mono text-muted-foreground">collection destination: {destinationText}</span>
-    {(routingStatus || state?.activity === "routing_blocked") && <span role="status" className="font-mono text-amber-400">{routingStatus || "Routing blocked: waypoint, source, or depot is unavailable."}</span>}
+    {(routingStatus || state?.activity === "routing_blocked") && <span role="status" className="font-mono text-amber-400">{routeText}</span>}
   </>;
 }

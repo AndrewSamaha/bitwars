@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file collector_state.proto.
  */
 export const file_collector_state: GenFile = /*@__PURE__*/
-  fileDesc("ChVjb2xsZWN0b3Jfc3RhdGUucHJvdG8SB2JpdHdhcnMipAIKDkNvbGxlY3RvclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIQCghhY3Rpdml0eRgCIAEoCRIVCg1yZXNvdXJjZV90eXBlGAMgASgJEhgKDGNhcnJ5X2Ftb3VudBgEIAEoAkICGAESGgoOY2FycnlfY2FwYWNpdHkYBSABKAJCAhgBEiEKGWVmZmVjdGl2ZV9yYXRlX3Blcl9zZWNvbmQYBiABKAISHgoWYXNzaWduZWRfcmVzb3VyY2VfdHlwZRgHIAEoCRIjChthc3NpZ25lZF9uZWFyZXN0X2NvbXBhdGlibGUYCCABKAgSIAoTcmVjZWl2aW5nX2VudGl0eV9pZBgJIAEoBEgAiAEBQhYKFF9yZWNlaXZpbmdfZW50aXR5X2lkYgZwcm90bzM");
+  fileDesc("ChVjb2xsZWN0b3Jfc3RhdGUucHJvdG8SB2JpdHdhcnMi2AIKDkNvbGxlY3RvclN0YXRlEhEKCWVudGl0eV9pZBgBIAEoBBIQCghhY3Rpdml0eRgCIAEoCRIVCg1yZXNvdXJjZV90eXBlGAMgASgJEhgKDGNhcnJ5X2Ftb3VudBgEIAEoAkICGAESGgoOY2FycnlfY2FwYWNpdHkYBSABKAJCAhgBEiEKGWVmZmVjdGl2ZV9yYXRlX3Blcl9zZWNvbmQYBiABKAISHgoWYXNzaWduZWRfcmVzb3VyY2VfdHlwZRgHIAEoCRIjChthc3NpZ25lZF9uZWFyZXN0X2NvbXBhdGlibGUYCCABKAgSIAoTcmVjZWl2aW5nX2VudGl0eV9pZBgJIAEoBEgAiAEBEh0KEHJvdXRlX2Jsb2NrX2NvZGUYCiABKAlIAYgBAUIWChRfcmVjZWl2aW5nX2VudGl0eV9pZEITChFfcm91dGVfYmxvY2tfY29kZWIGcHJvdG8z");
 
 /**
  * Authoritative collector telemetry for one entity. This travels with the
@@ -71,6 +71,13 @@ export type CollectorState = Message<"bitwars.CollectorState"> & {
    * @generated from field: optional uint64 receiving_entity_id = 9;
    */
   receivingEntityId?: bigint;
+
+  /**
+   * Stable cause for a blocked maintained route; empty when not blocked.
+   *
+   * @generated from field: optional string route_block_code = 10;
+   */
+  routeBlockCode?: string;
 };
 
 /**
