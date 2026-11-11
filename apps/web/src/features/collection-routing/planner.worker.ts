@@ -7,8 +7,15 @@ self.onmessage = (event: MessageEvent<{ id: number; kind?: "move"; request: Plan
   try {
     self.postMessage({ id, result: kind === "move" ? movePlanner.plan(request as MovePlanRequest) : collectionPlanner.plan(request as PlanRequest) });
   } catch {
-    self.postMessage({ id, result: { kind: "blocked", reason: kind === "move"
-      ? "Move route planning failed. No unplanned Move order was sent."
-      : "Collection route planning failed. No unplanned collection order was sent." } });
+    if (kind === "move") {
+      self.postMessage({ id, result: { kind: "blocked", reason: "Move route planning failed. No unplanned Move order was sent." } });
+      return;
+    }
+    const collection = request as PlanRequest;
+    self.postMessage({ id, result: { kind: "blocked", reasonCode: "planner_failed",
+      reason: "Collection route planning failed. No unplanned collection order was sent.",
+      ...(collection.assignment.resourceTypeId ? { resourceTypeId: collection.assignment.resourceTypeId } : {}),
+      ...(collection.pinned?.sourceEntityId ? { sourceEntityId: collection.pinned.sourceEntityId } : {}),
+      ...(collection.pinned?.depotEntityId ? { depotEntityId: collection.pinned.depotEntityId } : {}) } });
   }
 };

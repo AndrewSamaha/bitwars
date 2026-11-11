@@ -212,7 +212,20 @@ pub struct GameplayIntentRejection {
     pub reason: i32,
     pub protocol_version: u32,
     pub route_edit: bool,
-    pub build_rejection: GameplayBuildRejectionDetail,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_rejection: Option<GameplayBuildRejectionDetail>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection_rejection: Option<GameplayCollectionRejectionDetail>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameplayCollectionRejectionDetail {
+    pub code: String,
+    pub resource_type_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_entity_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depot_entity_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

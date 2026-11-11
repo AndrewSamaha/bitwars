@@ -138,6 +138,14 @@ export async function emitEventFromBuffer(
               })),
             }
           : undefined,
+        collectionRejection: record.record.value.collectionRejection
+          ? {
+              code: record.record.value.collectionRejection.code,
+              resourceTypeId: record.record.value.collectionRejection.resourceTypeId,
+              sourceEntityId: record.record.value.collectionRejection.sourceEntityId.toString(),
+              depotEntityId: record.record.value.collectionRejection.depotEntityId.toString(),
+            }
+          : undefined,
       };
       await channel.write(sseFormat({ event: "lifecycle", id, data: payload }));
       break;

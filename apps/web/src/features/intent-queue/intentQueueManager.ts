@@ -215,6 +215,15 @@ export type ReconnectHandshake = {
     resupply?: { depot_id: number; target_amounts: Record<string, number> };
     move_target?: { x: number; y: number };
     move_route?: MoveRouteSummary;
+    collect_resource_type_id?: string;
+    collect_nearest_compatible?: boolean;
+    collect_travel_plan?: {
+      source_entity_id: number | string;
+      depot_entity_id: number | string;
+      waypoint_ids: Array<number | string>;
+      initial_waypoint_ids: Array<number | string>;
+      initial_to_depot: boolean;
+    };
     blueprint_id?: string;
     progress?: number;
   }>;

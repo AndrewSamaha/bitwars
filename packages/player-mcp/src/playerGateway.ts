@@ -65,8 +65,25 @@ export type GameplayEvent = GameplayEventCommon & (
           resource_shortfalls: { resource_type_id: string; required: number; available: number }[];
           requested_location?: { x: number; y: number };
         };
+        collection_rejection?: {
+          code: string;
+          resource_type_id: string;
+          source_entity_id?: number;
+          depot_entity_id?: number;
+        };
       };
       position?: { x: number; y: number };
+    }
+  | {
+      event_type: "collection_routing_blocked";
+      reporter: "client";
+      entity_id: number;
+      reason_code: string;
+      message?: string;
+      resource_type_id?: string;
+      source_entity_id?: number;
+      depot_entity_id?: number;
+      run_id: string;
     }
 );
 

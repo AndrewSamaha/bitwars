@@ -10,6 +10,10 @@ import { game } from "@/features/gamestate/world";
 import {
   BUILD_REJECTED_EVENT,
   type BuildRejectedDetail,
+  COLLECTION_REJECTED_EVENT,
+  COLLECTION_ROUTING_BLOCKED_EVENT,
+  type CollectionRejectedDetail,
+  type CollectionRoutingBlockedDetail,
   COLLECTION_WAITING_EVENT,
   COLLECTION_DROPOFF_BLOCKED_EVENT,
   COLLECT_COMMAND_EVENT,
@@ -113,6 +117,24 @@ export default function LifecycleToasts() {
         `Builder ${detail.actorEntityId}`,
       );
     };
+    const onCollectionRejected = (event: Event) => {
+      const detail = (event as CustomEvent<CollectionRejectedDetail>).detail;
+      if (!detail) return;
+      const context = [
+        detail.resourceTypeId && `resource ${detail.resourceTypeId}`,
+        detail.sourceEntityId && `source #${detail.sourceEntityId}`,
+        detail.depotEntityId && `depot #${detail.depotEntityId}`,
+      ].filter(Boolean).join(", ");
+      showToast("Collection rejected",
+        `Worker ${detail.actorEntityId}: ${detail.code.replaceAll("_", " ")}${context ? ` (${context})` : ""}.`,
+        detail.actorEntityId, `Worker ${detail.actorEntityId}`);
+    };
+    const onCollectionRoutingBlocked = (event: Event) => {
+      const detail = (event as CustomEvent<CollectionRoutingBlockedDetail>).detail;
+      if (!detail) return;
+      showToast("Collection route blocked", `Worker ${detail.entityId}: ${detail.reason}`,
+        String(detail.entityId), `Worker ${detail.entityId}`);
+    };
     const onCollectionWaiting = (event: Event) => {
       const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
       if (!detail) return;
@@ -170,6 +192,8 @@ export default function LifecycleToasts() {
     window.addEventListener(COLLECT_COMMAND_EVENT, onCollectCommand);
     window.addEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
     window.addEventListener(BUILD_REJECTED_EVENT, onBuildRejected);
+    window.addEventListener(COLLECTION_REJECTED_EVENT, onCollectionRejected);
+    window.addEventListener(COLLECTION_ROUTING_BLOCKED_EVENT, onCollectionRoutingBlocked);
     window.addEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
     window.addEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
     window.addEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
@@ -181,6 +205,8 @@ export default function LifecycleToasts() {
       window.removeEventListener(COLLECT_COMMAND_EVENT, onCollectCommand);
       window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
       window.removeEventListener(BUILD_REJECTED_EVENT, onBuildRejected);
+      window.removeEventListener(COLLECTION_REJECTED_EVENT, onCollectionRejected);
+      window.removeEventListener(COLLECTION_ROUTING_BLOCKED_EVENT, onCollectionRoutingBlocked);
       window.removeEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
       window.removeEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
       window.removeEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);

@@ -29,7 +29,19 @@ export type PlanRequest = {
   pinned?: Pick<TravelPlan, "sourceEntityId" | "depotEntityId">;
   currentPlan?: TravelPlan;
 };
-export type PlanResult = { kind: "planned"; travelPlan: TravelPlan } | { kind: "retained" } | { kind: "proximity" } | { kind: "blocked"; reason: string };
+export type CollectionBlockCode =
+  | "worker_unavailable" | "not_collector" | "no_capacity" | "source_unavailable"
+  | "assigned_depot_unavailable" | "depot_unavailable" | "no_safe_recurring_route"
+  | "no_safe_initial_route" | "planner_failed" | "planner_worker_failed" | "planner_worker_start_failed";
+export type CollectionBlock = {
+  kind: "blocked";
+  reason: string;
+  reasonCode: CollectionBlockCode;
+  resourceTypeId?: string;
+  sourceEntityId?: number;
+  depotEntityId?: number;
+};
+export type PlanResult = { kind: "planned"; travelPlan: TravelPlan } | { kind: "retained" } | { kind: "proximity" } | CollectionBlock;
 export type MovePlanRequest = Pick<PlanRequest, "playerId" | "entities" | "definitions"> & {
   entityId: number;
   start: { x: number; y: number };
@@ -149,16 +161,21 @@ export class CollectionPlanner {
   private router = new WaypointRouter();
 
   plan(request: PlanRequest): PlanResult {
-    const blocked = (reason: string): PlanResult => ({ kind: "blocked", reason });
+    const blocked = (reasonCode: CollectionBlockCode, reason: string, sourceEntityId?: number, depotEntityId?: number): CollectionBlock => {
+      const resourceTypeId = request.assignment.resourceTypeId
+        ?? request.definitions[request.entities.find(entity => entity.id === sourceEntityId)?.entity_type_id ?? ""]?.resource_node?.resource_type;
+      return { kind: "blocked", reason, reasonCode, ...(resourceTypeId ? { resourceTypeId } : {}),
+        ...(sourceEntityId ? { sourceEntityId } : {}), ...(depotEntityId ? { depotEntityId } : {}) };
+    };
     const worker = request.entities.find(entity => entity.id === request.workerId);
-    if (!worker || worker.owner_player_id !== request.playerId || worker.remembered) return blocked("Worker is unavailable or not owned by you.");
+    if (!worker || worker.owner_player_id !== request.playerId || worker.remembered) return blocked("worker_unavailable", "Worker is unavailable or not owned by you.");
     const definition = request.definitions[worker.entity_type_id ?? ""];
-    if (!definition?.collector) return blocked("Entity cannot collect resources.");
+    if (!definition?.collector) return blocked("not_collector", "Entity cannot collect resources.");
     if ((definition.collector.transport_rate_per_second ?? 8) <= 0) return { kind: "proximity" };
     const collects = definition.collector.collects ?? [];
     const hasCapacity = (resource: string) => (definition.max_capacity?.[resource] ?? 0) > 0;
     const explicitResource = request.assignment.nearestCompatible ? undefined : request.assignment.resourceTypeId;
-    if (explicitResource && !hasCapacity(explicitResource)) return blocked(`Worker has no capacity for ${explicitResource}.`);
+    if (explicitResource && !hasCapacity(explicitResource)) return blocked("no_capacity", `Worker has no capacity for ${explicitResource}.`);
     const preferredCargo = explicitResource ? [explicitResource] : [worker.collector_state?.resource_type, ...collects];
     const cargo = preferredCargo
       .filter((resource): resource is string => !!resource && collects.includes(resource) && hasCapacity(resource))
@@ -172,7 +189,7 @@ export class CollectionPlanner {
         && collects.includes(node.resource_type) && hasCapacity(node.resource_type) && (resource === undefined || node.resource_type === resource);
     }).sort(nearest);
     const source = request.pinned ? sources.find(entity => entity.id === request.pinned!.sourceEntityId) : sources[0];
-    if (!source) return blocked("No compatible discovered transport source is available.");
+    if (!source) return blocked("source_unavailable", "No compatible discovered transport source is available.", request.pinned?.sourceEntityId);
     const sourceResource = request.definitions[source.entity_type_id ?? ""]!.resource_node!.resource_type;
     const sourceCargo = cargo?.resource_type === sourceResource ? cargo : undefined;
     const initialToDepot = !!sourceCargo && (sourceCargo.amount >= definition.max_capacity![sourceResource]!
@@ -186,7 +203,9 @@ export class CollectionPlanner {
         && depot?.depot && (!assigned || entity.id === assigned) && remaining(sourceResource) > 0;
     }).sort(nearest);
     const depot = request.pinned ? depots.find(entity => entity.id === request.pinned!.depotEntityId) : depots[0];
-    if (!depot) return blocked(assigned ? "Assigned collection depot is unavailable or has no compatible capacity." : "No owned collection depot has compatible capacity.");
+    if (!depot) return blocked(assigned ? "assigned_depot_unavailable" : "depot_unavailable",
+      assigned ? "Assigned collection depot is unavailable or has no compatible capacity." : "No owned collection depot has compatible capacity.",
+      source.id, request.pinned?.depotEntityId ?? (assigned || undefined));
     const points = corridorPoints(request, depot.pos, source.pos);
     const current = request.currentPlan;
     if (current && current.sourceEntityId === source.id && current.depotEntityId === depot.id) {
@@ -215,9 +234,9 @@ export class CollectionPlanner {
     const hazards = hazardsFor(request, worker);
     // The shared router caches edges for this waypoint network and radiation profile.
     const route = this.router.route(depot.pos, source.pos, points, hazards);
-    if (route === null) return blocked("No radiation-safe route between depot and source within 1.5x direct distance. Reposition nearby owned waypoints.");
+    if (route === null) return blocked("no_safe_recurring_route", "No radiation-safe route between depot and source within 1.5x direct distance. Reposition nearby owned waypoints.", source.id, depot.id);
     const initial = this.router.route(worker.pos, initialToDepot ? depot.pos : source.pos, points, hazards);
-    if (initial === null) return blocked("No radiation-safe initial approach within 1.5x direct distance. Move the worker to safety or reposition nearby owned waypoints.");
+    if (initial === null) return blocked("no_safe_initial_route", "No radiation-safe initial approach within 1.5x direct distance. Move the worker to safety or reposition nearby owned waypoints.", source.id, depot.id);
     return { kind: "planned", travelPlan: { sourceEntityId: source.id, depotEntityId: depot.id, waypointIds: route, initialWaypointIds: initial, initialToDepot } };
   }
 

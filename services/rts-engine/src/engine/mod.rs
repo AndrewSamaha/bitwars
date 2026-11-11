@@ -35,8 +35,8 @@ use crate::delta::compute_delta;
 use crate::engine::intent::{format_uuid, IntentManager, IntentMetadata};
 use crate::io::redis::{
     CollectorUiState, CombatEffectUiState, ConstructionProgressUpdate, GameplayBuildRejectionDetail,
-    GameplayBuildResourceShortfall, GameplayEntityRef, GameplayEvent, GameplayEventKind,
-    GameplayIntentRejection, IntentPoint, RedisClient,
+    GameplayBuildResourceShortfall, GameplayCollectionRejectionDetail, GameplayEntityRef, GameplayEvent,
+    GameplayEventKind, GameplayIntentRejection, IntentPoint, RedisClient,
 };
 use crate::io::telemetry::{summarize_tick_durations, Telemetry};
 use crate::io::host_metrics::HostSampler;
@@ -1716,6 +1716,105 @@ mod integration_tests {
         }
         Ok(())
     }
+    #[tokio::test]
+    #[ignore = "requires Redis server (set TEST_REDIS_URL)"]
+    async fn rejected_collection_assignment_has_live_and_owner_history_details() -> Result<()> {
+        let redis_url = test_redis_url();
+        let game_id = format!("itest-collection-rejection-{}", Uuid::now_v7());
+        let (spawn_path, content_path) = test_spawn_and_content_paths();
+        let mut cfg = GameConfig::default();
+        cfg.game_id = game_id.clone();
+        cfg.redis_url = redis_url.clone();
+        cfg.spawn_config_path = spawn_path;
+        cfg.content_pack_path = content_path;
+        let mut engine = Engine::new(cfg).await?;
+        let worker_id = 900001;
+        engine.state.entities.push(pb::Entity {
+            id: worker_id, owner_player_id: "player-1".into(), entity_type_id: "worker".into(),
+            health: 100.0, pos: Some(pb::Vec2 { x: 10.0, y: 20.0 }), ..Default::default()
+        });
+        let command = Uuid::now_v7();
+        let intent = Uuid::now_v7();
+        let envelope = pb::IntentEnvelope {
+            client_cmd_id: command.as_bytes().to_vec(),
+            intent_id: intent.as_bytes().to_vec(),
+            player_id: "player-1".into(),
+            client_seq: 1,
+            protocol_version: ENGINE_PROTOCOL_MAJOR,
+            payload: Some(intent_envelope::Payload::Collect(pb::CollectIntent {
+                entity_id: worker_id, resource_type_id: "not_a_resource".into(), ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert!(engine.handle_envelope(envelope).await.is_err());
+        assert!(engine.intents.active_intents().is_empty());
+
+        let client = redis::Client::open(redis_url)?;
+        let mut conn = client.get_multiplexed_async_connection().await?;
+        let lifecycle: RedisValue = redis::cmd("XRANGE")
+            .arg(format!("rts:match:{game_id}:events")).arg("-").arg("+")
+            .query_async(&mut conn).await?;
+        let mut states = Vec::new();
+        if let RedisValue::Bulk(entries) = lifecycle {
+            for entry in entries {
+                if let RedisValue::Bulk(parts) = entry {
+                    if let Some(RedisValue::Bulk(fields)) = parts.get(1) {
+                        for pair in fields.chunks_exact(2) {
+                            if let [RedisValue::Data(field), RedisValue::Data(bytes)] = pair {
+                                if field == b"data" {
+                                    if let Some(pb::events_stream_record::Record::Lifecycle(event)) =
+                                        pb::EventsStreamRecord::decode(bytes.as_slice())?.record {
+                                        states.push(event);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(states.iter().map(|event| event.state).collect::<Vec<_>>(),
+            [pb::LifecycleState::Received as i32, pb::LifecycleState::Rejected as i32]);
+        let rejected = &states[1];
+        assert_eq!(rejected.entity_id, worker_id);
+        assert_eq!(rejected.client_cmd_id.as_slice(), command.as_bytes());
+        assert_eq!(rejected.reason, pb::LifecycleReason::InvalidTarget as i32);
+        let detail = rejected.collection_rejection.as_ref().unwrap();
+        assert_eq!(detail.code, "resource_incompatible");
+        assert_eq!(detail.resource_type_id, "not_a_resource");
+        assert_eq!(detail.source_entity_id, 0);
+        assert_eq!(detail.depot_entity_id, 0);
+
+        let history: RedisValue = redis::cmd("XRANGE")
+            .arg(format!("rts:match:{game_id}:gameplay_events")).arg("-").arg("+")
+            .query_async(&mut conn).await?;
+        let mut records = Vec::new();
+        if let RedisValue::Bulk(entries) = history {
+            for entry in entries {
+                if let RedisValue::Bulk(parts) = entry {
+                    if let Some(RedisValue::Bulk(fields)) = parts.get(1) {
+                        for pair in fields.chunks_exact(2) {
+                            if let [RedisValue::Data(field), RedisValue::Data(bytes)] = pair {
+                                if field == b"data" { records.push(serde_json::from_slice::<serde_json::Value>(bytes)?); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record["event_type"], "intent_rejected");
+        assert_eq!(record["recipients"], serde_json::json!(["player-1"]));
+        assert_eq!(record["rejection"]["client_cmd_id"], command.to_string());
+        assert_eq!(record["rejection"]["intent_id"], intent.to_string());
+        assert_eq!(record["rejection"]["collection_rejection"]["code"], detail.code);
+        assert_eq!(record["rejection"]["collection_rejection"]["resource_type_id"], detail.resource_type_id);
+        assert!(record["rejection"]["collection_rejection"].get("source_entity_id").is_none());
+        assert!(record["rejection"]["collection_rejection"].get("depot_entity_id").is_none());
+        Ok(())
+    }
+
 
 }
 
@@ -5708,6 +5807,9 @@ impl Engine {
                 if let Some(pb::intent::Kind::Build(build)) = payload_intent.kind.as_ref() {
                     self.emit_build_rejection(&metadata, build,
                         &BuildPreflightFailure::invalid("entity not found"), accept_tick).await?;
+                } else if let Some(pb::intent::Kind::Collect(collect)) = payload_intent.kind.as_ref() {
+                    self.emit_collection_rejection(&metadata, collect, "collector_unavailable", 0, 0,
+                        pb::LifecycleReason::InvalidTarget, accept_tick).await?;
                 } else {
                     self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
                         pb::LifecycleReason::InvalidTarget, accept_tick).await?;
@@ -5723,6 +5825,9 @@ impl Engine {
                         missing_technology_ids: Vec::new(),
                         resource_shortfalls: Vec::new(),
                     }, accept_tick).await?;
+                } else if let Some(pb::intent::Kind::Collect(collect)) = payload_intent.kind.as_ref() {
+                    self.emit_collection_rejection(&metadata, collect, "collector_not_owned", 0, 0,
+                        pb::LifecycleReason::NotOwned, accept_tick).await?;
                 } else {
                     self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
                         pb::LifecycleReason::NotOwned, accept_tick).await?;
@@ -5743,33 +5848,31 @@ impl Engine {
         // CLI, or another client. A missing source/refinery is deliberately
         // not an error: the collector retains its order and waits.
         if let Some(pb::intent::Kind::Collect(collect)) = payload_intent.kind.as_ref() {
-            let content = self
-                .content
-                .as_ref()
-                .ok_or_else(|| anyhow!("collection unavailable without content pack"))?;
-            let entity = self
-                .state
-                .entities
-                .iter()
-                .find(|entity| entity.id == entity_id)
-                .ok_or_else(|| anyhow!("collector entity not found"))?;
-            let collector = content
-                .get(&entity.entity_type_id)
-                .and_then(|definition| definition.collector.as_ref())
-                .ok_or_else(|| anyhow!("entity cannot collect resources"))?;
+            let Some(content) = self.content.as_ref() else {
+                self.emit_collection_rejection(&metadata, collect, "collection_unavailable", 0, 0,
+                    pb::LifecycleReason::InvalidTarget, accept_tick).await?;
+                return Err(anyhow!("collection unavailable without content pack"));
+            };
+            let entity = self.state.entities.iter().find(|entity| entity.id == entity_id)
+                .expect("collection actor ownership checked above");
+            let Some(collector) = content.get(&entity.entity_type_id)
+                .and_then(|definition| definition.collector.as_ref()) else {
+                self.emit_collection_rejection(&metadata, collect, "collector_incompatible", 0, 0,
+                    pb::LifecycleReason::InvalidTarget, accept_tick).await?;
+                return Err(anyhow!("entity cannot collect resources"));
+            };
             if collect.nearest_compatible {
                 if !collect.resource_type_id.is_empty() {
+                    self.emit_collection_rejection(&metadata, collect, "resource_incompatible", 0, 0,
+                        pb::LifecycleReason::InvalidTarget, accept_tick).await?;
                     return Err(anyhow!("nearest collection must not name a resource type"));
                 }
             } else if collect.resource_type_id.is_empty()
-                || content
-                    .get_resource_type(&collect.resource_type_id)
-                    .is_none()
-                || !collector
-                    .collects
-                    .iter()
-                    .any(|id| id == &collect.resource_type_id)
+                || content.get_resource_type(&collect.resource_type_id).is_none()
+                || !collector.collects.iter().any(|id| id == &collect.resource_type_id)
             {
+                self.emit_collection_rejection(&metadata, collect, "resource_incompatible", 0, 0,
+                    pb::LifecycleReason::InvalidTarget, accept_tick).await?;
                 return Err(anyhow!("collector cannot collect requested resource type"));
             }
 
@@ -5780,11 +5883,13 @@ impl Engine {
                     .map(|(id, _)| *id).collect();
                 let empty = std::collections::BTreeSet::new();
                 let known = self.state.discovered_entities.get(&player_id).unwrap_or(&empty);
-                if !collection_routes::valid(&self.state.entities, &collection_entity_index(&self.state.entities),
-                    content, known, &upgrading, collect.entity_id, &collect.resource_type_id, collect.nearest_compatible, plan) {
-                    self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
+                if let Err(failure) = collection_routes::diagnose(&self.state.entities,
+                    &collection_entity_index(&self.state.entities), content, known, &upgrading,
+                    collect.entity_id, &collect.resource_type_id, collect.nearest_compatible, plan) {
+                    self.emit_collection_rejection(&metadata, collect, failure.code,
+                        failure.source_entity_id, failure.depot_entity_id,
                         pb::LifecycleReason::InvalidTarget, accept_tick).await?;
-                    return Err(anyhow!("invalid collection travel plan"));
+                    return Err(anyhow!("invalid collection travel plan: {}", failure.code));
                 }
             }
         }
@@ -6106,6 +6211,12 @@ impl Engine {
                         resource_shortfalls: Vec::new(),
                     }, accept_tick).await?;
                 }
+            } else if let Some((resource_type_id, _, _)) = collect_assignment.as_ref() {
+                let collect = pb::CollectIntent {
+                    entity_id, resource_type_id: resource_type_id.clone(), ..Default::default()
+                };
+                self.emit_collection_rejection(&metadata, &collect, "collector_busy", 0, 0,
+                    pb::LifecycleReason::EntityBusy, accept_tick).await?;
             } else {
                 self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected,
                     pb::LifecycleReason::EntityBusy, accept_tick).await?;
@@ -6257,7 +6368,7 @@ impl Engine {
         self.emit_lifecycle_event_raw(
             &metadata.intent_id, &metadata.client_cmd_id, &metadata.player_id,
             pb::LifecycleState::Rejected, failure.reason, tick, metadata.protocol_version,
-            metadata.entity_id, false, None, Some(detail),
+            metadata.entity_id, false, None, Some(detail), None,
         ).await?;
         let event = GameplayEvent {
             server_tick: tick,
@@ -6274,7 +6385,7 @@ impl Engine {
                     reason: failure.reason as i32,
                     protocol_version: metadata.protocol_version,
                     route_edit: false,
-                    build_rejection: GameplayBuildRejectionDetail {
+                    build_rejection: Some(GameplayBuildRejectionDetail {
                         blueprint_id: build.blueprint_id.clone(),
                         missing_technology_ids: failure.missing_technology_ids.clone(),
                         resource_shortfalls: failure.resource_shortfalls.iter().map(|shortfall|
@@ -6286,7 +6397,8 @@ impl Engine {
                         ).collect(),
                         requested_location: build.location.as_ref().map(|point|
                             IntentPoint { x: point.x, y: point.y }),
-                    },
+                    }),
+                    collection_rejection: None,
                 },
                 position: self.state.entities.iter()
                     .find(|entity| entity.id == metadata.entity_id && entity.owner_player_id == metadata.player_id)
@@ -6298,11 +6410,68 @@ impl Engine {
         Ok(())
     }
 
+    async fn emit_collection_rejection(
+        &mut self, metadata: &IntentMetadata, collect: &pb::CollectIntent,
+        code: &str, source_entity_id: u64, depot_entity_id: u64,
+        reason: pb::LifecycleReason, tick: u64,
+    ) -> Result<()> {
+        let event_key = [metadata.intent_id.as_slice(), &metadata.entity_id.to_le_bytes()].concat();
+        if !self.lifecycle_emitted.insert((event_key, pb::LifecycleState::Rejected)) {
+            return Ok(());
+        }
+        let resource_type_id = if collect.resource_type_id.is_empty() && source_entity_id != 0 {
+            self.state.entities.iter().find(|entity| entity.id == source_entity_id)
+                .and_then(|entity| self.content.as_ref()?.get(&entity.entity_type_id)?.resource_node.as_ref())
+                .map(|node| node.resource_type.clone()).unwrap_or_default()
+        } else {
+            collect.resource_type_id.clone()
+        };
+        self.emit_lifecycle_event_raw(
+            &metadata.intent_id, &metadata.client_cmd_id, &metadata.player_id,
+            pb::LifecycleState::Rejected, reason, tick, metadata.protocol_version,
+            metadata.entity_id, false, None, None, Some(pb::CollectionRejectionDetail {
+                code: code.to_string(),
+                resource_type_id: resource_type_id.clone(),
+                source_entity_id,
+                depot_entity_id,
+            }),
+        ).await?;
+        self.redis.publish_gameplay_event(&GameplayEvent {
+            server_tick: tick,
+            occurred_at_ms: unix_time_ms(),
+            recipients: vec![metadata.player_id.clone()],
+            kind: GameplayEventKind::IntentRejected {
+                rejection: GameplayIntentRejection {
+                    intent_id: format_uuid(&metadata.intent_id),
+                    client_cmd_id: format_uuid(&metadata.client_cmd_id),
+                    player_id: metadata.player_id.clone(),
+                    entity_id: metadata.entity_id,
+                    intent_type: "collect".to_string(),
+                    state: pb::LifecycleState::Rejected as i32,
+                    reason: reason as i32,
+                    protocol_version: metadata.protocol_version,
+                    route_edit: false,
+                    build_rejection: None,
+                    collection_rejection: Some(GameplayCollectionRejectionDetail {
+                        code: code.to_string(),
+                        resource_type_id,
+                        source_entity_id: (source_entity_id != 0).then_some(source_entity_id),
+                        depot_entity_id: (depot_entity_id != 0).then_some(depot_entity_id),
+                    }),
+                },
+                position: self.state.entities.iter()
+                    .find(|entity| entity.id == metadata.entity_id && entity.owner_player_id == metadata.player_id)
+                    .and_then(|entity| entity.pos.as_ref().map(|_| entity_position(entity))),
+            },
+        }).await.context("publish collection rejection gameplay event")?;
+        Ok(())
+    }
+
     async fn emit_route_edit_event(&mut self, metadata: &IntentMetadata,
         state: pb::LifecycleState, reason: pb::LifecycleReason) -> Result<()> {
         self.emit_lifecycle_event_raw(&metadata.intent_id, &metadata.client_cmd_id,
             &metadata.player_id, state, reason, self.state.tick, metadata.protocol_version,
-            metadata.entity_id, true, None, None).await
+            metadata.entity_id, true, None, None, None).await
     }
 
     async fn emit_lifecycle_event(
@@ -6343,6 +6512,7 @@ impl Engine {
             false,
             minimum_distance_violation,
             None,
+            None,
         )
         .await
     }
@@ -6360,6 +6530,7 @@ impl Engine {
         route_edit: bool,
         minimum_distance_violation: Option<pb::MinimumDistanceViolation>,
         build_rejection: Option<pb::BuildRejectionDetail>,
+        collection_rejection: Option<pb::CollectionRejectionDetail>,
     ) -> Result<()> {
         let event = pb::LifecycleEvent {
             entity_id,
@@ -6373,6 +6544,7 @@ impl Engine {
             protocol_version,
             minimum_distance_violation,
             build_rejection,
+            collection_rejection,
         };
         self.redis
             .publish_lifecycle_event(&event)

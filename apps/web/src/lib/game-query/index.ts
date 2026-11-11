@@ -40,8 +40,25 @@ type StoredGameplayEvent = (
         protocol_version: number;
         route_edit: boolean;
         build_rejection?: BuildRejection;
+        collection_rejection?: {
+          code: string;
+          resource_type_id: string;
+          source_entity_id?: number;
+          depot_entity_id?: number;
+        };
       };
       position?: { x: number; y: number };
+    }
+  | {
+      event_type: "collection_routing_blocked";
+      reporter: "client";
+      entity_id: number;
+      reason_code: string;
+      message?: string;
+      resource_type_id?: string;
+      source_entity_id?: number;
+      depot_entity_id?: number;
+      run_id: string;
     }
 ) & { server_tick: number; occurred_at_ms: number; recipients: string[] };
 

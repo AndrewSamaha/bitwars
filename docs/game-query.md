@@ -64,6 +64,28 @@ checkpoint denotes an older world; procedural joins require a reservation
 backfill or a fresh world. Normal player snapshot mapping does not expose this
 operator checkpoint.
 
+## Collection refusal diagnostics
+
+Two refusal paths are recorded separately. An engine-rejected collection intent
+emits an owner-filtered `lifecycle` SSE event with `collectionRejection` (stable
+`code`, resource type, source/depot IDs) and an `intent_rejected` JSON record in
+`rts:match:<game-id>:gameplay_events`. The record includes the dashed
+`client_cmd_id` for correlation. A browser route planner can block before
+submitting an intent or while replanning an existing order. It reports a
+transition via authenticated `POST /api/v2/collection-routing/diagnostics`;
+the server checks current run, worker ownership, and known source/owned depot
+before recording `collection_routing_blocked` with `reporter: "client"`,
+`reason_code`, and optional context. These reports are not authoritative
+engine rejections. Repeated identical blocks are suppressed in the browser,
+and the endpoint throttles reports per player and worker.
+
+The authenticated `GET /api/v2/gameplay-events?after=<stream-id>` pages both
+record types for the issuing player. The JSON Redis stream retains approximately
+100,000 recent match records; follow `next_cursor` while `has_more` is true.
+Live lifecycle records are in the separate binary `:events` stream and have
+shorter retention. Game-query snapshots report current state, not past
+collection refusals.
+
 ## Write endpoint
 
 The only current game-query write is Lua debug capture control:

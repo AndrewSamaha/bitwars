@@ -1,10 +1,10 @@
 import { contentManager } from "../content/contentManager";
 import { gameConnection } from "../gamestate/connection";
-import { GAMESTATE_UPDATED_EVENT } from "../gamestate/events";
+import { dispatchCollectionRoutingBlocked, GAMESTATE_UPDATED_EVENT } from "../gamestate/events";
 import { minimapMemory } from "../gamestate/minimapMemory";
 import { game } from "../gamestate/world";
 import { intentQueue, type CollectionRouter } from "../intent-queue/intentQueueManager";
-import type { Assignment, PlanRequest, PlanResult, RouteEntity, TravelPlan } from "./planner";
+import type { Assignment, CollectionBlock, PlanRequest, PlanResult, RouteEntity, TravelPlan } from "./planner";
 
 type ManagedOrder = {
   assignment: Assignment;
@@ -16,6 +16,7 @@ type ManagedOrder = {
   revision: number;
   fingerprint: string;
   blockedActivity: boolean;
+  blockedKey?: string;
   holding?: boolean;
   expectedDepotId?: number;
 };
@@ -52,10 +53,35 @@ class CollectionRouting implements CollectionRouter {
     return () => { this.listeners.delete(listener); };
   };
   getStatus(entityId: number) { return this.statuses.get(entityId) ?? ""; }
+  /** Accepted collection circuit for an active order; never expose a held or superseded plan. */
+  getPlan(entityId: number): TravelPlan | undefined {
+    const order = this.orders.get(entityId);
+    return order?.accepted && !order.holding && intentQueue.getEntityState(entityId).active?.kind === "collect"
+      ? order.plan : undefined;
+  }
   private status(entityId: number, value: string) {
     if (this.getStatus(entityId) === value) return;
     if (value) this.statuses.set(entityId, value); else this.statuses.delete(entityId);
     for (const listener of this.listeners) listener();
+  }
+
+  private block(entityId: number, result: CollectionBlock, order = this.orders.get(entityId)) {
+    this.status(entityId, `Routing blocked: ${result.reason}`);
+    if (!order) return;
+    const signature = JSON.stringify([result.reasonCode, result.resourceTypeId, result.sourceEntityId, result.depotEntityId]);
+    if (order.blockedKey === signature) return;
+    order.blockedKey = signature;
+    dispatchCollectionRoutingBlocked({ entityId, reasonCode: result.reasonCode, reason: result.reason,
+      resourceTypeId: result.resourceTypeId, sourceEntityId: result.sourceEntityId, depotEntityId: result.depotEntityId });
+    const runId = this.runId;
+    // The server authenticates the actor and stamps authoritative tick/recipient.
+    // Reporting failure must never delay or change collection routing.
+    void Promise.resolve().then(() => fetch("/api/v2/collection-routing/diagnostics", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entity_id: entityId, reason_code: result.reasonCode, message: result.reason,
+        resource_type_id: result.resourceTypeId, source_entity_id: result.sourceEntityId,
+        depot_entity_id: result.depotEntityId, ...(runId ? { run_id: runId } : {}) }),
+    })).catch(() => {});
   }
 
   start(playerId: string | null) {
@@ -220,11 +246,21 @@ class CollectionRouting implements CollectionRouter {
           this.worker = new Worker(new URL("./planner.worker.ts", import.meta.url), { type: "module" });
           this.worker.onmessage = (event: MessageEvent<{ id: number; result: PlanResult }>) => this.complete(event.data.id, event.data.result);
           this.worker.onerror = () => {
+            const blocked = [...this.orders.entries()];
             this.suspend();
-            for (const entityId of this.orders.keys()) this.status(entityId, "Routing blocked: planner worker failed. Reconnect or issue collection again.");
+            for (const [entityId, order] of blocked) this.block(entityId, {
+              kind: "blocked", reasonCode: "planner_worker_failed",
+              reason: "Planner worker failed. Reconnect or issue collection again.",
+              resourceTypeId: order.assignment.resourceTypeId,
+              sourceEntityId: order.plan?.sourceEntityId, depotEntityId: order.plan?.depotEntityId,
+            }, order);
           };
         } catch {
-          this.status(id, "Routing blocked: this browser could not start the route planner."); continue;
+          this.block(id, { kind: "blocked", reasonCode: "planner_worker_start_failed",
+            reason: "This browser could not start the route planner.",
+            resourceTypeId: order.assignment.resourceTypeId,
+            sourceEntityId: order.plan?.sourceEntityId, depotEntityId: order.plan?.depotEntityId }, order);
+          continue;
         }
       }
       const requestId = ++this.serial;
@@ -248,6 +284,7 @@ class CollectionRouting implements CollectionRouter {
       return;
     }
     if (result.kind === "retained") {
+      order.blockedKey = undefined;
       this.status(pending.entityId, "Radiation-safe collection route retained");
       return;
     }
@@ -264,9 +301,10 @@ class CollectionRouting implements CollectionRouter {
             { playerId: this.playerId, assignment: order.assignment, plan: order.plan, holdClientCmdId });
         }
       }
-      this.status(pending.entityId, `Routing blocked: ${result.reason}`); return;
+      this.block(pending.entityId, result, order); return;
     }
     if (result.kind === "proximity") { order.send(); this.cancel(pending.entityId); return; }
+    order.blockedKey = undefined;
     order.plan = result.travelPlan;
     order.accepted = true;
     order.holding = false;

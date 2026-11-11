@@ -7,6 +7,8 @@ export const ENTITY_DETECTED_EVENT = "bitwars:entity-detected";
 export const BUILD_COMPLETED_EVENT = "bitwars:build-completed";
 export const MINIMUM_DISTANCE_VIOLATION_EVENT = "bitwars:minimum-distance-violation";
 export const BUILD_REJECTED_EVENT = "bitwars:build-rejected";
+export const COLLECTION_REJECTED_EVENT = "bitwars:collection-rejected";
+export const COLLECTION_ROUTING_BLOCKED_EVENT = "bitwars:collection-routing-blocked";
 export const TRANSFER_ENDPOINT_LOST_EVENT = "bitwars:transfer-endpoint-lost";
 export const COLLECTION_WAITING_EVENT = "bitwars:collection-waiting";
 export const COLLECTION_DROPOFF_BLOCKED_EVENT = "bitwars:collection-dropoff-blocked";
@@ -29,6 +31,21 @@ export type BuildRejectedDetail = {
   blueprintId: string;
   missingTechnologyIds: string[];
   resourceShortfalls: { resourceTypeId: string; required: number; available: number }[];
+};
+export type CollectionRejectedDetail = {
+  actorEntityId: string;
+  code: string;
+  resourceTypeId?: string;
+  sourceEntityId?: string;
+  depotEntityId?: string;
+};
+export type CollectionRoutingBlockedDetail = {
+  entityId: number;
+  reasonCode: string;
+  reason: string;
+  resourceTypeId?: string;
+  sourceEntityId?: number;
+  depotEntityId?: number;
 };
 export type CollectionWaitingDetail = { collectorEntityId: string };
 export type CollectCommandDetail = { entityId: number; resourceTypeId?: string; nearestCompatible: boolean; depotEntityId?: number };
@@ -101,6 +118,14 @@ export function dispatchMinimumDistanceViolation(detail: MinimumDistanceViolatio
 
 export function dispatchBuildRejected(detail: BuildRejectedDetail) {
   window.dispatchEvent(new CustomEvent<BuildRejectedDetail>(BUILD_REJECTED_EVENT, { detail }));
+}
+
+export function dispatchCollectionRejected(detail: CollectionRejectedDetail) {
+  window.dispatchEvent(new CustomEvent<CollectionRejectedDetail>(COLLECTION_REJECTED_EVENT, { detail }));
+}
+
+export function dispatchCollectionRoutingBlocked(detail: CollectionRoutingBlockedDetail) {
+  window.dispatchEvent(new CustomEvent<CollectionRoutingBlockedDetail>(COLLECTION_ROUTING_BLOCKED_EVENT, { detail }));
 }
 
 export function dispatchCollectionWaiting(detail: CollectionWaitingDetail) {

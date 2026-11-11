@@ -14,6 +14,8 @@ import { useSession } from "@/features/users/components/identity/SessionContext"
 import { createHoverIndicator, drawBuildArc, drawHealthArc } from "@/features/hud/graphics/hoverIndicator";
 import { SELECTED_COLOR, CLEAN_COLOR, BACKGROUND_APP_COLOR } from "@/features/hud/styles/style";
 import { intentQueue, type SendIntentParams } from "@/features/intent-queue/intentQueueManager";
+import { collectionRouting } from "@/features/collection-routing/collectionRouting";
+import { drawCollectionRoute } from "@/features/pixijs/renderer/collectionRoute";
 import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from "@/features/pixijs/effects/renderEffects";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
@@ -801,10 +803,13 @@ export default function GameStage() {
           }
         }
 
-        // M1: Container for waypoint indicator graphics (drawn each frame)
-        const waypointContainer = new Container();
-        (waypointContainer as any).label = 'waypoints';
-        worldContainer.addChild(waypointContainer);
+        // Routes live in world space beneath units and never intercept selection clicks.
+        const waypointGraphics = new Graphics();
+        waypointGraphics.label = "waypoints";
+        waypointGraphics.eventMode = "none";
+        waypointGraphics.zIndex = -1;
+        worldContainer.addChild(waypointGraphics);
+        const knownRoutePositions = new Map<number, { x: number; y: number }>();
 
         const buildProgressSource = Symbol("rendered build entities");
         let lastBuildProgressScanAt = -BUILD_PROGRESS_SCAN_MS;
@@ -1234,29 +1239,35 @@ export default function GameStage() {
             nowMs,
           );
 
-          // 4) Render remaining server waypoints and pending command previews
-          // removeChildren only detaches Pixi display objects; destroying the
-          // removed Graphics releases their associated GPU/JS resources before
-          // this frame creates replacement waypoint markers.
-          for (const child of waypointContainer.removeChildren()) {
-            child.destroy();
-          }
+          // Show only the selected unit's orders, including pending move edits.
+          waypointGraphics.clear();
+          let knownPositionsLoaded = false;
           const renderedSentryRoots = new Set<string>();
           for (const entityId of intentQueue.getActiveEntityIds()) {
+            if (!latestSelectorsRef.current.isSelected(String(entityId))) continue;
             const active = intentQueue.getEntityState(entityId).active;
+            if (active?.kind === "collect") {
+              const plan = collectionRouting.getPlan(entityId);
+              if (!plan) continue;
+              if (!knownPositionsLoaded) {
+                knownRoutePositions.clear();
+                for (const entity of minimapMemory.entries()) knownRoutePositions.set(Number(entity.id), entity.pos);
+                for (const [id, entity] of liveById) knownRoutePositions.set(Number(id), entity.pos);
+                knownPositionsLoaded = true;
+              }
+              drawCollectionRoute(waypointGraphics, plan, knownRoutePositions);
+              continue;
+            }
             if (active?.kind === "escort") {
-              if (!latestSelectorsRef.current.isSelected(String(entityId))) continue;
               const leader = liveById.get(String(active.escortTargetId));
               const guard = liveById.get(String(entityId));
               const slot = active.escort?.slots.find((slot) => Number(slot.entity_id) === entityId);
               if (leader?.pos && guard?.pos) {
                 const x = leader.pos.x + (slot?.offset?.x ?? 0), y = leader.pos.y + (slot?.offset?.y ?? 0);
-                const g = new Graphics();
-                g.moveTo(guard.pos.x, guard.pos.y).lineTo(x, y).stroke({ width: 1, color: 0x66ccff, alpha: 0.6 });
-                g.circle(x,y,4).stroke({ width: 1, color: 0x66ccff });
-                g.circle(leader.pos.x, leader.pos.y, (contentManager.getEntityType(leader.entity_type_id ?? "")?.hull_radius ?? 10) + 5)
+                waypointGraphics.moveTo(guard.pos.x, guard.pos.y).lineTo(x, y).stroke({ width: 1, color: 0x66ccff, alpha: 0.6 });
+                waypointGraphics.circle(x,y,4).stroke({ width: 1, color: 0x66ccff });
+                waypointGraphics.circle(leader.pos.x, leader.pos.y, (contentManager.getEntityType(leader.entity_type_id ?? "")?.hull_radius ?? 10) + 5)
                   .stroke({ width: 1, color: 0x66ccff });
-                waypointContainer.addChild(g);
               }
               continue;
             }
@@ -1271,19 +1282,13 @@ export default function GameStage() {
             // Sentry renders its complete path, starting at the saved origin.
             // Only finite movement routes need a line from the ship to the first waypoint.
             if (active?.kind !== "sentry") {
-              for (const e of game.world.with("pos", "id")) {
-                if (Number((e as any).id) === entityId) {
-                  prevX = e.pos.x;
-                  prevY = e.pos.y;
-                  break;
-                }
-              }
+              const entity = liveById.get(String(entityId));
+              if (entity) { prevX = entity.pos.x; prevY = entity.pos.y; }
             }
 
             for (let i = 0; i < waypoints.length; i++) {
               const wp = waypoints[i]!;
-              const g = new Graphics();
-
+              const g = waypointGraphics;
               const waypointColor = wp.pending ? 0xf5b942 : wp.active ? 0x44ff44 : 0x888888;
               // Draw connecting line from previous point
               if (prevX !== undefined && prevY !== undefined) {
@@ -1308,7 +1313,6 @@ export default function GameStage() {
                 // the IntentQueuePanel shows the numbered list instead.
               }
 
-              waypointContainer.addChild(g);
               prevX = wp.x;
               prevY = wp.y;
             }

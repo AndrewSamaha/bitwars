@@ -197,7 +197,7 @@ describe("collection routing", () => {
     if (capacity === undefined) delete request.definitions.worker!.max_capacity!.minerals;
     else request.definitions.worker!.max_capacity!.minerals = capacity;
     request.entities[0]!.resources = [{ resource_type: "minerals", amount: 2 }];
-    expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "no_capacity", resourceTypeId: "minerals" });
     request.entities[0]!.resources = [];
     expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
   });
@@ -214,13 +214,24 @@ describe("collection routing", () => {
   });
   it("honors a manual depot without fallback, full capacity, and pinned endpoints", () => {
     const request = fixture(); request.entities[0]!.supply = { delivery_depot_id: 9 };
-    expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "assigned_depot_unavailable", sourceEntityId: 3, depotEntityId: 9 });
     request.entities[0]!.supply = { delivery_depot_id: 2 };
     request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
-    expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "assigned_depot_unavailable", sourceEntityId: 3, depotEntityId: 2 });
     request.entities[1]!.resources = [];
     request.pinned = { sourceEntityId: 99, depotEntityId: 2 };
-    expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "source_unavailable", resourceTypeId: "minerals", sourceEntityId: 99 });
+  });
+  it("identifies a depleted pinned source even when another discovered source remains viable", () => {
+    const request = fixture();
+    request.entities.push({ id: 8, entity_type_id: "minerals", pos: { x: 3000, y: 0 }, resource_deposit: { remaining: 100 } });
+    request.entities[2]!.resource_deposit = { remaining: 0 };
+    request.pinned = { sourceEntityId: 3, depotEntityId: 2 };
+    expect(new CollectionPlanner().plan(request)).toMatchObject({
+      kind: "blocked", reasonCode: "source_unavailable", resourceTypeId: "minerals", sourceEntityId: 3,
+    });
+    request.pinned = undefined;
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { sourceEntityId: 8 } });
   });
   it("resolves source distance ties by entity ID and ignores incompatible/depleted sources", () => {
     const request = fixture(); request.assignment = { nearestCompatible: true };

@@ -209,6 +209,16 @@ message LifecycleEvent {
   // This command edited a route; its completion does not finish the root order.
   bool route_edit = 10;
   BuildRejectionDetail build_rejection = 11;
+  CollectionRejectionDetail collection_rejection = 12;
+}
+
+// Server-validated collection assignment or route failure. Entity IDs are
+// populated only for a discovered source or an owned depot.
+message CollectionRejectionDetail {
+  string code = 1;
+  string resource_type_id = 2;
+  uint64 source_entity_id = 3;
+  uint64 depot_entity_id = 4;
 }
 
 message BuildRejectionDetail {

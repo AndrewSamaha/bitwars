@@ -692,6 +692,21 @@ pub struct LifecycleEvent {
     pub route_edit: bool,
     #[prost(message, optional, tag = "11")]
     pub build_rejection: ::core::option::Option<BuildRejectionDetail>,
+    #[prost(message, optional, tag = "12")]
+    pub collection_rejection: ::core::option::Option<CollectionRejectionDetail>,
+}
+/// Server-validated collection assignment or route failure. Entity IDs are
+/// populated only for a discovered source or an owned depot.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionRejectionDetail {
+    #[prost(string, tag = "1")]
+    pub code: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub resource_type_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub source_entity_id: u64,
+    #[prost(uint64, tag = "4")]
+    pub depot_entity_id: u64,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BuildRejectionDetail {

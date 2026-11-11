@@ -9,7 +9,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { syncContentChangedEvent } from "@/features/content/contentEvents";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchBuildRejected, dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
+import { dispatchBuildRejected, dispatchCollectionRejected, dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { COLLECTION_DROPOFF_BLOCKED_EVENT } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
@@ -574,6 +574,16 @@ export default function GameStateStreamBridge() {
               blueprintId: buildRejection.blueprintId,
               missingTechnologyIds: buildRejection.missingTechnologyIds ?? [],
               resourceShortfalls: buildRejection.resourceShortfalls ?? [],
+            });
+          }
+          const collectionRejection = payload.collectionRejection;
+          if (state === LIFECYCLE_STATE_REJECTED && collectionRejection && entityIdFromCmd != null) {
+            dispatchCollectionRejected({
+              actorEntityId: String(entityIdFromCmd),
+              code: String(collectionRejection.code),
+              resourceTypeId: collectionRejection.resourceTypeId || undefined,
+              sourceEntityId: collectionRejection.sourceEntityId !== "0" ? collectionRejection.sourceEntityId : undefined,
+              depotEntityId: collectionRejection.depotEntityId !== "0" ? collectionRejection.depotEntityId : undefined,
             });
           }
           const isCompletedConstruction =

@@ -117,7 +117,7 @@ it("holds accepted routes once when a new hazard leaves no safe local waypoint r
   window.dispatchEvent(new Event("bitwars:gamestate-updated"));
   vi.advanceTimersByTime(200);
   const nextId = worker.postMessage.mock.calls.at(-1)![0].id;
-  worker.onmessage!({ data: { id: nextId, result: { kind: "blocked", reason: "No safe path" } } });
+  worker.onmessage!({ data: { id: nextId, result: { kind: "blocked", reasonCode: "no_safe_initial_route", reason: "No safe path" } } });
   expect(send).toHaveBeenCalledOnce(); expect(env.move).toHaveBeenCalledOnce();
   expect(env.hold).toHaveBeenCalledWith(1, expect.objectContaining({ playerId: "me", holdClientCmdId: "hold-command", plan }));
   expect(collectionRouting.getStatus(1)).toContain("No safe path");
@@ -140,6 +140,23 @@ it("restores owner-scoped blocked collection only when no newer active command s
   collectionRouting.adopt([{ entity_id: 1, intent_kind: "move", client_cmd_id: "newer-command" }], "me", "world-1");
   expect(env.hold).toHaveBeenCalledWith(1, undefined);
   expect(env.submit).not.toHaveBeenCalled();
+});
+
+it("exposes the active collection circuit after reconnect but hides superseded and held routes", async () => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  cleanup = collectionRouting.start("me");
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "collect-command" } });
+  collectionRouting.adopt([{ entity_id: 1, intent_kind: "collect", client_cmd_id: "collect-command",
+    collect_resource_type_id: "minerals", collect_travel_plan: {
+      source_entity_id: 3, depot_entity_id: 2, waypoint_ids: [4],
+      initial_waypoint_ids: [5], initial_to_depot: true,
+    } }], "me", "world-1");
+  expect(collectionRouting.getPlan(1)).toEqual({ ...plan, waypointIds: [4], initialWaypointIds: [5], initialToDepot: true });
+  env.states.set(1, { active: { kind: "move", clientCmdId: "new-command" } });
+  expect(collectionRouting.getPlan(1)).toBeUndefined();
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "collect-command" } });
+  collectionRouting.cancel(1);
+  expect(collectionRouting.getPlan(1)).toBeUndefined();
 });
 
 it("coalesces moving-depot updates and keeps a valid collection intent without replacement", async () => {

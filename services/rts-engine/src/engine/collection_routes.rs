@@ -17,6 +17,19 @@ fn positioned(entity: &pb::Entity) -> bool {
         && entity.pos.is_some_and(|p| p.x.is_finite() && p.y.is_finite())
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct RouteRejection {
+    pub code: &'static str,
+    pub source_entity_id: u64,
+    pub depot_entity_id: u64,
+}
+
+impl RouteRejection {
+    fn new(code: &'static str, source_entity_id: u64, depot_entity_id: u64) -> Self {
+        Self { code, source_entity_id, depot_entity_id }
+    }
+}
+
 /// Checks ownership, discovery, content compatibility and bounded waypoint IDs only.
 /// Deliberately does not inspect radiation, enemies, segment geometry or hazards.
 pub(super) fn valid(
@@ -30,34 +43,73 @@ pub(super) fn valid(
     nearest_compatible: bool,
     plan: &pb::CollectionTravelPlan,
 ) -> bool {
+    diagnose(entities, by_id, content, known, upgrading, entity_id, resource_type_id, nearest_compatible, plan).is_ok()
+}
+
+pub(super) fn diagnose(
+    entities: &[pb::Entity],
+    by_id: &HashMap<u64, usize>,
+    content: &ContentPack,
+    known: &BTreeSet<u64>,
+    upgrading: &HashSet<u64>,
+    entity_id: u64,
+    resource_type_id: &str,
+    nearest_compatible: bool,
+    plan: &pb::CollectionTravelPlan,
+) -> Result<(), RouteRejection> {
+    let source_id = if known.contains(&plan.source_entity_id) { plan.source_entity_id } else { 0 };
+    let actor = collection_entity(entities, entity_id, by_id);
+    let depot_id = actor.and_then(|actor| collection_entity(entities, plan.depot_entity_id, by_id)
+        .filter(|depot| depot.owner_player_id == actor.owner_player_id)).map_or(0, |depot| depot.id);
+    let reject = |code| RouteRejection::new(code, source_id, depot_id);
     if plan.waypoint_ids.len() > MAX_WAYPOINTS || plan.initial_waypoint_ids.len() > MAX_WAYPOINTS {
-        return false;
+        return Err(reject("invalid_waypoint"));
     }
-    let Some(actor) = collection_entity(entities, entity_id, by_id).filter(|e| positioned(e)) else { return false; };
-    let Some(actor_def) = content.get(&actor.entity_type_id) else { return false; };
-    let Some(collector) = actor_def.collector.as_ref().filter(|c| c.transport_rate_per_second > 0.0) else { return false; };
-    let Some(source) = collection_entity(entities, plan.source_entity_id, by_id).filter(|e| positioned(e)) else { return false; };
-    let Some(node) = content.get(&source.entity_type_id).and_then(|d| d.resource_node.as_ref()) else { return false; };
-    let Some(depot) = collection_entity(entities, plan.depot_entity_id, by_id).filter(|e| positioned(e)) else { return false; };
-    let Some(depot_def) = content.get(&depot.entity_type_id) else { return false; };
-    actor.id != source.id && actor.id != depot.id && source.id != depot.id
-        && actor_def.speed > 0.0
-        && known.contains(&source.id)
-        && !upgrading.contains(&source.id) && !upgrading.contains(&depot.id)
-        && node.collection_mode == CollectionMode::Transport
-        && source.resource_deposit.is_none_or(|deposit| deposit.remaining > f64::EPSILON)
-        && collector.collects.contains(&node.resource_type)
-        && actor_def.max_capacity.get(&node.resource_type).is_some_and(|n| *n > 0.0)
-        && ((nearest_compatible && resource_type_id.is_empty())
-            || (!nearest_compatible && resource_type_id == node.resource_type))
-        && depot.owner_player_id == actor.owner_player_id && depot_def.depot
-        && depot_def.max_capacity.get(&node.resource_type).is_some_and(|n| *n > 0.0)
-        && plan.waypoint_ids.iter().chain(&plan.initial_waypoint_ids).all(|id| {
-            collection_entity(entities, *id, by_id).is_some_and(|waypoint| {
-                positioned(waypoint) && waypoint.entity_type_id == "waypoint"
-                    && waypoint.owner_player_id == actor.owner_player_id
-            })
+    let Some(actor) = actor.filter(|entity| positioned(entity)) else { return Err(reject("collector_unavailable")); };
+    let Some(actor_def) = content.get(&actor.entity_type_id) else { return Err(reject("collector_unavailable")); };
+    let Some(collector) = actor_def.collector.as_ref().filter(|c| c.transport_rate_per_second > 0.0) else {
+        return Err(reject("collector_incompatible"));
+    };
+    if source_id == 0 { return Err(reject("source_undiscovered")); }
+    let Some(source) = collection_entity(entities, source_id, by_id).filter(|e| positioned(e)) else {
+        return Err(reject("source_unavailable"));
+    };
+    let Some(node) = content.get(&source.entity_type_id).and_then(|d| d.resource_node.as_ref()) else {
+        return Err(reject("source_incompatible"));
+    };
+    let Some(depot) = collection_entity(entities, plan.depot_entity_id, by_id)
+        .filter(|entity| entity.owner_player_id == actor.owner_player_id) else { return Err(reject("depot_unavailable")); };
+    if !positioned(depot) || upgrading.contains(&depot.id) {
+        return Err(reject("depot_unavailable"));
+    }
+    let Some(depot_def) = content.get(&depot.entity_type_id) else { return Err(reject("depot_incompatible")); };
+    if actor.id == source.id || actor.id == depot.id || source.id == depot.id {
+        return Err(reject("invalid_route"));
+    }
+    if actor_def.speed <= 0.0 { return Err(reject("collector_incompatible")); }
+    if upgrading.contains(&source.id) { return Err(reject("source_unavailable")); }
+    if node.collection_mode != CollectionMode::Transport { return Err(reject("source_incompatible")); }
+    if !source.resource_deposit.is_none_or(|deposit| deposit.remaining > f64::EPSILON) {
+        return Err(reject("source_depleted"));
+    }
+    if !collector.collects.contains(&node.resource_type)
+        || !actor_def.max_capacity.get(&node.resource_type).is_some_and(|n| *n > 0.0)
+        || !((nearest_compatible && resource_type_id.is_empty())
+            || (!nearest_compatible && resource_type_id == node.resource_type)) {
+        return Err(reject("resource_incompatible"));
+    }
+    if !depot_def.depot || !depot_def.max_capacity.get(&node.resource_type).is_some_and(|n| *n > 0.0) {
+        return Err(reject("depot_incompatible"));
+    }
+    if !plan.waypoint_ids.iter().chain(&plan.initial_waypoint_ids).all(|id| {
+        collection_entity(entities, *id, by_id).is_some_and(|waypoint| {
+            positioned(waypoint) && waypoint.entity_type_id == "waypoint"
+                && waypoint.owner_player_id == actor.owner_player_id
         })
+    }) {
+        return Err(reject("invalid_waypoint"));
+    }
+    Ok(())
 }
 
 fn hold(entity: &mut pb::Entity) {
@@ -321,6 +373,37 @@ mod tests {
         assert!(!legal(&content, &entities, &bounded, &known));
         assert!(!valid(&entities, &collection_entity_index(&entities), &content, &known, &[3].into(),
             state.entity_id, &state.resource_type_id, state.nearest_compatible, state.travel_plan.as_ref().unwrap()));
+    }
+
+    #[test]
+    fn route_rejection_identifies_actionable_failures_without_exposing_unknown_ids() {
+        let (content, mut entities, state, known) = fixture();
+        let plan = state.travel_plan.as_ref().unwrap();
+        let diagnose_route = |entities: &[pb::Entity], known: &BTreeSet<u64>, plan: &pb::CollectionTravelPlan| {
+            diagnose(entities, &collection_entity_index(entities), &content, known, &HashSet::new(),
+                state.entity_id, &state.resource_type_id, state.nearest_compatible, plan).unwrap_err()
+        };
+        let hidden = diagnose_route(&entities, &BTreeSet::new(), plan);
+        assert_eq!(hidden.code, "source_undiscovered");
+        assert_eq!(hidden.source_entity_id, 0);
+        assert_eq!(hidden.depot_entity_id, 3);
+        entities[1].resource_deposit = Some(pb::ResourceDeposit { amount: 10.0, remaining: 0.0 });
+        let depleted = diagnose_route(&entities, &known, plan);
+        assert_eq!(depleted.code, "source_depleted");
+        assert_eq!(depleted.source_entity_id, 2);
+        entities[1].resource_deposit = None;
+        entities[2].owner_player_id = "bob".into();
+        let unavailable = diagnose_route(&entities, &known, plan);
+        assert_eq!(unavailable.code, "depot_unavailable");
+        assert_eq!(unavailable.depot_entity_id, 0);
+        entities[2].owner_player_id = "alice".into();
+        let mut invalid_plan = plan.clone();
+        invalid_plan.waypoint_ids.push(999);
+        assert_eq!(diagnose_route(&entities, &known, &invalid_plan).code, "invalid_waypoint");
+        let mut wrong_resource = state.clone();
+        wrong_resource.resource_type_id = "food".into();
+        assert_eq!(diagnose(&entities, &collection_entity_index(&entities), &content, &known, &HashSet::new(),
+            wrong_resource.entity_id, &wrong_resource.resource_type_id, false, plan).unwrap_err().code, "resource_incompatible");
     }
 
     #[test]
