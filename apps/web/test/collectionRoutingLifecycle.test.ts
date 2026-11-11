@@ -186,3 +186,40 @@ it("coalesces moving-depot updates and keeps a valid collection intent without r
   expect(env.move).not.toHaveBeenCalled();
   expect(collectionRouting.getStatus(1)).toContain("retained");
 });
+
+it("keeps an accepted Collect order while its depot group is full and announces a real reroute once", async () => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  const destinationEvents: Array<{ entityId: number; fromDepotId: number; toDepotId: number }> = [];
+  vi.stubGlobal("CustomEvent", class<T> extends Event {
+    detail: T;
+    constructor(name: string, options: { detail: T }) { super(name); this.detail = options.detail; }
+  });
+  window.addEventListener("bitwars:collection-destination-changed", event => {
+    destinationEvents.push((event as CustomEvent<(typeof destinationEvents)[number]>).detail);
+  });
+  cleanup = collectionRouting.start("me");
+  const send = vi.fn();
+  collectionRouting.request(1, { resourceTypeId: "minerals", nearestCompatible: false }, send);
+  const worker = env.workers[0]!;
+  worker.onmessage!({ data: { id: worker.postMessage.mock.calls[0]![0].id, result: { kind: "planned", travelPlan: plan } } });
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "collect-command" } });
+  env.entities[0]!.supply = { delivery_depot_id: 2 };
+  env.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  worker.onmessage!({ data: { id: worker.postMessage.mock.calls.at(-1)![0].id, result: {
+    kind: "blocked", reasonCode: "depot_group_full", reason: "All depots in this group are full",
+    resourceTypeId: "minerals", sourceEntityId: 3, depotEntityId: 2,
+  } } });
+  expect(env.move).not.toHaveBeenCalled();
+  expect(collectionRouting.getPlan(1)).toEqual(plan);
+
+  env.entities.push({ id: 4, entity_type_id: "habitat", owner_player_id: "me", pos: { x: -1000, y: 0 } });
+  window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+  worker.onmessage!({ data: { id: worker.postMessage.mock.calls.at(-1)![0].id, result: {
+    kind: "planned", travelPlan: { ...plan, depotEntityId: 4 },
+  } } });
+  expect(collectionRouting.getEffectiveDestinationId(1)).toBe(4);
+  expect(env.entities[0]!.supply?.delivery_depot_id).toBe(2);
+  expect(destinationEvents).toEqual([{ entityId: 1, fromDepotId: 2, toDepotId: 4 }]);
+  expect(send).toHaveBeenCalledTimes(2);
+});

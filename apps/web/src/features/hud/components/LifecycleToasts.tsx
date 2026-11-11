@@ -16,6 +16,8 @@ import {
   type CollectionRoutingBlockedDetail,
   COLLECTION_WAITING_EVENT,
   COLLECTION_DROPOFF_BLOCKED_EVENT,
+  COLLECTION_DESTINATION_CHANGED_EVENT,
+  type CollectionDestinationChangedDetail,
   COLLECT_COMMAND_EVENT,
   collectionCapacityStatus,
   type CollectCommandDetail,
@@ -135,6 +137,12 @@ export default function LifecycleToasts() {
       showToast("Collection route blocked", `Worker ${detail.entityId}: ${detail.reason}`,
         String(detail.entityId), `Worker ${detail.entityId}`);
     };
+    const onCollectionDestinationChanged = (event: Event) => {
+      const detail = (event as CustomEvent<CollectionDestinationChangedDetail>).detail;
+      if (!detail) return;
+      showToast("Collection rerouted", `Worker ${detail.entityId} is routing from depot #${detail.fromDepotId} to depot #${detail.toDepotId}.`,
+        String(detail.entityId), `Worker ${detail.entityId}`);
+    };
     const onCollectionWaiting = (event: Event) => {
       const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
       if (!detail) return;
@@ -144,7 +152,7 @@ export default function LifecycleToasts() {
     const showDropoffBlocked = (entityId: string) => {
       const entity = game.world.entities.find((entity) => String(entity.id) === entityId);
       const cargo = entity?.collector_state?.resource_type || "cargo";
-      showToast("Collection blocked", `Worker ${entityId} cannot unload its ${cargo}: no eligible dropoff has room. Spend stored resources or provide dropoff capacity so collection can continue.`, entityId, `Worker ${entityId}`);
+      showToast("Collection waiting", `Worker ${entityId} cannot unload its ${cargo} at the current depot. Checking linked drop-offs; if none has room, it will wait here until capacity opens.`, entityId, `Worker ${entityId}`);
     };
     const onDropoffBlocked = (event: Event) => {
       const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
@@ -194,6 +202,7 @@ export default function LifecycleToasts() {
     window.addEventListener(BUILD_REJECTED_EVENT, onBuildRejected);
     window.addEventListener(COLLECTION_REJECTED_EVENT, onCollectionRejected);
     window.addEventListener(COLLECTION_ROUTING_BLOCKED_EVENT, onCollectionRoutingBlocked);
+    window.addEventListener(COLLECTION_DESTINATION_CHANGED_EVENT, onCollectionDestinationChanged);
     window.addEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
     window.addEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
     window.addEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);
@@ -207,6 +216,7 @@ export default function LifecycleToasts() {
       window.removeEventListener(BUILD_REJECTED_EVENT, onBuildRejected);
       window.removeEventListener(COLLECTION_REJECTED_EVENT, onCollectionRejected);
       window.removeEventListener(COLLECTION_ROUTING_BLOCKED_EVENT, onCollectionRoutingBlocked);
+      window.removeEventListener(COLLECTION_DESTINATION_CHANGED_EVENT, onCollectionDestinationChanged);
       window.removeEventListener(COLLECTION_WAITING_EVENT, onCollectionWaiting);
       window.removeEventListener(TRANSFER_ENDPOINT_LOST_EVENT, onTransferEndpointLost);
       window.removeEventListener(ENTITY_RESOURCE_STARVATION_EVENT, onResourceStarvation);

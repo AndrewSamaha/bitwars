@@ -1,6 +1,6 @@
 import { contentManager } from "@/features/content/contentManager";
 import { game, type Entity } from "@/features/gamestate/world";
-import { useSyncExternalStore } from "react";
+import React, { useSyncExternalStore } from "react";
 import { collectionRouting } from "@/features/collection-routing/collectionRouting";
 
 /** Keep collection destinations distinct from the depot that funds operations. */
@@ -8,6 +8,8 @@ export function CollectionAssignment({ entity, tooltip = false }: { entity: Enti
   useSyncExternalStore(contentManager.subscribe, contentManager.getContentVersion, () => "");
   const routingStatus = useSyncExternalStore(collectionRouting.subscribe,
     () => collectionRouting.getStatus(Number(entity.id)), () => "");
+  const effectiveDestinationId = useSyncExternalStore(collectionRouting.subscribe,
+    () => collectionRouting.getEffectiveDestinationId(Number(entity.id)), () => 0);
   const definition = contentManager.getEntityType(entity.entity_type_id ?? "");
   if (!definition?.collector) return null;
   const state = entity.collector_state;
@@ -26,7 +28,11 @@ export function CollectionAssignment({ entity, tooltip = false }: { entity: Enti
     ? `${destination?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${destinationId}`
     : (definition.collector.transport_rate_per_second ?? 8) > 0 ? "nearest depot with room" : "no depot in range";
 
-  const destinationText = `${destinationLabel} (${manual ? "assigned" : "automatic"})`;
+  const effectiveDestination = effectiveDestinationId && String(effectiveDestinationId) !== String(destinationId)
+    ? Array.from(game.world.with("id")).find(e => Number(e.id) === effectiveDestinationId) : undefined;
+  const effectiveText = effectiveDestinationId && String(effectiveDestinationId) !== String(destinationId)
+    ? `; delivering to ${effectiveDestination?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${effectiveDestinationId}` : "";
+  const destinationText = `${destinationLabel} (${manual ? "assigned" : "automatic"})${effectiveText}`;
   if (tooltip) return <>
     <div><b>collecting:</b> {resource || "not selected"}</div>
     <div><b>collection destination:</b> {destinationText}</div>

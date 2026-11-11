@@ -17,6 +17,47 @@ fn positioned(entity: &pb::Entity) -> bool {
         && entity.pos.is_some_and(|p| p.x.is_finite() && p.y.is_finite())
 }
 
+fn within_hub(hub: &pb::Entity, container: &pb::Entity, range: f32) -> bool {
+    let (Some(h), Some(c)) = (hub.pos, container.pos) else { return false; };
+    range > 0.0 && range.is_finite()
+        && Engine::distance_sq(h.x, h.y, c.x, c.y) <= range * range
+}
+
+fn assigned_group_allows(
+    entities: &[pb::Entity], content: &ContentPack, actor: &pb::Entity,
+    anchor: &pb::Entity, depot: &pb::Entity, resource: &str,
+) -> bool {
+    if anchor.id == depot.id { return true; }
+    let Some(anchor_def) = content.get(&anchor.entity_type_id) else { return false; };
+    let hub = if anchor_def.shareable_with_hub.is_empty() {
+        anchor
+    } else {
+        let hubs = entities.iter().filter(|entity| entity.owner_player_id == actor.owner_player_id
+            && positioned(entity))
+            .filter_map(|entity| content.get(&entity.entity_type_id)
+                .filter(|def| def.depot && def.shareable_with_hub.is_empty()
+                    && within_hub(entity, anchor, def.depot_range))
+                .map(|_| entity));
+        let preferred = actor.supply.as_ref().map_or(0, |supply| supply.depot_id);
+        let anchor_pos = anchor.pos.unwrap();
+        let Some(hub) = hubs.min_by(|a, b| {
+            (a.id != preferred).cmp(&(b.id != preferred))
+                .then_with(|| {
+                    let a_pos = a.pos.unwrap();
+                    let b_pos = b.pos.unwrap();
+                    Engine::distance_sq(a_pos.x, a_pos.y, anchor_pos.x, anchor_pos.y)
+                        .total_cmp(&Engine::distance_sq(b_pos.x, b_pos.y, anchor_pos.x, anchor_pos.y))
+                })
+                .then_with(|| a.id.cmp(&b.id))
+        }) else { return false; };
+        hub
+    };
+    if depot.id == hub.id { return true; }
+    content.get(&depot.entity_type_id).is_some_and(|def|
+        def.shareable_with_hub.iter().any(|shared| shared == resource)
+            && within_hub(hub, depot, content.get(&hub.entity_type_id).unwrap().depot_range))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct RouteRejection {
     pub code: &'static str,
@@ -83,6 +124,15 @@ pub(super) fn diagnose(
         return Err(reject("depot_unavailable"));
     }
     let Some(depot_def) = content.get(&depot.entity_type_id) else { return Err(reject("depot_incompatible")); };
+    if let Some(anchor_id) = actor.supply.as_ref().map(|supply| supply.delivery_depot_id).filter(|id| *id != 0) {
+        let Some(anchor) = collection_entity(entities, anchor_id, by_id)
+            .filter(|entity| entity.owner_player_id == actor.owner_player_id && positioned(entity))
+            .filter(|entity| content.get(&entity.entity_type_id).is_some_and(|def| def.depot))
+        else { return Err(reject("depot_unavailable")); };
+        if !assigned_group_allows(entities, content, actor, anchor, depot, &node.resource_type) {
+            return Err(reject("depot_outside_assignment"));
+        }
+    }
     if actor.id == source.id || actor.id == depot.id || source.id == depot.id {
         return Err(reject("invalid_route"));
     }
@@ -277,6 +327,157 @@ mod tests {
             ..Default::default()
         };
         (content, entities, state, [2].into())
+    }
+
+    fn assigned_fixture() -> (ContentPack, Vec<pb::Entity>, pb::CollectState, BTreeSet<u64>) {
+        let (content, mut entities, state, known) = fixture();
+        let depot = |id, kind: &str, x| pb::Entity {
+            id, entity_type_id: kind.into(), owner_player_id: "alice".into(), health: 100.0,
+            pos: Some(pb::Vec2 { x, y: 0.0 }), ..Default::default()
+        };
+        entities.extend([
+            depot(7, "food_storage_container", 500.0),
+            depot(8, "mineral_storage_container", 600.0),
+            depot(9, "habitat", 8000.0),
+            depot(10, "mineral_storage_container", 8200.0),
+            depot(11, "food_storage_container", 700.0),
+        ]);
+        entities[0].supply = Some(pb::DepotSupply {
+            depot_id: 3, delivery_depot_id: 7, ..Default::default()
+        });
+        (content, entities, state, known)
+    }
+
+    fn route_error(
+        content: &ContentPack, entities: &[pb::Entity], state: &pb::CollectState, known: &BTreeSet<u64>,
+    ) -> &'static str {
+        diagnose(entities, &collection_entity_index(entities), content, known, &HashSet::new(),
+            state.entity_id, &state.resource_type_id, state.nearest_compatible,
+            state.travel_plan.as_ref().unwrap()).unwrap_err().code
+    }
+
+    #[test]
+    fn explicit_hub_and_container_assignments_allow_only_local_resource_sharing() {
+        let (content, mut entities, mut state, known) = assigned_fixture();
+        for anchor in [3, 7] {
+            entities[0].supply.as_mut().unwrap().delivery_depot_id = anchor;
+            for id in [3, 7, 8] {
+                state.travel_plan.as_mut().unwrap().depot_entity_id = id;
+                if id == 7 && anchor == 3 {
+                    assert_eq!(route_error(&content, &entities, &state, &known), "depot_outside_assignment");
+                } else {
+                    assert!(legal(&content, &entities, &state, &known), "anchor {anchor}, depot {id}");
+                }
+            }
+            for id in [9, 10, 11] {
+                state.travel_plan.as_mut().unwrap().depot_entity_id = id;
+                assert_eq!(route_error(&content, &entities, &state, &known), "depot_outside_assignment");
+            }
+            state.travel_plan.as_mut().unwrap().depot_entity_id = 8;
+            entities[7].pos.as_mut().unwrap().x = 4100.0;
+            assert_eq!(route_error(&content, &entities, &state, &known), "depot_outside_assignment");
+            entities[7].pos.as_mut().unwrap().x = 600.0;
+        }
+        entities[0].supply.as_mut().unwrap().delivery_depot_id = 7;
+        entities[7].owner_player_id = "bob".into();
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_unavailable");
+        entities[7].owner_player_id = "alice".into();
+        entities[7].health = 0.0;
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_unavailable");
+        entities[7].health = 100.0;
+        entities[7].pos = None;
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_unavailable");
+        entities[7].pos = Some(pb::Vec2 { x: 600.0, y: 0.0 });
+        entities[6].entity_type_id = "factory".into();
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_unavailable");
+        entities[6].entity_type_id = "food_storage_container".into();
+        entities[0].supply.as_mut().unwrap().delivery_depot_id = 999;
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_unavailable");
+        entities[0].supply.as_mut().unwrap().delivery_depot_id = 0;
+        state.travel_plan.as_mut().unwrap().depot_entity_id = 10;
+        assert!(legal(&content, &entities, &state, &known));
+        entities[9].owner_player_id = "bob".into();
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_unavailable");
+        entities[9].owner_player_id = "alice".into();
+        entities[0].supply.as_mut().unwrap().delivery_depot_id = 3;
+        entities[2].owner_player_id = "bob".into();
+        state.travel_plan.as_mut().unwrap().depot_entity_id = 8;
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_unavailable");
+        entities[2].owner_player_id = "alice".into();
+        entities[2].pos = None;
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_unavailable");
+    }
+
+    #[test]
+    fn container_anchor_uses_preferred_covering_hub_then_nearest_with_id_tie_break() {
+        let (content, mut entities, mut state, known) = assigned_fixture();
+        // The second hub covers the anchor at 500, but its linked container is
+        // outside the preferred hub's radius.
+        entities[8].pos.as_mut().unwrap().x = 3500.0;
+        entities[9].pos.as_mut().unwrap().x = 6500.0;
+        state.travel_plan.as_mut().unwrap().depot_entity_id = 10;
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_outside_assignment");
+        entities[0].supply.as_mut().unwrap().depot_id = 9;
+        assert!(legal(&content, &entities, &state, &known));
+        entities[0].supply.as_mut().unwrap().depot_id = 999;
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_outside_assignment");
+        // Move the anchor closer to the second hub, so nearest is chosen.
+        entities[6].pos.as_mut().unwrap().x = 2800.0;
+        assert!(legal(&content, &entities, &state, &known));
+        entities[6].pos.as_mut().unwrap().x = 500.0;
+        entities[2].health = 0.0;
+        assert!(legal(&content, &entities, &state, &known));
+        entities[8].health = 0.0;
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_outside_assignment");
+        entities[2].health = 100.0;
+        entities[8].health = 100.0;
+        entities[8].pos.as_mut().unwrap().x = 1000.0;
+        entities[9].pos.as_mut().unwrap().x = 4500.0;
+        // Both hubs cover the anchor equally; the lower ID wins.
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_outside_assignment");
+        entities[0].supply.as_mut().unwrap().depot_id = 9;
+        assert!(legal(&content, &entities, &state, &known));
+        // Without any covering hub a container assignment stays pinned.
+        entities[6].pos.as_mut().unwrap().x = 18000.0;
+        assert_eq!(route_error(&content, &entities, &state, &known), "depot_outside_assignment");
+        state.travel_plan.as_mut().unwrap().depot_entity_id = 7;
+        assert!(legal(&content, &entities, &state, &known));
+    }
+
+    #[test]
+    fn switched_route_restores_and_waits_for_capacity_without_changing_assignment() {
+        let (content, mut entities, mut state, known) = assigned_fixture();
+        let plan = state.travel_plan.as_mut().unwrap();
+        plan.depot_entity_id = 8;
+        plan.initial_to_depot = true;
+        plan.initial_waypoint_ids.clear();
+        plan.waypoint_ids.clear();
+        state.returning_to_depot = true;
+        set_resource_amount(&mut entities[0], "minerals", 10.0);
+        let food = content.get("food_storage_container").unwrap();
+        let mineral = content.get("mineral_storage_container").unwrap();
+        set_resource_amount(&mut entities[6], "minerals", food.max_capacity["minerals"] as f64);
+        set_resource_amount(&mut entities[7], "minerals", mineral.max_capacity["minerals"] as f64);
+        entities[0].pos = entities[7].pos;
+        assert!(legal(&content, &entities, &state, &known));
+        state.travel_plan.as_mut().unwrap().depot_entity_id = 7;
+        assert!(legal(&content, &entities, &state, &known));
+        state.travel_plan.as_mut().unwrap().depot_entity_id = 8;
+        let entry = tracking(&state);
+        let snapshot = pb::Snapshot { entities, collection_orders: vec![pb::CollectionOrderState {
+            client_cmd_id: vec![7; 16], state: Some(state.clone()) }], ..Default::default() };
+        let saved = pb::Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap();
+        let mut resumed = restore_order(&entry, &saved.collection_orders).unwrap();
+        let mut entities = saved.entities;
+        assert_eq!(resumed.travel_plan.as_ref().unwrap().depot_entity_id, 8);
+        assert_eq!(entities[0].supply.as_ref().unwrap().delivery_depot_id, 7);
+        assert_eq!(step(&content, &mut entities, &mut resumed, &known), "waiting_for_dropoff");
+        set_resource_amount(&mut entities[7], "minerals", mineral.max_capacity["minerals"] as f64 - 10.0);
+        assert_eq!(step(&content, &mut entities, &mut resumed, &known), COLLECTOR_ACTIVITY_DELIVERING);
+        assert_eq!(resource_amount(&entities[7], "minerals"), mineral.max_capacity["minerals"] as f64);
+        assert_eq!(resource_amount(&entities[6], "minerals"), food.max_capacity["minerals"] as f64);
+        assert_eq!(entities[0].supply.as_ref().unwrap().delivery_depot_id, 7);
+        assert_eq!(resumed.travel_plan.as_ref().unwrap().depot_entity_id, 8);
     }
 
     fn legal(content: &ContentPack, entities: &[pb::Entity], state: &pb::CollectState, known: &BTreeSet<u64>) -> bool {

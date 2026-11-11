@@ -16,7 +16,7 @@ export type RouteEntity = {
   remembered?: unknown;
   resource_deposit?: { remaining: number } | null;
   resources?: Array<{ resource_type: string; amount: number }>;
-  supply?: { delivery_depot_id?: number | string };
+  supply?: { depot_id?: number | string; delivery_depot_id?: number | string };
   collector_state?: { activity: string; resource_type?: string };
 };
 export type Assignment = { resourceTypeId?: string; nearestCompatible: boolean };
@@ -26,12 +26,12 @@ export type PlanRequest = {
   entities: RouteEntity[];
   definitions: Record<string, EntityTypeDef>;
   assignment: Assignment;
-  pinned?: Pick<TravelPlan, "sourceEntityId" | "depotEntityId">;
+  pinned?: Pick<TravelPlan, "sourceEntityId">;
   currentPlan?: TravelPlan;
 };
 export type CollectionBlockCode =
   | "worker_unavailable" | "not_collector" | "no_capacity" | "source_unavailable"
-  | "assigned_depot_unavailable" | "depot_unavailable" | "no_safe_recurring_route"
+  | "assigned_depot_unavailable" | "depot_group_full" | "depot_unavailable" | "no_safe_recurring_route"
   | "no_safe_initial_route" | "planner_failed" | "planner_worker_failed" | "planner_worker_start_failed";
 export type CollectionBlock = {
   kind: "blocked";
@@ -196,48 +196,101 @@ export class CollectionPlanner {
       || (worker.collector_state?.resource_type === sourceResource
         && ["moving_to_dropoff", "delivering", "waiting_for_dropoff"].includes(worker.collector_state.activity)));
     const assigned = Number(worker.supply?.delivery_depot_id ?? 0);
-    const depots = request.entities.filter(entity => {
-      const depot = request.definitions[entity.entity_type_id ?? ""];
-      const remaining = (resourceId: string) => (depot?.max_capacity?.[resourceId] ?? 0) - (entity.resources?.find(entry => entry.resource_type === resourceId)?.amount ?? 0);
-      return !entity.remembered && entity.id !== worker.id && entity.owner_player_id === request.playerId && (entity.health ?? 1) > 0
-        && depot?.depot && (!assigned || entity.id === assigned) && remaining(sourceResource) > 0;
-    }).sort(nearest);
-    const depot = request.pinned ? depots.find(entity => entity.id === request.pinned!.depotEntityId) : depots[0];
-    if (!depot) return blocked(assigned ? "assigned_depot_unavailable" : "depot_unavailable",
-      assigned ? "Assigned collection depot is unavailable or has no compatible capacity." : "No owned collection depot has compatible capacity.",
-      source.id, request.pinned?.depotEntityId ?? (assigned || undefined));
-    const points = corridorPoints(request, depot.pos, source.pos);
+    const validDepot = (entity: RouteEntity) => !entity.remembered && entity.id !== worker.id
+      && entity.owner_player_id === request.playerId && (entity.health ?? 1) > 0
+      && Number.isFinite(entity.pos?.x) && Number.isFinite(entity.pos?.y)
+      && !!request.definitions[entity.entity_type_id ?? ""]?.depot;
+    const owned = request.entities.filter(validDepot);
+    const anchor = assigned ? owned.find(entity => entity.id === assigned) : undefined;
+    if (assigned && !anchor) return blocked("assigned_depot_unavailable",
+      "Assigned collection depot is unavailable.", source.id, assigned);
+    const depotDef = (entity: RouteEntity) => request.definitions[entity.entity_type_id ?? ""]!;
+    const hubRange = (entity: RouteEntity) => depotDef(entity).depot_range;
+    let group = owned;
+    if (anchor) {
+      let hub = !depotDef(anchor).shareable_with_hub?.length ? anchor : undefined;
+      if (!hub) {
+        const covering = owned.filter(entity => {
+          const range = hubRange(entity);
+          return !depotDef(entity).shareable_with_hub?.length
+            && typeof range === "number" && range >= distance(entity.pos, anchor.pos);
+        });
+        hub = covering.find(entity => entity.id === Number(worker.supply?.depot_id))
+          ?? covering.sort((a, b) => distance(a.pos, anchor.pos) - distance(b.pos, anchor.pos) || a.id - b.id)[0];
+      }
+      const selectedHub = hub;
+      group = selectedHub ? owned.filter(entity => entity.id === selectedHub.id || entity.id === anchor.id
+        || (depotDef(entity).shareable_with_hub?.includes(sourceResource) === true
+          && typeof hubRange(selectedHub) === "number"
+          && distance(selectedHub.pos, entity.pos) <= hubRange(selectedHub)!)) : [anchor];
+    }
+    const remaining = (entity: RouteEntity) => (depotDef(entity).max_capacity?.[sourceResource] ?? 0)
+      - (entity.resources?.find(entry => entry.resource_type === sourceResource)?.amount ?? 0);
     const current = request.currentPlan;
-    if (current && current.sourceEntityId === source.id && current.depotEntityId === depot.id) {
-      const hazards = hazardsFor(request, worker);
-      const markers = current.waypointIds.map(id => points.find(point => point.id === id));
-      const initial = current.initialWaypointIds.map(id => request.entities.find(entity => entity.id === id
-        && entity.entity_type_id === "waypoint" && entity.owner_player_id === request.playerId
-        && !entity.remembered && (entity.health ?? 1) > 0));
-      if (markers.every(point => point !== undefined) && initial.every(point => point !== undefined)) {
-        const recurring = [depot, ...markers as RouteEntity[], source];
-        const approach = [worker, ...initial as RouteEntity[], current.initialToDepot ? depot : source];
-        // No server route cursor is published. Prove every possible next leg safe
-        // rather than guessing which initial/recurring waypoint remains active.
-        const targets = [source, depot, ...markers as RouteEntity[], ...initial as RouteEntity[]];
-        const safe = points.length === 0 || (recurring.every((point, index) =>
-          index === 0 || safeSegment(recurring[index - 1]!.pos, point.pos, hazards))
-          && approach.every((point, index) => index === 0 || safeSegment(approach[index - 1]!.pos, point.pos, hazards))
-          && targets.every(point => safeSegment(worker.pos, point.pos, hazards)));
-        if (safe) return { kind: "retained" };
+    const available = group.filter(entity => remaining(entity) > 0).sort(nearest);
+    // An active destination stays fixed while it has room, regardless of new closer depots.
+    const preferred = current && current.sourceEntityId === source.id
+      ? available.find(entity => entity.id === current.depotEntityId) : undefined;
+    if (preferred) {
+      available.splice(available.indexOf(preferred), 1);
+      available.unshift(preferred);
+    }
+    // Keep a full compatible endpoint as a waiting fallback if no open depot has
+    // a safe route. This never replaces a usable candidate with a full one.
+    if (anchor) {
+      const waiting = current && current.sourceEntityId === source.id
+        ? group.find(entity => entity.id === current.depotEntityId) : undefined;
+      for (const depot of [waiting, anchor]) {
+        if (depot && (depotDef(depot).max_capacity?.[sourceResource] ?? 0) > 0
+          && !available.includes(depot)) available.push(depot);
       }
     }
-    // Without a local waypoint network, preserve ordinary direct travel and its risks.
-    if (points.length === 0) return { kind: "planned", travelPlan: {
-      sourceEntityId: source.id, depotEntityId: depot.id, waypointIds: [], initialWaypointIds: [], initialToDepot,
-    } };
+    if (!available.length) {
+      const compatible = group.some(entity => (depotDef(entity).max_capacity?.[sourceResource] ?? 0) > 0);
+      return blocked(assigned ? compatible ? "depot_group_full" : "assigned_depot_unavailable" : "depot_unavailable",
+        assigned ? compatible ? "Assigned depot group is full." : "Assigned depot group has no compatible capacity."
+          : "No owned collection depot has compatible capacity.", source.id, assigned || undefined);
+    }
     const hazards = hazardsFor(request, worker);
-    // The shared router caches edges for this waypoint network and radiation profile.
-    const route = this.router.route(depot.pos, source.pos, points, hazards);
-    if (route === null) return blocked("no_safe_recurring_route", "No radiation-safe route between depot and source within 1.5x direct distance. Reposition nearby owned waypoints.", source.id, depot.id);
-    const initial = this.router.route(worker.pos, initialToDepot ? depot.pos : source.pos, points, hazards);
-    if (initial === null) return blocked("no_safe_initial_route", "No radiation-safe initial approach within 1.5x direct distance. Move the worker to safety or reposition nearby owned waypoints.", source.id, depot.id);
-    return { kind: "planned", travelPlan: { sourceEntityId: source.id, depotEntityId: depot.id, waypointIds: route, initialWaypointIds: initial, initialToDepot } };
+    let routeFailure: CollectionBlock | undefined;
+    for (const depot of available) {
+      const points = corridorPoints(request, depot.pos, source.pos);
+      if (current && current.sourceEntityId === source.id && current.depotEntityId === depot.id) {
+        const markers = current.waypointIds.map(id => points.find(point => point.id === id));
+        const initial = current.initialWaypointIds.map(id => request.entities.find(entity => entity.id === id
+          && entity.entity_type_id === "waypoint" && entity.owner_player_id === request.playerId
+          && !entity.remembered && (entity.health ?? 1) > 0));
+        if (markers.every(point => point !== undefined) && initial.every(point => point !== undefined)) {
+          const recurring = [depot, ...markers as RouteEntity[], source];
+          const approach = [worker, ...initial as RouteEntity[], current.initialToDepot ? depot : source];
+          // No server route cursor is published. Prove every possible next leg safe
+          // rather than guessing which initial/recurring waypoint remains active.
+          const targets = [source, depot, ...markers as RouteEntity[], ...initial as RouteEntity[]];
+          const safe = points.length === 0 || (recurring.every((point, index) =>
+            index === 0 || safeSegment(recurring[index - 1]!.pos, point.pos, hazards))
+            && approach.every((point, index) => index === 0 || safeSegment(approach[index - 1]!.pos, point.pos, hazards))
+            && targets.every(point => safeSegment(worker.pos, point.pos, hazards)));
+          if (safe) return { kind: "retained" };
+        }
+      }
+      // Without a local waypoint network, preserve ordinary direct travel and its risks.
+      if (points.length === 0) return { kind: "planned", travelPlan: {
+        sourceEntityId: source.id, depotEntityId: depot.id, waypointIds: [], initialWaypointIds: [], initialToDepot,
+      } };
+      // The shared router caches edges for this waypoint network and radiation profile.
+      const route = this.router.route(depot.pos, source.pos, points, hazards);
+      if (route === null) {
+        routeFailure ??= blocked("no_safe_recurring_route", "No radiation-safe route between depot and source within 1.5x direct distance. Reposition nearby owned waypoints.", source.id, depot.id);
+        continue;
+      }
+      const initial = this.router.route(worker.pos, initialToDepot ? depot.pos : source.pos, points, hazards);
+      if (initial === null) {
+        routeFailure ??= blocked("no_safe_initial_route", "No radiation-safe initial approach within 1.5x direct distance. Move the worker to safety or reposition nearby owned waypoints.", source.id, depot.id);
+        continue;
+      }
+      return { kind: "planned", travelPlan: { sourceEntityId: source.id, depotEntityId: depot.id, waypointIds: route, initialWaypointIds: initial, initialToDepot } };
+    }
+    return routeFailure!;
   }
 
 }

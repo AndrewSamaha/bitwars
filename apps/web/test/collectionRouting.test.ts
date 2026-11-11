@@ -27,6 +27,18 @@ const detour: RouteEntity[] = [
   { id: 5, entity_type_id: "waypoint", owner_player_id: "me", pos: { x: 1000, y: 1400 } },
 ];
 
+function groupFixture(): PlanRequest {
+  const request = fixture();
+  request.definitions.hub = { ...base, depot: true, depot_range: 1000, max_capacity: { minerals: 100, food: 100 } };
+  request.definitions.storage = { ...base, depot: true, depot_range: 2000, shareable_with_hub: ["minerals"], max_capacity: { minerals: 100, food: 100 } };
+  request.entities[1]!.entity_type_id = "hub";
+  request.entities.push(
+    { id: 10, entity_type_id: "storage", owner_player_id: "me", pos: { x: -1800, y: 0 } },
+    { id: 11, entity_type_id: "storage", owner_player_id: "me", pos: { x: -1900, y: 0 } },
+  );
+  return request;
+}
+
 describe("user Move routing", () => {
   it("uses owned corridor waypoints to detour around remembered radiation", () => {
     const request = fixture();
@@ -212,21 +224,155 @@ describe("collection routing", () => {
     request.definitions.worker!.max_capacity!.minerals = 0;
     expect(new CollectionPlanner().plan(request).kind).toBe("blocked");
   });
-  it("honors a manual depot without fallback, full capacity, and pinned endpoints", () => {
+  it("keeps manual standalone assignment waiting at a full depot and pins only the source", () => {
     const request = fixture(); request.entities[0]!.supply = { delivery_depot_id: 9 };
     expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "assigned_depot_unavailable", sourceEntityId: 3, depotEntityId: 9 });
     request.entities[0]!.supply = { delivery_depot_id: 2 };
     request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
-    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "assigned_depot_unavailable", sourceEntityId: 3, depotEntityId: 2 });
+    const planner = new CollectionPlanner();
+    const result = planner.plan(request);
+    expect(result).toMatchObject({ kind: "planned", travelPlan: { sourceEntityId: 3, depotEntityId: 2 } });
+    if (result.kind !== "planned") throw new Error("Expected waiting route");
+    request.currentPlan = result.travelPlan;
+    expect(planner.plan(request)).toEqual({ kind: "retained" });
+    request.pinned = { sourceEntityId: 99 };
+    expect(planner.plan(request)).toMatchObject({ kind: "blocked", reasonCode: "source_unavailable", resourceTypeId: "minerals", sourceEntityId: 99 });
+  });
+  it("breaks equal-distance failover ties by depot ID", () => {
+    const request = groupFixture();
+    request.entities[0]!.supply = { delivery_depot_id: 2 };
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.find(entity => entity.id === 11)!.pos = { x: -1800, y: 0 };
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 10 } });
+  });
+  it("fails over from a full hub to mineral-sharing storage without changing the assignment", () => {
+    const request = groupFixture();
+    request.entities[0]!.supply = { delivery_depot_id: 2 };
+    request.pinned = { sourceEntityId: 3 };
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 11 } });
+    expect(request.entities[0]!.supply!.delivery_depot_id).toBe(2);
+  });
+  it("keeps the reverse waypoint itinerary when full cargo fails over to linked storage", () => {
+    const request = groupFixture();
+    request.entities[0]!.supply = { delivery_depot_id: 2 };
+    request.entities[0]!.pos = { x: 2000, y: 0 };
+    request.entities[0]!.resources = [{ resource_type: "minerals", amount: 10 }];
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.push(star, ...detour);
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: {
+      depotEntityId: 10, initialToDepot: true, waypointIds: [4, 5], initialWaypointIds: [5, 4],
+    } });
+  });
+  it("uses the assigned full container's hub and keeps a current destination while it has room", () => {
+    const request = groupFixture();
+    request.entities[0]!.supply = { delivery_depot_id: 10, depot_id: 2 };
+    request.entities.find(entity => entity.id === 10)!.resources = [{ resource_type: "minerals", amount: 100 }];
+    const planner = new CollectionPlanner();
+    expect(planner.plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 2 } });
+    request.currentPlan = { sourceEntityId: 3, depotEntityId: 2, waypointIds: [], initialWaypointIds: [], initialToDepot: false };
+    expect(planner.plan(request)).toEqual({ kind: "retained" });
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    expect(planner.plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 11 } });
+  });
+  it("accepts its assigned container even if that container is not shareable with its hub", () => {
+    const request = groupFixture();
+    request.definitions.storage!.shareable_with_hub = ["food"];
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities[0]!.supply = { delivery_depot_id: 10 };
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 10 } });
     request.entities[1]!.resources = [];
-    request.pinned = { sourceEntityId: 99, depotEntityId: 2 };
-    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "source_unavailable", resourceTypeId: "minerals", sourceEntityId: 99 });
+    request.entities.find(entity => entity.id === 10)!.resources = [{ resource_type: "minerals", amount: 100 }];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 2 } });
+  });
+  it("uses only same-owner, in-range, resource-sharing depots from the anchor's hub", () => {
+    const request = groupFixture();
+    request.entities[0]!.supply = { delivery_depot_id: 2 };
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.find(entity => entity.id === 10)!.owner_player_id = "enemy";
+    request.entities.find(entity => entity.id === 11)!.pos.x = -500;
+    request.entities.push({ id: 12, entity_type_id: "storage", owner_player_id: "me", pos: { x: -1900, y: 0 } });
+    request.definitions.storage!.shareable_with_hub = ["food"];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 2 } });
+    request.definitions.storage!.shareable_with_hub = ["minerals"];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 12 } });
+  });
+  it("chooses the nearest covering hub to a container, preferring the worker's hub", () => {
+    const request = groupFixture();
+    request.entities[0]!.supply = { delivery_depot_id: 10, depot_id: 20 };
+    request.entities.find(entity => entity.id === 10)!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.push(
+      { id: 20, entity_type_id: "hub", owner_player_id: "me", pos: { x: -1700, y: 0 } },
+      { id: 21, entity_type_id: "storage", owner_player_id: "me", pos: { x: -900, y: 0 } },
+    );
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.find(entity => entity.id === 11)!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.find(entity => entity.id === 20)!.resources = [{ resource_type: "minerals", amount: 100 }];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 21 } });
+    request.entities[0]!.supply!.depot_id = 2;
+    request.entities.find(entity => entity.id === 11)!.resources = [];
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 11 } });
+  });
+  it("distinguishes incompatible from full groups and retains an accepted waiting route", () => {
+    const request = groupFixture(); request.entities[0]!.supply = { delivery_depot_id: 2 };
+    request.definitions.hub!.max_capacity!.minerals = 0;
+    request.definitions.storage!.max_capacity!.minerals = 0;
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "assigned_depot_unavailable", depotEntityId: 2 });
+    request.definitions.storage!.max_capacity!.minerals = 100;
+    for (const depot of request.entities.filter(entity => entity.entity_type_id === "storage")) {
+      depot.resources = [{ resource_type: "minerals", amount: 100 }];
+    }
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "depot_group_full", depotEntityId: 2 });
+    request.definitions.hub!.max_capacity!.minerals = 100;
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    const planner = new CollectionPlanner();
+    const result = planner.plan(request);
+    expect(result).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 2 } });
+    if (result.kind !== "planned") throw new Error("Expected waiting route");
+    request.currentPlan = result.travelPlan;
+    expect(planner.plan(request)).toEqual({ kind: "retained" });
+  });
+  it("rejects a destroyed or foreign explicit anchor rather than crossing to other depots", () => {
+    const request = groupFixture(); request.entities[0]!.supply = { delivery_depot_id: 10 };
+    request.entities.find(entity => entity.id === 10)!.health = 0;
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "assigned_depot_unavailable", depotEntityId: 10 });
+    request.entities.find(entity => entity.id === 10)!.health = 100;
+    request.entities.find(entity => entity.id === 10)!.owner_player_id = "enemy";
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "assigned_depot_unavailable", depotEntityId: 10 });
+    request.entities.find(entity => entity.id === 10)!.owner_player_id = "me";
+    request.entities.find(entity => entity.id === 10)!.pos.x = NaN;
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "blocked", reasonCode: "assigned_depot_unavailable", depotEntityId: 10 });
+  });
+  it("skips the nearest depot's unsafe route when another group destination has a safe route", () => {
+    const request = groupFixture();
+    request.entities[0]!.supply = { delivery_depot_id: 2 };
+    request.entities[0]!.pos = { x: 2000, y: 0 };
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.find(entity => entity.id === 11)!.pos = { x: -1700, y: 0 };
+    request.entities.find(entity => entity.id === 10)!.pos = { x: -1800, y: 700 };
+    request.definitions.star!.radiation_sources![0]!.max_effective_distance = 300;
+    request.entities.push({ ...star, pos: { x: -1700, y: 0 } },
+      { id: 30, entity_type_id: "waypoint", owner_player_id: "me", pos: { x: 0, y: 400 } });
+    expect(new CollectionPlanner().plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 10, waypointIds: [] } });
+  });
+  it("keeps a safe accepted full depot when open alternatives have unsafe routes", () => {
+    const request = groupFixture();
+    request.entities[0]!.supply = { delivery_depot_id: 2 };
+    request.entities[0]!.pos = { x: 2000, y: 0 };
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.find(entity => entity.id === 10)!.resources = [{ resource_type: "minerals", amount: 100 }];
+    request.entities.find(entity => entity.id === 11)!.pos = { x: -1700, y: 700 };
+    request.currentPlan = { sourceEntityId: 3, depotEntityId: 2, waypointIds: [], initialWaypointIds: [], initialToDepot: false };
+    request.definitions.star!.radiation_sources![0]!.max_effective_distance = 300;
+    request.entities.push({ ...star, pos: { x: -1700, y: 700 } },
+      { id: 30, entity_type_id: "waypoint", owner_player_id: "me", pos: { x: 0, y: 400 } });
+    expect(new CollectionPlanner().plan(request)).toEqual({ kind: "retained" });
   });
   it("identifies a depleted pinned source even when another discovered source remains viable", () => {
     const request = fixture();
     request.entities.push({ id: 8, entity_type_id: "minerals", pos: { x: 3000, y: 0 }, resource_deposit: { remaining: 100 } });
     request.entities[2]!.resource_deposit = { remaining: 0 };
-    request.pinned = { sourceEntityId: 3, depotEntityId: 2 };
+    request.pinned = { sourceEntityId: 3 };
     expect(new CollectionPlanner().plan(request)).toMatchObject({
       kind: "blocked", reasonCode: "source_unavailable", resourceTypeId: "minerals", sourceEntityId: 3,
     });

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const MAX_BODY_BYTES = 2048;
 const CODES: Record<string, true> = {
   worker_unavailable: true, not_collector: true, no_capacity: true, source_unavailable: true,
-  assigned_depot_unavailable: true, depot_unavailable: true, no_safe_recurring_route: true,
+  assigned_depot_unavailable: true, depot_unavailable: true, depot_group_full: true, no_safe_recurring_route: true,
   no_safe_initial_route: true, planner_failed: true, planner_worker_failed: true, planner_worker_start_failed: true,
 };
 const validId = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0;

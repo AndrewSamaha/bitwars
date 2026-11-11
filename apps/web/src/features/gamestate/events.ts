@@ -12,6 +12,7 @@ export const COLLECTION_ROUTING_BLOCKED_EVENT = "bitwars:collection-routing-bloc
 export const TRANSFER_ENDPOINT_LOST_EVENT = "bitwars:transfer-endpoint-lost";
 export const COLLECTION_WAITING_EVENT = "bitwars:collection-waiting";
 export const COLLECTION_DROPOFF_BLOCKED_EVENT = "bitwars:collection-dropoff-blocked";
+export const COLLECTION_DESTINATION_CHANGED_EVENT = "bitwars:collection-destination-changed";
 export const COLLECT_COMMAND_EVENT = "bitwars:collect-command";
 export const CENTER_CAMERA_ON_ENTITY_EVENT = "bitwars:center-camera-on-entity";
 export const ENTITY_UNDER_ATTACK_EVENT = "bitwars:entity-under-attack";
@@ -49,6 +50,7 @@ export type CollectionRoutingBlockedDetail = {
 };
 export type CollectionWaitingDetail = { collectorEntityId: string };
 export type CollectCommandDetail = { entityId: number; resourceTypeId?: string; nearestCompatible: boolean; depotEntityId?: number };
+export type CollectionDestinationChangedDetail = { entityId: number; fromDepotId: number; toDepotId: number };
 
 export function collectionCapacityStatus(
   resources: Entity["resources"],
@@ -130,6 +132,9 @@ export function dispatchCollectionRoutingBlocked(detail: CollectionRoutingBlocke
 
 export function dispatchCollectionWaiting(detail: CollectionWaitingDetail) {
   window.dispatchEvent(new CustomEvent<CollectionWaitingDetail>(COLLECTION_WAITING_EVENT, { detail }));
+}
+export function dispatchCollectionDestinationChanged(detail: CollectionDestinationChangedDetail) {
+  window.dispatchEvent(new CustomEvent<CollectionDestinationChangedDetail>(COLLECTION_DESTINATION_CHANGED_EVENT, { detail }));
 }
 
 export function dispatchCenterCameraOnEntity(entityId: string) {

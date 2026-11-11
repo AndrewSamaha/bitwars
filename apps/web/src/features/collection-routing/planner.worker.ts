@@ -16,6 +16,6 @@ self.onmessage = (event: MessageEvent<{ id: number; kind?: "move"; request: Plan
       reason: "Collection route planning failed. No unplanned collection order was sent.",
       ...(collection.assignment.resourceTypeId ? { resourceTypeId: collection.assignment.resourceTypeId } : {}),
       ...(collection.pinned?.sourceEntityId ? { sourceEntityId: collection.pinned.sourceEntityId } : {}),
-      ...(collection.pinned?.depotEntityId ? { depotEntityId: collection.pinned.depotEntityId } : {}) } });
+      ...(collection.currentPlan?.depotEntityId ? { depotEntityId: collection.currentPlan.depotEntityId } : {}) } });
   }
 };

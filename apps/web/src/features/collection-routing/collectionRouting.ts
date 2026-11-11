@@ -1,6 +1,6 @@
 import { contentManager } from "../content/contentManager";
 import { gameConnection } from "../gamestate/connection";
-import { dispatchCollectionRoutingBlocked, GAMESTATE_UPDATED_EVENT } from "../gamestate/events";
+import { dispatchCollectionDestinationChanged, dispatchCollectionRoutingBlocked, GAMESTATE_UPDATED_EVENT } from "../gamestate/events";
 import { minimapMemory } from "../gamestate/minimapMemory";
 import { game } from "../gamestate/world";
 import { intentQueue, type CollectionRouter } from "../intent-queue/intentQueueManager";
@@ -58,6 +58,9 @@ class CollectionRouting implements CollectionRouter {
     const order = this.orders.get(entityId);
     return order?.accepted && !order.holding && intentQueue.getEntityState(entityId).active?.kind === "collect"
       ? order.plan : undefined;
+  }
+  getEffectiveDestinationId(entityId: number): number {
+    return this.getPlan(entityId)?.depotEntityId ?? 0;
   }
   private status(entityId: number, value: string) {
     if (this.getStatus(entityId) === value) return;
@@ -141,6 +144,7 @@ class CollectionRouting implements CollectionRouter {
       });
     }
     for (const [id, order] of this.orders) if (order.accepted && !order.holding && !present.has(id)) this.cancel(id);
+    for (const listener of this.listeners) listener();
   }
 
   request(entityId: number, assignment: Assignment, send: (plan?: TravelPlan) => void) {
@@ -238,8 +242,7 @@ class CollectionRouting implements CollectionRouter {
       order.dirty = false;
       order.fingerprint = orderFingerprint;
       const request: PlanRequest = { workerId: id, playerId: this.playerId, entities: [...entities.values()], definitions, assignment: order.assignment,
-        pinned: order.plan ? { sourceEntityId: order.plan.sourceEntityId,
-          depotEntityId: Number(worker.supply?.delivery_depot_id) || order.plan.depotEntityId } : undefined,
+        pinned: order.plan ? { sourceEntityId: order.plan.sourceEntityId } : undefined,
         currentPlan: order.accepted && !order.holding && !blocked ? order.plan : undefined };
       if (!this.worker) {
         try {
@@ -289,7 +292,7 @@ class CollectionRouting implements CollectionRouter {
       return;
     }
     if (result.kind === "blocked") {
-      if (order.accepted && !order.holding) {
+      if (order.accepted && !order.holding && result.reasonCode !== "depot_group_full") {
         const worker = Array.from(game.world.with("id", "pos")).find(entity => Number(entity.id) === pending.entityId);
         if (worker?.pos) {
           order.holding = true;
@@ -305,10 +308,16 @@ class CollectionRouting implements CollectionRouter {
     }
     if (result.kind === "proximity") { order.send(); this.cancel(pending.entityId); return; }
     order.blockedKey = undefined;
+    const previousDepotId = order.accepted ? order.plan?.depotEntityId : undefined;
     order.plan = result.travelPlan;
     order.accepted = true;
     order.holding = false;
     order.send(result.travelPlan);
+    if (previousDepotId && previousDepotId !== result.travelPlan.depotEntityId) {
+      dispatchCollectionDestinationChanged({ entityId: pending.entityId,
+        fromDepotId: previousDepotId, toDepotId: result.travelPlan.depotEntityId });
+      for (const listener of this.listeners) listener();
+    }
     this.status(pending.entityId, "Radiation-safe collection route planned");
   }
 }

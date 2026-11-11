@@ -101,11 +101,11 @@ For local production, gathered energy credits the associated depot up to capacit
 
 Select solar collectors or workers, press **[A] Assign**, and click a friendly compatible depot. Multiple selected collectors may be assigned together. Assignment changes a persistent collection destination without replacing the active order; an idle collector still needs a Collect order. It does not change the depot used to pay for operations or construction.
 
-Solar collectors require their destination's service coverage at assignment and whenever energy is credited. Workers physically deliver cargo to their assigned depot, including outside service coverage. A depot must accept at least one resource the collector gathers; other resources wait if they cannot be accepted. Full, destroyed, hostile, or out-of-range destinations never trigger automatic fallback. Collection pauses or cargo waits until the destination is usable or the player changes the assignment. The detail panel shows the assignment and collection activity.
+Solar collectors still require their assigned destination's service coverage and never fall back. Workers physically deliver cargo; the persistent `supply.delivery_depot_id` is the player's assignment, while the active Collect plan's `depot_entity_id` is its effective drop-off. A worker assigned to a hub may deliver to that hub or a living, same-owner storage depot within the hub's `depot_range` that declares the collected resource in `shareable_with_hub`. A worker assigned to a storage depot may also use its covering hub and that hub's matching containers: prefer the worker's associated hub if it covers the assigned depot, otherwise the nearest covering hub (entity ID breaks ties). If no hub covers the assigned depot, only that depot is eligible. The assigned depot itself remains eligible for any resource it can hold, even when it shares a different resource with the hub. Destroyed or hostile explicit assignments do not fall back; neither group changes nor delivery change the assignment.
 
-Assignments survive stopping/restarting Collect, reconnects, and snapshot restoration. In Assign mode, **Use automatic destination** clears the explicit destination: solar returns to its automatic supply-depot association, while workers choose the nearest compatible depot with room. Explicit Deliver and Transport orders continue to use their own specified destinations.
+The worker retains its effective drop-off while it has room for the collected resource. When full, the browser planner selects the nearest eligible group member with room (entity ID breaks ties), builds a safe replacement route and submits a replacement Collect order. If all compatible recipients are full, a valid current route stays active and waits for room; a newly issued Collect may plan a waiting route to the full assigned depot. If alternatives lack safe routes, the current valid route remains rather than being replaced by a hold. A worker without a connected route planner holds its existing route until capacity frees or the client reconnects; automatic offline routing to a different depot is not available. The engine checks group membership when accepting and advancing a planned route, but never treats group inventories as a shared drop-off balance. Cargo stays on the worker until physically unloaded.
 
-When an owned worker enters `waiting_for_dropoff`, show a focusable **Collection blocked** toast and record it in the message log. Do not repeat it on unchanged state updates; leaving and re-entering the wait raises it again.
+Assignments survive stopping/restarting Collect, reconnects, and snapshot restoration. In Assign mode, **Use automatic destination** clears the explicit destination: solar returns to its automatic supply-depot association, while workers choose a compatible depot with room and keep a valid chosen drop-off while it has room. Explicit Deliver and Transport orders continue to use their own specified destinations. The detail panel distinguishes the assigned depot from the effective destination when they differ. A destination-change notification enters the message log only on an actual route switch; an unchanged `waiting_for_dropoff` state does not repeat its blocked toast.
 
 Collection capacity is independent per resource. Explicit Collect orders gather and deliver only the requested resource: full food or energy does not block mineral gathering or cause those supplies to be unloaded. Planned collection routes likewise deliver only their source resource. If the requested resource is full, deliver that resource before gathering more; if its capacity is zero, collection cannot gather it. Explicit collection warnings describe only the requested resource's storage, never another full resource. Explicit Deliver and Transport orders retain their configured resource lists.
 
@@ -116,20 +116,23 @@ route evaluation, not unconditional replacement of the active Collect intent.
 An unrelated moving habitat must not restart collectors whose existing routes
 remain valid. Cargo phase changes alone do not redefine the recurring route.
 
-The browser planner retains the active source/depot/waypoint contract when its
-geometry remains valid. With a local waypoint network, retention requires safe
-recurring segments, the submitted initial approach, and every possible next leg
-from the worker. The server does not publish its exact collection waypoint cursor,
-so this is deliberately conservative: ambiguous paths near hazards may require a
-replacement even when the server's actual remaining path is safe. Without a local
-waypoint network, ordinary direct travel retains its existing radiation-risk policy.
+The browser planner retains the active source/depot/waypoint contract while its
+geometry is valid and its effective drop-off still has room. A full drop-off
+triggers evaluation of other group members without changing the pinned source.
+With a local waypoint network, retention requires safe recurring segments,
+the submitted initial approach, and every possible next leg from the worker.
+The server does not publish its exact collection waypoint cursor, so this is
+deliberately conservative: ambiguous paths near hazards may require a
+replacement even when the server's actual remaining path is safe. Without a
+local waypoint network, ordinary direct travel retains its existing
+radiation-risk policy.
 
 Invalid routes are replanned; a valid replacement is submitted with REPLACE_ACTIVE.
-If no safe route exists, an accepted collection enters a position hold once.
-Held or server-blocked collection must obtain a fresh plan before resuming.
-Only one planner request per collector is in flight; further updates mark it dirty
-and coalesce into a fresh evaluation before an obsolete result can issue commands.
-
+If no safe route exists and no valid waiting route can be retained, an accepted
+collection enters a position hold once. Held or server-blocked collection must
+obtain a fresh plan before resuming. Only one planner request per collector is
+in flight; further updates mark it dirty and coalesce into a fresh evaluation
+before an obsolete result can issue commands.
 
 ### Jettison cargo
 
