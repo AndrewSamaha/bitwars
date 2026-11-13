@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { resolveParticleFlowEffects } from "@/features/pixijs/effects/particle_flow";
+import { Graphics } from "pixi.js";
+import { drawEnemyHalo, resolveParticleFlowEffects, shouldDrawEnemyHalo } from "@/features/pixijs/effects/particle_flow";
 import type { Entity } from "@/features/gamestate/world";
 
 it.each([
@@ -38,4 +39,26 @@ it("renders repair activity as a green flow to the target", () => {
   expect(effect?.key).toBe("repair-flow:2:9");
   expect(effect?.color).toBe(0x22_c5_5e);
   expect(effect?.targetWorldPos).toEqual(target.pos);
+});
+
+it("shows the red enemy halo only at the minimap's 1024-unit scale", () => {
+  const enemy: Entity = { id: 42, entity_type_id: "worker", owner_player_id: "opponent", pos: { x: 0, y: 0 } };
+  expect(shouldDrawEnemyHalo(enemy, "player", 512, true)).toBe(false);
+  expect(shouldDrawEnemyHalo(enemy, "player", 1024, true)).toBe(true);
+  expect(shouldDrawEnemyHalo(enemy, "player", 2048, true)).toBe(true);
+  expect(shouldDrawEnemyHalo({ ...enemy, owner_player_id: "raiders" }, "player", 1024, true)).toBe(true);
+  expect(shouldDrawEnemyHalo({ ...enemy, owner_player_id: "player" }, "player", 1024, true)).toBe(false);
+  expect(shouldDrawEnemyHalo({ ...enemy, owner_player_id: "universe" }, "player", 1024, true)).toBe(false);
+  expect(shouldDrawEnemyHalo({ ...enemy, remembered: { last_seen_tick: 10 } }, "player", 1024, true)).toBe(false);
+  expect(shouldDrawEnemyHalo(enemy, null, 1024, true)).toBe(false);
+  expect(shouldDrawEnemyHalo(enemy, "player", 1024, false)).toBe(false);
+});
+
+it("renders the hostile pulse red at three times the collector halo's size", () => {
+  const halo = new Graphics();
+  drawEnemyHalo(halo, 0);
+  expect(halo.context.instructions.map(({ data }) => typeof data.style === "number" ? data.style : data.style.color)).toEqual([
+    0xef_44_44, 0xff_8a_65, 0xff_d0_c4, 0xff_8a_65,
+  ]);
+  expect(halo.getLocalBounds().width).toBe(504);
 });

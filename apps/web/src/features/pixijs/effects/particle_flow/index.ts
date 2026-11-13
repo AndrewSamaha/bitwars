@@ -32,6 +32,43 @@ const REPAIR_CORE_COLOR = 0xdc_fc_e7;
 const FALLBACK_ENERGY_SOURCE_TYPES = new Set(["theta", "star_yellow"]);
 const FALLBACK_MINERAL_SOURCE_TYPES = new Set(["minerals"]);
 
+const ENEMY_HALO_STYLE = {
+  color: 0xef_44_44,
+  glowColor: 0xff_8a_65,
+  coreColor: 0xff_d0_c4,
+  sizeMultiplier: SOLAR_COLLECTION_SIZE_MULTIPLIER * 3,
+};
+
+function pulseAt(nowMs: number): number {
+  return (Math.sin(nowMs / 1000 * 5.2) + 1) * 0.5;
+}
+
+function drawTargetHalo(graphics: Graphics, x: number, y: number, pulse: number, effect: typeof ENEMY_HALO_STYLE) {
+  const size = effect.sizeMultiplier;
+  graphics.circle(x, y, (24 + pulse * 6) * size).stroke({ width: 2 * size, color: effect.color, alpha: 0.3 + pulse * 0.18 });
+  graphics.circle(x, y, (12 + pulse * 3) * size).stroke({ width: 2 * size, color: effect.glowColor, alpha: 0.55 + pulse * 0.2 });
+  graphics.circle(x, y, (8 + pulse * 2) * size).fill({ color: effect.coreColor, alpha: 0.24 + pulse * 0.12 });
+}
+
+function drawTargetHaloAccent(graphics: Graphics, x: number, y: number, pulse: number, effect: typeof ENEMY_HALO_STYLE) {
+  graphics.circle(x, y, (15 + pulse * 4) * effect.sizeMultiplier)
+    .stroke({ width: 1.5 * effect.sizeMultiplier, color: effect.glowColor, alpha: 0.4 + pulse * 0.18 });
+}
+
+/** Solar collector's pulse shape and timing, tinted red for hostile entities. */
+export function drawEnemyHalo(graphics: Graphics, nowMs: number) {
+  const pulse = pulseAt(nowMs);
+  graphics.clear();
+  drawTargetHalo(graphics, 0, 0, pulse, ENEMY_HALO_STYLE);
+  drawTargetHaloAccent(graphics, 0, 0, pulse, ENEMY_HALO_STYLE);
+}
+
+export function shouldDrawEnemyHalo(entity: Entity, playerId: string | null, scaleBarDistance: number, combatTargetable: boolean): boolean {
+  const ownerId = entity.owner_player_id;
+  return scaleBarDistance >= 1024 && playerId !== null && entity.remembered === undefined
+    && typeof ownerId === "string" && ownerId !== "universe" && ownerId !== playerId && combatTargetable;
+}
+
 function isResourceSourceEntityType(
   world: RenderEffectsWorld,
   entityTypeId: string | undefined,
@@ -167,7 +204,7 @@ export function drawParticleFlowEffect(
     container.parent ?? undefined,
   );
   const t = nowMs / 1000;
-  const pulse = (Math.sin(t * 5.2) + 1) * 0.5;
+  const pulse = pulseAt(nowMs);
   const size = effect.sizeMultiplier;
   const dx = targetLocal.x - sourceLocal.x;
   const dy = targetLocal.y - sourceLocal.y;
@@ -181,13 +218,7 @@ export function drawParticleFlowEffect(
   const streamStartY = sourceLocal.y + dirY * sourceInset;
   graphics.clear();
 
-  if (effect.showTargetHalo !== false) {
-    const haloRadius = (24 + pulse * 6) * size;
-    const innerHaloRadius = (12 + pulse * 3) * size;
-    graphics.circle(targetLocal.x, targetLocal.y, haloRadius).stroke({ width: 2 * size, color: effect.color, alpha: 0.3 + pulse * 0.18 });
-    graphics.circle(targetLocal.x, targetLocal.y, innerHaloRadius).stroke({ width: 2 * size, color: effect.glowColor, alpha: 0.55 + pulse * 0.2 });
-    graphics.circle(targetLocal.x, targetLocal.y, (8 + pulse * 2) * size).fill({ color: effect.coreColor, alpha: 0.24 + pulse * 0.12 });
-  }
+  if (effect.showTargetHalo !== false) drawTargetHalo(graphics, targetLocal.x, targetLocal.y, pulse, effect);
 
   graphics.moveTo(streamStartX, streamStartY);
   graphics.lineTo(targetLocal.x, targetLocal.y);
@@ -205,7 +236,5 @@ export function drawParticleFlowEffect(
     });
   }
 
-  if (effect.showTargetHalo !== false) {
-    graphics.circle(targetLocal.x, targetLocal.y, (15 + pulse * 4) * size).stroke({ width: 1.5 * size, color: effect.glowColor, alpha: 0.4 + pulse * 0.18 });
-  }
+  if (effect.showTargetHalo !== false) drawTargetHaloAccent(graphics, targetLocal.x, targetLocal.y, pulse, effect);
 }
