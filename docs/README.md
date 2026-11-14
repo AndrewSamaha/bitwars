@@ -30,6 +30,10 @@ This directory contains specifications, designs, and decision records for the pr
   - [Redis to Files](./tools/redis-to-files.md)
   - [Chaos Harness (M2)](./tools/chaos-harness.md)
 
+## Client notifications
+
+`apps/web/src/features/hud/messages.ts` defines the event-level `MessageInput` kinds and formats their titles, text, and entity focus metadata. `LifecycleToasts.tsx` publishes these messages to the HUD log and toast; `MessageLogEntry.kind` preserves the kind for future delivery rules. Route planner failures can provide their own reason text as payload. New client notifications should add a kind and formatter case here rather than format titles in their event handlers.
+
 ## Contributing to Docs
 
 - Prefer small, focused documents under `docs/` and group related topics into subfolders like `docs/requirements/` and `docs/design/`.

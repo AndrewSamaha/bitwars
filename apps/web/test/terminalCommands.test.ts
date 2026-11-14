@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { executeTerminalCommand } from "@/features/hud/terminal/commands";
+import { executeTerminalCommand, type TerminalCommandContext } from "@/features/hud/terminal/commands";
 import { type Entity, game } from "@/features/gamestate/world";
 import { appendMessageLog, type MessageLogEntry } from "@/features/hud/messageLog";
 
@@ -12,13 +12,13 @@ afterEach(() => {
 
 describe("log", () => {
   it("links entity labels in collection and starvation messages with and without timestamps", async () => {
-    const context = {
+    const context: TerminalCommandContext = {
       realPlayerId: "player-a", effectivePlayerId: "player-a", actingAsId: null,
       sessionStatus: "active" as const,
       messageLog: [
-        { title: "Collection blocked", message: "Collector 42 is too close to another active collector. Move it farther away and restart, or wait for an automatic retry.", timestamp: 1,
+        { kind: "collection-spacing-waiting", title: "Collection blocked", message: "Collector 42 is too close to another active collector. Move it farther away and restart, or wait for an automatic retry.", timestamp: 1,
           focusEntityId: "42", focusLabel: "Collector 42" },
-        { title: "Resource starvation", message: "worker 680 is taking damage because it lacks resources for maintenance.", timestamp: 2,
+        { kind: "resource-starvation", title: "Resource starvation", message: "worker 680 is taking damage because it lacks resources for maintenance.", timestamp: 2,
           focusEntityId: "680", focusLabel: "worker 680" },
       ],
       logout: async () => "", su: () => {}, exitSu: () => {},
@@ -37,7 +37,7 @@ describe("log", () => {
     let messageLog: MessageLogEntry[] = [];
     for (let index = 0; index < 105; index += 1) {
       messageLog = appendMessageLog(messageLog, {
-        title: "Collection blocked", message: `Collector ${index} is waiting.`,
+        kind: "collection-spacing-waiting", title: "Collection blocked", message: `Collector ${index} is waiting.`,
         timestamp: Date.UTC(2026, 9, 8, 12, 0, index),
       });
     }

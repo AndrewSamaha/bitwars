@@ -20,7 +20,7 @@ import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from 
 import { drawEnemyHalo, shouldDrawEnemyHalo } from "@/features/pixijs/effects/particle_flow";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
-import { BUILD_COMPLETED_EVENT, CENTER_CAMERA_ON_ENTITY_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
+import { BUILD_COMPLETED_EVENT, CENTER_CAMERA_ON_ENTITY_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT, dispatchCommandFeedback } from "@/features/gamestate/events";
 import {
   createGameEntityVisual,
   createGameWorldContainer,
@@ -1521,7 +1521,7 @@ export default function GameStage() {
           if (!leader || leader.remembered || leader.health <= 0 || leader.owner_player_id !== myPlayerIdRef.current
             || (contentManager.getEntityType(leader.entity_type_id ?? "")?.speed ?? 0) <= 0
             || sel.selectedEntities.includes(targetId)) {
-            window.dispatchEvent(new CustomEvent("bitwars:command-feedback", { detail: "Choose another owned mobile ship to escort." }));
+            dispatchCommandFeedback({ kind: "escort-invalid-target" });
             return;
           }
           intentQueue.handleEscortCommand(sel.selectedEntities.map(Number), Number(targetId));
