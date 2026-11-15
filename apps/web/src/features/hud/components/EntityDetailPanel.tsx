@@ -13,6 +13,7 @@ import { actionResourceSource, canAffordAction, isHubDepot, resourceDisplayKeys,
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 import { buildProgressMetrics } from "@/features/build-state/buildProgressMetrics";
 import { useSession } from "@/features/users/components/identity/SessionContext";
+import { advanceSelfDestructConfirmation, createSelfDestructConfirmation, type SelfDestructConfirmation } from "@/features/hud/selfDestructConfirmation";
 
 const GAMESTATE_UI_REFRESH_INTERVAL_MS = 100;
 
@@ -44,6 +45,13 @@ export default function EntityDetailPanel() {
   const selectedIdsKey = selectedEntities.join(",");
   const donorId = typeof selectedAction === "object" && selectedAction?.kind === "Transport" ? selectedAction.donorId : undefined;
   const statusBarRef = useRef<HTMLDivElement>(null);
+  const confirmationRowRef = useRef<HTMLDivElement>(null);
+  const confirmationRef = useRef<SelfDestructConfirmation | null>(null);
+  const [selfDestructConfirmation, setSelfDestructConfirmation] = useState<SelfDestructConfirmation | null>(null);
+  const updateConfirmation = (confirmation: SelfDestructConfirmation | null) => {
+    confirmationRef.current = confirmation;
+    setSelfDestructConfirmation(confirmation);
+  };
   const [, forceRerender] = useState(0);
   const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [queueBuild, setQueueBuild] = useState(false);
@@ -105,6 +113,7 @@ export default function EntityDetailPanel() {
     setUpgradeMenuOpen(false);
     setResearchMenuOpen(false);
     setCollectMenuOpen(false);
+    updateConfirmation(null);
     if (typeof selectedAction === "object" && selectedAction) actions.setSelectedAction(null);
   }, [selectedIdsKey]);
 
@@ -245,6 +254,10 @@ export default function EntityDetailPanel() {
     const entity = entities.find(e => String(e.id) === id);
     return entity?.owner_player_id === effectivePlayerId && entity.remembered === undefined && (entity.health ?? 0) > 0;
   });
+  useEffect(() => {
+    const confirmation = confirmationRef.current;
+    if (confirmation && (!canSelfDestruct || confirmation.playerId !== effectivePlayerId)) updateConfirmation(null);
+  }, [canSelfDestruct, effectivePlayerId]);
   const canJettisonCargo = !!effectivePlayerId && selectedEntities.length > 0 && selectedEntities.every(id => {
     const entity = entities.find(e => String(e.id) === id);
     const def = contentManager.getEntityType(entity?.entity_type_id ?? "");
@@ -318,12 +331,14 @@ export default function EntityDetailPanel() {
       return;
     }
     if (val === "SelfDestruct") {
-      if (!canSelfDestruct) return;
+      if (!canSelfDestruct || !effectivePlayerId) return;
       actions.setSelectedAction(null);
       actions.setMeasuring(false);
-      for (const id of selectedEntities) intentQueue.handleSelfDestructCommand(Number(id));
+      setCollectMenuOpen(false); setBuildMenuOpen(false); setUpgradeMenuOpen(false); setResearchMenuOpen(false);
+      updateConfirmation(createSelfDestructConfirmation(selectedIdsKey, effectivePlayerId));
       return;
     }
+    if (confirmationRef.current) updateConfirmation(null);
     if (val === "Measure") {
       actions.setMeasuring(!isMeasuring);
       return;
@@ -464,6 +479,29 @@ export default function EntityDetailPanel() {
     return () => window.removeEventListener("bitwars:open-collect-picker", openCollectPicker);
   }, [collectOptions, selectedIdsKey]);
 
+  const confirmSelfDestructLetter = (key: string) => {
+    const confirmation = confirmationRef.current;
+    if (!confirmation) return;
+    if (confirmation.selectionKey !== selectedIdsKey || confirmation.playerId !== effectivePlayerId || !canSelfDestruct) {
+      updateConfirmation(null);
+      return;
+    }
+    const next = advanceSelfDestructConfirmation(confirmation, key);
+    updateConfirmation(next === "confirmed" ? null : next);
+    if (next === "confirmed") {
+      for (const id of selectedEntities) intentQueue.handleSelfDestructCommand(Number(id));
+    }
+  };
+
+  useEffect(() => {
+    if (!confirmationRef.current) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!confirmationRowRef.current?.contains(event.target as Node)) updateConfirmation(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [selfDestructConfirmation]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -535,6 +573,16 @@ export default function EntityDetailPanel() {
 
   useEffect(() => {
     const onDeliverKey = (event: KeyboardEvent) => {
+      if (confirmationRef.current) {
+        if (event.key === "Shift" || event.key === "Control" || event.key === "Alt" || event.key === "Meta") return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!event.repeat) {
+          if (event.key === "Escape") updateConfirmation(null);
+          else confirmSelfDestructLetter(event.key.toLowerCase());
+        }
+        return;
+      }
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, [contenteditable=true]")) return;
       const key = event.key.toLowerCase();
@@ -719,12 +767,31 @@ export default function EntityDetailPanel() {
                               ? upgradeMenuOpen
                               : a.value === "Research"
                                 ? researchMenuOpen
-                                : false
+                                : a.value === "SelfDestruct"
+                                  ? !!selfDestructConfirmation
+                                  : false
                   }
                   onClick={(action) => action.enabled !== false && onClickAction(action.value)}
                 />
               ))}
             </div>
+            {selfDestructConfirmation && selfDestructConfirmation.selectionKey === selectedIdsKey
+              && selfDestructConfirmation.playerId === effectivePlayerId && canSelfDestruct && (
+              <div ref={confirmationRowRef} className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2 text-xs">
+                <span className="text-muted-foreground">Confirm self-destruct sequence:</span>
+                {selfDestructConfirmation.words.map((word, index) => (
+                  <button key={index} type="button"
+                    onClick={() => index === confirmationRef.current?.index
+                      ? confirmSelfDestructLetter(word[0]!) : updateConfirmation(null)}
+                    className={`rounded border px-2 py-1 ${index === selfDestructConfirmation.index
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-muted text-muted-foreground"}`}>
+                    [{word[0]}] {word}
+                  </button>
+                ))}
+                <span className="text-muted-foreground">[Esc] cancel</span>
+              </div>
+            )}
             {selectedAction === "Assign" && <div className="mt-2 text-xs text-muted-foreground">
               Click a friendly depot to assign collection deliveries. Solar collectors require coverage; workers travel to the depot.
               <button type="button" className="ml-2 rounded border px-2 py-1" onClick={() => {

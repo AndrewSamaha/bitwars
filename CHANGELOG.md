@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Self-destruct in the entity details panel now requires a four-word randomized NATO confirmation sequence. Wrong letters, Escape, clicking away, or changing selection cancel the sequence before any order is sent.
 - Minimap sound pings now mark laser firing origins, explosions, and attacked units alongside existing discovery and construction pings; the red circle remains usable even when audio is muted.
 - Selecting an owned entity now shows only its route on the world map: remaining move and sentry waypoints, escort position, or a collection circuit between storage and source (including intermediate waypoints). Collection circuits survive reconnects through the active-intent handshake; the server does not publish a collection waypoint cursor, so the initial approach is not shown as a current leg.
 - Transport collectors now fail over from a full assigned hub or storage depot to a compatible linked depot in the same hub group, keeping the manual assignment and carried cargo. The chosen physical drop-off is shown separately and its change is announced once; full groups retain a waiting Collect route instead of canceling it.
