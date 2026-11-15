@@ -28,6 +28,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Documentation index and links surfaced in `README.md` (see `docs/`).
 
 ### Changed
+- Bumped the engine and web intent protocol major from 22 to 23; deploy them together to avoid protocol mismatch rejections.
 - Indexed shareable depot storage by owner and resource once per operating tick, avoiding repeated full-world scans while preserving live inventory debits and existing depot eligibility rules.
 - Positioned the distance measurement label just above and left of the cursor instead of at the midpoint of the measurement line.
 - Reworded the full-cargo collection notice to name the planned delivery depot and explain that the worker delivers its cargo before collecting more.
