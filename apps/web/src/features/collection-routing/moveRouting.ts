@@ -1,5 +1,6 @@
 import { contentManager } from "../content/contentManager";
 import { gameConnection } from "../gamestate/connection";
+import { dispatchCommandFeedback } from "../gamestate/events";
 import { minimapMemory } from "../gamestate/minimapMemory";
 import { game } from "../gamestate/world";
 import { intentQueue, type MoveRouter } from "../intent-queue/intentQueueManager";
@@ -48,13 +49,13 @@ class MoveRouting implements MoveRouter {
       if (version !== this.versions.get(entityId)) return;
       const request = this.prepare(entityId, target, modifiers);
       if (!request) {
-        window.dispatchEvent(new CustomEvent("bitwars:command-feedback", { detail: "Move routing unavailable: wait for the live world and content." }));
+        dispatchCommandFeedback({ kind: "move-route-unavailable" });
         return;
       }
       const result = await this.plan(request);
       if (version !== this.versions.get(entityId) || request.playerId !== this.playerId || !game.ready || gameConnection.getSnapshot() !== "live") return;
       if (result.kind === "blocked") {
-        window.dispatchEvent(new CustomEvent("bitwars:command-feedback", { detail: result.reason }));
+        dispatchCommandFeedback({ kind: "move-route-blocked", reason: result.reason });
       } else {
         send(result.via);
       }

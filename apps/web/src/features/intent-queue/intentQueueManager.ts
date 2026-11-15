@@ -2,6 +2,7 @@
 import { v7 as uuidv7 } from "uuid";
 import { COLLECT_COMMAND_EVENT, type CollectCommandDetail } from "@/features/gamestate/events";
 import type { Assignment, TravelPlan } from "@/features/collection-routing/planner";
+import { WAYPOINT_MIGRATION_MESSAGE } from "@/features/hud/messages";
 
 export type CollectionRouter = {
   request(entityId: number, assignment: Assignment, send: (travelPlan?: TravelPlan) => void): void;
@@ -1012,7 +1013,7 @@ export class IntentQueueManager {
       this.migrationNotice = data.migrationNotice ?? null;
       if (data.schemaVersion !== 2 && Object.values(data.entities || {}).some((state) =>
         ((state as unknown as { queue?: unknown[] }).queue?.length ?? 0) > 0)) {
-        this.migrationNotice = "Saved waypoints were cleared during this update. Reissue any remaining destinations.";
+        this.migrationNotice = WAYPOINT_MIGRATION_MESSAGE;
       }
       this.entities = new Map(Object.entries(data.entities || {}).map(([id, state]) =>
         [id, { active: state.active ?? null, pendingMoves: [], queuedOrders: state.queuedOrders ?? [], queuedAfter: state.queuedAfter, collectionRoutingHold: state.collectionRoutingHold }]));

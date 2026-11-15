@@ -111,7 +111,7 @@ it("does not send an unsafe Move when the local waypoint network has no valid de
   const { intentQueue, send } = await setup();
   env.entities.pop();
   vi.stubGlobal("CustomEvent", class {
-    constructor(public type: string, public options: { detail: string }) {}
+    constructor(public type: string, public options: { detail: { kind: string; reason?: string } }) {}
   });
   intentQueue.handleMoveCommand(1, { x: 2000, y: 0 }, { shift: false, ctrl: false });
   await vi.waitFor(() => expect(env.workers[0]?.postMessage).toHaveBeenCalledOnce());
@@ -119,6 +119,10 @@ it("does not send an unsafe Move when the local waypoint network has no valid de
   const { id, request } = worker.postMessage.mock.calls[0]![0];
   worker.onmessage!({ data: { id, result: new MovePlanner().plan(request) } });
   await vi.waitFor(() => expect(window.dispatchEvent).toHaveBeenCalledOnce());
+  expect(vi.mocked(window.dispatchEvent).mock.calls[0]![0]).toMatchObject({
+    type: "bitwars:command-feedback",
+    options: { detail: { kind: "move-route-blocked", reason: expect.any(String) } },
+  });
   expect(send).not.toHaveBeenCalled();
   expect(intentQueue.getEntityState(1).active).toBeNull();
 });

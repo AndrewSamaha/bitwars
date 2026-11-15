@@ -131,6 +131,12 @@ replacement even when the server's actual remaining path is safe. Without a
 local waypoint network, ordinary direct travel retains its existing
 radiation-risk policy.
 
+If reevaluation finds the same source, drop-off, waypoint circuit, and initial
+approach as the accepted active Collect order, retain it without submitting a
+replacement intent. This also applies when conservative radiation checks cannot
+certify the current route but the planner finds no different safe route. A held
+order or an explicitly new request still submits its planned route.
+
 Invalid routes are replanned; a valid replacement is submitted with REPLACE_ACTIVE.
 If no safe route exists and no valid waiting route can be retained, an accepted
 collection enters a position hold once. Held or server-blocked collection must

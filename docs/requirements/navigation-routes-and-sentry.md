@@ -103,7 +103,13 @@ the current leg, discards future legs, and plans from that current destination.
 Subsequent clicks are planned in order per entity; a newer replacement or
 different action cancels pending plans. Unlike maintained collection, a Move
 does not replan after acceptance when hazards or waypoint positions change.
-This does not apply to Convoy, Sentry, or autonomous movement.
+This does not apply to Convoy, Sentry, Escort, or autonomous movement.
+
+Individual Move route creation is selected explicitly when the engine activates
+the command, independently of the entity ID used in lifecycle events. Convoy,
+Sentry, and Escort members retain their group-owned movement and do not publish
+individual Move routes. Checkpoint restoration keeps the individual Move's real
+entity ID alongside its saved route cursor.
 
 ## Existing implementation
 

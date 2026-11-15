@@ -65,14 +65,14 @@ async fn read_snapshot_at_time(
     let meta: redis::RedisResult<redis::Value> =
         redis::cmd("HGETALL").arg(&meta_key).query_async(conn).await;
 
-    if let Ok(redis::Value::Bulk(meta_fields)) = meta {
+    if let Ok(redis::Value::Array(meta_fields)) = meta {
         let mut _snapshot_tick: Option<i64> = None;
         let mut updated_at_ms: Option<i64> = None;
 
         // Parse metadata fields
         let mut i = 0;
         while i + 1 < meta_fields.len() {
-            if let (redis::Value::Data(key), redis::Value::Data(value)) =
+            if let (redis::Value::BulkString(key), redis::Value::BulkString(value)) =
                 (&meta_fields[i], &meta_fields[i + 1])
             {
                 match key.as_slice() {
@@ -134,15 +134,15 @@ async fn read_events_stream_range(
         .query_async(conn)
         .await?;
 
-    if let redis::Value::Bulk(entries) = events_res {
+    if let redis::Value::Array(entries) = events_res {
         for entry in entries {
-            if let redis::Value::Bulk(pair) = entry {
+            if let redis::Value::Array(pair) = entry {
                 if pair.len() != 2 {
                     continue;
                 }
 
                 let id = match &pair[0] {
-                    redis::Value::Data(b) => String::from_utf8_lossy(b).to_string(),
+                    redis::Value::BulkString(b) => String::from_utf8_lossy(b).to_string(),
                     _ => continue,
                 };
 
@@ -163,10 +163,10 @@ async fn read_events_stream_range(
                 }
 
                 // Extract data field
-                if let redis::Value::Bulk(fields) = &pair[1] {
+                if let redis::Value::Array(fields) = &pair[1] {
                     let mut i = 0;
                     while i + 1 < fields.len() {
-                        if let (redis::Value::Data(name), redis::Value::Data(data)) =
+                        if let (redis::Value::BulkString(name), redis::Value::BulkString(data)) =
                             (&fields[i], &fields[i + 1])
                         {
                             if name == b"data" {
@@ -202,15 +202,15 @@ async fn read_events_stream_range(
         .query_async(conn)
         .await?;
 
-    if let redis::Value::Bulk(entries) = intents_res {
+    if let redis::Value::Array(entries) = intents_res {
         for entry in entries {
-            if let redis::Value::Bulk(pair) = entry {
+            if let redis::Value::Array(pair) = entry {
                 if pair.len() != 2 {
                     continue;
                 }
 
                 let id = match &pair[0] {
-                    redis::Value::Data(b) => String::from_utf8_lossy(b).to_string(),
+                    redis::Value::BulkString(b) => String::from_utf8_lossy(b).to_string(),
                     _ => continue,
                 };
 
@@ -231,10 +231,10 @@ async fn read_events_stream_range(
                 }
 
                 // Extract data field
-                if let redis::Value::Bulk(fields) = &pair[1] {
+                if let redis::Value::Array(fields) = &pair[1] {
                     let mut i = 0;
                     while i + 1 < fields.len() {
-                        if let (redis::Value::Data(name), redis::Value::Data(data)) =
+                        if let (redis::Value::BulkString(name), redis::Value::BulkString(data)) =
                             (&fields[i], &fields[i + 1])
                         {
                             if name == b"data" {

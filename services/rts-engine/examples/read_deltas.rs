@@ -41,25 +41,25 @@ async fn main() -> anyhow::Result<()> {
     println!("stream {} entries (up to {}):", stream, count);
 
     // Parse response: [[id, [field, value, ...]], ...]
-    if let redis::Value::Bulk(entries) = res {
+    if let redis::Value::Array(entries) = res {
         for entry in entries {
-            if let redis::Value::Bulk(pair) = entry {
+            if let redis::Value::Array(pair) = entry {
                 if pair.len() != 2 {
                     continue;
                 }
                 let id = match &pair[0] {
-                    redis::Value::Data(b) => String::from_utf8_lossy(b).to_string(),
+                    redis::Value::BulkString(b) => String::from_utf8_lossy(b).to_string(),
                     _ => continue,
                 };
                 let mut data_bytes: Option<&[u8]> = None;
-                if let redis::Value::Bulk(fields) = &pair[1] {
+                if let redis::Value::Array(fields) = &pair[1] {
                     let mut i = 0;
                     while i + 1 < fields.len() {
                         let f = &fields[i];
                         let v = &fields[i + 1];
-                        if let redis::Value::Data(name) = f {
+                        if let redis::Value::BulkString(name) = f {
                             if name == b"data" {
-                                if let redis::Value::Data(b) = v {
+                                if let redis::Value::BulkString(b) = v {
                                     data_bytes = Some(b);
                                 }
                                 break;

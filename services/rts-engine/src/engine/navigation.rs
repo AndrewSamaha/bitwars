@@ -133,9 +133,7 @@ impl IntentManager {
         policy: pb::IntentPolicy,
     ) -> Option<Result<(), RouteEditError>> {
         let active = self.current_action.get(&entity_id)?;
-        if active.metadata.entity_id != 0
-            || !matches!(active.action.exec, Some(pb::action_state::Exec::Move(_)))
-        {
+        if !matches!(active.action.exec, Some(pb::action_state::Exec::Move(_))) {
             return Some(Err(RouteEditError::Busy));
         }
         let Some(route) = self.move_routes.get_mut(&entity_id) else {
@@ -171,6 +169,46 @@ impl IntentManager {
             .collect();
         orders.sort_by_key(|order| order.entity_id);
         orders
+    }
+
+    /// Rehydrate a validated checkpoint before persisting its active tracking.
+    fn restore_move_order(
+        &mut self,
+        mut order: pb::MoveOrderState,
+        entity_type_id: &str,
+    ) -> (super::intent::IntentMetadata, pb::Vec2) {
+        let route = order.route.take().unwrap();
+        let destination = route.destination().unwrap();
+        let metadata = super::intent::IntentMetadata {
+            entity_id: order.entity_id,
+            intent_id: order.intent_id,
+            client_cmd_id: order.client_cmd_id,
+            player_id: order.player_id,
+            server_tick: order.started_tick,
+            protocol_version: super::ENGINE_PROTOCOL_MAJOR,
+            policy: pb::IntentPolicy::ReplaceActive,
+        };
+        self.try_activate(
+            pb::Intent {
+                kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
+                    entity_id: order.entity_id,
+                    target: Some(destination),
+                    ..Default::default()
+                })),
+            },
+            metadata.clone(),
+            entity_type_id,
+        );
+        self.move_route_last_cmd.insert(
+            order.entity_id,
+            if order.last_client_cmd_id.is_empty() {
+                metadata.client_cmd_id.clone()
+            } else {
+                order.last_client_cmd_id
+            },
+        );
+        self.move_routes.insert(order.entity_id, route);
+        (metadata, destination)
     }
 }
 
@@ -243,7 +281,7 @@ impl Engine {
         orders: Vec<pb::MoveOrderState>,
     ) -> Result<()> {
         for order in orders {
-            let Some(route) = order.route.filter(|route| {
+            let Some(route) = order.route.as_ref().filter(|route| {
                 route.valid()
                     && route.traversal == pb::RouteTraversal::FinishAtEnd as i32
                     && route.direction == 1
@@ -263,39 +301,11 @@ impl Engine {
                 self.redis.clear_active_intent(order.entity_id).await?;
                 continue;
             }
-            let metadata = super::intent::IntentMetadata {
-                entity_id: 0,
-                intent_id: order.intent_id,
-                client_cmd_id: order.client_cmd_id,
-                player_id: order.player_id,
-                server_tick: order.started_tick,
-                protocol_version: super::ENGINE_PROTOCOL_MAJOR,
-                policy: pb::IntentPolicy::ReplaceActive,
-            };
-            let destination = route.destination().unwrap();
-            self.intents.try_activate(
-                pb::Intent {
-                    kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
-                        entity_id: order.entity_id,
-                        target: Some(destination),
-                        ..Default::default()
-                    })),
-                },
-                metadata.clone(),
-                &entity.entity_type_id,
-            );
-            self.intents.move_route_last_cmd.insert(
-                order.entity_id,
-                if order.last_client_cmd_id.is_empty() {
-                    metadata.client_cmd_id.clone()
-                } else {
-                    order.last_client_cmd_id
-                },
-            );
-            self.intents.move_routes.insert(order.entity_id, route);
+            let entity_id = order.entity_id;
+            let (metadata, destination) = self.intents.restore_move_order(order, &entity.entity_type_id);
             self.redis
                 .persist_active_intent(
-                    order.entity_id,
+                    entity_id,
                     &metadata,
                     "move",
                     Some(crate::io::redis::IntentPoint {
@@ -332,7 +342,7 @@ mod tests {
                 })),
             },
             IntentMetadata {
-                entity_id: 0,
+                entity_id: 1,
                 intent_id: vec![1; 16],
                 client_cmd_id: vec![2; 16],
                 player_id: "me".into(),
@@ -526,20 +536,27 @@ mod tests {
     }
 
     #[test]
-    fn individual_append_cannot_change_a_convoy_members_order() {
+    fn group_member_move_does_not_publish_or_accept_individual_route_edits() {
         let (mut manager, _) = fixture();
-        manager
-            .current_action
-            .get_mut(&1)
-            .unwrap()
-            .metadata
-            .entity_id = 1;
-        let before = manager.move_routes[&1].clone();
+        let metadata = manager.active_intents()[&1].metadata.clone();
+        let outcome = manager.try_activate_group_member(
+            pb::Intent {
+                kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
+                    entity_id: 1,
+                    target: Some(point(30.0)),
+                    ..Default::default()
+                })),
+            },
+            metadata,
+            "",
+        );
+        assert_eq!(outcome.canceled.len(), 1);
+        assert!(manager.move_orders_for_snapshot().is_empty());
         assert_eq!(
             manager.edit_move_route(1, point(20.0), &[], pb::IntentPolicy::Append),
             Some(Err(RouteEditError::Busy))
         );
-        assert_eq!(manager.move_routes[&1], before);
+        assert_eq!(manager.active_intents()[&1].metadata.entity_id, 1);
     }
 
     #[test]
@@ -585,6 +602,19 @@ mod tests {
             1
         );
         assert_eq!(decoded.move_orders[0].intent_id, vec![1; 16]);
+        let mut restored = IntentManager::new(HashMap::new(), 0.0, 10.0);
+        let mut restored_state = GameState {
+            tick: 0, entities: decoded.entities, technologies: HashMap::new(),
+            discovered_entities: Default::default(), generation: Default::default(),
+        };
+        let (metadata, destination) = restored.restore_move_order(decoded.move_orders.into_iter().next().unwrap(), "");
+        assert_eq!(metadata.entity_id, 1);
+        assert_eq!(destination, point(20.0));
+        assert_eq!(restored.move_routes[&1].next_waypoint_index, 1);
+        let finished = restored.follow_targets(&mut restored_state, 10.0, 1.0);
+        assert_eq!(finished[0].1.entity_id, 1);
+        assert_eq!(finished[0].1.intent_id, vec![1; 16]);
+        assert!(restored.move_routes.is_empty());
     }
 
     #[test]
@@ -608,6 +638,7 @@ mod tests {
         let pb::action_state::Exec::Move(mov) = manager.active_intents()[&1].action.exec.as_ref().unwrap() else {
             panic!("expected Move action");
         };
+        assert_eq!(manager.active_intents()[&1].metadata.entity_id, 1);
         assert_eq!(mov.target.as_ref().unwrap().target, Some(point(10.0)));
         for (index, next) in [(1, point(20.0)), (2, point(30.0))] {
             assert!(manager.follow_targets(&mut state, 10.0, 1.0).is_empty());
@@ -615,7 +646,7 @@ mod tests {
             assert_eq!(manager.move_routes[&1].destination(), Some(next));
             assert_eq!(manager.active_intents()[&1].metadata.intent_id, metadata.intent_id);
         }
-        assert_eq!(manager.follow_targets(&mut state, 10.0, 1.0)[0].1.intent_id, metadata.intent_id);
+        assert_eq!(manager.follow_targets(&mut state, 10.0, 1.0)[0].1.entity_id, 1);
         assert!(manager.move_routes.is_empty());
     }
 

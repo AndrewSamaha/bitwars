@@ -1,4 +1,5 @@
 import type { Entity } from "./world";
+import type { CommandFeedback } from "@/features/hud/messages";
 
 /** Emitted after the client ECS has incorporated an authoritative state update. */
 export const GAMESTATE_UPDATED_EVENT = "bitwars:gamestate-updated";
@@ -18,6 +19,7 @@ export const CENTER_CAMERA_ON_ENTITY_EVENT = "bitwars:center-camera-on-entity";
 export const ENTITY_UNDER_ATTACK_EVENT = "bitwars:entity-under-attack";
 export const ENTITY_RESOURCE_STARVATION_EVENT = "bitwars:entity-resource-starvation";
 export const ENTITY_RADIATION_DAMAGE_EVENT = "bitwars:entity-radiation-damage";
+export const COMMAND_FEEDBACK_EVENT = "bitwars:command-feedback";
 
 export type GameStateUpdatedDetail = { entityIds?: string[] };
 export type MinimumDistanceViolationDetail = {
@@ -137,6 +139,9 @@ export function dispatchCollectionDestinationChanged(detail: CollectionDestinati
   window.dispatchEvent(new CustomEvent<CollectionDestinationChangedDetail>(COLLECTION_DESTINATION_CHANGED_EVENT, { detail }));
 }
 
+export function dispatchCommandFeedback(detail: CommandFeedback) {
+  window.dispatchEvent(new CustomEvent<CommandFeedback>(COMMAND_FEEDBACK_EVENT, { detail }));
+}
 export function dispatchCenterCameraOnEntity(entityId: string) {
   window.dispatchEvent(new CustomEvent<string>(CENTER_CAMERA_ON_ENTITY_EVENT, { detail: entityId }));
 }

@@ -17,9 +17,10 @@ import { intentQueue, type SendIntentParams } from "@/features/intent-queue/inte
 import { collectionRouting } from "@/features/collection-routing/collectionRouting";
 import { drawCollectionRoute } from "@/features/pixijs/renderer/collectionRoute";
 import { reconcileEntityRenderEffects, reconcileWorldParticleFlowEffects } from "@/features/pixijs/effects/renderEffects";
+import { drawEnemyHalo, shouldDrawEnemyHalo } from "@/features/pixijs/effects/particle_flow";
 import { createDespawnExplosionSystem } from "@/features/pixijs/effects/despawnExplosion";
 import { contentManager } from "@/features/content/contentManager";
-import { BUILD_COMPLETED_EVENT, CENTER_CAMERA_ON_ENTITY_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT } from "@/features/gamestate/events";
+import { BUILD_COMPLETED_EVENT, CENTER_CAMERA_ON_ENTITY_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT, dispatchCommandFeedback } from "@/features/gamestate/events";
 import {
   createGameEntityVisual,
   createGameWorldContainer,
@@ -257,6 +258,11 @@ export default function GameStage() {
         radiationRangeGraphics.eventMode = "none";
         radiationRangeGraphics.zIndex = -1_000_000;
         worldContainer.addChild(radiationRangeGraphics);
+        const enemyHaloContainer = new Container();
+        enemyHaloContainer.label = "enemyHalos";
+        enemyHaloContainer.eventMode = "none";
+        enemyHaloContainer.zIndex = -999_999;
+        worldContainer.addChild(enemyHaloContainer);
 
         // Laser shots are transient presentation of an authoritative server
         // event. They live in world space, so camera pan/zoom affects them in
@@ -555,21 +561,22 @@ export default function GameStage() {
         scaleText.eventMode = "none";
         app.stage.addChild(scaleBar, scaleText);
 
+        let scaleBarDistance = 0;
         const updateScaleBar = () => {
           const centerX = app.screen.width - MINIMAP_MARGIN - MINIMAP_SIZE_PX / 2;
           const left = centerX - scaleBarWidth / 2;
           const top = MINIMAP_MARGIN + MINIMAP_SIZE_PX + 12;
           // Powers of two keep the moving tick between half and full width.
           // This measures the linear world view, not the compressed minimap.
-          const distance = 2 ** Math.floor(Math.log2(scaleBarWidth / worldContainer.scale.x));
-          const tickX = distance * worldContainer.scale.x;
+          scaleBarDistance = 2 ** Math.floor(Math.log2(scaleBarWidth / worldContainer.scale.x));
+          const tickX = scaleBarDistance * worldContainer.scale.x;
           scaleBar.position.set(left, top);
           scaleBar.clear()
             .moveTo(0, 0).lineTo(scaleBarWidth, 0)
             .moveTo(0, -4).lineTo(0, 4)
             .moveTo(tickX, -4).lineTo(tickX, 4)
             .stroke({ width: 1, color: 0xffffff });
-          scaleText.text = `${distance.toLocaleString()} units`;
+          scaleText.text = `${scaleBarDistance.toLocaleString()} units`;
           scaleText.position.set(centerX, top + 7);
         };
         updateScaleBar();
@@ -907,9 +914,6 @@ export default function GameStage() {
           }
         };
         const onKeyUp = (ev: KeyboardEvent) => {
-          if (ev.key === "Shift" && (latestSelectorsRef.current.selectedAction === "Move" || latestSelectorsRef.current.selectedAction === "Sentry")) {
-            setSelectedAction(null);
-          }
           if (PAN_KEYS.has(ev.code)) {
             panKeysRef.current.delete(ev.code);
           }
@@ -973,6 +977,7 @@ export default function GameStage() {
 
         // M8c: Authoritative render index keyed by ECS entity id.
         const renderById = new Map<string, EntityVisual>();
+        const enemyHalos = new Map<string, Graphics>();
 
         const normalizeId = (id: number | string | undefined | null): string | null => {
           if (id === undefined || id === null) return null;
@@ -1005,6 +1010,11 @@ export default function GameStage() {
         };
 
         const destroyRenderRef = (id: string) => {
+          const halo = enemyHalos.get(id);
+          if (halo) {
+            halo.destroy();
+            enemyHalos.delete(id);
+          }
           const ref = renderById.get(id);
           if (!ref) return;
           try {
@@ -1017,6 +1027,7 @@ export default function GameStage() {
 
         // Render system: project ECS -> Pixi once per frame (movement handled in world.tick)
         const render = () => {
+          const playerId = myPlayerIdRef.current;
           const nowMs = performance.now();
           let renderedBuildUpdatedAt: number | undefined;
           renderRadiationRanges();
@@ -1135,10 +1146,26 @@ export default function GameStage() {
             }
             const baseTint = remembered ? REMEMBERED_TINT : isOwned || isSystemOwner ? CLEAN_COLOR : NON_OWNED_TINT;
             const health = Number((e as Entity).health);
-            const maxHealth = contentManager.getEntityType(typeId)?.health;
+            const depotDef = contentManager.getEntityType(typeId);
+            const maxHealth = depotDef?.health;
             const hasHealth = Number.isFinite(health) && typeof maxHealth === "number" && maxHealth > 0;
             const isSelected = latestSelectorsRef.current.isSelected(id);
-            const depotDef = contentManager.getEntityType(typeId);
+            const haloVisible = shouldDrawEnemyHalo(e as Entity, playerId, scaleBarDistance, depotDef?.combat_targetable === true);
+            let halo = enemyHalos.get(id);
+            if (haloVisible) {
+              if (!halo) {
+                halo = new Graphics();
+                halo.eventMode = "none";
+                halo.label = `enemyHalo:${id}`;
+                enemyHaloContainer.addChild(halo);
+                enemyHalos.set(id, halo);
+              }
+              halo.position.set(e.pos.x, e.pos.y);
+              drawEnemyHalo(halo, nowMs);
+            } else if (halo) {
+              halo.destroy();
+              enemyHalos.delete(id);
+            }
             let depotCoverage = container.children.find(c => c.label === "depotCoverage") as Graphics | undefined;
             if (isOwned && !remembered && isSelected && depotDef?.depot && depotDef.depot_range) {
               if (!depotCoverage) { depotCoverage = new Graphics(); depotCoverage.label = "depotCoverage"; container.addChild(depotCoverage); }
@@ -1494,7 +1521,7 @@ export default function GameStage() {
           if (!leader || leader.remembered || leader.health <= 0 || leader.owner_player_id !== myPlayerIdRef.current
             || (contentManager.getEntityType(leader.entity_type_id ?? "")?.speed ?? 0) <= 0
             || sel.selectedEntities.includes(targetId)) {
-            window.dispatchEvent(new CustomEvent("bitwars:command-feedback", { detail: "Choose another owned mobile ship to escort." }));
+            dispatchCommandFeedback({ kind: "escort-invalid-target" });
             return;
           }
           intentQueue.handleEscortCommand(sel.selectedEntities.map(Number), Number(targetId));

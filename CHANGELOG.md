@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Self-destruct in the entity details panel now requires a four-word randomized NATO confirmation sequence. Wrong letters, Escape, clicking away, or changing selection cancel the sequence before any order is sent.
 - Minimap sound pings now mark laser firing origins, explosions, and attacked units alongside existing discovery and construction pings; the red circle remains usable even when audio is muted.
 - Selecting an owned entity now shows only its route on the world map: remaining move and sentry waypoints, escort position, or a collection circuit between storage and source (including intermediate waypoints). Collection circuits survive reconnects through the active-intent handshake; the server does not publish a collection waypoint cursor, so the initial approach is not shown as a current leg.
 - Transport collectors now fail over from a full assigned hub or storage depot to a compatible linked depot in the same hub group, keeping the manual assignment and carried cargo. The chosen physical drop-off is shown separately and its change is announced once; full groups retain a waiting Collect route instead of canceling it.
@@ -27,6 +28,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Documentation index and links surfaced in `README.md` (see `docs/`).
 
 ### Changed
+- Pinned Rust to 1.100.0 locally and in schema-check CI, and upgraded the engine's Redis client from 0.25.4 to 1.8.2; migrated response parsing and preserved blocking stream reads across the new client timeouts.
+- Bumped the engine and web intent protocol major from 22 to 23; deploy them together to avoid protocol mismatch rejections.
 - Indexed shareable depot storage by owner and resource once per operating tick, avoiding repeated full-world scans while preserving live inventory debits and existing depot eligibility rules.
 - Positioned the distance measurement label just above and left of the cursor instead of at the midpoint of the measurement line.
 - Reworded the full-cargo collection notice to name the planned delivery depot and explain that the worker delivers its cargo before collecting more.
@@ -35,6 +38,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Set maximum energy storage to 200 for all three defense pylon types.
 
 ### Fixed
+- Releasing Shift after a queued Move or Sentry destination no longer exits destination mode; successive Shift-clicks can extend the same route.
+- Stopped collection routing from repeatedly replacing an active Collect intent with an identical waypoint plan when depot capacity or nearby geometry changes.
 - Workers that partially unload at a hub now replan once on entering `waiting_for_dropoff` and deliver their remaining cargo to a linked depot with more room, even if hub spending keeps a tiny amount of capacity open.
 - Made collection capacity and delivery resource-specific: full food or energy no longer blocks mineral collection or gets unloaded by mineral routes. Full/no-capacity warnings now refer only to the requested resource.
 - Moved legacy sprites for `planet_blue`, `star_yellow`, `minerals`, and `raider` from the web public directory into `packages/content/assets` so hot-reload revisions include their artwork instead of falling back to the corvette texture.

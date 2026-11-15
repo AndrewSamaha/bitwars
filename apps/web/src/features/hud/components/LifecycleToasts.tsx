@@ -1,13 +1,15 @@
 "use client";
 
 import { AlertTriangle, X } from "lucide-react";
-import { LifecycleReason } from "@bitwars/shared/gen/intent_pb";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+
+import { formatMessage, type CommandFeedback, type MessageInput } from "@/features/hud/messages";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { intentQueue } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
 import { game } from "@/features/gamestate/world";
 import {
+  COMMAND_FEEDBACK_EVENT,
   BUILD_REJECTED_EVENT,
   type BuildRejectedDetail,
   COLLECTION_REJECTED_EVENT,
@@ -71,8 +73,9 @@ export default function LifecycleToasts() {
 
   useEffect(() => {
     const shownStarvationWarnings = new Set<string>();
-    const showToast = (title: string, message: string, focusEntityId?: string, focusLabel?: string) => {
-      pushMessageLog({ title, message, timestamp: Date.now(), focusEntityId, focusLabel });
+    const publishMessage = (input: MessageInput) => {
+      const { title, message, focusEntityId, focusLabel } = formatMessage(input);
+      pushMessageLog({ kind: input.kind, title, message, timestamp: Date.now(), focusEntityId, focusLabel });
       const toast = { title, message, focusEntityId, id: nextId.current++, entering: true };
       setToasts((current) => [...current.slice(-2), toast]);
       window.requestAnimationFrame(() => {
@@ -83,7 +86,7 @@ export default function LifecycleToasts() {
     const showWaypointMigrationNotice = () => {
       const message = intentQueue.getMigrationNotice();
       if (!message) return;
-      showToast("Saved waypoints cleared", message);
+      publishMessage({ kind: "waypoints-cleared", message });
       // Delivery to the toast and message log consumes this one-time notice.
       intentQueue.dismissMigrationNotice();
     };
@@ -91,68 +94,32 @@ export default function LifecycleToasts() {
     const migrationNoticeFrame = window.requestAnimationFrame(showWaypointMigrationNotice);
     const onMinimumDistanceViolation = (event: Event) => {
       const detail = (event as CustomEvent<MinimumDistanceViolationDetail>).detail;
-      if (!detail) return;
-      showToast("Collection blocked", `Collector ${detail.collectorEntityId} is ${Math.round(detail.actualDistance)} units from collector ${detail.blockingEntityId}; ${Math.round(detail.requiredDistance)} required. Click to focus it.`, detail.blockingEntityId);
+      if (detail) publishMessage({ kind: "collection-spacing-blocked", detail });
     };
     const onBuildRejected = (event: Event) => {
       const detail = (event as CustomEvent<BuildRejectedDetail>).detail;
-      if (!detail) return;
-      const missingTech = detail.missingTechnologyIds.length
-        ? `Missing technology: ${detail.missingTechnologyIds.join(", ")}.`
-        : "";
-      const shortfalls = detail.resourceShortfalls.length
-        ? `Insufficient resources: ${detail.resourceShortfalls.map(({ resourceTypeId, required, available }) =>
-            `${resourceTypeId} (required ${required}, available ${available})`).join("; ")}.`
-        : "";
-      const explanation = [missingTech, shortfalls].filter(Boolean).join(" ")
-        || (detail.reason === LifecycleReason.INVALID_TARGET
-          ? "Invalid builder, blueprint, or build configuration."
-          : detail.reason === LifecycleReason.ENTITY_BUSY
-            ? "The builder is busy."
-            : detail.reason === LifecycleReason.NOT_OWNED
-              ? "You do not own this builder."
-              : "The build request was rejected.");
-      showToast(
-        "Build rejected",
-        `Builder ${detail.actorEntityId} cannot build ${detail.blueprintId}. ${explanation}`,
-        detail.actorEntityId,
-        `Builder ${detail.actorEntityId}`,
-      );
+      if (detail) publishMessage({ kind: "build-rejected", detail });
     };
     const onCollectionRejected = (event: Event) => {
       const detail = (event as CustomEvent<CollectionRejectedDetail>).detail;
-      if (!detail) return;
-      const context = [
-        detail.resourceTypeId && `resource ${detail.resourceTypeId}`,
-        detail.sourceEntityId && `source #${detail.sourceEntityId}`,
-        detail.depotEntityId && `depot #${detail.depotEntityId}`,
-      ].filter(Boolean).join(", ");
-      showToast("Collection rejected",
-        `Worker ${detail.actorEntityId}: ${detail.code.replaceAll("_", " ")}${context ? ` (${context})` : ""}.`,
-        detail.actorEntityId, `Worker ${detail.actorEntityId}`);
+      if (detail) publishMessage({ kind: "collection-rejected", detail });
     };
     const onCollectionRoutingBlocked = (event: Event) => {
       const detail = (event as CustomEvent<CollectionRoutingBlockedDetail>).detail;
-      if (!detail) return;
-      showToast("Collection route blocked", `Worker ${detail.entityId}: ${detail.reason}`,
-        String(detail.entityId), `Worker ${detail.entityId}`);
+      if (detail) publishMessage({ kind: "collection-route-blocked", detail });
     };
     const onCollectionDestinationChanged = (event: Event) => {
       const detail = (event as CustomEvent<CollectionDestinationChangedDetail>).detail;
-      if (!detail) return;
-      showToast("Collection rerouted", `Worker ${detail.entityId} is routing from depot #${detail.fromDepotId} to depot #${detail.toDepotId}.`,
-        String(detail.entityId), `Worker ${detail.entityId}`);
+      if (detail) publishMessage({ kind: "collection-rerouted", detail });
     };
     const onCollectionWaiting = (event: Event) => {
       const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
-      if (!detail) return;
-      const label = `Collector ${detail.collectorEntityId}`;
-      showToast("Collection blocked", `${label} is too close to another active collector. Move it farther away and restart, or wait for an automatic retry.`, detail.collectorEntityId, label);
+      if (detail) publishMessage({ kind: "collection-spacing-waiting", collectorEntityId: detail.collectorEntityId });
     };
     const showDropoffBlocked = (entityId: string) => {
       const entity = game.world.entities.find((entity) => String(entity.id) === entityId);
       const cargo = entity?.collector_state?.resource_type || "cargo";
-      showToast("Collection waiting", `Worker ${entityId} cannot unload its ${cargo} at the current depot. Checking linked drop-offs; if none has room, it will wait here until capacity opens.`, entityId, `Worker ${entityId}`);
+      publishMessage({ kind: "collection-dropoff-blocked", entityId, cargo });
     };
     const onDropoffBlocked = (event: Event) => {
       const detail = (event as CustomEvent<CollectionWaitingDetail>).detail;
@@ -166,16 +133,16 @@ export default function LifecycleToasts() {
       const capacities = contentManager.getEntityType(entity.entity_type_id ?? "")?.max_capacity ?? {};
       const capacityStatus = collectionCapacityStatus(entity.resources, capacities, detail.resourceTypeId);
       if (capacityStatus === "unavailable") {
-        showToast("Collection blocked", `Worker ${detail.entityId} has no capacity for ${detail.resourceTypeId} and cannot collect it.`, String(detail.entityId), `Worker ${detail.entityId}`);
+        publishMessage({ kind: "collection-capacity-blocked", entityId: detail.entityId, resourceTypeId: detail.resourceTypeId });
       } else if (capacityStatus === "full" && detail.depotEntityId) {
         const depot = game.world.entities.find((candidate) => Number(candidate.id) === detail.depotEntityId);
         const target = `${depot?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${detail.depotEntityId}`;
-        showToast("Delivering cargo", `Worker ${detail.entityId} delivering its ${detail.resourceTypeId} to ${target} before going to collecting more.`, String(detail.entityId), `Worker ${detail.entityId}`);
+        publishMessage({ kind: "collection-delivering-cargo", entityId: detail.entityId, resourceTypeId: detail.resourceTypeId, target });
       }
     };
     const onTransferEndpointLost = (event: Event) => {
       const detail = (event as CustomEvent<{ carrierEntityId: string }>).detail;
-      if (detail) showToast("Resource transport canceled", "The donor or recipient is no longer available or compatible. Resources still aboard the worker are retained. Click to focus it.", detail.carrierEntityId);
+      if (detail) publishMessage({ kind: "transport-endpoint-lost", carrierEntityId: detail.carrierEntityId });
     };
     const onResourceStarvation = (event: Event) => {
       const entity = (event as CustomEvent<{ id?: number | string; entity_type_id?: string }>).detail;
@@ -184,18 +151,13 @@ export default function LifecycleToasts() {
       if (shownStarvationWarnings.has(entityId)) return;
       shownStarvationWarnings.add(entityId);
       dispatchCenterCameraOnEntity(entityId);
-      showToast(
-        "Resource starvation",
-        `${entity.entity_type_id ?? "Entity"} ${entityId} is taking damage because it lacks resources for maintenance.`,
-        entityId,
-        `${entity.entity_type_id ?? "Entity"} ${entityId}`,
-      );
+      publishMessage({ kind: "resource-starvation", entityId, entityTypeId: entity.entity_type_id });
     };
     const onCommandFeedback = (event: Event) => {
-      const message = (event as CustomEvent<string>).detail;
-      if (message) showToast("Escort", message);
+      const detail = (event as CustomEvent<CommandFeedback>).detail;
+      if (detail) publishMessage(detail);
     };
-    window.addEventListener("bitwars:command-feedback", onCommandFeedback);
+    window.addEventListener(COMMAND_FEEDBACK_EVENT, onCommandFeedback);
     window.addEventListener(COLLECTION_DROPOFF_BLOCKED_EVENT, onDropoffBlocked);
     window.addEventListener(COLLECT_COMMAND_EVENT, onCollectCommand);
     window.addEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);
@@ -209,7 +171,7 @@ export default function LifecycleToasts() {
     return () => {
       unsubscribeMigrationNotice();
       window.cancelAnimationFrame(migrationNoticeFrame);
-      window.removeEventListener("bitwars:command-feedback", onCommandFeedback);
+      window.removeEventListener(COMMAND_FEEDBACK_EVENT, onCommandFeedback);
       window.removeEventListener(COLLECTION_DROPOFF_BLOCKED_EVENT, onDropoffBlocked);
       window.removeEventListener(COLLECT_COMMAND_EVENT, onCollectCommand);
       window.removeEventListener(MINIMUM_DISTANCE_VIOLATION_EVENT, onMinimumDistanceViolation);

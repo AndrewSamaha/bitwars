@@ -402,7 +402,11 @@ impl RedisClient {
 
     pub async fn connect(url: &str, game_id: String) -> anyhow::Result<Self> {
         let client = redis::Client::open(url.to_string())?;
-        let conn = client.get_multiplexed_async_connection().await?;
+        // The engine's XREAD can block longer than redis-rs 1.x's default response timeout.
+        let config = redis::AsyncConnectionConfig::new()
+            .set_connection_timeout(None)
+            .set_response_timeout(None);
+        let conn = client.get_multiplexed_async_connection_with_config(&config).await?;
         info!("Connected to Redis at {}", url);
         Ok(Self { game_id, conn, run_id: String::new(), scenario_mode: false, content_revision: String::new() })
     }
@@ -764,35 +768,35 @@ impl RedisClient {
         let reply: RedisValue = cmd.query_async(&mut self.conn).await?;
 
         // Expected reply shape from redis-rs for XREAD:
-        // Bulk([
-        //   Bulk([
-        //     Data(stream_name),
-        //     Bulk([
-        //       Bulk([ Data(id), Bulk([ Data(field), Data(value), ... ]) ]),
+        // Array([
+        //   Array([
+        //     BulkString(stream_name),
+        //     Array([
+        //       Array([ BulkString(id), Array([ BulkString(field), BulkString(value), ... ]) ]),
         //       ...
         //     ])
         //   ])
         // ])
-        match reply {
+        match &reply {
             RedisValue::Nil => return Ok(None),
-            RedisValue::Bulk(ref top) => {
+            RedisValue::Array(top) => {
                 if top.is_empty() {
                     return Ok(None);
                 }
-                if let Some(RedisValue::Bulk(stream_entry)) = top.get(0) {
-                    if let [RedisValue::Data(_name), RedisValue::Bulk(items)] = &stream_entry[..] {
+                if let Some(RedisValue::Array(stream_entry)) = top.get(0) {
+                    if let [RedisValue::BulkString(_name), RedisValue::Array(items)] = &stream_entry[..] {
                         let mut out: Vec<(String, Vec<u8>)> = Vec::new();
                         for item in items.iter() {
-                            if let RedisValue::Bulk(parts) = item {
+                            if let RedisValue::Array(parts) = item {
                                 if parts.len() >= 2 {
-                                    let entry_id = if let RedisValue::Data(id_bytes) = &parts[0] {
+                                    let entry_id = if let RedisValue::BulkString(id_bytes) = &parts[0] {
                                         String::from_utf8(id_bytes.clone()).unwrap_or_default()
                                     } else {
                                         continue;
                                     };
-                                    if let RedisValue::Bulk(fieldvals) = &parts[1] {
+                                    if let RedisValue::Array(fieldvals) = &parts[1] {
                                         let epoch = fieldvals.chunks_exact(2).find_map(|pair| match (&pair[0], &pair[1]) {
-                                            (RedisValue::Data(key), RedisValue::Data(value)) if key == b"run_id" => Some(value.as_slice()),
+                                            (RedisValue::BulkString(key), RedisValue::BulkString(value)) if key == b"run_id" => Some(value.as_slice()),
                                             _ => None,
                                         });
                                         let valid = epoch.map_or(!self.scenario_mode, |epoch| epoch == self.run_id.as_bytes());
@@ -800,9 +804,9 @@ impl RedisClient {
                                         while i + 1 < fieldvals.len() {
                                             let field = &fieldvals[i];
                                             let value = &fieldvals[i + 1];
-                                            if let RedisValue::Data(field_name) = field {
+                                            if let RedisValue::BulkString(field_name) = field {
                                                 if field_name == b"data" {
-                                                    if let RedisValue::Data(payload) = value {
+                                                    if let RedisValue::BulkString(payload) = value {
                                                         out.push((
                                                             entry_id.clone(),
                                                             if valid { payload.clone() } else { Vec::new() },
@@ -943,27 +947,27 @@ impl RedisClient {
             .query_async(&mut self.conn)
             .await?;
 
-        match reply {
+        match &reply {
             RedisValue::Nil => return Ok(None),
-            RedisValue::Bulk(ref top) => {
+            RedisValue::Array(top) => {
                 if top.is_empty() {
                     return Ok(None);
                 }
-                if let Some(RedisValue::Bulk(stream_entry)) = top.get(0) {
-                    if let [RedisValue::Data(_name), RedisValue::Bulk(items)] = &stream_entry[..] {
+                if let Some(RedisValue::Array(stream_entry)) = top.get(0) {
+                    if let [RedisValue::BulkString(_name), RedisValue::Array(items)] = &stream_entry[..] {
                         let mut out: Vec<EventsStreamRecord> = Vec::new();
                         let mut new_last_id = String::from(last_id);
                         for item in items.iter() {
-                            if let RedisValue::Bulk(parts) = item {
+                            if let RedisValue::Array(parts) = item {
                                 if parts.len() >= 2 {
-                                    if let RedisValue::Data(id_bytes) = &parts[0] {
+                                    if let RedisValue::BulkString(id_bytes) = &parts[0] {
                                         if let Ok(id_str) = String::from_utf8(id_bytes.clone()) {
                                             new_last_id = id_str;
                                         }
                                     }
-                                    if let RedisValue::Bulk(fieldvals) = &parts[1] {
+                                    if let RedisValue::Array(fieldvals) = &parts[1] {
                                         let epoch = fieldvals.chunks_exact(2).find_map(|pair| match (&pair[0], &pair[1]) {
-                                            (RedisValue::Data(key), RedisValue::Data(value)) if key == b"run_id" => Some(value.as_slice()),
+                                            (RedisValue::BulkString(key), RedisValue::BulkString(value)) if key == b"run_id" => Some(value.as_slice()),
                                             _ => None,
                                         });
                                         let valid = epoch.map_or(!self.scenario_mode, |epoch| epoch == self.run_id.as_bytes());
@@ -971,9 +975,9 @@ impl RedisClient {
                                         while i + 1 < fieldvals.len() {
                                             let field = &fieldvals[i];
                                             let value = &fieldvals[i + 1];
-                                            if let RedisValue::Data(field_name) = field {
+                                            if let RedisValue::BulkString(field_name) = field {
                                                 if field_name == b"data" {
-                                                    if let RedisValue::Data(payload) = value {
+                                                    if let RedisValue::BulkString(payload) = value {
                                                         if let Ok(record) =
                                                             EventsStreamRecord::decode(
                                                                 payload.as_slice(),
@@ -1524,6 +1528,22 @@ fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<Co
         technologies: snapshot.player_technologies.into_iter()
             .map(|player| (player.player_id, player.technology_ids.into_iter().collect())).collect(),
     }, snapshot.collector_states))
+}
+
+#[cfg(test)]
+mod redis_connection_tests {
+    use super::RedisClient;
+
+    #[tokio::test]
+    #[ignore = "requires disposable Redis (set TEST_REDIS_URL)"]
+    async fn blocking_stream_read_outlasts_default_redis_response_timeout() -> anyhow::Result<()> {
+        let url = std::env::var("TEST_REDIS_URL").expect("set TEST_REDIS_URL to disposable Redis");
+        let game_id = format!("redis-timeout-test-{}", uuid::Uuid::now_v7());
+        let mut client = RedisClient::connect(&url, game_id).await?;
+
+        assert!(client.read_events_blocking("0-0", 750).await?.is_none());
+        Ok(())
+    }
 }
 
 #[cfg(test)]

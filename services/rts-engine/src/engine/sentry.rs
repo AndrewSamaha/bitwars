@@ -459,7 +459,7 @@ impl Engine {
                 .unwrap()
                 .entity_type_id
                 .clone();
-            let outcome = self.intents.try_activate(
+            let outcome = self.intents.try_activate_group_member(
                 pb::Intent {
                     kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
                         entity_id: slot.entity_id,
@@ -545,7 +545,7 @@ impl Engine {
                     .clone();
                 let target = order.route.as_ref().unwrap().destination().unwrap();
                 let offset = slot.offset.unwrap();
-                self.intents.try_activate(
+                self.intents.try_activate_group_member(
                     pb::Intent {
                         kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
                             entity_id: slot.entity_id,
@@ -573,5 +573,55 @@ impl Engine {
             }
         }
         self.persist_sentry_changes().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sentry_member_uses_ping_pong_route_without_an_individual_move_order() {
+        let origin = pb::Vec2 { x: 0.0, y: 0.0 };
+        let destination = pb::Vec2 { x: 10.0, y: 0.0 };
+        let mut manager = IntentManager::new(HashMap::new(), 0.0, 10.0);
+        let mut state = GameState {
+            tick: 0,
+            entities: vec![pb::Entity {
+                id: 1, entity_type_id: "scout".into(), owner_player_id: "me".into(),
+                health: 10.0, pos: Some(origin), ..Default::default()
+            }],
+            technologies: HashMap::new(),
+            discovered_entities: Default::default(),
+            generation: Default::default(),
+        };
+        let metadata = IntentMetadata {
+            entity_id: 1, intent_id: vec![1; 16], client_cmd_id: vec![2; 16],
+            player_id: "me".into(), protocol_version: super::super::ENGINE_PROTOCOL_MAJOR,
+            server_tick: 0, policy: pb::IntentPolicy::ReplaceActive,
+        };
+        let outcome = manager.try_activate_group_member(
+            pb::Intent { kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
+                entity_id: 1, target: Some(destination), ..Default::default()
+            })) },
+            metadata.clone(), "scout",
+        );
+        assert!(outcome.started.is_some());
+        manager.sentries.push(pb::SentryOrderState {
+            intent_id: metadata.intent_id, client_cmd_id: metadata.client_cmd_id,
+            player_id: metadata.player_id, anchor: Some(origin),
+            slots: vec![pb::ConvoySlot { entity_id: 1, offset: Some(origin) }],
+            route: Some(pb::NavigationRoute {
+                waypoints: vec![origin, destination], next_waypoint_index: 1, direction: 1,
+                traversal: pb::RouteTraversal::PingPong as i32,
+            }),
+            phase: pb::SentryPhase::Patrolling as i32, ..Default::default()
+        });
+        assert!(manager.move_orders_for_snapshot().is_empty());
+        assert!(manager.follow_targets(&mut state, 10.0, 1.0).is_empty());
+        assert_eq!(state.entities[0].pos, Some(origin));
+        manager.tick_sentries(&mut state, 1.0);
+        assert_eq!(state.entities[0].pos, Some(destination));
+        assert_eq!(manager.sentries[0].route.as_ref().unwrap().destination(), Some(origin));
     }
 }

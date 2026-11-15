@@ -1,4 +1,7 @@
+import type { MessageKind } from "./messages";
+
 export type MessageLogEntry = {
+  kind: MessageKind;
   title: string;
   message: string;
   timestamp: number;

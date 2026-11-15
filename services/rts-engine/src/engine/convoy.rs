@@ -185,7 +185,7 @@ impl Engine {
                 x: destination.x + offset.x,
                 y: destination.y + offset.y,
             };
-            let outcome = self.intents.try_activate(
+            let outcome = self.intents.try_activate_group_member(
                 pb::Intent {
                     kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
                         entity_id: id,
@@ -304,7 +304,7 @@ impl Engine {
                     protocol_version: super::ENGINE_PROTOCOL_MAJOR,
                     policy: pb::IntentPolicy::ReplaceActive,
                 };
-                self.intents.try_activate(
+                self.intents.try_activate_group_member(
                     pb::Intent {
                         kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
                             entity_id: slot.entity_id,
@@ -368,7 +368,7 @@ mod tests {
                 pos: Some(pb::Vec2 { x, y: 0.0 }),
                 ..Default::default()
             });
-            manager.try_activate(
+            manager.try_activate_group_member(
                 pb::Intent {
                     kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
                         entity_id: id,
@@ -397,6 +397,7 @@ mod tests {
             slots: formation_slots(vec![2, 1], 2.0),
             ..Default::default()
         });
+        assert!(manager.move_orders_for_snapshot().is_empty());
         (manager, state)
     }
 

@@ -106,7 +106,7 @@ impl IntentManager {
                     .unwrap()
                     .entity_type_id
                     .clone();
-                self.try_activate(
+                self.try_activate_group_member(
                     pb::Intent {
                         kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
                             entity_id: slot.entity_id,
@@ -546,7 +546,7 @@ impl Engine {
                 .clone();
             let mut member = metadata.clone();
             member.entity_id = slot.entity_id;
-            let outcome = self.intents.try_activate(
+            let outcome = self.intents.try_activate_group_member(
                 pb::Intent {
                     kind: Some(pb::intent::Kind::Move(pb::MoveToLocationIntent {
                         entity_id: slot.entity_id,
@@ -653,7 +653,7 @@ mod tests {
                 ..Default::default()
             });
             let metadata = IntentMetadata {
-                entity_id: if id == 1 { 0 } else { id },
+                entity_id: id,
                 intent_id: vec![id as u8; 16],
                 client_cmd_id: vec![id as u8; 16],
                 player_id: "me".into(),
@@ -661,25 +661,26 @@ mod tests {
                 protocol_version: super::super::ENGINE_PROTOCOL_MAJOR,
                 policy: pb::IntentPolicy::ReplaceActive,
             };
-            manager.try_activate(
-                pb::Intent {
-                    kind: Some(if id == 1 {
-                        Kind::Collect(pb::CollectIntent {
-                            entity_id: id,
-                            resource_type_id: "food".into(),
-                            ..Default::default()
-                        })
-                    } else {
-                        Kind::Move(pb::MoveToLocationIntent {
-                            entity_id: id,
-                            target: Some(pb::Vec2 { x: 100.0, y: 0.0 }),
-                            ..Default::default()
-                        })
-                    }),
-                },
-                metadata,
-                name,
-            );
+            let intent = pb::Intent {
+                kind: Some(if id == 1 {
+                    Kind::Collect(pb::CollectIntent {
+                        entity_id: id,
+                        resource_type_id: "food".into(),
+                        ..Default::default()
+                    })
+                } else {
+                    Kind::Move(pb::MoveToLocationIntent {
+                        entity_id: id,
+                        target: Some(pb::Vec2 { x: 100.0, y: 0.0 }),
+                        ..Default::default()
+                    })
+                }),
+            };
+            if id == 1 {
+                manager.try_activate(intent, metadata, name);
+            } else {
+                manager.try_activate_group_member(intent, metadata, name);
+            }
         }
         for (id, index) in [(2, 0), (3, 1)] {
             manager.escorts.push(pb::EscortOrderState {
@@ -696,6 +697,7 @@ mod tests {
                 ..Default::default()
             });
         }
+        assert!(manager.move_orders_for_snapshot().is_empty());
         (manager, state)
     }
     fn pos(state: &GameState, id: u64) -> pb::Vec2 {

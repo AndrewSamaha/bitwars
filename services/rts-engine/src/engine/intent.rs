@@ -8,7 +8,7 @@ use crate::pb;
 
 #[derive(Clone)]
 pub struct IntentMetadata {
-    /// Nonzero for member-scoped lifecycle events of a shared command.
+    /// Entity associated with lifecycle events (zero only for shared-command roots).
     pub entity_id: u64,
     pub intent_id: Vec<u8>,
     pub client_cmd_id: Vec<u8>,
@@ -131,6 +131,27 @@ impl IntentManager {
         metadata: IntentMetadata,
         entity_type_id: &str,
     ) -> ActivationOutcome {
+        self.try_activate_with_role(intent, metadata, entity_type_id, false)
+    }
+
+    /// Group members hold a Move action for lifecycle tracking, but their
+    /// formation or escort order owns movement instead of an individual route.
+    pub(super) fn try_activate_group_member(
+        &mut self,
+        intent: pb::Intent,
+        metadata: IntentMetadata,
+        entity_type_id: &str,
+    ) -> ActivationOutcome {
+        self.try_activate_with_role(intent, metadata, entity_type_id, true)
+    }
+
+    fn try_activate_with_role(
+        &mut self,
+        intent: pb::Intent,
+        metadata: IntentMetadata,
+        entity_type_id: &str,
+        group_member: bool,
+    ) -> ActivationOutcome {
         let Some(entity_id) = Self::intent_entity_id(&intent) else {
             warn!("intent with no entity id, cannot activate");
             return ActivationOutcome {
@@ -151,7 +172,7 @@ impl IntentManager {
         }
 
         // Construct and validate the entire route before replacing any active order.
-        let move_route = if metadata.entity_id == 0 {
+        let move_route = if !group_member {
             if let Some(pb::intent::Kind::Move(mov)) = intent.kind.as_ref() {
                 match mov.target.and_then(|target| pb::NavigationRoute::move_via(&mov.via, target).ok()) {
                     Some(route) => Some(route),
