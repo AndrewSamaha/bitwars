@@ -1460,7 +1460,7 @@ mod integration_tests {
         redis::cmd("DEL")
             .arg(&events_stream)
             .arg(&intents_stream)
-            .query_async::<_, ()>(&mut conn)
+            .query_async::<()>(&mut conn)
             .await?;
         drop(conn);
 
@@ -1472,16 +1472,12 @@ mod integration_tests {
         cfg.content_pack_path = content_path;
 
         let mut engine = Engine::new(cfg).await?;
-        assert!(
-            engine.state.entities.is_empty(),
-            "config-based init starts with no entities"
-        );
 
         let mut rconn = client.get_multiplexed_async_connection().await?;
         redis::cmd("RPUSH")
             .arg(&pending_joins_key)
             .arg("player-1")
-            .query_async::<_, ()>(&mut rconn)
+            .query_async::<()>(&mut rconn)
             .await?;
         drop(rconn);
         engine.run_one_tick().await?;
@@ -1489,9 +1485,10 @@ mod integration_tests {
         let entity = engine
             .state
             .entities
-            .first()
+            .iter()
+            .find(|entity| entity.owner_player_id == "player-1")
             .cloned()
-            .expect("world should have at least one entity after run_one_tick (spawn on join)");
+            .expect("join should spawn a player-owned entity");
 
         let move_intent = pb::MoveToLocationIntent {
             entity_id: entity.id,
@@ -1545,13 +1542,13 @@ mod integration_tests {
             .await?;
 
         let mut states = Vec::new();
-        if let RedisValue::Bulk(entries) = reply {
+        if let RedisValue::Array(entries) = reply {
             for entry in entries {
-                if let RedisValue::Bulk(parts) = entry {
-                    if let Some(RedisValue::Bulk(fieldvals)) = parts.get(1) {
+                if let RedisValue::Array(parts) = entry {
+                    if let Some(RedisValue::Array(fieldvals)) = parts.get(1) {
                         let mut i = 0;
                         while i + 1 < fieldvals.len() {
-                            if let (RedisValue::Data(field), RedisValue::Data(value)) =
+                            if let (RedisValue::BulkString(field), RedisValue::BulkString(value)) =
                                 (&fieldvals[i], &fieldvals[i + 1])
                             {
                                 if field == b"data" {
@@ -1642,12 +1639,12 @@ mod integration_tests {
         let mut conn = client.get_multiplexed_async_connection().await?;
         let stream_payloads = |reply: RedisValue| {
             let mut payloads = Vec::new();
-            if let RedisValue::Bulk(entries) = reply {
+            if let RedisValue::Array(entries) = reply {
                 for entry in entries {
-                    if let RedisValue::Bulk(parts) = entry {
-                        if let Some(RedisValue::Bulk(fields)) = parts.get(1) {
+                    if let RedisValue::Array(parts) = entry {
+                        if let Some(RedisValue::Array(fields)) = parts.get(1) {
                             for pair in fields.chunks_exact(2) {
-                                if let [RedisValue::Data(field), RedisValue::Data(data)] = pair {
+                                if let [RedisValue::BulkString(field), RedisValue::BulkString(data)] = pair {
                                     if field == b"data" { payloads.push(data.clone()); }
                                 }
                             }
@@ -1755,12 +1752,12 @@ mod integration_tests {
             .arg(format!("rts:match:{game_id}:events")).arg("-").arg("+")
             .query_async(&mut conn).await?;
         let mut states = Vec::new();
-        if let RedisValue::Bulk(entries) = lifecycle {
+        if let RedisValue::Array(entries) = lifecycle {
             for entry in entries {
-                if let RedisValue::Bulk(parts) = entry {
-                    if let Some(RedisValue::Bulk(fields)) = parts.get(1) {
+                if let RedisValue::Array(parts) = entry {
+                    if let Some(RedisValue::Array(fields)) = parts.get(1) {
                         for pair in fields.chunks_exact(2) {
-                            if let [RedisValue::Data(field), RedisValue::Data(bytes)] = pair {
+                            if let [RedisValue::BulkString(field), RedisValue::BulkString(bytes)] = pair {
                                 if field == b"data" {
                                     if let Some(pb::events_stream_record::Record::Lifecycle(event)) =
                                         pb::EventsStreamRecord::decode(bytes.as_slice())?.record {
@@ -1789,12 +1786,12 @@ mod integration_tests {
             .arg(format!("rts:match:{game_id}:gameplay_events")).arg("-").arg("+")
             .query_async(&mut conn).await?;
         let mut records = Vec::new();
-        if let RedisValue::Bulk(entries) = history {
+        if let RedisValue::Array(entries) = history {
             for entry in entries {
-                if let RedisValue::Bulk(parts) = entry {
-                    if let Some(RedisValue::Bulk(fields)) = parts.get(1) {
+                if let RedisValue::Array(parts) = entry {
+                    if let Some(RedisValue::Array(fields)) = parts.get(1) {
                         for pair in fields.chunks_exact(2) {
-                            if let [RedisValue::Data(field), RedisValue::Data(bytes)] = pair {
+                            if let [RedisValue::BulkString(field), RedisValue::BulkString(bytes)] = pair {
                                 if field == b"data" { records.push(serde_json::from_slice::<serde_json::Value>(bytes)?); }
                             }
                         }

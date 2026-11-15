@@ -28,6 +28,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Documentation index and links surfaced in `README.md` (see `docs/`).
 
 ### Changed
+- Pinned Rust to 1.100.0 locally and in schema-check CI, and upgraded the engine's Redis client from 0.25.4 to 1.8.2; migrated response parsing and preserved blocking stream reads across the new client timeouts.
 - Bumped the engine and web intent protocol major from 22 to 23; deploy them together to avoid protocol mismatch rejections.
 - Indexed shareable depot storage by owner and resource once per operating tick, avoiding repeated full-world scans while preserving live inventory debits and existing depot eligibility rules.
 - Positioned the distance measurement label just above and left of the cursor instead of at the midpoint of the measurement line.
