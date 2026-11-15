@@ -188,6 +188,41 @@ it("coalesces moving-depot updates and keeps a valid collection intent without r
   expect(collectionRouting.getStatus(1)).toContain("retained");
 });
 
+it("does not restart a waypoint Collect when depot capacity toggles but the only safe plan is unchanged", async () => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  const planner = new CollectionPlanner();
+  env.entities[0]!.supply = { delivery_depot_id: 2 };
+  env.entities[0]!.pos.x = -3000;
+  env.entities[1]!.pos.x = -3000;
+  env.entities[2]!.pos.x = 3000;
+  env.entities.push(
+    { id: 4, entity_type_id: "waypoint", owner_player_id: "me", pos: { x: 0, y: 1500 } },
+    { id: 5, entity_type_id: "star", pos: { x: 0, y: 0 } },
+  );
+  cleanup = collectionRouting.start("me");
+  const send = vi.fn();
+  collectionRouting.request(1, { resourceTypeId: "minerals", nearestCompatible: false }, send);
+  const worker = env.workers[0]!;
+  const finish = () => {
+    const message = worker.postMessage.mock.calls.at(-1)![0];
+    const result = planner.plan(message.request);
+    worker.onmessage!({ data: { id: message.id, result } });
+    return result;
+  };
+  const first = finish();
+  expect(first).toMatchObject({ kind: "planned", travelPlan: { waypointIds: [4], initialWaypointIds: [4] } });
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "collect-command" } });
+  for (const amount of [100, 99.995, 100]) {
+    env.entities[1]!.resources = [{ resource_type: "minerals", amount }];
+    window.dispatchEvent(new Event("bitwars:gamestate-updated"));
+    vi.advanceTimersByTime(200);
+    expect(finish()).toEqual(first);
+  }
+  expect(worker.postMessage).toHaveBeenCalledTimes(4);
+  expect(send).toHaveBeenCalledOnce();
+  expect(collectionRouting.getStatus(1)).toContain("retained");
+});
+
 it("keeps an accepted Collect order while its depot group is full and announces a real reroute once", async () => {
   const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
   const destinationEvents: Array<{ entityId: number; fromDepotId: number; toDepotId: number }> = [];

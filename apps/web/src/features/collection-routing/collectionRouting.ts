@@ -39,6 +39,15 @@ type ReconnectedOrder = {
   };
 };
 
+function sameTravelPlan(a: TravelPlan, b: TravelPlan): boolean {
+  return a.sourceEntityId === b.sourceEntityId && a.depotEntityId === b.depotEntityId
+    && a.initialToDepot === b.initialToDepot
+    && a.waypointIds.length === b.waypointIds.length
+    && a.initialWaypointIds.length === b.initialWaypointIds.length
+    && a.waypointIds.every((id, index) => id === b.waypointIds[index])
+    && a.initialWaypointIds.every((id, index) => id === b.initialWaypointIds[index]);
+}
+
 class CollectionRouting implements CollectionRouter {
   private worker: Worker | null = null;
   private playerId: string | null = null;
@@ -354,6 +363,15 @@ class CollectionRouting implements CollectionRouter {
       this.block(pending.entityId, result, order); return;
     }
     if (result.kind === "proximity") { order.send(); this.cancel(pending.entityId); return; }
+    // Geometry can require replanning even when the only viable route is unchanged.
+    // Replacing that active Collect would restart it on every capacity/position update.
+    if (order.accepted && !order.holding && order.plan
+      && intentQueue.getEntityState(pending.entityId).active?.kind === "collect"
+      && sameTravelPlan(order.plan, result.travelPlan)) {
+      order.blockedKey = undefined;
+      this.status(pending.entityId, "Radiation-safe collection route retained");
+      return;
+    }
     order.blockedKey = undefined;
     const previousDepotId = order.accepted ? order.plan?.depotEntityId : undefined;
     order.plan = result.travelPlan;
