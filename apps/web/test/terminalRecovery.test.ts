@@ -2,6 +2,10 @@ import React, { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
+  milestones: [] as { label: string; done: boolean; running: boolean }[],
+  error: null as string | null,
+  recovering: false,
+  retry: vi.fn(),
   busy: false,
   ready: true,
   status: "active",
@@ -10,7 +14,7 @@ const fixture = vi.hoisted(() => ({
   playMusic: vi.fn(),
 }));
 vi.mock("@/features/gamestate/components/BootContext", () => ({
-  useBoot: () => ({ ...fixture, milestones: [], error: null }),
+  useBoot: () => fixture,
 }));
 vi.mock("@/features/users/components/identity/SessionContext", () => ({
   useSession: () => ({ status: fixture.status, login: fixture.login }),
@@ -50,6 +54,9 @@ beforeEach(() => {
       saved = value;
     },
   });
+  fixture.milestones = [];
+  fixture.error = null;
+  fixture.recovering = false;
   fixture.busy = false;
   fixture.ready = true;
   fixture.status = "active";
@@ -182,4 +189,60 @@ it("renders ls row links as buttons and dispatches their IDs only while ready", 
   await act(async () => { fixture.ready = false; fixture.busy = true; root.update(tree()); });
   await act(async () => buttons()[0].props.onClick({ stopPropagation }));
   expect(dispatchEvent).not.toHaveBeenCalled();
+});
+
+const renderedText = (node: ReturnType<ReactTestRenderer["root"]["findByType"]>): string =>
+  node.children.map(child => typeof child === "string" ? child : renderedText(child)).join("");
+
+it("shows completed green milestones and one blue truthful concurrent summary, hiding pending steps", async () => {
+  fixture.busy = true;
+  fixture.ready = false;
+  fixture.milestones = [
+    { label: "Authentication", done: true, running: true },
+    { label: "Load definitions", done: true, running: true },
+    { label: "Prepare graphics", done: false, running: true },
+    { label: "Synchronize world", done: false, running: true },
+    { label: "Pending milestone", done: false, running: false },
+  ];
+  await act(async () => { root = create(tree()); });
+  const active = root.root.findAllByProps({ "data-boot-active": true });
+  expect(active).toHaveLength(1);
+  expect(active[0].props.className).toBe("text-blue-400");
+  expect(renderedText(active[0])).toBe("[|] Prepare graphics and synchronize world");
+  expect(active[0].findByType("span").props["aria-hidden"]).toBe("true");
+  const completed = root.root.findAllByType("div").filter(node => node.props.className === "text-green-400");
+  expect(completed.map(renderedText)).toEqual(["[OK] Authentication", "[OK] Load definitions"]);
+  expect(JSON.stringify(root.toJSON())).not.toContain("Pending milestone");
+  expect(renderedText(root.root.findByProps({ role: "status" }))).toContain("Prepare graphics and synchronize world");
+  await act(async () => { fixture.milestones[2].done = true; root.update(tree()); });
+  expect(renderedText(root.root.findByProps({ "data-boot-active": true }))).toBe("[|] Synchronize world");
+  await act(async () => { fixture.milestones = fixture.milestones.map(item => ({ ...item, done: true })); root.update(tree()); });
+  expect(root.root.findAllByProps({ "data-boot-active": true })).toHaveLength(0);
+  await act(async () => { fixture.busy = false; fixture.ready = true; root.update(tree()); });
+  expect(renderedText(root.root.findByProps({ role: "status" }))).toBe("Battlefield ready.");
+});
+
+it("shows reconnect context, waits truthfully, and replaces progress with a retryable error", async () => {
+  fixture.busy = true;
+  fixture.ready = false;
+  fixture.recovering = true;
+  fixture.milestones = [
+    { label: "Reconnect transport", done: false, running: true },
+    { label: "Synchronize world", done: false, running: false },
+  ];
+  await act(async () => { root = create(tree()); });
+  expect(renderedText(root.root.findByProps({ className: "text-amber-300" }))).toBe("Connection interrupted.");
+  expect(renderedText(root.root.findByProps({ "data-boot-active": true }))).toBe("[|] Reconnect transport");
+  await act(async () => { fixture.milestones[0].running = false; root.update(tree()); });
+  expect(renderedText(root.root.findByProps({ "data-boot-active": true }))).toContain("Waiting for reconnect transport and synchronize world");
+  await act(async () => { fixture.error = "Definitions failed"; root.update(tree()); });
+  expect(root.root.findAllByProps({ "data-boot-active": true })).toHaveLength(0);
+  expect(renderedText(root.root.findByProps({ className: "text-red-300" }))).toContain("Definitions failed");
+  expect(renderedText(root.root.findByProps({ role: "status" }))).toBe("Definitions failed");
+  const retry = root.root.findAllByType("button").find(node => renderedText(node) === "Retry")!;
+  expect(retry.props.disabled).toBeUndefined();
+  await act(async () => retry.props.onClick());
+  expect(fixture.retry).toHaveBeenCalledOnce();
+  await act(async () => { fixture.error = null; fixture.milestones[0].running = true; root.update(tree()); });
+  expect(root.root.findAllByProps({ "data-boot-active": true })).toHaveLength(1);
 });

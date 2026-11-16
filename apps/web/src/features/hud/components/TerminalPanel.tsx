@@ -18,6 +18,15 @@ import { useBoot } from "@/features/gamestate/components/BootContext";
 
 const SHOW_STREAM_COUNTER = false;
 
+// Running flags may overlap; completion always wins over a stale running flag.
+function activeBootSummary(milestones: ReturnType<typeof useBoot>["milestones"]) {
+  const outstanding = milestones.filter(item => !item.done);
+  const running = outstanding.filter(item => item.running);
+  const labels = (running.length ? running : outstanding).map(item => item.label);
+  const summary = labels.map((label, index) => index ? label[0].toLowerCase() + label.slice(1) : label).join(" and ");
+  return running.length ? summary : summary ? `Waiting for ${summary[0].toLowerCase()}${summary.slice(1)}` : null;
+}
+
 export default function TerminalPanel() {
   const boot = useBoot();
   const { player } = usePlayer();
@@ -107,7 +116,7 @@ export default function TerminalPanel() {
     >
       <div role="status" aria-live="polite" className="sr-only">
         {boot.busy
-          ? boot.error ?? boot.milestones.map(item => `${item.label}: ${item.done ? "complete" : item.running ? "in progress" : "waiting"}`).join(". ")
+          ? boot.error ?? [...boot.milestones.filter(item => item.done).map(item => `${item.label}: complete`), activeBootSummary(boot.milestones)].filter(Boolean).join(". ")
           : boot.ready ? "Battlefield ready." : status === "logged-out" ? "Login ready." : ""}
       </div>
       {/* Toggle Button */}
@@ -251,16 +260,20 @@ export default function TerminalPanel() {
 function BootTranscript() {
   const boot = useBoot();
   const [frame, setFrame] = useState(0);
+  const summary = activeBootSummary(boot.milestones);
   useEffect(() => {
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    if (boot.error || !summary || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const timer = window.setInterval(() => setFrame(value => (value + 1) % 4), 160);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [boot.error, summary]);
   return <div className="mb-2">
-    {boot.recovering && <div>Connection interrupted.</div>}
-    {boot.milestones.map(item => <div key={item.label}>
-      <span aria-hidden="true">{item.done ? "[OK]" : item.running ? `[${["|", "/", "-", "\\"][frame]}]` : "[ ]"}</span> {item.label}
+    {boot.recovering && <div className="text-amber-300">Connection interrupted.</div>}
+    {boot.milestones.filter(item => item.done).map(item => <div key={item.label} className="text-green-400">
+      <span aria-hidden="true">[OK]</span> {item.label}
     </div>)}
+    {!boot.error && summary && <div className="text-blue-400" data-boot-active>
+      <span aria-hidden="true">{`[${["|", "/", "-", "\\"][frame]}]`}</span> {summary}
+    </div>}
     {boot.error && <div className="text-red-300">{boot.error} <button type="button" className="underline" onClick={boot.retry}>Retry</button></div>}
   </div>;
 }
