@@ -176,7 +176,7 @@ export default function TerminalPanel() {
                           <button
                             key={link.start}
                             type="button"
-                            className="cursor-pointer text-cyan-300 underline hover:text-cyan-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                            className="cursor-pointer text-inherit no-underline hover:text-cyan-100 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
                             title={`Focus entity ${link.entityId}`}
                             onClick={(event) => {
                               event.stopPropagation();
