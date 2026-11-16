@@ -25,9 +25,13 @@ fi
 # main stays in this checkout; workmux creates the feature branch elsewhere.
 git switch main
 git pull --ff-only
+if [[ "$(git rev-parse main)" != "$(git rev-parse origin/main)" ]]; then
+  echo "Local main does not match origin/main after the fast-forward pull. Stop and follow docs/workmux-workflow.v5.md recovery guidance." >&2
+  exit 1
+fi
 
-if [[ ! -f .agents/skills/workmux-integration/SKILL.md || ! -f docs/workmux-workflow.v4.md || ! -f .workmux.yaml ]]; then
-  echo "Updated main must contain the integration skill, v4 workflow, and .workmux.yaml first." >&2
+if [[ ! -f .agents/skills/workmux-integration/SKILL.md || ! -f docs/workmux-workflow.v5.md || ! -f .workmux.yaml ]]; then
+  echo "Updated main must contain the integration skill, v5 workflow, and .workmux.yaml first." >&2
   exit 1
 fi
 
@@ -35,11 +39,14 @@ prompt_file=$(mktemp "${TMPDIR:-/tmp}/workmux-integration.XXXXXX")
 trap 'rm -f "$prompt_file"' EXIT
 cat > "$prompt_file" <<EOF
 Use \$workmux-integration. Read .agents/skills/workmux-integration/SKILL.md
-and docs/workmux-workflow.v4.md.
+and docs/workmux-workflow.v5.md.
 
 You are the integration agent in the newly created integration worktree.
 Integration branch: $branch
-The branch has already been created from updated local main; do not repeat setup.
+The branch has already been created from updated local main in this separate
+integration worktree. Keep local main reserved for GitHub synchronization; do
+not merge this integration branch into main locally. Task branches merge into
+this integration branch only.
 Initialize .workmux-local/integration.md here. Ask the user for the feature goal
 and acceptance criteria before implementing or dispatching tasks.
 Keep the app/server in this integration worktree and coordinate shared services
