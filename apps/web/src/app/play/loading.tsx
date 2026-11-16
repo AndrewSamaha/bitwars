@@ -1,5 +1,4 @@
-import LoadingAnimation from "@/components/LoadingAnimation";
-
 export default function Loading() {
-  return <LoadingAnimation />;
+  // The mounted Terminal owns authentication and world startup progress.
+  return null;
 }

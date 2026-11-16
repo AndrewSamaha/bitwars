@@ -63,6 +63,48 @@ describe("log", () => {
   });
 });
 
+describe("ls", () => {
+  const context: TerminalCommandContext = {
+    realPlayerId: "player-a", effectivePlayerId: "raiders", actingAsId: "raiders",
+    sessionStatus: "active", logout: async () => "", su: () => {}, exitSu: () => {},
+  };
+
+  it("links each complete row to its sorted ID using effective ownership", async () => {
+    added.push(
+      game.world.add({ id: 12003, owner_player_id: "raiders", entity_type_id: "worker" }),
+      game.world.add({ id: 7, owner_player_id: "raiders", entity_type_id: "worker" }),
+      game.world.add({ id: 42, owner_player_id: "raiders", entity_type_id: "collector_solar_v2" }),
+      game.world.add({ id: 81, owner_player_id: "raiders" }),
+      game.world.add({ id: 1, owner_player_id: "player-a", entity_type_id: "worker" }),
+      game.world.add({ id: 2, entity_type_id: "worker" }),
+    );
+    const result = await executeTerminalCommand("ls", context);
+    const rows = ["7       worker", "42       collector_solar_v2", "81       (no type)", "12003       worker"];
+    expect(result.output).toBe(["id      entity_type", ...rows].join("\n"));
+    expect(result.links?.map(link => [result.output.slice(link.start, link.end), link.entityId])).toEqual(
+      rows.map((row, index) => [row, ["7", "42", "81", "12003"][index]]),
+    );
+    let offset = "id      entity_type".length + 1;
+    expect(result.links).toHaveLength(rows.length);
+    result.links!.forEach((link, index) => {
+      expect(link.start).toBe(offset);
+      expect(link.end).toBe(offset + rows[index].length);
+      offset = link.end + 1;
+    });
+  });
+
+  it("does not link empty, unauthenticated, or ending-session output", async () => {
+    for (const overrides of [
+      {}, { effectivePlayerId: null }, { realPlayerId: null }, { sessionStatus: "logging-out" as const },
+    ]) {
+      const result = await executeTerminalCommand("ls", { ...context, ...overrides });
+      expect(result.links ?? []).toEqual([]);
+      expect(result.output).not.toContain("id      entity_type");
+    }
+    expect((await executeTerminalCommand("ls", context)).output).toBe("No entities owned by you.");
+  });
+});
+
 describe("who", () => {
   it("lists active players with their current unit counts", async () => {
     added.push(
