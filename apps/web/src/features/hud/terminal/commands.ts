@@ -38,9 +38,9 @@ type TerminalCommand = {
   ) => TerminalCommandResult | Promise<TerminalCommandResult>;
 };
 
-function listOwnedEntities(myPlayerId: string | null): string {
+function listOwnedEntities(myPlayerId: string | null): TerminalCommandResult {
   if (myPlayerId == null) {
-    return "Not logged in. List shows only your entities after you log in.";
+    return { output: "Not logged in. List shows only your entities after you log in." };
   }
 
   const entities: Array<{ id: number | string; entityTypeId: string }> = [];
@@ -53,12 +53,17 @@ function listOwnedEntities(myPlayerId: string | null): string {
   }
 
   entities.sort((a, b) => Number(a.id) - Number(b.id));
-  if (entities.length === 0) return "No entities owned by you.";
+  if (entities.length === 0) return { output: "No entities owned by you." };
 
-  return [
-    "id      entity_type",
-    ...entities.map((entity) => `${entity.id}       ${entity.entityTypeId}`),
-  ].join("\n");
+  let output = "id      entity_type";
+  const links: TerminalOutputLink[] = [];
+  for (const entity of entities) {
+    const label = `${entity.id}       ${entity.entityTypeId}`;
+    const start = output.length + 1;
+    output += `\n${label}`;
+    links.push({ start, end: output.length, entityId: String(entity.id) });
+  }
+  return { output, links };
 }
 
 async function listPlayers(): Promise<string> {
@@ -253,7 +258,7 @@ const commands: TerminalCommand[] = [
     name: "ls",
     description: "List your units",
     requiresAuth: true,
-    run: (_args, context) => ({ output: listOwnedEntities(context.effectivePlayerId) }),
+    run: (_args, context) => listOwnedEntities(context.effectivePlayerId),
   },
   {
     name: "desc",

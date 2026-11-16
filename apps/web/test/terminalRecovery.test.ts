@@ -140,3 +140,46 @@ it("restores login input after authentication failure and unlocks audio in the s
   expect(root.root.findByType("form").props.className).toBe("flex");
   expect(root.root.findByType("input").props.readOnly).toBe(false);
 });
+
+it("renders ls row links as buttons and dispatches their IDs only while ready", async () => {
+  const { executeTerminalCommand } = await import("@/features/hud/terminal/commands");
+  const { game } = await import("@/features/gamestate/world");
+  const { CENTER_CAMERA_ON_ENTITY_EVENT } = await import("@/features/gamestate/events");
+  const entities = [
+    game.world.add({ id: 902, owner_player_id: "ls-player", entity_type_id: "worker" }),
+    game.world.add({ id: 8, owner_player_id: "ls-player", entity_type_id: "worker" }),
+  ];
+  let result;
+  try {
+    result = await executeTerminalCommand("ls", {
+      realPlayerId: "ls-player", effectivePlayerId: "ls-player", actingAsId: null,
+      sessionStatus: "active", logout: async () => "", su: () => {}, exitSu: () => {},
+    });
+  } finally {
+    for (const entity of entities) game.world.remove(entity);
+  }
+  const dispatchEvent = vi.fn();
+  vi.stubGlobal("CustomEvent", class {
+    constructor(public type: string, public options: { detail: string }) {}
+    get detail() { return this.options.detail; }
+  });
+  vi.stubGlobal("window", { matchMedia: () => ({ matches: true }), dispatchEvent });
+  saved = JSON.stringify({ isTerminalOpen: true, isTerminalWide: false });
+  await act(async () => { root = create(tree()); });
+  await act(async () => hud.actions.pushCommandHistory({ command: "ls", ...result }));
+  const buttons = () => root.root.findAllByType("button").filter(button => button.props.title?.startsWith("Focus entity"));
+  expect(buttons().map(button => button.children.join(""))).toEqual(["8       worker", "902       worker"]);
+  const stopPropagation = vi.fn();
+  for (const button of buttons()) {
+    expect(button.props.type).toBe("button");
+    await act(async () => button.props.onClick({ stopPropagation }));
+  }
+  expect(dispatchEvent.mock.calls.map(([event]) => [event.type, event.detail])).toEqual([
+    [CENTER_CAMERA_ON_ENTITY_EVENT, "8"], [CENTER_CAMERA_ON_ENTITY_EVENT, "902"],
+  ]);
+  expect(stopPropagation).toHaveBeenCalledTimes(2);
+  dispatchEvent.mockClear();
+  await act(async () => { fixture.ready = false; fixture.busy = true; root.update(tree()); });
+  await act(async () => buttons()[0].props.onClick({ stopPropagation }));
+  expect(dispatchEvent).not.toHaveBeenCalled();
+});
