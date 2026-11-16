@@ -332,8 +332,10 @@ impl CollectionDepots {
         if !matches!(actor.entity_type_id.as_str(), "collector_solar" | "collector_solar_v2") {
             return collection_depot_id(entities, content, actor);
         }
+        let capacity = |depot: &pb::Entity| content.get(&depot.entity_type_id)
+            .and_then(|def| def.max_capacity.get(resource)).copied().unwrap_or(0.0) as f64;
         let eligible = |id| by_id.get(&id).map(|&i| &entities[i])
-            .filter(|depot| eligible_depot(actor, depot, content));
+            .filter(|depot| eligible_depot(actor, depot, content) && capacity(depot) > 0.0);
         // Cooldown never grants eligibility: validate the live recipient every pass.
         // Retain no alternative during the deadline, even if the old recipient died.
         if let Some((next_search_tick, tick, delay)) = retry {
@@ -342,11 +344,8 @@ impl CollectionDepots {
             }
             *next_search_tick = tick.saturating_add(delay.max(1));
         }
-        let room = |depot: &pb::Entity| {
-            let capacity = content.get(&depot.entity_type_id)
-                .and_then(|def| def.max_capacity.get(resource)).copied().unwrap_or(0.0) as f64;
-            (capacity - resource_amount(depot, resource)).max(0.0)
-        };
+        let room = |depot: &pb::Entity|
+            (capacity(depot) - resource_amount(depot, resource)).max(0.0);
         let has_room = |depot: &pb::Entity| room(depot) > f64::EPSILON;
         // Maintenance can open a tiny gap every tick in an otherwise full depot.
         // Keep a recipient only when it can accept this tick's available production;
@@ -369,27 +368,38 @@ impl CollectionDepots {
         };
         let nearer = |a: &pb::Entity, b: &pb::Entity|
             distance(a).total_cmp(&distance(b)).then_with(|| a.id.cmp(&b.id)).is_lt();
+        // Replacement priority is lexicographic, never blended: absolute energy,
+        // fill fraction, squared distance, then ID (all ascending). An adequate
+        // active recipient returned above is never rebalanced by this ranking.
+        let needier = |a: &pb::Entity, b: &pb::Entity| {
+            let a_stock = resource_amount(a, resource);
+            let b_stock = resource_amount(b, resource);
+            a_stock.total_cmp(&b_stock)
+                .then_with(|| (a_stock / capacity(a)).total_cmp(&(b_stock / capacity(b))))
+                .then_with(|| distance(a).total_cmp(&distance(b)))
+                .then_with(|| a.id.cmp(&b.id)).is_lt()
+        };
         #[cfg(test)]
         self.searches.set(self.searches.get() + 1);
-        let mut nearest_batch: Option<&pb::Entity> = None;
-        let mut nearest_partial: Option<&pb::Entity> = None;
+        let mut best_batch: Option<&pb::Entity> = None;
+        let mut best_partial: Option<&pb::Entity> = None;
         let mut nearest_eligible: Option<&pb::Entity> = None;
         for &index in self.by_owner.get(&actor.owner_player_id).into_iter().flatten() {
             let depot = &entities[index];
-            if !eligible_depot(actor, depot, content) { continue; }
+            if !eligible_depot(actor, depot, content) || capacity(depot) <= 0.0 { continue; }
             if nearest_eligible.is_none_or(|other| nearer(depot, other)) { nearest_eligible = Some(depot); }
             let available_room = room(depot);
             if available_room <= f64::EPSILON { continue; }
-            if nearest_partial.is_none_or(|other| nearer(depot, other)) { nearest_partial = Some(depot); }
-            if available_room >= batch && nearest_batch.is_none_or(|other| nearer(depot, other)) {
-                nearest_batch = Some(depot);
+            if best_partial.is_none_or(|other| needier(depot, other)) { best_partial = Some(depot); }
+            if available_room >= batch && best_batch.is_none_or(|other| needier(depot, other)) {
+                best_batch = Some(depot);
             }
         }
-        nearest_batch
+        best_batch
             // With no full-batch alternative, keep a partial recipient instead of
             // oscillating between maintenance gaps. Still collect partial production.
             .or_else(|| current.filter(|depot| has_room(depot)))
-            .or(nearest_partial)
+            .or(best_partial)
             .or(current)
             .or(nearest_eligible)
             .map(|depot| depot.id)
@@ -1277,6 +1287,94 @@ mod assignment_tests {
 
         set_resource_amount(&mut es[2], "energy", 599.0);
         assert_eq!(collect_to_depot(&mut es, &c, 1, 6, "energy", 10.0), (1.0, Some(3)));
+    }
+
+    #[test]
+    fn solar_replacement_need_is_lexicographic_for_both_versions() {
+        for kind in ["collector_solar", "collector_solar_v2"] {
+            let c = content();
+            // Deliberately list the losing candidate first, except the distance
+            // case, so neither iteration order nor distance can mask priority.
+            for (a_kind, a_stock, a_x, b_kind, b_stock, b_x, expected) in [
+                ("power_storage_pod", 10.0, 100.0, "mineral_storage_container", 5.0, 900.0, 3),
+                ("mineral_storage_container", 10.0, 100.0, "power_storage_pod", 10.0, 900.0, 3),
+                ("power_storage_pod", 10.0, 100.0, "power_storage_pod", 10.0, 900.0, 2),
+                ("power_storage_pod", 10.0, -100.0, "power_storage_pod", 10.0, 100.0, 2),
+            ] {
+                let mut es = vec![entity(1, kind, 0.0), entity(3, b_kind, b_x),
+                    entity(2, a_kind, a_x), entity(4, "theta", 0.0),
+                    entity(5, "power_storage_pod", 1.0), entity(6, "power_storage_pod", 2.0),
+                    entity(7, "power_storage_pod", 10000.0), entity(8, "factory", 1.0)];
+                set_resource_amount(&mut es[1], "energy", b_stock);
+                set_resource_amount(&mut es[2], "energy", a_stock);
+                es[4].owner_player_id = "enemy".into();
+                es[5].health = 0.0;
+                // Operating status and missing minerals must not exclude a pod.
+                es[1].supply = Some(pb::DepotSupply { operational: false,
+                    missing_resources: vec!["minerals".into()], ..Default::default() });
+                assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 1.0), (1.0, Some(expected)));
+                // Same ranking applies to partial recipients when no full batch fits.
+                set_resource_amount(&mut es[1], "energy", b_stock);
+                set_resource_amount(&mut es[2], "energy", a_stock);
+                let result = collect_to_depot(&mut es, &c, 1, 4, "energy", 1000.0);
+                assert_eq!(result.1, Some(expected));
+                assert!(result.0 > 0.0 && result.0 < 1000.0);
+            }
+        }
+    }
+
+    #[test]
+    fn solar_full_batch_precedes_need_and_uses_finite_available_production() {
+        for kind in ["collector_solar", "collector_solar_v2"] {
+            let c = content();
+            let mut es = vec![entity(1, kind, 0.0), entity(2, "mineral_storage_container", 100.0),
+                entity(3, "power_storage_pod", 900.0), entity(4, "theta", 0.0)];
+            set_resource_amount(&mut es[1], "energy", 5.0);
+            set_resource_amount(&mut es[2], "energy", 10.0);
+            // Lower absolute energy cannot outweigh accepting the full batch.
+            assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 100.0), (100.0, Some(3)));
+            set_resource_amount(&mut es[2], "energy", 10.0);
+            es[3].resource_deposit = Some(pb::ResourceDeposit { amount: 50.0, remaining: 50.0 });
+            // With only 50 available, the container qualifies for the entire
+            // production batch and its lower absolute energy wins.
+            assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 100.0), (50.0, Some(2)));
+            assert_eq!(es[3].resource_deposit.as_ref().unwrap().remaining, 0.0);
+        }
+    }
+
+    #[test]
+    fn solar_need_priority_preserves_cooldown_active_throughput_and_partial_fallback() {
+        for kind in ["collector_solar", "collector_solar_v2"] {
+            let c = content();
+            let mut es = vec![entity(1, kind, 0.0), entity(2, "mineral_storage_container", 100.0),
+                entity(3, "power_storage_pod", 900.0), entity(4, "theta", 0.0)];
+            set_resource_amount(&mut es[1], "energy", 99.9991);
+            set_resource_amount(&mut es[2], "energy", 10.0);
+            let by_id = super::super::collection_entity_index(&es);
+            let depots = CollectionDepots::new(&es, &c);
+            let mut next = 0;
+            let mut active = Some(2);
+            for tick in 0..60 {
+                // The lower-energy container reopens, but never steals an
+                // adequate active pod, including at permitted search boundaries.
+                if tick == 1 { set_resource_amount(&mut es[1], "energy", 0.0); }
+                let (amount, recipient) = collect_to_depot_with_retry(&mut es, &c, 1, 4,
+                    "energy", 1.0, active, &depots, &by_id, Some((&mut next, tick, 20)));
+                assert_eq!((amount, recipient), (1.0, Some(3)));
+                active = recipient;
+            }
+            // A partial active recipient wins over a needier partial option.
+            set_resource_amount(&mut es[1], "energy", 99.5);
+            set_resource_amount(&mut es[2], "energy", 499.5);
+            assert_eq!(collect_to_depot_with_retry(&mut es, &c, 1, 4, "energy", 1.0,
+                active, &depots, &by_id, Some((&mut next, 60, 20))), (0.5, Some(3)));
+            // Opening a full batch elsewhere cannot switch before the deadline.
+            set_resource_amount(&mut es[1], "energy", 0.0);
+            assert_eq!(collect_to_depot_with_retry(&mut es, &c, 1, 4, "energy", 1.0,
+                active, &depots, &by_id, Some((&mut next, 79, 20))), (0.0, Some(3)));
+            assert_eq!(collect_to_depot_with_retry(&mut es, &c, 1, 4, "energy", 1.0,
+                active, &depots, &by_id, Some((&mut next, 80, 20))), (1.0, Some(2)));
+        }
     }
 
     #[test]
