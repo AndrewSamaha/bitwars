@@ -31,6 +31,8 @@ impl RaiderAiSpatialIndexMode {
 pub struct GameConfig {
     pub game_id: String,
     pub tps: u32,
+    /// Solar destination search/switch interval in simulation milliseconds.
+    pub solar_destination_retry_ms: u64,
     pub force_min: f32,
     pub force_max: f32,
     pub friction: f32,
@@ -67,6 +69,7 @@ impl Default for GameConfig {
         Self {
             game_id: "demo-001".into(),
             tps: DEFAULT_TPS,
+            solar_destination_retry_ms: 1000,
             force_min: -200.0,
             force_max: 200.0,
             friction: 0.3,
@@ -105,6 +108,11 @@ impl GameConfig {
         }
         cfg.max_cmds_per_tick = DEFAULT_MAX_CMDS_PER_SECOND.div_ceil(cfg.tps);
         cfg.max_batch_ms = DEFAULT_MAX_BATCH_MS_PER_SECOND.div_ceil(u64::from(cfg.tps));
+        if let Ok(v) = std::env::var("SOLAR_DESTINATION_RETRY_MS") {
+            if let Ok(n) = v.parse::<u64>() {
+                cfg.solar_destination_retry_ms = n.max(1);
+            }
+        }
         if let Ok(v) = std::env::var("MAX_CMDS_PER_TICK") {
             if let Ok(n) = v.parse::<u32>() {
                 cfg.max_cmds_per_tick = n;

@@ -486,7 +486,7 @@ mod wireless_collection_tests {
         let by_id = collection_entity_index(entities);
         let depots = logistics::CollectionDepots::new(entities, content);
         Engine::advance_wireless_collection(entities, content, &collector, node,
-            content.get("collector_solar").unwrap(), 1.0, None, &depots, &by_id)
+            content.get("collector_solar").unwrap(), 1.0, None, &depots, &by_id, None)
     }
 
     #[test]
@@ -498,6 +498,36 @@ mod wireless_collection_tests {
         // The star is to the left; the receiving depot is to the right.
         assert!(entities[0].vel.unwrap().x < 0.0);
         assert_eq!(resource_amount(&entities[1], "energy"), 1000.0);
+    }
+
+    #[test]
+    fn solar_cooldown_keeps_source_range_and_resumes_after_wait() {
+        for kind in ["collector_solar", "collector_solar_v2"] {
+            let (content, mut entities, node) = setup(10.0);
+            entities[0].entity_type_id = kind.into();
+            let by_id = collection_entity_index(&entities);
+            let depots = logistics::CollectionDepots::new(&entities, &content);
+            let mut next = 20;
+            let mut active = Some(2);
+            for (tick, x, expected_activity) in [
+                (1, 16000.0, COLLECTOR_ACTIVITY_MOVING_TO_SOURCE),
+                (2, 10.0, "waiting_for_depot_capacity"),
+                (19, 10.0, "waiting_for_depot_capacity"),
+                (20, 10.0, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
+            ] {
+                entities[0].pos.as_mut().unwrap().x = x;
+                set_resource_amount(&mut entities[1], "energy", if tick < 20 { 600.0 } else { 0.0 });
+                let collector = CollectorSnapshot { id: 1, entity_type_id: kind.into(),
+                    owner_player_id: "me".into(), x, y: 0.0 };
+                let (activity, rate, recipient) = Engine::advance_wireless_collection(
+                    &mut entities, &content, &collector, &node, content.get(kind).unwrap(),
+                    0.05, active, &depots, &by_id, Some((&mut next, tick, 20)));
+                assert_eq!(activity, expected_activity);
+                if tick < 20 { assert_eq!(rate, 0.0); }
+                else { assert!(rate > 0.0); }
+                active = recipient;
+            }
+        }
     }
 
     #[test]
@@ -554,7 +584,7 @@ mod wireless_collection_tests {
             set_resource_amount(&mut entities[1], "energy", preferred_stock);
             set_resource_amount(&mut entities[3], "energy", fallback_stock);
             let result = Engine::advance_wireless_collection(&mut entities, &content, &collector,
-                &node, content.get("collector_solar").unwrap(), 1.0, active, &depots, &by_id);
+                &node, content.get("collector_solar").unwrap(), 1.0, active, &depots, &by_id, None);
             assert_eq!(result.0, activity);
             assert_eq!(result.2, Some(expected));
             active = result.2;
@@ -587,7 +617,7 @@ mod wireless_collection_tests {
                 let by_id = collection_entity_index(&entities);
                 let depots = logistics::CollectionDepots::new(&entities, &content);
                 let (actual_activity, rate, recipient) = Engine::advance_wireless_collection(
-                    &mut entities, &content, &collector, &node, def, 2.0, None, &depots, &by_id);
+                    &mut entities, &content, &collector, &node, def, 2.0, None, &depots, &by_id, None);
                 assert_eq!(actual_activity, activity, "{kind} at {distance}");
                 assert!((rate - expected).abs() < 1e-6, "{kind} at {distance}: {rate}");
                 let target = if def.depot { 1 } else { 2 };
@@ -1446,6 +1476,8 @@ pub struct Engine {
     collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
     /// Next tick when a spacing-blocked collector may try gathering again.
     collection_retry_tick_by_entity: HashMap<u64, u64>,
+    /// Runtime-only destination retry deadlines; no countdown is sent to clients.
+    solar_destination_retry_tick_by_entity: HashMap<u64, u64>,
     /// Previous telemetry state used to emit sparse authoritative delta updates.
     prev_collector_ui_state_by_entity: HashMap<u64, CollectorUiState>,
     /// Per-attacker continuous combat effects, streamed for presentation.
@@ -2297,6 +2329,7 @@ impl Engine {
                     resource_gain_total: HashMap::new(),
                     collector_ui_state_by_entity: HashMap::new(),
                     collection_retry_tick_by_entity: HashMap::new(),
+                    solar_destination_retry_tick_by_entity: HashMap::new(),
                     prev_collector_ui_state_by_entity: HashMap::new(),
                     combat_effect_ui_state_by_entity: HashMap::new(),
                     prev_combat_effect_ui_state_by_entity: HashMap::new(),
@@ -2528,6 +2561,7 @@ impl Engine {
             resource_gain_total: HashMap::new(),
             collector_ui_state_by_entity: HashMap::new(),
             collection_retry_tick_by_entity: HashMap::new(),
+            solar_destination_retry_tick_by_entity: HashMap::new(),
             prev_collector_ui_state_by_entity: HashMap::new(),
             combat_effect_ui_state_by_entity: HashMap::new(),
             prev_combat_effect_ui_state_by_entity: HashMap::new(),
@@ -4313,6 +4347,7 @@ impl Engine {
         active: Option<u64>,
         depots: &logistics::CollectionDepots,
         by_id: &HashMap<u64, usize>,
+        retry: Option<(&mut u64, u64, u64)>,
     ) -> (&'static str, f32, Option<u64>) {
         let distance = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
         if let Some(entity) = collection_entity_mut(entities, collector.id, by_id) {
@@ -4329,8 +4364,8 @@ impl Engine {
         }
         let rate = def.collector.as_ref().map_or(0.0, |c| c.proximity_rate_per_second.max(0.0))
             * efficiency;
-        let (amount, recipient) = logistics::collect_to_depot_indexed(entities, content,
-            collector.id, node.id, &node.resource_type, (rate * dt) as f64, active, depots, by_id);
+        let (amount, recipient) = logistics::collect_to_depot_with_retry(entities, content,
+            collector.id, node.id, &node.resource_type, (rate * dt) as f64, active, depots, by_id, retry);
         let activity = if recipient.is_none() {
             "waiting_for_depot"
         } else if amount == 0.0 {
@@ -4405,6 +4440,7 @@ impl Engine {
             .map(|(owner, known)| (owner.clone(), discovered_resource_nodes(&nodes, known))).collect();
         let refineries = self.build_depot_snapshots();
         let collector_ids: HashSet<u64> = collectors.iter().map(|c| c.id).collect();
+        self.solar_destination_retry_tick_by_entity.retain(|id, _| collector_ids.contains(id));
         self.transport_node_by_entity.retain(|id, _| collector_ids.contains(id));
         self.transport_wait_since_tick_by_entity.retain(|id, _| collector_ids.contains(id));
         let stale_ui_ids: Vec<u64> = self
@@ -4734,9 +4770,12 @@ impl Engine {
                 }
                 let active = self.collector_ui_state_by_entity.get(&collector.id)
                     .and_then(|state| state.receiving_entity_id);
+                let retry = matches!(collector.entity_type_id.as_str(), "collector_solar" | "collector_solar_v2")
+                    .then(|| (self.solar_destination_retry_tick_by_entity.entry(collector.id).or_default(),
+                        self.state.tick, retry_delay_ticks(self.cfg.solar_destination_retry_ms, self.cfg.tps)));
                 let (activity, rate, recipient) = Self::advance_wireless_collection(
                     &mut self.state.entities, self.content.as_ref().unwrap(), &collector, node, &def, dt,
-                    active, &collection_depots, &entity_by_id);
+                    active, &collection_depots, &entity_by_id, retry);
                 self.set_collector_ui_state(collector.id, activity, &node.resource_type, rate);
                 if let Some(state) = self.collector_ui_state_by_entity.get_mut(&collector.id) {
                     state.receiving_entity_id = recipient;
@@ -5749,6 +5788,7 @@ impl Engine {
                     return Err(anyhow!("invalid collection depot assignment"));
                 }
                 // A fresh explicit preference takes effect on the next collection pass.
+                self.solar_destination_retry_tick_by_entity.remove(&order.entity_id);
                 if let Some(state) = self.collector_ui_state_by_entity.get_mut(&order.entity_id) {
                     state.receiving_entity_id = None;
                 }
