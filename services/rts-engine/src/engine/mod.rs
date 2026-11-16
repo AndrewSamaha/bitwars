@@ -483,8 +483,10 @@ mod wireless_collection_tests {
         let pos = entities[0].pos.unwrap();
         let collector = CollectorSnapshot { id: 1, entity_type_id: "collector_solar".into(),
             owner_player_id: "me".into(), x: pos.x, y: pos.y };
+        let by_id = collection_entity_index(entities);
+        let depots = logistics::CollectionDepots::new(entities, content);
         Engine::advance_wireless_collection(entities, content, &collector, node,
-            content.get("collector_solar").unwrap(), 1.0)
+            content.get("collector_solar").unwrap(), 1.0, None, &depots, &by_id)
     }
 
     #[test]
@@ -534,6 +536,32 @@ mod wireless_collection_tests {
     }
 
     #[test]
+    fn wireless_fallback_is_retained_across_ticks_and_capacity_waits() {
+        let (content, mut entities, node) = setup(10.0);
+        entities.push(pb::Entity { id: 4, entity_type_id: "habitat".into(), health: 100.0,
+            owner_player_id: "me".into(), pos: Some(pb::Vec2 { x: 2000.0, y: 0.0 }), ..Default::default() });
+        let by_id = collection_entity_index(&entities);
+        let depots = logistics::CollectionDepots::new(&entities, &content);
+        let collector = CollectorSnapshot { id: 1, entity_type_id: "collector_solar".into(),
+            owner_player_id: "me".into(), x: 10.0, y: 0.0 };
+        let mut active = None;
+        for (preferred_stock, fallback_stock, expected, activity) in [
+            (600.0, 0.0, 4, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
+            (0.0, 3.0, 4, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
+            (600.0, 600.0, 4, "waiting_for_depot_capacity"),
+            (590.0, 600.0, 2, COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING),
+        ] {
+            set_resource_amount(&mut entities[1], "energy", preferred_stock);
+            set_resource_amount(&mut entities[3], "energy", fallback_stock);
+            let result = Engine::advance_wireless_collection(&mut entities, &content, &collector,
+                &node, content.get("collector_solar").unwrap(), 1.0, active, &depots, &by_id);
+            assert_eq!(result.0, activity);
+            assert_eq!(result.2, Some(expected));
+            active = result.2;
+        }
+    }
+
+    #[test]
     fn proximity_falloff_credits_scaled_energy_and_stops_at_source_boundaries() {
         for kind in ["collector_solar", "habitat", "planet_blue_inhabitated"] {
             let (content, _, node) = setup(0.0);
@@ -556,8 +584,10 @@ mod wireless_collection_tests {
                 };
                 let def = content.get(kind).unwrap();
                 let expected = def.collector.as_ref().unwrap().proximity_rate_per_second * strength;
+                let by_id = collection_entity_index(&entities);
+                let depots = logistics::CollectionDepots::new(&entities, &content);
                 let (actual_activity, rate, recipient) = Engine::advance_wireless_collection(
-                    &mut entities, &content, &collector, &node, def, 2.0);
+                    &mut entities, &content, &collector, &node, def, 2.0, None, &depots, &by_id);
                 assert_eq!(actual_activity, activity, "{kind} at {distance}");
                 assert!((rate - expected).abs() < 1e-6, "{kind} at {distance}: {rate}");
                 let target = if def.depot { 1 } else { 2 };
@@ -4280,24 +4310,27 @@ impl Engine {
         node: &ResourceNodeSnapshot,
         def: &EntityTypeDef,
         dt: f32,
+        active: Option<u64>,
+        depots: &logistics::CollectionDepots,
+        by_id: &HashMap<u64, usize>,
     ) -> (&'static str, f32, Option<u64>) {
         let distance = Self::distance_sq(collector.x, collector.y, node.x, node.y).sqrt();
-        if let Some(entity) = entities.iter_mut().find(|e| e.id == collector.id) {
+        if let Some(entity) = collection_entity_mut(entities, collector.id, by_id) {
             Self::drive_velocity_to_band(entity, def.speed.max(0.0), node.x, node.y,
                 node.min_effective_distance, node.max_effective_distance);
         }
         if distance < node.min_effective_distance || distance > node.max_effective_distance {
-            return (COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, 0.0, None);
+            return (COLLECTOR_ACTIVITY_MOVING_TO_SOURCE, 0.0, active);
         }
         let efficiency = crate::content::proximity_collection_efficiency(
             distance, node.min_effective_distance, node.max_effective_distance);
         if efficiency == 0.0 {
-            return (COLLECTOR_ACTIVITY_IDLE, 0.0, None);
+            return (COLLECTOR_ACTIVITY_IDLE, 0.0, active);
         }
         let rate = def.collector.as_ref().map_or(0.0, |c| c.proximity_rate_per_second.max(0.0))
             * efficiency;
-        let (amount, recipient) = logistics::collect_to_depot(entities, content,
-            collector.id, node.id, &node.resource_type, (rate * dt) as f64);
+        let (amount, recipient) = logistics::collect_to_depot_indexed(entities, content,
+            collector.id, node.id, &node.resource_type, (rate * dt) as f64, active, depots, by_id);
         let activity = if recipient.is_none() {
             "waiting_for_depot"
         } else if amount == 0.0 {
@@ -4317,6 +4350,7 @@ impl Engine {
         // The completed-tick observation pass refreshes discovery once for all
         // players. Intent acceptance separately refreshes newly requested routes.
         let entity_by_id = collection_entity_index(&self.state.entities);
+        let collection_depots = logistics::CollectionDepots::new(&self.state.entities, self.content.as_ref().unwrap());
         state::initialize_fixed_resource_deposits(
             &mut self.state.entities, self.content.as_ref().unwrap(), &self.spawn_config);
         state::regenerate_resource_deposits(&mut self.state.entities, self.content.as_ref().unwrap(), dt as f64);
@@ -4698,8 +4732,11 @@ impl Engine {
                 } else {
                     self.collection_retry_tick_by_entity.remove(&collector.id);
                 }
+                let active = self.collector_ui_state_by_entity.get(&collector.id)
+                    .and_then(|state| state.receiving_entity_id);
                 let (activity, rate, recipient) = Self::advance_wireless_collection(
-                    &mut self.state.entities, self.content.as_ref().unwrap(), &collector, node, &def, dt);
+                    &mut self.state.entities, self.content.as_ref().unwrap(), &collector, node, &def, dt,
+                    active, &collection_depots, &entity_by_id);
                 self.set_collector_ui_state(collector.id, activity, &node.resource_type, rate);
                 if let Some(state) = self.collector_ui_state_by_entity.get_mut(&collector.id) {
                     state.receiving_entity_id = recipient;
@@ -5710,6 +5747,10 @@ impl Engine {
                 if let Err(reason) = result {
                     self.emit_lifecycle_event(&metadata, pb::LifecycleState::Rejected, reason, accept_tick).await?;
                     return Err(anyhow!("invalid collection depot assignment"));
+                }
+                // A fresh explicit preference takes effect on the next collection pass.
+                if let Some(state) = self.collector_ui_state_by_entity.get_mut(&order.entity_id) {
+                    state.receiving_entity_id = None;
                 }
                 self.emit_lifecycle_event(&metadata, pb::LifecycleState::Accepted, pb::LifecycleReason::None, accept_tick).await?;
                 self.emit_lifecycle_event(&metadata, pb::LifecycleState::Finished, pb::LifecycleReason::None, accept_tick).await?;

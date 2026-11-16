@@ -305,44 +305,62 @@ pub(super) fn collection_depot_id(
     entities.iter().find(|d| d.id == assigned && eligible_depot(actor, d, content)).map(|d| d.id)
 }
 
-fn collection_depot_for_resource(
-    entities: &[pb::Entity], content: &ContentPack, actor: &pb::Entity, resource: &str,
-) -> Option<u64> {
-    let assigned = actor.supply.as_ref().map_or(0, |s| s.delivery_depot_id);
-    let current = if assigned == 0 {
-        depot_id(entities, content, actor)
-    } else {
-        collection_depot_id(entities, content, actor)
-    };
-    let has_capacity = |id: u64| entities.iter().find(|entity| entity.id == id).is_some_and(|depot| {
-        let capacity = content.get(&depot.entity_type_id)
-            .and_then(|def| def.max_capacity.get(resource)).copied().unwrap_or(0.0) as f64;
-        capacity > resource_amount(depot, resource) + f64::EPSILON
-    });
-    let Some(current) = current else { return None; };
-    if has_capacity(current) {
-        return Some(current);
+/// Built once per collection pass. Only depot indices are searched on fallback;
+/// stock is read live so collectors sharing the pass cannot overfill a depot.
+pub(super) struct CollectionDepots {
+    by_owner: HashMap<String, Vec<usize>>,
+}
+
+impl CollectionDepots {
+    pub(super) fn new(entities: &[pb::Entity], content: &ContentPack) -> Self {
+        let mut by_owner: HashMap<String, Vec<usize>> = HashMap::new();
+        for (index, entity) in entities.iter().enumerate() {
+            if content.get(&entity.entity_type_id).is_some_and(|def| def.depot) {
+                by_owner.entry(entity.owner_player_id.clone()).or_default().push(index);
+            }
+        }
+        Self { by_owner }
     }
 
-    if !matches!(actor.entity_type_id.as_str(), "collector_solar" | "collector_solar_v2") {
-        return Some(current);
+    fn destination(
+        &self, entities: &[pb::Entity], content: &ContentPack, actor: &pb::Entity,
+        resource: &str, active: Option<u64>, by_id: &HashMap<u64, usize>,
+    ) -> Option<u64> {
+        if !matches!(actor.entity_type_id.as_str(), "collector_solar" | "collector_solar_v2") {
+            return collection_depot_id(entities, content, actor);
+        }
+        let eligible = |id| by_id.get(&id).map(|&i| &entities[i])
+            .filter(|depot| eligible_depot(actor, depot, content));
+        let has_room = |depot: &pb::Entity| content.get(&depot.entity_type_id)
+            .and_then(|def| def.max_capacity.get(resource))
+            .is_some_and(|capacity| *capacity as f64 > resource_amount(depot, resource) + f64::EPSILON);
+        // The active destination is distinct from the user's preferred assignment.
+        // Never switch back merely because the preferred depot has emptied.
+        let assigned = actor.supply.as_ref().map_or(0, |s| s.delivery_depot_id);
+        let current = active.and_then(eligible)
+            .or_else(|| eligible(assigned))
+            .or_else(|| actor.supply.as_ref().and_then(|s| eligible(s.depot_id)));
+        if let Some(depot) = current.filter(|depot| has_room(depot)) { return Some(depot.id); }
+        if !crate::spawn_config::is_player_owner(&actor.owner_player_id) {
+            return current.map(|depot| depot.id);
+        }
+        let pos = actor.pos?;
+        self.by_owner.get(&actor.owner_player_id).into_iter().flatten()
+            .map(|&index| &entities[index])
+            .filter(|depot| eligible_depot(actor, depot, content) && has_room(depot))
+            .min_by(|a, b| {
+                let distance = |depot: &pb::Entity| {
+                    let p = depot.pos.unwrap();
+                    (p.x - pos.x).powi(2) + (p.y - pos.y).powi(2)
+                };
+                distance(a).total_cmp(&distance(b)).then_with(|| a.id.cmp(&b.id))
+            })
+            .map(|depot| depot.id)
+            .or_else(|| current.map(|depot| depot.id))
+            // Preserve the capacity-wait diagnostic even without an association.
+            .or_else(|| self.by_owner.get(&actor.owner_player_id).into_iter().flatten()
+                .map(|&i| &entities[i]).find(|depot| eligible_depot(actor, depot, content)).map(|d| d.id))
     }
-
-    let actor_pos = actor.pos?;
-    entities.iter()
-        .filter(|depot| depot.id != current && eligible_depot(actor, depot, content))
-        .filter(|depot| {
-            let capacity = content.get(&depot.entity_type_id)
-                .and_then(|def| def.max_capacity.get(resource)).copied().unwrap_or(0.0) as f64;
-            capacity > resource_amount(depot, resource) + f64::EPSILON
-        })
-        .min_by(|a, b| {
-            let distance = |depot: &pb::Entity| depot.pos.map_or(f32::INFINITY, |p|
-                (p.x - actor_pos.x).powi(2) + (p.y - actor_pos.y).powi(2));
-            distance(a).total_cmp(&distance(b)).then_with(|| a.id.cmp(&b.id))
-        })
-        .map(|depot| depot.id)
-        .or(Some(current))
 }
 
 /// Validate both the collector and destination before changing persistent state.
@@ -370,19 +388,20 @@ pub(super) fn assign_delivery_depot(
 }
 
 /// Collection credits the one associated depot; no intermediate producer balance.
-pub(super) fn collect_to_depot(
+pub(super) fn collect_to_depot_indexed(
     entities: &mut [pb::Entity],
     content: &ContentPack,
     actor_id: u64,
     node_id: u64,
     resource: &str,
     requested: f64,
+    active: Option<u64>,
+    depots: &CollectionDepots,
+    by_id: &HashMap<u64, usize>,
 ) -> (f64, Option<u64>) {
-    let target = entities
-        .iter()
-        .find(|e| e.id == actor_id)
-        .and_then(|actor| collection_depot_for_resource(entities, content, actor, resource));
-    let Some(index) = target.and_then(|id| entities.iter().position(|e| e.id == id)) else {
+    let actor = by_id.get(&actor_id).map(|&i| &entities[i]);
+    let target = actor.and_then(|actor| depots.destination(entities, content, actor, resource, active, by_id));
+    let Some(index) = target.and_then(|id| by_id.get(&id).copied()) else {
         return (0.0, None);
     };
     let capacity = content
@@ -392,13 +411,21 @@ pub(super) fn collect_to_depot(
         .unwrap_or(0.0) as f64;
     let stock = resource_amount(&entities[index], resource);
     let amount = requested.max(0.0).min((capacity - stock).max(0.0));
-    let gathered = entities
-        .iter_mut()
-        .find(|e| e.id == node_id)
-        .map(|e| super::take_from_deposit(e, amount))
+    let gathered = by_id.get(&node_id).copied()
+        .map(|i| super::take_from_deposit(&mut entities[i], amount))
         .unwrap_or(0.0);
     set_resource_amount(&mut entities[index], resource, stock + gathered);
     (gathered, target)
+}
+
+#[cfg(test)]
+fn collect_to_depot(
+    entities: &mut [pb::Entity], content: &ContentPack, actor: u64, node: u64,
+    resource: &str, requested: f64,
+) -> (f64, Option<u64>) {
+    let by_id = super::collection_entity_index(entities);
+    let depots = CollectionDepots::new(entities, content);
+    collect_to_depot_indexed(entities, content, actor, node, resource, requested, None, &depots, &by_id)
 }
 
 /// Returns whether this tick made the upfront payment. The checkpoint travels with stock.
@@ -1167,7 +1194,7 @@ mod assignment_tests {
         set_resource_amount(&mut es[2], "energy", 600.0);
         assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 10.0), (0.0, Some(3)));
         es[2].pos.as_mut().unwrap().x = 5000.0;
-        assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 10.0), (0.0, None));
+        assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 10.0), (0.0, Some(2)));
         assign_delivery_depot(&mut es, &c, "me", 1, 0).unwrap();
         assert_eq!(collection_depot_id(&es, &c, &es[0]), Some(2));
     }
@@ -1194,6 +1221,46 @@ mod assignment_tests {
 
         set_resource_amount(&mut es[2], "energy", 599.0);
         assert_eq!(collect_to_depot(&mut es, &c, 1, 6, "energy", 10.0), (1.0, Some(3)));
+    }
+
+    #[test]
+    fn solar_retains_active_destination_and_rechecks_live_stock_for_both_versions() {
+        for kind in ["collector_solar", "collector_solar_v2"] {
+            let c = content();
+            let mut es = vec![entity(1, kind, 0.0), entity(2, "habitat", 100.0),
+                entity(3, "habitat", 200.0), entity(4, "theta", 0.0),
+                entity(5, "habitat", 1.0), entity(6, "habitat", 2.0),
+                entity(7, "habitat", 4001.0), entity(8, "habitat", -200.0)];
+            es[0].supply = Some(pb::DepotSupply { depot_id: 2, delivery_depot_id: 2, ..Default::default() });
+            es[3].resource_deposit = Some(pb::ResourceDeposit { amount: 100.0, remaining: 100.0 });
+            es[4].owner_player_id = "enemy".into();
+            es[5].health = 0.0;
+            set_resource_amount(&mut es[1], "energy", 600.0);
+            let by_id = super::super::collection_entity_index(&es);
+            let depots = CollectionDepots::new(&es, &c);
+            let collect = |es: &mut [pb::Entity], active| collect_to_depot_indexed(
+                es, &c, 1, 4, "energy", 10.0, active, &depots, &by_id);
+            // Equal distances break by ID. Hostile, dead and distant depots are excluded.
+            assert_eq!(collect(&mut es, None), (10.0, Some(3)));
+            set_resource_amount(&mut es[1], "energy", 0.0);
+            // The preferred depot reopening must not interrupt the active recipient.
+            assert_eq!(collect(&mut es, Some(3)), (10.0, Some(3)));
+            assert_eq!(es[0].supply.as_ref().unwrap().delivery_depot_id, 2);
+            set_resource_amount(&mut es[2], "energy", 599.0);
+            assert_eq!(collect(&mut es, Some(3)), (1.0, Some(3)));
+            assert_eq!(collect(&mut es, Some(3)), (10.0, Some(2)));
+            set_resource_amount(&mut es[1], "energy", 600.0);
+            set_resource_amount(&mut es[7], "energy", 600.0);
+            let remaining = es[3].resource_deposit.as_ref().unwrap().remaining;
+            assert_eq!(collect(&mut es, Some(2)), (0.0, Some(2)));
+            assert_eq!(es[3].resource_deposit.as_ref().unwrap().remaining, remaining);
+            set_resource_amount(&mut es[2], "energy", 590.0);
+            assert_eq!(collect(&mut es, Some(2)), (10.0, Some(3)));
+            // Active recipients are revalidated on every transfer.
+            es[2].owner_player_id = "enemy".into();
+            set_resource_amount(&mut es[1], "energy", 590.0);
+            assert_eq!(collect(&mut es, Some(3)), (10.0, Some(2)));
+        }
     }
 
     #[test]

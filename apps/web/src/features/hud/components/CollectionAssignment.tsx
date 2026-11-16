@@ -34,7 +34,7 @@ export function CollectionAssignment({ entity, tooltip = false }: { entity: Enti
   const effectiveDestination = activeDestinationId && String(activeDestinationId) !== String(destinationId)
     ? Array.from(game.world.with("id")).find(e => Number(e.id) === activeDestinationId) : undefined;
   const effectiveText = activeDestinationId && String(activeDestinationId) !== String(destinationId)
-    ? `; ${wirelessDestinationId ? "transmitting" : "delivering"} to ${effectiveDestination?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${activeDestinationId}` : "";
+    ? `; ${wirelessDestinationId ? ((state?.effective_rate_per_second ?? 0) > 0 ? "transmitting" : "connected") : "delivering"} to ${effectiveDestination?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${activeDestinationId}` : "";
   const destinationText = `${destinationLabel} (${manual ? "assigned" : "automatic"})${effectiveText}`;
   const routeText = routingStatus || (state?.route_block_code === "source_depleted"
     ? "Source depleted; waiting for another discovered source."
