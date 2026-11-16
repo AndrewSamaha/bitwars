@@ -305,6 +305,46 @@ pub(super) fn collection_depot_id(
     entities.iter().find(|d| d.id == assigned && eligible_depot(actor, d, content)).map(|d| d.id)
 }
 
+fn collection_depot_for_resource(
+    entities: &[pb::Entity], content: &ContentPack, actor: &pb::Entity, resource: &str,
+) -> Option<u64> {
+    let assigned = actor.supply.as_ref().map_or(0, |s| s.delivery_depot_id);
+    let current = if assigned == 0 {
+        depot_id(entities, content, actor)
+    } else {
+        collection_depot_id(entities, content, actor)
+    };
+    let has_capacity = |id: u64| entities.iter().find(|entity| entity.id == id).is_some_and(|depot| {
+        let capacity = content.get(&depot.entity_type_id)
+            .and_then(|def| def.max_capacity.get(resource)).copied().unwrap_or(0.0) as f64;
+        capacity > resource_amount(depot, resource) + f64::EPSILON
+    });
+    let Some(current) = current else { return None; };
+    if has_capacity(current) {
+        return Some(current);
+    }
+
+    if !matches!(actor.entity_type_id.as_str(), "collector_solar" | "collector_solar_v2") {
+        return Some(current);
+    }
+
+    let actor_pos = actor.pos?;
+    entities.iter()
+        .filter(|depot| depot.id != current && eligible_depot(actor, depot, content))
+        .filter(|depot| {
+            let capacity = content.get(&depot.entity_type_id)
+                .and_then(|def| def.max_capacity.get(resource)).copied().unwrap_or(0.0) as f64;
+            capacity > resource_amount(depot, resource) + f64::EPSILON
+        })
+        .min_by(|a, b| {
+            let distance = |depot: &pb::Entity| depot.pos.map_or(f32::INFINITY, |p|
+                (p.x - actor_pos.x).powi(2) + (p.y - actor_pos.y).powi(2));
+            distance(a).total_cmp(&distance(b)).then_with(|| a.id.cmp(&b.id))
+        })
+        .map(|depot| depot.id)
+        .or(Some(current))
+}
+
 /// Validate both the collector and destination before changing persistent state.
 pub(super) fn assign_delivery_depot(
     entities: &mut [pb::Entity], content: &ContentPack, player: &str, actor_id: u64, target_id: u64,
@@ -341,7 +381,7 @@ pub(super) fn collect_to_depot(
     let target = entities
         .iter()
         .find(|e| e.id == actor_id)
-        .and_then(|actor| collection_depot_id(entities, content, actor));
+        .and_then(|actor| collection_depot_for_resource(entities, content, actor, resource));
     let Some(index) = target.and_then(|id| entities.iter().position(|e| e.id == id)) else {
         return (0.0, None);
     };
@@ -1123,12 +1163,37 @@ mod assignment_tests {
         assert_eq!(resource_amount(&es[1], "energy"), 0.0);
         es[0] = pb::Entity::decode(es[0].encode_to_vec().as_slice()).unwrap();
         assert_eq!(collection_depot_id(&es, &c, &es[0]), Some(3));
-        set_resource_amount(&mut es[2], "energy", 1000.0);
+        set_resource_amount(&mut es[1], "energy", 600.0);
+        set_resource_amount(&mut es[2], "energy", 600.0);
         assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 10.0), (0.0, Some(3)));
         es[2].pos.as_mut().unwrap().x = 5000.0;
         assert_eq!(collect_to_depot(&mut es, &c, 1, 4, "energy", 10.0), (0.0, None));
         assign_delivery_depot(&mut es, &c, "me", 1, 0).unwrap();
         assert_eq!(collection_depot_id(&es, &c, &es[0]), Some(2));
+    }
+
+    #[test]
+    fn solar_automatically_uses_nearest_in_range_depot_with_capacity() {
+        let c = content();
+        let mut es = vec![entity(1, "collector_solar", 0.0), entity(2, "habitat", 100.0),
+            entity(3, "habitat", 200.0), entity(4, "habitat", 300.0), entity(5, "habitat", 4001.0),
+            entity(6, "theta", 0.0)];
+        es[5].resource_deposit = Some(pb::ResourceDeposit { amount: 100.0, remaining: 100.0 });
+        set_resource_amount(&mut es[1], "energy", 600.0);
+        es[0].supply = Some(pb::DepotSupply { delivery_depot_id: 2, ..Default::default() });
+
+        assert_eq!(collect_to_depot(&mut es, &c, 1, 6, "energy", 10.0), (10.0, Some(3)));
+        assert_eq!(resource_amount(&es[2], "energy"), 10.0);
+
+        set_resource_amount(&mut es[2], "energy", 600.0);
+        assert_eq!(collect_to_depot(&mut es, &c, 1, 6, "energy", 10.0), (10.0, Some(4)));
+
+        set_resource_amount(&mut es[3], "energy", 600.0);
+        set_resource_amount(&mut es[2], "energy", 600.0);
+        assert_eq!(collect_to_depot(&mut es, &c, 1, 6, "energy", 10.0), (0.0, Some(2)));
+
+        set_resource_amount(&mut es[2], "energy", 599.0);
+        assert_eq!(collect_to_depot(&mut es, &c, 1, 6, "energy", 10.0), (1.0, Some(3)));
     }
 
     #[test]

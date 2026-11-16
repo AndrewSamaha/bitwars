@@ -515,16 +515,22 @@ mod wireless_collection_tests {
     #[test]
     fn full_or_unavailable_wireless_destination_waits_at_source_then_resumes() {
         let (content, mut entities, node) = setup(10.0);
-        set_resource_amount(&mut entities[1], "energy", 1000.0);
-        assert_eq!(advance(&content, &mut entities, &node), ("waiting_for_depot_capacity", 0.0, Some(2)));
+        entities.push(pb::Entity { id: 4, entity_type_id: "habitat".into(), health: 100.0,
+            owner_player_id: "me".into(), pos: Some(pb::Vec2 { x: 2000.0, y: 0.0 }), ..Default::default() });
+        set_resource_amount(&mut entities[1], "energy", 600.0);
+        assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING, 3.0, Some(4)));
+        assert_eq!(resource_amount(&entities[3], "energy"), 3.0);
         assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
+        set_resource_amount(&mut entities[3], "energy", 600.0);
+        assert_eq!(advance(&content, &mut entities, &node), ("waiting_for_depot_capacity", 0.0, Some(2)));
         entities[1].pos.as_mut().unwrap().x = 5000.0;
+        entities[3].pos.as_mut().unwrap().x = 5000.0;
         assert_eq!(advance(&content, &mut entities, &node), ("waiting_for_depot", 0.0, None));
         assert_eq!(entities[0].vel.unwrap(), pb::Vec2 { x: 0.0, y: 0.0 });
         entities[1].pos.as_mut().unwrap().x = 3000.0;
-        set_resource_amount(&mut entities[1], "energy", 990.0);
+        set_resource_amount(&mut entities[1], "energy", 590.0);
         assert_eq!(advance(&content, &mut entities, &node), (COLLECTOR_ACTIVITY_PROXIMITY_COLLECTING, 3.0, Some(2)));
-        assert_eq!(resource_amount(&entities[1], "energy"), 993.0);
+        assert_eq!(resource_amount(&entities[1], "energy"), 593.0);
     }
 
     #[test]
