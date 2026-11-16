@@ -85,7 +85,7 @@ commands, not by the root dev command. A working root `.env` must provide
 `SPAWN_CONFIG_PATH` and `CONTENT_PACK_PATH` as well as the intended game/Redis
 settings. The launcher does not synthesize credentials or start services.
 
-On creation, workmux copies from the checkout where `workmux add` is run,
+On creation, workmux reads project config and copies files from the checkout where `workmux add` is run,
 including when dispatching from an integration worktree. Before dispatch,
 ensure that checkout has the intended ignored configuration; a branch/base
 commit does not carry it. New copies are independent: later edits do not
@@ -105,23 +105,62 @@ are `../../packages/content/entities.yaml` and `config/spawn.yaml`, not paths
 relative to root `.env`. Check any custom file-valued settings and overrides in
 the engine `.env` too. Referenced external files are not recursively copied.
 The YAML files above are tracked and already present in new worktrees; generated
-content revisions, art candidates, and build caches are not startup config.
+art candidates and build caches are not startup config. Retained content revisions
+are required saved-game data: `.workmux.yaml` independently copies the complete
+`packages/content/.revisions` directory, including manifests and `bundles/`.
+When `RESTORE_GAMESTATE_ON_RESTART=true`, the engine loads the exact revision
+referenced by the Redis snapshot from `.revisions` beside `CONTENT_PACK_PATH`;
+the web app uses the integration checkout's `packages/content/.revisions`.
+A manifest alone is insufficient: its immutable asset bundles are verified too.
+Keep engine content paths inside the integration checkout so engine and web use
+its independent retained data. If the previous engine used an external content
+path, recover `.revisions` from beside that actual content file instead.
+An absent source directory is skipped by workmux, but saved-game restoration
+will fail if its required revision is missing. Do not disable restoration or
+reset Redis to work around missing local data.
 
-For an existing integration checkout missing configuration, first merge this
-fix there. Back up any existing local environment files privately, then from
-the integration checkout run:
+For an existing integration checkout missing configuration, merge this fix there
+and back up any existing environment files and retained revisions privately.
+With workmux 0.1.282, `sync-files` reads **both project config and source files
+from the primary checkout**, even when invoked inside the integration checkout.
+If primary still has the old `.workmux.yaml`, it can report success while copying
+nothing. It has no `--config` override. By contrast, `add` uses the dispatching
+checkout's config and source files (or its explicit `--config` override).
+The smoke test covers this difference with an old primary config and updated
+integration config. Do not change primary just to recover this worktree.
+
+Instead, from the integration checkout, explicitly copy from a known configured
+checkout (replace the example absolute source path). This overwrites matching
+local files, so back them up first. It does not change the source checkout:
 
 ```sh
-workmux sync-files
+source_root=/absolute/path/to/configured-checkout
+for file in .env .env.local apps/web/.env apps/web/.env.local apps/web/.env.development apps/web/.env.development.local services/rts-engine/.env; do
+  if [ -f "$source_root/$file" ]; then
+    mkdir -p "$(dirname "$file")"
+    cp -p "$source_root/$file" "$file"
+  fi
+done
+if [ -d "$source_root/packages/content/.revisions" ]; then
+  mkdir -p packages/content/.revisions
+  cp -Rp "$source_root/packages/content/.revisions/." packages/content/.revisions/
+fi
 ```
 
-Unlike creation, this command sources copies from the **primary checkout** and
-can overwrite existing copies. Do not use `--all`. Confirm the primary checkout
-has the intended files first; alternatively copy just the missing allowlisted
-files from a known configured checkout, preserving their permissions. Adjust
-the two YAML paths as described above, then run `pnpm install` and `pnpm dev`
-in the integration shell pane. Do not print credentials or force-add ignored
-files. `workmux open` alone does not repair missing configuration.
+Coordinate with the integration owner to copy retained data while the previous
+engine/editor is stopped and no new revisions are being published. Copy the
+complete retained directory, preserving manifests and bundles; do not regenerate
+it from current YAML as a substitute for the saved revision. If any required
+revision or asset is unavailable in that source, recover it from the actual
+previous content directory or backup before starting. Keep restoration enabled
+when preserving the saved game. Nothing here resets or rewrites Redis.
+
+Once primary itself eventually contains the updated config, `workmux sync-files`
+from the integration checkout can reapply the primary's copies, overwriting
+existing local copies. Do not use `--all`. For this recovery, use the explicit
+copy above. Adjust the two YAML paths as described above, then run `pnpm install`
+and `pnpm dev` in the integration shell pane. Do not print credentials or
+force-add ignored files. `workmux open` alone does not repair missing data.
 
 Copied Redis URLs, game IDs, ports, and external credentials still address
 shared services. Worktrees do not isolate them. The integration worktree owns
@@ -138,7 +177,8 @@ python3 scripts/tests/workmux-provisioning.py
 ```
 
 It verifies copies, optional missing files, dispatch from a second worktree,
-recovery source, and exclusion of dependency/build/handoff directories.
+stale-primary recovery, independent retained manifests/bundles, and exclusion of
+dependency/build/handoff directories.
 
 Begin with a clean working directory and synchronized local `main`, then create the integration branch:
 
