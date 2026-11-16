@@ -73,6 +73,73 @@ Run that recovery command from the checkout containing the new `.workmux.yaml`.
 Ensure the config is committed before dispatching further task worktrees so they
 inherit it as well.
 
+### Local development configuration
+
+The project config uses native workmux `files.copy` for root `.env` and
+`.env.local`, Next.js files `apps/web/.env`, `.env.local`, `.env.development`,
+and `.env.development.local`, and the engine's `services/rts-engine/.env`.
+Absent optional files are skipped. Root `pnpm dev` loads root `.env` through
+dotenv; Next.js additionally loads its own environment files, and the Rust
+engine can load its own `.env`. Root `.env.local` is used by some test/reset
+commands, not by the root dev command. A working root `.env` must provide
+`SPAWN_CONFIG_PATH` and `CONTENT_PACK_PATH` as well as the intended game/Redis
+settings. The launcher does not synthesize credentials or start services.
+
+On creation, workmux copies from the checkout where `workmux add` is run,
+including when dispatching from an integration worktree. Before dispatch,
+ensure that checkout has the intended ignored configuration; a branch/base
+commit does not carry it. New copies are independent: later edits do not
+propagate. No environment files, dependencies, build outputs, or handoff state
+are committed. `files.symlink: []` also overrides global file symlinks: run
+`pnpm install` separately in the new checkout, then `pnpm dev` manually in its
+shell pane. The agent and shell pane layout is unchanged.
+
+Copies preserve path values verbatim. The example root `.env` uses absolute
+`CONTENT_PACK_PATH` and `SPAWN_CONFIG_PATH` values pointing into the original
+checkout; copying them continues to read that checkout's YAML. For independent
+integration content, edit these two values in the integration copy to absolute
+paths inside that integration checkout (`packages/content/entities.yaml` and
+`services/rts-engine/config/spawn.yaml`). For the current `pnpm dev` engine
+command, relative paths resolve from `services/rts-engine`, so the equivalents
+are `../../packages/content/entities.yaml` and `config/spawn.yaml`, not paths
+relative to root `.env`. Check any custom file-valued settings and overrides in
+the engine `.env` too. Referenced external files are not recursively copied.
+The YAML files above are tracked and already present in new worktrees; generated
+content revisions, art candidates, and build caches are not startup config.
+
+For an existing integration checkout missing configuration, first merge this
+fix there. Back up any existing local environment files privately, then from
+the integration checkout run:
+
+```sh
+workmux sync-files
+```
+
+Unlike creation, this command sources copies from the **primary checkout** and
+can overwrite existing copies. Do not use `--all`. Confirm the primary checkout
+has the intended files first; alternatively copy just the missing allowlisted
+files from a known configured checkout, preserving their permissions. Adjust
+the two YAML paths as described above, then run `pnpm install` and `pnpm dev`
+in the integration shell pane. Do not print credentials or force-add ignored
+files. `workmux open` alone does not repair missing configuration.
+
+Copied Redis URLs, game IDs, ports, and external credentials still address
+shared services. Worktrees do not isolate them. The integration worktree owns
+the single running app/engine and coordinates Redis ownership; stop any old
+app/engine before starting its replacement. Task worktrees must not start
+shared services or run reset commands against shared Redis. In particular,
+`RESTORE_GAMESTATE_ON_RESTART=false` can initialize a fresh world at startup.
+
+The disposable provisioning check uses installed workmux with headless creation,
+no hooks, isolated global config, and synthetic settings (no agents/services):
+
+```sh
+python3 scripts/tests/workmux-provisioning.py
+```
+
+It verifies copies, optional missing files, dispatch from a second worktree,
+recovery source, and exclusion of dependency/build/handoff directories.
+
 Begin with a clean working directory and synchronized local `main`, then create the integration branch:
 
 ```sh

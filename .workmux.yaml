@@ -1,5 +1,16 @@
 # Integration and task worktrees launch Codex with prompt support.
 agent: codex
+# Independent local settings; never share dependency/build directories or handoffs.
+files:
+  copy:
+    - .env
+    - .env.local
+    - apps/web/.env
+    - apps/web/.env.local
+    - apps/web/.env.development
+    - apps/web/.env.development.local
+    - services/rts-engine/.env
+  symlink: []
 panes:
   - command: <agent>
     focus: true
