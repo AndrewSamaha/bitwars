@@ -6,6 +6,10 @@ export class GameConnection {
   private reconciled = false;
   private healthyAt = -Infinity;
   private hasLoaded = false;
+  private transportOpen = false;
+  private progress = { transport: false, snapshot: false, reconciled: false, healthy: false };
+  getProgress = () => this.progress;
+  opened() { this.transportOpen = true; this.update(performance.now()); }
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -15,11 +19,19 @@ export class GameConnection {
     const next = this.snapshot && this.reconciled && now - this.healthyAt < 2500
       ? "live" : this.hasLoaded ? "reconnecting" : "connecting";
     if (next === "live") this.hasLoaded = true;
-    if (next === this.state) return;
+    const progress = { transport: this.transportOpen, snapshot: this.snapshot, reconciled: this.reconciled, healthy: now - this.healthyAt < 2500 };
+    const changed = Object.keys(progress).some(key => progress[key as keyof typeof progress] !== this.progress[key as keyof typeof progress]);
+    if (next === this.state && !changed) return;
+    this.progress = progress;
     this.state = next;
     for (const listener of this.listeners) listener();
   }
+  reset() {
+    this.hasLoaded = false;
+    this.begin();
+  }
   begin() {
+    this.transportOpen = false;
     this.snapshot = false;
     this.reconciled = false;
     this.healthyAt = -Infinity;

@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useBoot } from "@/features/gamestate/components/BootContext";
+import { gameConnection } from "@/features/gamestate/connection";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { game } from "@/features/gamestate/world";
 import { contentManager } from "@/features/content/contentManager";
@@ -38,6 +40,9 @@ function MaintenanceCosts({ entityTypeId }: { entityTypeId: string }) {
 }
 
 export default function EntityDetailPanel() {
+  const boot = useBoot();
+  const bootReadyRef = useRef(boot.ready);
+  bootReadyRef.current = boot.ready;
   const { selectors, actions } = useHUD();
   const { effectivePlayerId } = useSession();
   const contentRevision = useSyncExternalStore(contentManager.subscribe, contentManager.getContentVersion, () => "");
@@ -504,6 +509,7 @@ export default function EntityDetailPanel() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!bootReadyRef.current || !gameConnection.check()) return;
       const target = event.target as HTMLElement | null;
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
       if (event.key === "Escape" && collectMenuOpen) {
@@ -573,6 +579,7 @@ export default function EntityDetailPanel() {
 
   useEffect(() => {
     const onDeliverKey = (event: KeyboardEvent) => {
+      if (!bootReadyRef.current || !gameConnection.check()) return;
       if (confirmationRef.current) {
         if (event.key === "Shift" || event.key === "Control" || event.key === "Alt" || event.key === "Meta") return;
         event.preventDefault();

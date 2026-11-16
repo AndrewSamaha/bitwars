@@ -152,10 +152,13 @@ export default function GameStateStreamBridge() {
   log.info("GameStateStreamBridge:init", { streamId: streamIdRef.current });
 
   useEffect(() => {
+    gameConnection.reset();
     currentPlayerIdRef.current = effectivePlayerId;
   }, [effectivePlayerId]);
 
   useEffect(() => {
+    let disposed = false;
+    let openGeneration = 0;
     const byId = byIdRef.current;
     const world = game.world;
 
@@ -673,9 +676,11 @@ export default function GameStateStreamBridge() {
       }, 1000);
     };
     const onOpen = () => {
+      const generation = ++openGeneration;
       const contentGeneration = contentManager.getSyncGeneration();
       lastHealthAt = -Infinity;
       gameConnection.begin();
+      gameConnection.opened();
       buildProgressStore.streamConnected();
       const msSinceMount = Date.now() - mountedAtRef.current;
       log.info("GameStateStreamBridge:es:open", { streamId: streamIdRef.current, msSinceMount, isReconnect: hasConnectedBefore });
@@ -686,6 +691,7 @@ export default function GameStateStreamBridge() {
       // M2: On every open (initial + reconnect), reconcile the intent queue
       // with the server's tracking state so we don't duplicate or skip intents.
       intentQueue.reconcileWithServer().then(async (handshake) => {
+        if (disposed || generation !== openGeneration) return;
         if (handshake && es.readyState !== EventSource.CLOSED) {
           if (!effectivePlayerId && handshake.player_id) currentPlayerIdRef.current = handshake.player_id;
           collectionRouting.adopt(handshake.active_intents, currentPlayerIdRef.current ?? undefined, handshake.run_id);
@@ -732,12 +738,13 @@ export default function GameStateStreamBridge() {
               log.warn("GameStateStreamBridge:content:sync-failed", { streamId: streamIdRef.current });
             }
           }
-          if (es.readyState === EventSource.OPEN) gameConnection.reconciledIntents();
+          if (!disposed && generation === openGeneration && es.readyState === EventSource.OPEN) gameConnection.reconciledIntents();
         } else {
           retryBootstrap();
           log.warn("GameStateStreamBridge:reconnect:failed", { streamId: streamIdRef.current, isReconnect: hasConnectedBefore });
         }
       }).catch((err) => {
+        if (disposed || generation !== openGeneration) return;
         retryBootstrap();
         log.warn("GameStateStreamBridge:reconnect:error", { streamId: streamIdRef.current, error: (err as any)?.message || String(err) });
       });
@@ -745,6 +752,7 @@ export default function GameStateStreamBridge() {
       hasConnectedBefore = true;
     };
     const onError = (evt: Event) => {
+      ++openGeneration;
       gameConnection.disconnect();
       buildProgressStore.streamDisconnected();
       // EventSource suppresses details; log readyState to detect disconnects.
@@ -802,6 +810,8 @@ export default function GameStateStreamBridge() {
     es.addEventListener("error", onError as EventListener);
 
     return () => {
+      disposed = true;
+      ++openGeneration;
       stopCollectionRouting();
       stopMoveRouting();
       stopContentReporting();

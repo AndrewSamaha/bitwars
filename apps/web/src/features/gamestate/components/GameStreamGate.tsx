@@ -3,18 +3,18 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
-import LoadingAnimation from "@/components/LoadingAnimation";
+import { useBoot } from "./BootContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
 import { contentManager, type ContentData } from "@/features/content/contentManager";
 
 /** Wait for player identity and content before starting the world stream and renderer. */
 export default function GameStreamGate({ children }: { children: React.ReactNode }) {
   const { player, loading } = usePlayer();
-  const { status } = useSession();
+  const { status, effectivePlayerId } = useSession();
   const router = useRouter();
   const [contentReady, setContentReady] = useState(false);
-  const [contentError, setContentError] = useState(false);
-  const [retry, setRetry] = useState(0);
+  const [loadedKey, setLoadedKey] = useState("");
+  const { attempt, definitionsLoaded, definitionsFailed } = useBoot();
   const playerId = player?.id;
 
   useEffect(() => {
@@ -27,7 +27,6 @@ export default function GameStreamGate({ children }: { children: React.ReactNode
     if (loading || !playerId) return;
     const controller = new AbortController();
     setContentReady(false);
-    setContentError(false);
 
     // A clean browser has no cached content. Load it before either the stream
     // or Pixi mounts, so the first snapshot has entity presentation metadata.
@@ -41,47 +40,19 @@ export default function GameStreamGate({ children }: { children: React.ReactNode
         const content = await response.json() as ContentData;
         if (controller.signal.aborted) return;
         contentManager.loadBundle(content);
+        setLoadedKey(`${effectivePlayerId}:${attempt}`);
         setContentReady(true);
+        definitionsLoaded();
       } catch (error) {
         if (controller.signal.aborted) return;
         console.error("[GameStreamGate] content load failed", error);
-        setContentError(true);
+        definitionsFailed(error instanceof Error ? error.message : String(error));
       }
     })();
 
     return () => controller.abort();
-  }, [loading, playerId, retry]);
+  }, [loading, playerId, effectivePlayerId, attempt, definitionsLoaded, definitionsFailed]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <LoadingAnimation />
-      </div>
-    );
-  }
-
-  if (!player) {
-    return null;
-  }
-
-  if (contentError) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4 text-white">
-        <p>Unable to load game content.</p>
-        <button className="rounded border border-white px-4 py-2" onClick={() => setRetry((value) => value + 1)} type="button">
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  if (!contentReady) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <LoadingAnimation />
-      </div>
-    );
-  }
-
+  if (loading || !player || !contentReady || loadedKey !== `${effectivePlayerId}:${attempt}`) return null;
   return <>{children}</>;
 }

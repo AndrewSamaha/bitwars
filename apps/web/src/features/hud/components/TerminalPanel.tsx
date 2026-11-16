@@ -13,13 +13,20 @@ import { executeTerminalCommand } from "@/features/hud/terminal/commands";
 import { dispatchCenterCameraOnEntity } from "@/features/gamestate/events";
 import { useSession } from "@/features/users/components/identity/SessionContext";
 
+import { gameConnection } from "@/features/gamestate/connection";
+import { useBoot } from "@/features/gamestate/components/BootContext";
+
 const SHOW_STREAM_COUNTER = false;
 
 export default function TerminalPanel() {
+  const boot = useBoot();
   const { player } = usePlayer();
   const { status, login, logout, effectivePlayerId, actingAsId, su, exitSu } = useSession();
   const { state: { messageLog }, selectors, actions, refs } = useHUD();
-  const { isTerminalOpen, isTerminalWide, currentCommand, commandHistory } = selectors;
+  const { currentCommand, commandHistory } = selectors;
+  // Temporary presentation only: persisted HUD layout and draft remain untouched.
+  const isTerminalOpen = boot.busy || selectors.isTerminalOpen;
+  const isTerminalWide = selectors.isTerminalWide;
   const { terminalRef, inputRef } = refs;
   const realPlayerId = player?.id ?? null;
   const [commandRunning, setCommandRunning] = useState(false);
@@ -27,25 +34,28 @@ export default function TerminalPanel() {
   const historyIndexRef = useRef(-1);
   const historyDraftRef = useRef("");
 
-  // Scroll to bottom when history changes
+  const milestoneStatus = boot.milestones.map(item => `${item.label}:${item.done}:${item.running}`).join("|");
+
+  // Scroll on meaningful progress changes, never on spinner frames.
   useEffect(() => {
     if (terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
-  }, [commandHistory, terminalRef]);
+  }, [commandHistory, terminalRef, boot.busy, boot.error, milestoneStatus]);
 
   // Focus input when terminal opens
   useEffect(() => {
-    if (isTerminalOpen && inputRef.current) {
+    if (isTerminalOpen && !boot.busy && inputRef.current) {
       inputRef.current.focus();
     }
-  }, [isTerminalOpen, inputRef]);
+  }, [isTerminalOpen, inputRef, boot.busy]);
 
   const handleCommand = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
       const cmd = currentCommand.trim();
-      if (!cmd || commandRunning) return;
+      if (!cmd || commandRunning || boot.busy) return;
+      if (status === "active" && !gameConnection.check()) return;
 
       if (status !== "logged-out") submittedCommandsRef.current.push(cmd);
       historyIndexRef.current = -1;
@@ -55,10 +65,9 @@ export default function TerminalPanel() {
         if (status === "logged-out") {
           // Must run inside the form submit gesture, before the login request awaits.
           void audio.unlock();
-          actions.pushCommandHistory({ command: `BitWars login: ${cmd}`, output: "Authenticating…" });
-          const output = await login(cmd);
+          actions.pushCommandHistory({ command: `BitWars login: ${cmd}`, output: "" });
+          await login(cmd);
           audio.playMusic();
-          actions.pushCommandHistory({ command: "", output });
           return;
         }
 
@@ -82,22 +91,28 @@ export default function TerminalPanel() {
         setCommandRunning(false);
       }
     },
-    [currentCommand, commandRunning, actions, realPlayerId, effectivePlayerId, actingAsId, status, login, logout, su, exitSu, messageLog]
+    [currentCommand, commandRunning, boot.busy, actions, realPlayerId, effectivePlayerId, actingAsId, status, login, logout, su, exitSu, messageLog]
   );
 
   const handleTerminalClick = useCallback(() => {
-    if (inputRef.current) {
+    if (!boot.busy && inputRef.current) {
       inputRef.current.focus();
     }
-  }, [inputRef]);
+  }, [inputRef, boot.busy]);
 
   return (
     <div
-      className={`fixed top-4 z-50 ${isTerminalWide ? "inset-x-4" : `left-4 ${isTerminalOpen ? "w-96" : "w-12"}`}`}
+      className={`fixed top-4 z-50 ${isTerminalWide ? "inset-x-4" : `left-4 ${isTerminalOpen ? "w-96 max-w-[calc(100vw-2rem)]" : "w-12"}`}`}
       style={{ bottom: "calc(var(--bitwars-status-bar-height, 0px) + 1rem)" }}
     >
+      <div role="status" aria-live="polite" className="sr-only">
+        {boot.busy
+          ? boot.error ?? boot.milestones.map(item => `${item.label}: ${item.done ? "complete" : item.running ? "in progress" : "waiting"}`).join(". ")
+          : boot.ready ? "Battlefield ready." : status === "logged-out" ? "Login ready." : ""}
+      </div>
       {/* Toggle Button */}
       <Button
+        disabled={boot.busy}
         onClick={() => actions.toggleTerminal()}
         size="sm"
         variant="outline"
@@ -110,6 +125,7 @@ export default function TerminalPanel() {
 
       {isTerminalOpen && (
         <Button
+          disabled={boot.busy}
           onClick={() => actions.toggleTerminalWidth()}
           size="sm"
           variant="outline"
@@ -164,7 +180,7 @@ export default function TerminalPanel() {
                             title={`Focus entity ${link.entityId}`}
                             onClick={(event) => {
                               event.stopPropagation();
-                              dispatchCenterCameraOnEntity(link.entityId);
+                              if (boot.ready) dispatchCenterCameraOnEntity(link.entityId);
                             }}
                           >{entry.output.slice(link.start, link.end)}</button>,
                         );
@@ -178,8 +194,10 @@ export default function TerminalPanel() {
               </div>
             ))}
 
+            {boot.busy && <BootTranscript />}
+
             {/* Current Input Line */}
-            <form onSubmit={handleCommand} className="flex">
+            <form onSubmit={handleCommand} className={boot.busy ? "hidden" : "flex"}>
               <span className="text-blue-400">{status === "logged-out" ? "BitWars login: " : `${player?.name ?? "user"}@bitwars:~$ `}</span>
               <Input
                 ref={inputRef}
@@ -228,4 +246,21 @@ export default function TerminalPanel() {
       )}
     </div>
   );
+}
+
+function BootTranscript() {
+  const boot = useBoot();
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => setFrame(value => (value + 1) % 4), 160);
+    return () => window.clearInterval(timer);
+  }, []);
+  return <div className="mb-2">
+    {boot.recovering && <div>Connection interrupted.</div>}
+    {boot.milestones.map(item => <div key={item.label}>
+      <span aria-hidden="true">{item.done ? "[OK]" : item.running ? `[${["|", "/", "-", "\\"][frame]}]` : "[ ]"}</span> {item.label}
+    </div>)}
+    {boot.error && <div className="text-red-300">{boot.error} <button type="button" className="underline" onClick={boot.retry}>Retry</button></div>}
+  </div>;
 }

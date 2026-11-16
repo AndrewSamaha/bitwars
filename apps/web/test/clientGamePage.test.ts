@@ -3,6 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 const session = vi.hoisted(() => ({ status: "logged-out" }));
+const boot = vi.hoisted(() => ({ ready: false, visible: false }));
+vi.mock("@/features/gamestate/components/BootContext", () => ({
+  BootProvider: ({ children }: { children: React.ReactNode }) => children,
+  useBoot: () => boot,
+}));
 vi.mock("@/features/users/components/identity/SessionContext", () => ({
   SessionProvider: ({ children }: { children: React.ReactNode }) => children,
   useSession: () => session,
@@ -18,9 +23,6 @@ vi.mock("@/features/gamestate/components/GameStreamGate", () => ({
 }));
 vi.mock("@/features/hud/components/TerminalPanel", () => ({
   default: () => React.createElement("input", { "aria-label": "Terminal login" }),
-}));
-vi.mock("@/features/gamestate/components/GameConnectionOverlay", () => ({
-  default: () => React.createElement("div", null, "Connection overlay"),
 }));
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
 vi.mock("@/features/audio/components/AudioEventBridge", () => ({ default: () => null }));
@@ -40,14 +42,15 @@ describe("session connection blocking", () => {
   it.each(["logged-out", "logging-in", "logging-out"])("keeps the terminal interactive while %s without a live connection", (status) => {
     session.status = status;
     const html = render();
-    expect(html).toContain('<div><input aria-label="Terminal login"/></div>');
+    expect(html).toContain('<input aria-label="Terminal login"/>');
     expect(html).not.toContain("Connection overlay");
   });
 
-  it("blocks the terminal and mounts the overlay during an active session awaiting connection", () => {
+  it("blocks gameplay while keeping the recovery terminal interactive", () => {
     session.status = "active";
     const html = render();
-    expect(html).toContain('<div inert=""><input aria-label="Terminal login"/></div>');
-    expect(html).toContain("Connection overlay");
+    expect(html).toContain('<div inert=""></div>');
+    expect(html).not.toContain('<div inert=""><input');
+    expect(html).not.toContain("Connection overlay");
   });
 });

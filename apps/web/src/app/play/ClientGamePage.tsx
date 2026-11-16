@@ -1,8 +1,6 @@
 "use client";
 
-import GameConnectionOverlay from "@/features/gamestate/components/GameConnectionOverlay";
-import { useSyncExternalStore } from "react";
-import { gameConnection } from "@/features/gamestate/connection";
+import { BootProvider, useBoot } from "@/features/gamestate/components/BootContext";
 import dynamic from "next/dynamic";
 import AudioEventBridge from "@/features/audio/components/AudioEventBridge";
 import GameStateStreamBridge from "@/features/gamestate/components/GameStateStreamBridge";
@@ -14,7 +12,7 @@ import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel";
 import IntentQueuePanel from "@/features/intent-queue/IntentQueuePanel";
 import { ResourceHUD } from "@/features/hud/components/ResourceHUD";
 import LifecycleToasts from "@/features/hud/components/LifecycleToasts";
-import { SessionProvider, useSession } from "@/features/users/components/identity/SessionContext";
+import { SessionProvider } from "@/features/users/components/identity/SessionContext";
 
 // Pixi accesses browser globals while its modules are initialized, so it must
 // never be included in Next's server-rendered bundle.
@@ -32,7 +30,9 @@ export default function ClientGamePage({ initialPlayer }: ClientGamePageProps) {
     <PlayerProvider initialPlayer={initialPlayer}>
       <SessionProvider>
         <HUDProvider>
-          <GameClientShell />
+          <BootProvider>
+            <GameClientShell />
+          </BootProvider>
         </HUDProvider>
       </SessionProvider>
     </PlayerProvider>
@@ -40,20 +40,18 @@ export default function ClientGamePage({ initialPlayer }: ClientGamePageProps) {
 }
 
 function GameClientShell() {
-  const { status } = useSession();
-  const connection = useSyncExternalStore(gameConnection.subscribe, gameConnection.getSnapshot, () => "connecting");
-  const fading = status !== "active";
+  const boot = useBoot();
+  const fading = !boot.visible;
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">
       <div
-        className={`min-h-screen transition-opacity duration-500 ${fading ? "pointer-events-none opacity-0" : "opacity-100"}`}
+        className={`min-h-screen transition-opacity duration-500 motion-reduce:transition-none ${fading ? "pointer-events-none opacity-0" : boot.ready ? "opacity-100" : "pointer-events-none opacity-40"}`}
         aria-hidden={fading}
       >
         <GameStreamGate>
           <GameStateStreamBridge />
-          {status === "active" && <GameConnectionOverlay />}
-          <div inert={connection !== "live" || fading}>
+          <div inert={!boot.ready}>
             <AudioEventBridge />
             <ResourceHUD />
             <LifecycleToasts />
@@ -64,7 +62,7 @@ function GameClientShell() {
         </GameStreamGate>
       </div>
       {/* Login must remain usable before an authenticated stream can connect. */}
-      <div inert={status === "active" && connection !== "live"}><TerminalPanel /></div>
+      <TerminalPanel />
     </div>
   );
 }

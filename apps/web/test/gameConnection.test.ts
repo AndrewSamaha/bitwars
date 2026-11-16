@@ -44,3 +44,15 @@ describe("game connection freshness", () => {
     expect(connection.getSnapshot()).toBe("reconnecting");
   });
 });
+
+it("starts a new identity as initial connecting after a prior session was live", () => {
+  const connection = new GameConnection();
+  connection.opened(); connection.receivedSnapshot(); connection.reconciledIntents(); connection.health(true);
+  expect(connection.getSnapshot()).toBe("live");
+  connection.reset();
+  expect(connection.getSnapshot()).toBe("connecting");
+  expect(connection.getProgress()).toEqual({ transport: false, snapshot: false, reconciled: false, healthy: false });
+  connection.opened();
+  expect(connection.getProgress().transport).toBe(true);
+  expect(connection.check()).toBe(false);
+});

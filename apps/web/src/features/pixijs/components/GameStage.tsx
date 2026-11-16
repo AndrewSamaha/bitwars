@@ -1,11 +1,11 @@
 "use client";
+import { useBoot } from "@/features/gamestate/components/BootContext";
 import { gameConnection } from "@/features/gamestate/connection";
 import { Application, Container, Graphics, RenderTexture, Sprite, Text } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 import { game, type Entity } from "@/features/gamestate/world";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
 import { buildProgressMetrics } from "@/features/build-state/buildProgressMetrics";
-import LoadingAnimation from "@/components/LoadingAnimation";
 import { TooltipOverlay } from "@/features/hud/components/TooltipOverlay";
 import { CoordsOverlay } from "@/features/hud/components/CoordsOverlay";
 import { FpsOverlay } from "@/features/hud/components/FpsOverlay";
@@ -85,6 +85,9 @@ function isFocusInEditable(): boolean {
 
 export default function GameStage() {
   const ref = useRef<HTMLDivElement>(null);
+  const boot = useBoot();
+  const bootReadyRef = useRef(boot.ready);
+  bootReadyRef.current = boot.ready;
   const [ready, setReady] = useState<boolean>(game.ready);
   const [moveDebug, setMoveDebug] = useState<string>("idle");
   const { effectivePlayerId } = useSession();
@@ -113,7 +116,7 @@ export default function GameStage() {
 
     // Wire ordered command submissions to POST /api/v1/intent
     intentQueue.setSendCallback(async (params: SendIntentParams) => {
-      if (!gameConnection.check()) throw new Error("Game connection is unavailable");
+      if (!bootReadyRef.current || !gameConnection.check()) throw new Error("Game connection is unavailable");
       const payload =
         params.kind === "SelfDestruct"
           ? { type: "SelfDestruct", entity_id: params.entityId,
@@ -831,6 +834,7 @@ export default function GameStage() {
 
         // Keyboard shortcuts for local modes and commands.
         const onKeyDown = (ev: KeyboardEvent) => {
+          if (!bootReadyRef.current || !gameConnection.check()) return;
           const sel = latestSelectorsRef.current;
           if ((ev.key === "i" || ev.key === "I") && !isFocusInEditable()) {
             setTerminalOpen(true);
@@ -1728,7 +1732,7 @@ export default function GameStage() {
 
         app.ticker.add((ticker) => {
             // Wait for first snapshot to be applied before rendering/ticking
-            if (!game.ready || !gameConnection.check()) {
+            if (!bootReadyRef.current || !game.ready || !gameConnection.check()) {
               game.last = performance.now();
               panKeysRef.current.clear();
               return;
@@ -1867,12 +1871,7 @@ export default function GameStage() {
         </div>
       )}
       {ready && <TooltipOverlay />}
-      {/* Overlay loading indicator while world is not ready */}
-      {!ready && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-          <LoadingAnimation />
-        </div>
-      )}
+
     </div>
   );
 }
