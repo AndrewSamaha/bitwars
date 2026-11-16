@@ -42,6 +42,9 @@ coverage/
 .DS_Store
 *.pem
 
+# Integration-agent handoff and dispatch prompts (local to each worktree).
+/.workmux-local/
+
 # Locally generated image candidates; selected final sprites are committed separately.
 /packages/content/art-candidates/
 /packages/content/mask-candidates/

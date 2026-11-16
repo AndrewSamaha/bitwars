@@ -1,0 +1,6 @@
+# Integration and task worktrees launch Codex with prompt support.
+agent: codex
+panes:
+  - command: <agent>
+    focus: true
+  - split: horizontal
