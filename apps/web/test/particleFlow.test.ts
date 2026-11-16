@@ -62,3 +62,17 @@ it("renders the hostile pulse red at three times the collector halo's size", () 
   ]);
   expect(halo.getLocalBounds().width).toBe(504);
 });
+
+it.each(["collector_solar", "collector_solar_v2"])("shows %s transmission only for actual production", (kind) => {
+  const depot: Entity = { id: 1453, entity_type_id: "habitat", pos: { x: 100, y: 0 } };
+  const collector: Entity = { id: 1393, entity_type_id: kind, pos: { x: 0, y: 0 },
+    collector_state: { activity: "proximity_collecting", resource_type: "energy",
+      effective_rate_per_second: 3, receiving_entity_id: 1453 } };
+  const world = { entities: () => [depot], getEntityType: () => ({ collector: { vfx: "solar_proximity" as const } }) };
+  const transmissions = () => resolveParticleFlowEffects(collector, world).filter(e => e.key.startsWith("solar-transmission"));
+  expect(transmissions()[0]?.targetWorldPos).toEqual(depot.pos);
+  collector.collector_state!.effective_rate_per_second = 0;
+  expect(transmissions()).toHaveLength(0);
+  collector.collector_state!.activity = "waiting_for_depot_capacity";
+  expect(transmissions()).toHaveLength(0);
+});

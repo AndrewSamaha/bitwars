@@ -26,8 +26,8 @@ fi
 git switch main
 git pull --ff-only
 
-if [[ ! -f .agents/skills/workmux-integration/SKILL.md || ! -f docs/workmux-workflow.v3.md || ! -f .workmux.yaml ]]; then
-  echo "Updated main must contain the integration skill, v3 workflow, and .workmux.yaml first." >&2
+if [[ ! -f .agents/skills/workmux-integration/SKILL.md || ! -f docs/workmux-workflow.v4.md || ! -f .workmux.yaml ]]; then
+  echo "Updated main must contain the integration skill, v4 workflow, and .workmux.yaml first." >&2
   exit 1
 fi
 
@@ -35,7 +35,7 @@ prompt_file=$(mktemp "${TMPDIR:-/tmp}/workmux-integration.XXXXXX")
 trap 'rm -f "$prompt_file"' EXIT
 cat > "$prompt_file" <<EOF
 Use \$workmux-integration. Read .agents/skills/workmux-integration/SKILL.md
-and docs/workmux-workflow.v3.md.
+and docs/workmux-workflow.v4.md.
 
 You are the integration agent in the newly created integration worktree.
 Integration branch: $branch

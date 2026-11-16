@@ -154,7 +154,9 @@ export function resolveParticleFlowEffects(
     });
   }
 
-  if (collectionEffect === "solar_proximity" && entity.collector_state?.receiving_entity_id != null) {
+  if (collectionEffect === "solar_proximity" && activity === "proximity_collecting"
+    && (entity.collector_state?.effective_rate_per_second ?? 0) > 0
+    && entity.collector_state?.receiving_entity_id != null) {
     const recipientId = String(entity.collector_state.receiving_entity_id);
     const recipient = Array.from(world.entities()).find((candidate) => String(candidate.id) === recipientId);
     if (recipient?.pos) {

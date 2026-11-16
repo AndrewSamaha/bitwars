@@ -13,6 +13,8 @@ export function CollectionAssignment({ entity, tooltip = false }: { entity: Enti
   const definition = contentManager.getEntityType(entity.entity_type_id ?? "");
   if (!definition?.collector) return null;
   const state = entity.collector_state;
+  const wirelessDestinationId = (definition.collector.transport_rate_per_second ?? 8) <= 0
+    ? Number(state?.receiving_entity_id ?? 0) : 0;
   const resourceId = state?.assigned_resource_type || state?.resource_type;
   const resource = state?.assigned_nearest_compatible ? "nearest compatible resource"
     : resourceId ? contentManager.getResourceType(resourceId)?.display_name ?? resourceId
@@ -28,10 +30,11 @@ export function CollectionAssignment({ entity, tooltip = false }: { entity: Enti
     ? `${destination?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${destinationId}`
     : (definition.collector.transport_rate_per_second ?? 8) > 0 ? "nearest depot with room" : "no depot in range";
 
-  const effectiveDestination = effectiveDestinationId && String(effectiveDestinationId) !== String(destinationId)
-    ? Array.from(game.world.with("id")).find(e => Number(e.id) === effectiveDestinationId) : undefined;
-  const effectiveText = effectiveDestinationId && String(effectiveDestinationId) !== String(destinationId)
-    ? `; delivering to ${effectiveDestination?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${effectiveDestinationId}` : "";
+  const activeDestinationId = effectiveDestinationId || wirelessDestinationId;
+  const effectiveDestination = activeDestinationId && String(activeDestinationId) !== String(destinationId)
+    ? Array.from(game.world.with("id")).find(e => Number(e.id) === activeDestinationId) : undefined;
+  const effectiveText = activeDestinationId && String(activeDestinationId) !== String(destinationId)
+    ? `; ${wirelessDestinationId ? ((state?.effective_rate_per_second ?? 0) > 0 ? "transmitting" : "connected") : "delivering"} to ${effectiveDestination?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${activeDestinationId}` : "";
   const destinationText = `${destinationLabel} (${manual ? "assigned" : "automatic"})${effectiveText}`;
   const routeText = routingStatus || (state?.route_block_code === "source_depleted"
     ? "Source depleted; waiting for another discovered source."

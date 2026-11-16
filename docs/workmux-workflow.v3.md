@@ -73,6 +73,113 @@ Run that recovery command from the checkout containing the new `.workmux.yaml`.
 Ensure the config is committed before dispatching further task worktrees so they
 inherit it as well.
 
+### Local development configuration
+
+The project config uses native workmux `files.copy` for root `.env` and
+`.env.local`, Next.js files `apps/web/.env`, `.env.local`, `.env.development`,
+and `.env.development.local`, and the engine's `services/rts-engine/.env`.
+Absent optional files are skipped. Root `pnpm dev` loads root `.env` through
+dotenv; Next.js additionally loads its own environment files, and the Rust
+engine can load its own `.env`. Root `.env.local` is used by some test/reset
+commands, not by the root dev command. A working root `.env` must provide
+`SPAWN_CONFIG_PATH` and `CONTENT_PACK_PATH` as well as the intended game/Redis
+settings. The launcher does not synthesize credentials or start services.
+
+On creation, workmux reads project config and copies files from the checkout where `workmux add` is run,
+including when dispatching from an integration worktree. Before dispatch,
+ensure that checkout has the intended ignored configuration; a branch/base
+commit does not carry it. New copies are independent: later edits do not
+propagate. No environment files, dependencies, build outputs, or handoff state
+are committed. `files.symlink: []` also overrides global file symlinks: run
+`pnpm install` separately in the new checkout, then `pnpm dev` manually in its
+shell pane. The agent and shell pane layout is unchanged.
+
+Copies preserve path values verbatim. The example root `.env` uses absolute
+`CONTENT_PACK_PATH` and `SPAWN_CONFIG_PATH` values pointing into the original
+checkout; copying them continues to read that checkout's YAML. For independent
+integration content, edit these two values in the integration copy to absolute
+paths inside that integration checkout (`packages/content/entities.yaml` and
+`services/rts-engine/config/spawn.yaml`). For the current `pnpm dev` engine
+command, relative paths resolve from `services/rts-engine`, so the equivalents
+are `../../packages/content/entities.yaml` and `config/spawn.yaml`, not paths
+relative to root `.env`. Check any custom file-valued settings and overrides in
+the engine `.env` too. Referenced external files are not recursively copied.
+The YAML files above are tracked and already present in new worktrees; generated
+art candidates and build caches are not startup config. Retained content revisions
+are required saved-game data: `.workmux.yaml` independently copies the complete
+`packages/content/.revisions` directory, including manifests and `bundles/`.
+When `RESTORE_GAMESTATE_ON_RESTART=true`, the engine loads the exact revision
+referenced by the Redis snapshot from `.revisions` beside `CONTENT_PACK_PATH`;
+the web app uses the integration checkout's `packages/content/.revisions`.
+A manifest alone is insufficient: its immutable asset bundles are verified too.
+Keep engine content paths inside the integration checkout so engine and web use
+its independent retained data. If the previous engine used an external content
+path, recover `.revisions` from beside that actual content file instead.
+An absent source directory is skipped by workmux, but saved-game restoration
+will fail if its required revision is missing. Do not disable restoration or
+reset Redis to work around missing local data.
+
+For an existing integration checkout missing configuration, merge this fix there
+and back up any existing environment files and retained revisions privately.
+With workmux 0.1.282, `sync-files` reads **both project config and source files
+from the primary checkout**, even when invoked inside the integration checkout.
+If primary still has the old `.workmux.yaml`, it can report success while copying
+nothing. It has no `--config` override. By contrast, `add` uses the dispatching
+checkout's config and source files (or its explicit `--config` override).
+The smoke test covers this difference with an old primary config and updated
+integration config. Do not change primary just to recover this worktree.
+
+Instead, from the integration checkout, explicitly copy from a known configured
+checkout (replace the example absolute source path). This overwrites matching
+local files, so back them up first. It does not change the source checkout:
+
+```sh
+source_root=/absolute/path/to/configured-checkout
+for file in .env .env.local apps/web/.env apps/web/.env.local apps/web/.env.development apps/web/.env.development.local services/rts-engine/.env; do
+  if [ -f "$source_root/$file" ]; then
+    mkdir -p "$(dirname "$file")"
+    cp -p "$source_root/$file" "$file"
+  fi
+done
+if [ -d "$source_root/packages/content/.revisions" ]; then
+  mkdir -p packages/content/.revisions
+  cp -Rp "$source_root/packages/content/.revisions/." packages/content/.revisions/
+fi
+```
+
+Coordinate with the integration owner to copy retained data while the previous
+engine/editor is stopped and no new revisions are being published. Copy the
+complete retained directory, preserving manifests and bundles; do not regenerate
+it from current YAML as a substitute for the saved revision. If any required
+revision or asset is unavailable in that source, recover it from the actual
+previous content directory or backup before starting. Keep restoration enabled
+when preserving the saved game. Nothing here resets or rewrites Redis.
+
+Once primary itself eventually contains the updated config, `workmux sync-files`
+from the integration checkout can reapply the primary's copies, overwriting
+existing local copies. Do not use `--all`. For this recovery, use the explicit
+copy above. Adjust the two YAML paths as described above, then run `pnpm install`
+and `pnpm dev` in the integration shell pane. Do not print credentials or
+force-add ignored files. `workmux open` alone does not repair missing data.
+
+Copied Redis URLs, game IDs, ports, and external credentials still address
+shared services. Worktrees do not isolate them. The integration worktree owns
+the single running app/engine and coordinates Redis ownership; stop any old
+app/engine before starting its replacement. Task worktrees must not start
+shared services or run reset commands against shared Redis. In particular,
+`RESTORE_GAMESTATE_ON_RESTART=false` can initialize a fresh world at startup.
+
+The disposable provisioning check uses installed workmux with headless creation,
+no hooks, isolated global config, and synthetic settings (no agents/services):
+
+```sh
+python3 scripts/tests/workmux-provisioning.py
+```
+
+It verifies copies, optional missing files, dispatch from a second worktree,
+stale-primary recovery, independent retained manifests/bundles, and exclusion of
+dependency/build/handoff directories.
+
 Begin with a clean working directory and synchronized local `main`, then create the integration branch:
 
 ```sh
