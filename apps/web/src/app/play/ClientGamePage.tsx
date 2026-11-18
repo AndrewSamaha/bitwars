@@ -11,6 +11,7 @@ import TerminalPanel from "@/features/hud/components/TerminalPanel";
 import EntityDetailPanel from "@/features/hud/components/EntityDetailPanel";
 import IntentQueuePanel from "@/features/intent-queue/IntentQueuePanel";
 import { ResourceHUD } from "@/features/hud/components/ResourceHUD";
+import GameplayMessageBridge from "@/features/hud/components/GameplayMessageBridge";
 import LifecycleToasts from "@/features/hud/components/LifecycleToasts";
 import { SessionProvider } from "@/features/users/components/identity/SessionContext";
 
@@ -55,6 +56,7 @@ function GameClientShell() {
             <AudioEventBridge />
             <ResourceHUD />
             <LifecycleToasts />
+            <GameplayMessageBridge />
             <EntityDetailPanel />
             <IntentQueuePanel />
             <GameStage />
