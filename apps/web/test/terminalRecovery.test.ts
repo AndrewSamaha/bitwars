@@ -246,3 +246,28 @@ it("shows reconnect context, waits truthfully, and replaces progress with a retr
   await act(async () => { fixture.error = null; fixture.milestones[0].running = true; root.update(tree()); });
   expect(root.root.findAllByProps({ "data-boot-active": true })).toHaveLength(1);
 });
+
+it("renders every reroute entity through Terminal log and dispatches its own ID", async () => {
+  const { executeTerminalCommand } = await import("@/features/hud/terminal/commands");
+  const { formatMessage } = await import("@/features/hud/messages");
+  const { CENTER_CAMERA_ON_ENTITY_EVENT } = await import("@/features/gamestate/events");
+  const dispatchEvent = vi.fn();
+  vi.stubGlobal("window", { matchMedia: () => ({ matches: true }), dispatchEvent });
+  saved = JSON.stringify({ isTerminalOpen: true, isTerminalWide: false });
+  await act(async () => { root = create(tree()); });
+  const kind = "collection-rerouted" as const;
+  await act(async () => hud.actions.pushMessageLog({ kind, timestamp: 1,
+    ...formatMessage({ kind, detail: { entityId: 7, fromDepotId: 8, toDepotId: 9 } }),
+  }));
+  const result = await executeTerminalCommand("log -ts", {
+    realPlayerId: "p", effectivePlayerId: "p", actingAsId: null, sessionStatus: "active",
+    messageLog: hud.state.messageLog, logout: async () => "", su: () => {}, exitSu: () => {},
+  });
+  await act(async () => hud.actions.pushCommandHistory({ command: "log -ts", ...result }));
+  const buttons = root.root.findAllByType("button").filter(button => button.props.title?.startsWith("Focus entity"));
+  expect(buttons.map(button => button.children.join(""))).toEqual(["Worker 7", "depot #8", "depot #9"]);
+  for (const button of buttons) await act(async () => button.props.onClick({ stopPropagation: vi.fn() }));
+  expect(dispatchEvent.mock.calls.map(([event]) => [event.type, event.detail])).toEqual([
+    [CENTER_CAMERA_ON_ENTITY_EVENT, "7"], [CENTER_CAMERA_ON_ENTITY_EVENT, "8"], [CENTER_CAMERA_ON_ENTITY_EVENT, "9"],
+  ]);
+});

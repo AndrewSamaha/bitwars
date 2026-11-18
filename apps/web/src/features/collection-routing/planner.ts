@@ -51,6 +51,8 @@ export type MovePlanRequest = Pick<PlanRequest, "playerId" | "entities" | "defin
 export type MovePlanResult = { kind: "planned"; via: Point[] } | { kind: "blocked"; reason: string };
 type Point = { x: number; y: number };
 type Hazard = Point & { inner: number; outer: number };
+// Shared with refresh eligibility so threshold crossings use identical tolerance.
+export const cargoFits = (room: number, cargo: number) => room > 0 && room + 1e-9 >= cargo;
 const MARGIN = 100;
 const MIN_CORRIDOR_WIDTH = 1500;
 const CORRIDOR_DISTANCE_RATIO = 0.25;
@@ -234,25 +236,20 @@ export class CollectionPlanner {
     const currentDepot = current?.sourceEntityId === source.id
       ? group.find(entity => entity.id === current.depotEntityId) : undefined;
     const currentRoom = currentDepot ? Math.max(0, remaining(currentDepot)) : 0;
-    // A partial unload may leave tiny recurring capacity from hub spending.
-    // While carrying the remainder, prefer a different depot that can take more.
-    const partialDropoff = worker.collector_state?.activity === "waiting_for_dropoff"
-      && !!sourceCargo && !!currentDepot && sourceCargo.amount > currentRoom + 1e-9;
     const available = group.filter(entity => remaining(entity) > 0).sort(nearest);
     if (currentDepot) {
-      const better = partialDropoff
-        ? available.filter(entity => entity.id !== currentDepot.id && remaining(entity) > currentRoom)
-        : undefined;
-      if (better?.length) {
-        available.length = 0;
-        available.push(...better, currentDepot);
-      } else {
-        const index = available.indexOf(currentDepot);
-        if (index >= 0) {
-          available.splice(index, 1);
-          available.unshift(currentDepot);
-        }
-      }
+      // An accepted delivery must not chase openings too small for its remainder.
+      // Keep the current endpoint in the candidate list so its geometry is still
+      // validated, and allow other endpoints if that route becomes invalid.
+      const delivering = initialToDepot && !!sourceCargo;
+      const alternatives = available.filter(entity => entity.id !== currentDepot.id);
+      const preferred = delivering && !cargoFits(currentRoom, sourceCargo.amount)
+        ? alternatives.filter(entity => cargoFits(remaining(entity), sourceCargo.amount)) : [];
+      available.length = 0;
+      available.push(...preferred);
+      if ((depotDef(currentDepot).max_capacity?.[sourceResource] ?? 0) > 0
+        && (delivering || currentRoom > 0)) available.push(currentDepot);
+      available.push(...alternatives.filter(entity => !preferred.includes(entity)));
     }
     // Keep a full compatible endpoint as a waiting fallback if no open depot has
     // a safe route. This never replaces a usable candidate with a full one.

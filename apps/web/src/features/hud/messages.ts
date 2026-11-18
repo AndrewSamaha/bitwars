@@ -18,7 +18,7 @@ export type MessageInput =
   | { kind: "collection-spacing-waiting"; collectorEntityId: string }
   | { kind: "collection-dropoff-blocked"; entityId: string; cargo: string }
   | { kind: "collection-capacity-blocked"; entityId: number; resourceTypeId: string }
-  | { kind: "collection-delivering-cargo"; entityId: number; resourceTypeId: string; target: string }
+  | { kind: "collection-delivering-cargo"; entityId: number; resourceTypeId: string; target: string; targetEntityId?: string }
   | { kind: "transport-endpoint-lost"; carrierEntityId: string }
   | { kind: "resource-starvation"; entityId: string; entityTypeId?: string }
   | { kind: "move-route-unavailable" }
@@ -30,6 +30,24 @@ export type CommandFeedback = Extract<MessageInput, { kind: "move-route-unavaila
 
 type MessageContent = Omit<MessageLogEntry, "timestamp" | "kind">;
 
+type EntityMention = { label: string; entityId: string };
+const entity = (entityId: string | number, label: string): EntityMention => ({ entityId: String(entityId), label });
+
+/** Build text and exact occurrence spans together, without parsing IDs from prose. */
+function linked(strings: TemplateStringsArray, ...parts: (string | number | EntityMention)[]): Pick<MessageContent, "message" | "entityLinks"> {
+  let message = strings[0];
+  const entityLinks: NonNullable<MessageContent["entityLinks"]> = [];
+  parts.forEach((part, index) => {
+    if (typeof part === "object") {
+      const start = message.length;
+      message += part.label;
+      entityLinks.push({ start, end: message.length, entityId: part.entityId });
+    } else message += part;
+    message += strings[index + 1];
+  });
+  return { message, entityLinks };
+}
+
 export function formatMessage(input: MessageInput): MessageContent {
   switch (input.kind) {
     case "waypoints-cleared":
@@ -37,7 +55,7 @@ export function formatMessage(input: MessageInput): MessageContent {
     case "collection-spacing-blocked": {
       const { collectorEntityId, blockingEntityId, actualDistance, requiredDistance } = input.detail;
       return { title: "Collection blocked",
-        message: `Collector ${collectorEntityId} is ${Math.round(actualDistance)} units from collector ${blockingEntityId}; ${Math.round(requiredDistance)} required. Click to focus it.`,
+        ...linked`${entity(collectorEntityId, `Collector ${collectorEntityId}`)} is ${Math.round(actualDistance)} units from ${entity(blockingEntityId, `collector ${blockingEntityId}`)}; ${Math.round(requiredDistance)} required. Click to focus it.`,
         focusEntityId: blockingEntityId };
     }
     case "build-rejected": {
@@ -62,13 +80,22 @@ export function formatMessage(input: MessageInput): MessageContent {
     }
     case "collection-rejected": {
       const { actorEntityId, code, resourceTypeId, sourceEntityId, depotEntityId } = input.detail;
-      const context = [
-        resourceTypeId && `resource ${resourceTypeId}`,
-        sourceEntityId && `source #${sourceEntityId}`,
-        depotEntityId && `depot #${depotEntityId}`,
-      ].filter(Boolean).join(", ");
-      return { title: "Collection rejected",
-        message: `Worker ${actorEntityId}: ${code.replaceAll("_", " ")}${context ? ` (${context})` : ""}.`,
+      const context: (string | EntityMention)[] = [];
+      if (resourceTypeId) context.push(`resource ${resourceTypeId}`);
+      if (sourceEntityId) context.push(entity(sourceEntityId, `source #${sourceEntityId}`));
+      if (depotEntityId) context.push(entity(depotEntityId, `depot #${depotEntityId}`));
+      const content = linked`${entity(actorEntityId, `Worker ${actorEntityId}`)}: ${code.replaceAll("_", " ")}`;
+      for (const [index, part] of context.entries()) {
+        content.message += index === 0 ? " (" : ", ";
+        if (typeof part === "string") content.message += part;
+        else {
+          const start = content.message.length;
+          content.message += part.label;
+          content.entityLinks!.push({ start, end: content.message.length, entityId: part.entityId });
+        }
+      }
+      content.message += context.length ? ")." : ".";
+      return { title: "Collection rejected", ...content,
         focusEntityId: actorEntityId, focusLabel: `Worker ${actorEntityId}` };
     }
     case "collection-route-blocked": {
@@ -78,7 +105,7 @@ export function formatMessage(input: MessageInput): MessageContent {
     }
     case "collection-rerouted": {
       const { entityId, fromDepotId, toDepotId } = input.detail;
-      return { title: "Collection rerouted", message: `Worker ${entityId} is routing from depot #${fromDepotId} to depot #${toDepotId}.`,
+      return { title: "Collection rerouted", ...linked`${entity(entityId, `Worker ${entityId}`)} is routing from ${entity(fromDepotId, `depot #${fromDepotId}`)} to ${entity(toDepotId, `depot #${toDepotId}`)}.`,
         focusEntityId: String(entityId), focusLabel: `Worker ${entityId}` };
     }
     case "collection-spacing-waiting": {
@@ -97,8 +124,8 @@ export function formatMessage(input: MessageInput): MessageContent {
         focusEntityId: String(entityId), focusLabel: `Worker ${entityId}` };
     }
     case "collection-delivering-cargo": {
-      const { entityId, resourceTypeId, target } = input;
-      return { title: "Delivering cargo", message: `Worker ${entityId} delivering its ${resourceTypeId} to ${target} before going to collecting more.`,
+      const { entityId, resourceTypeId, target, targetEntityId } = input;
+      return { title: "Delivering cargo", ...linked`${entity(entityId, `Worker ${entityId}`)} delivering its ${resourceTypeId} to ${targetEntityId ? entity(targetEntityId, target) : target} before going to collecting more.`,
         focusEntityId: String(entityId), focusLabel: `Worker ${entityId}` };
     }
     case "transport-endpoint-lost":

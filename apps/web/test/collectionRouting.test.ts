@@ -297,11 +297,12 @@ describe("collection routing", () => {
     request.currentPlan = { sourceEntityId: 3, depotEntityId: 2, waypointIds: [], initialWaypointIds: [], initialToDepot: true };
     const planner = new CollectionPlanner();
     request.entities[0]!.collector_state = { activity: "moving_to_dropoff", resource_type: "minerals" };
-    expect(planner.plan(request)).toEqual({ kind: "retained" });
+    expect(planner.plan(request)).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 11 } });
     request.entities[0]!.collector_state = { activity: "waiting_for_dropoff", resource_type: "minerals" };
     expect(planner.plan(request)).toMatchObject({ kind: "planned", travelPlan: {
       sourceEntityId: 3, depotEntityId: 11, initialToDepot: true,
     } });
+    request.currentPlan = { ...request.currentPlan!, depotEntityId: 11 };
     request.entities.find(entity => entity.id === 10)!.resources = [{ resource_type: "minerals", amount: 100 }];
     request.entities.find(entity => entity.id === 11)!.resources = [{ resource_type: "minerals", amount: 100 }];
     expect(planner.plan(request)).toEqual({ kind: "retained" });
@@ -419,4 +420,33 @@ describe("collection routing", () => {
     const request = fixture(); request.definitions.worker!.collector!.transport_rate_per_second = 0; request.entities.push(star);
     expect(new CollectionPlanner().plan(request)).toEqual({ kind: "proximity" });
   });
+});
+
+it("retains cargo delivery through fractional openings and fails over only at cargo fit", () => {
+  const request = groupFixture(), planner = new CollectionPlanner();
+  const worker = request.entities[0]!;
+  worker.supply = { delivery_depot_id: 2 };
+  worker.resources = [{ resource_type: "minerals", amount: 6.4 }, { resource_type: "food", amount: 9 }];
+  request.currentPlan = { sourceEntityId: 3, depotEntityId: 2, waypointIds: [], initialWaypointIds: [], initialToDepot: true };
+  request.entities.find(entity => entity.id === 10)!.resources = [{ resource_type: "minerals", amount: 100 }];
+  const alternative = request.entities.find(entity => entity.id === 11)!;
+  for (let cycle = 0; cycle < 8; cycle++) {
+    worker.collector_state = { activity: cycle % 2 ? "moving_to_dropoff" : "waiting_for_dropoff", resource_type: "minerals" };
+    request.entities[1]!.resources = [{ resource_type: "minerals", amount: cycle % 2 ? 99.995 : 100 }];
+    alternative.resources = [{ resource_type: "minerals", amount: cycle % 2 ? 100 : 99.995 }];
+    expect(planner.plan(request)).toEqual({ kind: "retained" });
+  }
+  request.entities[1]!.resources = [{ resource_type: "minerals", amount: 100 }];
+  alternative.resources = [{ resource_type: "minerals", amount: 100 }];
+  expect(planner.plan(request)).toEqual({ kind: "retained" });
+  alternative.resources = [{ resource_type: "minerals", amount: 96 + 5e-10 }];
+  expect(planner.plan(request)).toEqual({ kind: "retained" });
+  worker.resources[0]!.amount = 4; // Local partial unloading makes the same opening sufficient.
+  const result = planner.plan(request);
+  expect(result).toMatchObject({ kind: "planned", travelPlan: { depotEntityId: 11, initialToDepot: true } });
+  if (result.kind !== "planned") throw new Error("Expected failover");
+  request.currentPlan = result.travelPlan;
+  alternative.resources = [{ resource_type: "minerals", amount: 100 }];
+  expect(planner.plan(request)).toEqual({ kind: "retained" });
+  expect(worker.resources[1]!.amount).toBe(9);
 });

@@ -10,7 +10,7 @@ import { useHUD } from "@/features/hud/components/HUDContext";
 import EcsEntityCount from "@/features/gamestate/components/EcsEntityCount";
 import { usePlayer } from "@/features/users/components/identity/PlayerContext";
 import { executeTerminalCommand } from "@/features/hud/terminal/commands";
-import { dispatchCenterCameraOnEntity } from "@/features/gamestate/events";
+import { EntityLinkedText } from "./EntityLinkedText";
 import { useSession } from "@/features/users/components/identity/SessionContext";
 
 import { gameConnection } from "@/features/gamestate/connection";
@@ -176,28 +176,7 @@ export default function TerminalPanel() {
                 )}
                 {entry.output && (
                   <div className="whitespace-pre-line text-green-400 mb-1">
-                    {entry.links?.length ? (() => {
-                      let offset = 0;
-                      const parts: React.ReactNode[] = [];
-                      for (const link of entry.links) {
-                        parts.push(entry.output.slice(offset, link.start));
-                        parts.push(
-                          <button
-                            key={link.start}
-                            type="button"
-                            className="cursor-pointer text-inherit no-underline hover:text-cyan-100 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
-                            title={`Focus entity ${link.entityId}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              if (boot.ready) dispatchCenterCameraOnEntity(link.entityId);
-                            }}
-                          >{entry.output.slice(link.start, link.end)}</button>,
-                        );
-                        offset = link.end;
-                      }
-                      parts.push(entry.output.slice(offset));
-                      return parts;
-                    })() : entry.output}
+                    <EntityLinkedText text={entry.output} links={entry.links} enabled={boot.ready} />
                   </div>
                 )}
               </div>

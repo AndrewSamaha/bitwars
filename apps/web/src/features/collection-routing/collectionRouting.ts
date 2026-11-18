@@ -1,3 +1,4 @@
+import { cargoFits } from "./planner";
 import { contentManager } from "../content/contentManager";
 import { gameConnection } from "../gamestate/connection";
 import { COLLECTION_REJECTED_EVENT, dispatchCollectionDestinationChanged, dispatchCollectionRoutingBlocked, GAMESTATE_UPDATED_EVENT, type CollectionRejectedDetail } from "../gamestate/events";
@@ -285,7 +286,16 @@ class CollectionRouting implements CollectionRouter {
       const waitingDropoff = worker.collector_state?.activity === "waiting_for_dropoff";
       const becameWaiting = waitingDropoff && !order.waitingDropoff;
       order.waitingDropoff = waitingDropoff;
-      const orderFingerprint = `${fingerprint}:${worker.entity_type_id}:${worker.supply?.delivery_depot_id ?? 0}`;
+      // Track eligibility, not raw inventory: spending and partial deposits only
+      // wake this order when a depot crosses its remaining-cargo fit threshold.
+      const resource = order.assignment.resourceTypeId
+        ?? definitions[currentSource?.entity_type_id ?? ""]?.resource_node?.resource_type;
+      const cargo = worker.resources?.find(entry => entry.resource_type === resource)?.amount ?? 0;
+      const delivering = cargo > 0 && ["moving_to_dropoff", "delivering", "waiting_for_dropoff"].includes(worker.collector_state?.activity ?? "");
+      const fits = delivering ? relevant.filter(entity => definitions[entity.entity_type_id ?? ""]?.depot)
+        .map(entity => [entity.id, cargoFits((definitions[entity.entity_type_id ?? ""]?.max_capacity?.[resource ?? ""] ?? 0)
+          - (entity.resources?.find(entry => entry.resource_type === resource)?.amount ?? 0), cargo)]) : [];
+      const orderFingerprint = `${fingerprint}:${worker.entity_type_id}:${worker.supply?.delivery_depot_id ?? 0}:${delivering}:${JSON.stringify(fits)}`;
       const changed = order.fingerprint !== orderFingerprint;
       const becameBlocked = blocked && !order.blockedActivity;
       order.blockedActivity = blocked;

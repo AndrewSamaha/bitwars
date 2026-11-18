@@ -386,3 +386,62 @@ it("waits without retrying a depleted source when no replacement is known, then 
   finish();
   expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ sourceEntityId: 4 }));
 });
+
+it.each([false, true])("bounds replacement sends across capacity cycles and wakes on fit (partial unload=%s)", async partialUnload => {
+  const { collectionRouting } = await import("../src/features/collection-routing/collectionRouting");
+  vi.stubGlobal("CustomEvent", class<T> extends Event {
+    detail: T;
+    constructor(name: string, options: { detail: T }) { super(name); this.detail = options.detail; }
+  });
+  const collector = env.entities[0]!, depot = env.entities[1]!;
+  collector.supply = { delivery_depot_id: 2 };
+  collector.resources = [{ resource_type: "minerals", amount: 6.4 }];
+  collector.collector_state = { activity: "waiting_for_dropoff", resource_type: "minerals" };
+  depot.resources = [{ resource_type: "minerals", amount: 100 }];
+  const alternative: RouteEntity = { id: 4, entity_type_id: "storage", owner_player_id: "me", pos: { x: -1500, y: 0 },
+    resources: [{ resource_type: "minerals", amount: 99.995 }] };
+  env.entities.push(alternative);
+  env.states.set(1, { active: { kind: "collect", clientCmdId: "accepted" } });
+  cleanup = collectionRouting.start("me");
+  collectionRouting.adopt([{ entity_id: 1, intent_kind: "collect", collect_resource_type_id: "minerals", collect_travel_plan: {
+    source_entity_id: 3, depot_entity_id: 2, waypoint_ids: [], initial_waypoint_ids: [], initial_to_depot: true,
+  } }]);
+  const planner = new CollectionPlanner();
+  const update = () => {
+    window.dispatchEvent(new Event("bitwars:gamestate-updated")); vi.advanceTimersByTime(200);
+    const worker = env.workers[0]!;
+    for (const [message] of worker.postMessage.mock.calls.splice(0)) {
+      worker.onmessage!({ data: { id: message.id, result: planner.plan(message.request) } });
+    }
+  };
+  update();
+  for (let cycle = 0; cycle < 8; cycle++) {
+    depot.resources![0]!.amount = cycle % 2 ? 99.995 : 100;
+    alternative.resources![0]!.amount = cycle % 2 ? 100 : 99.995;
+    collector.collector_state.activity = cycle % 2 ? "moving_to_dropoff" : "waiting_for_dropoff";
+    update();
+  }
+  expect(env.submit).not.toHaveBeenCalled();
+  alternative.resources![0]!.amount = 96;
+  update();
+  expect(env.submit).not.toHaveBeenCalled();
+  if (partialUnload) collector.resources![0]!.amount = 4;
+  else alternative.resources![0]!.amount = 93.6;
+  update();
+  expect(env.submit).toHaveBeenCalledWith(1, expect.anything(), expect.objectContaining({ depotEntityId: 4, initialToDepot: true }));
+  collector.collector_state.activity = "moving_to_dropoff";
+  for (let cycle = 0; cycle < 6; cycle++) {
+    alternative.resources![0]!.amount = 100;
+    depot.resources![0]!.amount = cycle % 2 ? 99.995 : 100;
+    update();
+  }
+  const worker = env.workers[0]!;
+  worker.postMessage.mockClear();
+  alternative.resources![0]!.amount = 99.99; update();
+  worker.postMessage.mockClear();
+  alternative.resources![0]!.amount = 99.98; update();
+  expect(worker.postMessage).not.toHaveBeenCalled();
+  expect(env.submit).toHaveBeenCalledOnce();
+  expect(env.move).not.toHaveBeenCalled();
+  expect(collectionRouting.getEffectiveDestinationId(1)).toBe(4);
+});
