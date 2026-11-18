@@ -1,5 +1,5 @@
-import { BUILD_COMPLETED_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT, ENTITY_UNDER_ATTACK_EVENT } from "@/features/gamestate/events";
-import type { Entity } from "@/features/gamestate/world";
+import { LASER_SHOT_EVENT, laserEntityId, type LaserShotDetail, BUILD_COMPLETED_EVENT, ENTITY_DETECTED_EVENT, ENTITY_EXPLODED_EVENT, ENTITY_UNDER_ATTACK_EVENT } from "@/features/gamestate/events";
+import { game, type Entity } from "@/features/gamestate/world";
 import type { MessageInput } from "./messages";
 
 type Detection = Extract<MessageInput, { label: string }>;
@@ -53,10 +53,18 @@ export function subscribeGameplayMessages(target: EventTarget, publish: (input: 
       else publish(input);
     });
   }
-  listen("bitwars:laser-shot", event => {
-    const detail = (event as CustomEvent<Laser>).detail;
+  listen(LASER_SHOT_EVENT, event => {
+    const detail = (event as CustomEvent<LaserShotDetail>).detail;
     if (!detail?.origin || !detail.target) return;
-    laser({ kind: "laser-fired", origin: detail.origin, target: detail.target });
+    const mention = (value: unknown) => {
+      const entityId = laserEntityId(value);
+      if (!entityId) return;
+      const known = game.world.entities.find(entity => String(entity.id) === entityId);
+      return { entityId, label: `${known?.entity_type_id?.replaceAll("_", " ") ?? "Entity"} #${entityId}` };
+    };
+    // Capture labels now, before entities can change or disappear during a batch.
+    laser({ kind: "laser-fired", origin: { ...detail.origin }, target: { ...detail.target },
+      attacker: mention(detail.attackerId), targetEntity: mention(detail.targetId) });
   });
   return () => { for (const cleanup of cleanups) cleanup(); };
 }

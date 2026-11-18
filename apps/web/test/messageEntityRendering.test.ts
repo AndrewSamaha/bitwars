@@ -20,6 +20,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const inputs: MessageInput[] = [
+  { kind: "laser-fired", origin: { x: 1, y: 2 }, target: { x: 3, y: 4 }, attacker: { label: "laser frigate #7", entityId: "7" }, targetEntity: { label: "Entity #18446744073709551615", entityId: "18446744073709551615" } },
+  { kind: "laser-fired", origin: { x: 1, y: 2 }, target: { x: 3, y: 4 }, targetEntity: { label: "Entity #8", entityId: "8" }, count: 3 },
   { kind: "collection-rerouted", detail: { entityId: 7, fromDepotId: 8, toDepotId: 8 } },
   { kind: "collection-spacing-blocked", detail: { collectorEntityId: "7", blockingEntityId: "8", actualDistance: 8, requiredDistance: 42 } },
   { kind: "collection-rejected", detail: { actorEntityId: "7", code: "bad_source", sourceEntityId: "8", depotEntityId: "9" } },
@@ -28,7 +30,7 @@ const inputs: MessageInput[] = [
   { kind: "collection-spacing-waiting", collectorEntityId: "7" },
   { kind: "waypoints-cleared", message: "42 waypoints cleared" },
 ];
-const expected = [ ["7", "8", "8"], ["7", "8"], ["7", "8", "9"], ["7", "9"], ["7"], ["7"], [] ];
+const expected = [ ["7", "18446744073709551615"], ["8"], ["7", "8", "8"], ["7", "8"], ["7", "8", "9"], ["7", "9"], ["7"], ["7"], [] ];
 it.each(["toast", "log", "log -ts"])("dispatches each occurrence's own ID in %s, without needing a live entity", async (surface) => {
   const entries: MessageLogEntry[] = [];
   for (const input of inputs) entries.push({ kind: input.kind, ...formatMessage(input), timestamp: 123 });
