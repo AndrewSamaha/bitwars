@@ -194,3 +194,15 @@ it("recovers every in-flight entity when the shared Move Worker crashes", async 
     error.mockRestore();
   }
 });
+
+it("sends a manual escape Move through the intent queue when no initial safe edge exists", async () => {
+  const { intentQueue, send } = await setup();
+  env.entities[0]!.pos = { x: 600, y: 0 };
+  intentQueue.handleMoveCommand(1, { x: -2200, y: 0 }, { shift: false, ctrl: false });
+  await vi.waitFor(() => expect(env.workers[0]?.postMessage).toHaveBeenCalledOnce());
+  const worker = env.workers[0]!;
+  const { id, request } = worker.postMessage.mock.calls[0]![0];
+  worker.onmessage!({ data: { id, result: new MovePlanner().plan(request) } });
+  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+  expect(send.mock.calls[0]![0]).toMatchObject({ kind: "Move", target: { x: -2200, y: 0 }, via: [], policy: "REPLACE_ACTIVE" });
+});

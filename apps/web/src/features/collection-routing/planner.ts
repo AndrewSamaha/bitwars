@@ -97,8 +97,9 @@ class WaypointRouter {
   private points: RouteEntity[] = [];
   private edges: Array<Array<{ to: number; cost: number }>> = [];
 
-  route(start: Point, end: Point, points: RouteEntity[], hazards: Hazard[]): number[] | null {
-    if (safeSegment(start, end, hazards)) return [];
+  route(start: Point, end: Point, points: RouteEntity[], hazards: Hazard[],
+    initialSegment = (end: Point) => safeSegment(start, end, hazards)): number[] | null {
+    if (initialSegment(end)) return [];
     const key = JSON.stringify([points.map(entity => [entity.id, entity.pos.x, entity.pos.y]), hazards]);
     if (key !== this.cacheKey) {
       this.cacheKey = key;
@@ -114,7 +115,7 @@ class WaypointRouter {
     const costs = new Float64Array(count).fill(Infinity);
     const previous = new Int32Array(count).fill(-1);
     const visited = new Uint8Array(count);
-    for (let i = 0; i < count; i++) if (safeSegment(start, this.points[i]!.pos, hazards)) costs[i] = distance(start, this.points[i]!.pos);
+    for (let i = 0; i < count; i++) if (initialSegment(this.points[i]!.pos)) costs[i] = distance(start, this.points[i]!.pos);
     let best = Infinity, finish = -1;
     for (let step = 0; step < count; step++) {
       let current = -1;
@@ -153,7 +154,31 @@ export class MovePlanner {
     }
     const points = corridorPoints(request, request.start, request.target);
     if (!points.length) return { kind: "planned", via: [] };
-    const ids = this.router.route(request.start, request.target, points, hazardsFor(request, worker));
+    const hazards = hazardsFor(request, worker);
+    const exposed = hazards.filter(hazard => {
+      const radius = distance(request.start, hazard);
+      return radius >= hazard.inner && radius <= hazard.outer;
+    });
+    // For the preferred first Move leg out of a padded damaging annulus,
+    // require monotonically increasing distance from every containing hazard.
+    // Safe cores and fully shielded sources do not qualify as exposure.
+    const outward = (end: Point) => exposed.length > 0 && exposed.every(hazard =>
+      distance(end, hazard) > distance(request.start, hazard)
+      && (request.start.x - hazard.x) * (end.x - request.start.x)
+        + (request.start.y - hazard.y) * (end.y - request.start.y) >= 0);
+    const initialSegment = (end: Point) => safeSegment(request.start, end, hazards)
+      || (outward(end) && safeSegment(end, end, hazards)
+        && safeSegment(request.start, end, hazards.filter(hazard => !exposed.includes(hazard))));
+    const ids = this.router.route(request.start, request.target, points, hazards, initialSegment);
+    // Prefer a safe onward route, but never let network/stretch/hop limits trap
+    // an exposed unit ordered outside every containing annulus (including across
+    // a center), or monotonically outward. The direct fallback may increase
+    // exposure, cross other hazards, or end before fully escaping.
+    const escapes = exposed.length > 0 && exposed.every(hazard => {
+      const radius = distance(request.target, hazard);
+      return radius > hazard.outer || radius < hazard.inner;
+    });
+    if ((ids === null || ids.length >= 256) && (escapes || outward(request.target))) return { kind: "planned", via: [] };
     if (ids === null || ids.length >= 256) return { kind: "blocked", reason: "No radiation-safe Move route within 1.5x direct distance and 255 intermediate destinations. Reposition nearby owned waypoints." };
     return { kind: "planned", via: ids.map(id => points.find(point => point.id === id)!.pos) };
   }
