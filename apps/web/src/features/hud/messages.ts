@@ -19,7 +19,7 @@ export type MessageInput =
   | { kind: "collection-rerouted"; detail: CollectionDestinationChangedDetail }
   | { kind: "collection-spacing-waiting"; collectorEntityId: string }
   | { kind: "collection-dropoff-blocked"; entityId: string; cargo: string }
-  | { kind: "collection-capacity-blocked"; entityId: number; resourceTypeId: string }
+  | { kind: "collection-capacity-blocked"; entityId: number; entityTypeId?: string; resourceTypeId: string }
   | { kind: "collection-delivering-cargo"; entityId: number; resourceTypeId: string; target: string; targetEntityId?: string }
   | { kind: "transport-endpoint-lost"; carrierEntityId: string }
   | { kind: "resource-starvation"; entityId: string; entityTypeId?: string }
@@ -137,8 +137,9 @@ export function formatMessage(input: MessageInput): MessageContent {
     }
     case "collection-capacity-blocked": {
       const { entityId, resourceTypeId } = input;
-      return { title: "Collection blocked", message: `Worker ${entityId} has no capacity for ${resourceTypeId} and cannot collect it.`,
-        focusEntityId: String(entityId), focusLabel: `Worker ${entityId}` };
+      const label = `${input.entityTypeId?.replaceAll("_", " ") || "Collector"} #${entityId}`;
+      return { title: "Collection blocked", ...linked`${entity(entityId, label)} has no capacity for ${resourceTypeId} and cannot collect it.`,
+        focusEntityId: String(entityId), focusLabel: label };
     }
     case "collection-delivering-cargo": {
       const { entityId, resourceTypeId, target, targetEntityId } = input;

@@ -10,7 +10,7 @@ it("keeps different collection failures distinguishable despite their shared dis
   expect(spacing.kind).not.toBe(capacity.kind);
   expect(spacingMessage.title).toBe(capacityMessage.title);
   expect(spacingMessage.focusLabel).toBe("Collector 973");
-  expect(capacityMessage.focusLabel).toBe("Worker 973");
+  expect(capacityMessage.focusLabel).toBe("Collector #973");
 });
 
 it("formats a reroute with its worker as the focus and both depot IDs", () => {

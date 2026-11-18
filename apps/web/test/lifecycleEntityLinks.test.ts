@@ -7,7 +7,7 @@ vi.mock("@/features/intent-queue/intentQueueManager", () => ({ intentQueue: {
   getMigrationNotice: () => null, subscribe: () => () => {},
 } }));
 vi.mock("@/features/content/contentManager", () => ({ contentManager: {
-  getEntityType: () => ({ max_capacity: { minerals: 10 } }),
+  getEntityType: () => ({ collector: { collects: ["minerals"] }, max_capacity: { minerals: 10 } }),
 } }));
 vi.mock("@/features/gamestate/world", () => ({ game: { world: { entities: [
   { id: 7, resources: [{ resource_type: "minerals", amount: 10 }] },
