@@ -1,7 +1,7 @@
 import { game } from "@/features/gamestate/world";
 import { contentManager } from "@/features/content/contentManager";
 import type { SessionStatus } from "@/features/users/components/identity/SessionContext";
-import type { MessageLogEntry } from "@/features/hud/messageLog";
+import { messageEntityLinks, type MessageLogEntry } from "@/features/hud/messageLog";
 
 const SYSTEM_OWNERS = [
   { id: "raiders", name: "Raiders" },
@@ -117,12 +117,9 @@ const commands: TerminalCommand[] = [
       const output = entries.map((entry) => {
         const prefix = args[0] === "-ts" ? `[${new Date(entry.timestamp).toLocaleString()}] ` : "";
         const line = `${prefix}${entry.title}: ${entry.message}`;
-        if (entry.focusEntityId && entry.focusLabel) {
-          const labelStart = entry.message.indexOf(entry.focusLabel);
-          if (labelStart !== -1) {
-            const start = offset + prefix.length + entry.title.length + 2 + labelStart;
-            links.push({ start, end: start + entry.focusLabel.length, entityId: entry.focusEntityId });
-          }
+        for (const link of messageEntityLinks(entry)) {
+          const base = offset + prefix.length + entry.title.length + 2;
+          links.push({ ...link, start: base + link.start, end: base + link.end });
         }
         offset += line.length + 1;
         return line;

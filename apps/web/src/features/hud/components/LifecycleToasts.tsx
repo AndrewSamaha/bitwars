@@ -31,7 +31,10 @@ import {
   type MinimumDistanceViolationDetail,
 } from "@/features/gamestate/events";
 
-type Toast = { id: number; title: string; message: string; focusEntityId?: string; entering?: boolean; leaving?: boolean; leavingTop?: number };
+import { messageEntityLinks, type MessageLogEntry } from "../messageLog";
+import { EntityLinkedText } from "./EntityLinkedText";
+
+type Toast = Omit<MessageLogEntry, "kind" | "timestamp"> & { id: number; entering?: boolean; leaving?: boolean; leavingTop?: number };
 
 export default function LifecycleToasts() {
   const { actions: { pushMessageLog } } = useHUD();
@@ -74,9 +77,9 @@ export default function LifecycleToasts() {
   useEffect(() => {
     const shownStarvationWarnings = new Set<string>();
     const publishMessage = (input: MessageInput) => {
-      const { title, message, focusEntityId, focusLabel } = formatMessage(input);
-      pushMessageLog({ kind: input.kind, title, message, timestamp: Date.now(), focusEntityId, focusLabel });
-      const toast = { title, message, focusEntityId, id: nextId.current++, entering: true };
+      const content = formatMessage(input);
+      pushMessageLog({ kind: input.kind, ...content, timestamp: Date.now() });
+      const toast = { ...content, id: nextId.current++, entering: true };
       setToasts((current) => [...current.slice(-2), toast]);
       window.requestAnimationFrame(() => {
         setToasts((current) => current.map((item) => (item.id === toast.id ? { ...item, entering: false } : item)));
@@ -137,7 +140,7 @@ export default function LifecycleToasts() {
       } else if (capacityStatus === "full" && detail.depotEntityId) {
         const depot = game.world.entities.find((candidate) => Number(candidate.id) === detail.depotEntityId);
         const target = `${depot?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${detail.depotEntityId}`;
-        publishMessage({ kind: "collection-delivering-cargo", entityId: detail.entityId, resourceTypeId: detail.resourceTypeId, target });
+        publishMessage({ kind: "collection-delivering-cargo", entityId: detail.entityId, resourceTypeId: detail.resourceTypeId, target, targetEntityId: String(detail.depotEntityId) });
       }
     };
     const onTransferEndpointLost = (event: Event) => {
@@ -200,17 +203,29 @@ export default function LifecycleToasts() {
         >
           <div className="flex gap-2 rounded border border-amber-400/60 bg-slate-950/95 p-3 text-sm text-slate-100 shadow-xl">
             <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-amber-300" />
-            <button
-              className="min-w-0 flex-1 text-left"
-              onClick={() => {
-                if (toast.focusEntityId) dispatchCenterCameraOnEntity(toast.focusEntityId);
-                dismiss(toast.id);
-              }}
-              type="button"
-            >
-              <p className="font-medium">{toast.title}</p>
-              <p className="mt-1 text-xs text-slate-300">{toast.message}</p>
-            </button>
+            {toast.entityLinks?.length ? (
+              <div className="min-w-0 flex-1 text-left">
+                <button type="button" className="text-left font-medium" onClick={() => {
+                  if (toast.focusEntityId) dispatchCenterCameraOnEntity(toast.focusEntityId);
+                  dismiss(toast.id);
+                }}>{toast.title}</button>
+                <p className="mt-1 text-xs text-slate-300">
+                  <EntityLinkedText text={toast.message} links={messageEntityLinks(toast)} onFocus={() => dismiss(toast.id)} />
+                </p>
+              </div>
+            ) : (
+              <button
+                className="min-w-0 flex-1 text-left"
+                onClick={() => {
+                  if (toast.focusEntityId) dispatchCenterCameraOnEntity(toast.focusEntityId);
+                  dismiss(toast.id);
+                }}
+                type="button"
+              >
+                <p className="font-medium">{toast.title}</p>
+                <p className="mt-1 text-xs text-slate-300">{toast.message}</p>
+              </button>
+            )}
             <button aria-label="Dismiss" className="self-start text-slate-400 hover:text-white" onClick={() => dismiss(toast.id)} type="button">
               <X aria-hidden className="size-4" />
             </button>
