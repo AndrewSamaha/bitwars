@@ -9,6 +9,8 @@ export const WAYPOINT_MIGRATION_MESSAGE = "Saved waypoints were cleared during t
 
 /** Each case represents a distinct source event, not a display title or delivery channel. */
 export type MessageInput =
+  | { kind: "entity-under-attack" | "entity-detected" | "build-completed" | "entity-exploded"; entityId?: string; label: string; count?: number }
+  | { kind: "laser-fired"; origin: { x: number; y: number }; target: { x: number; y: number }; count?: number; attacker?: EntityMention; targetEntity?: EntityMention }
   | { kind: "waypoints-cleared"; message: string }
   | { kind: "collection-spacing-blocked"; detail: MinimumDistanceViolationDetail }
   | { kind: "build-rejected"; detail: BuildRejectedDetail }
@@ -17,7 +19,7 @@ export type MessageInput =
   | { kind: "collection-rerouted"; detail: CollectionDestinationChangedDetail }
   | { kind: "collection-spacing-waiting"; collectorEntityId: string }
   | { kind: "collection-dropoff-blocked"; entityId: string; cargo: string }
-  | { kind: "collection-capacity-blocked"; entityId: number; resourceTypeId: string }
+  | { kind: "collection-capacity-blocked"; entityId: number; entityTypeId?: string; resourceTypeId: string }
   | { kind: "collection-delivering-cargo"; entityId: number; resourceTypeId: string; target: string; targetEntityId?: string }
   | { kind: "transport-endpoint-lost"; carrierEntityId: string }
   | { kind: "resource-starvation"; entityId: string; entityTypeId?: string }
@@ -50,6 +52,21 @@ function linked(strings: TemplateStringsArray, ...parts: (string | number | Enti
 
 export function formatMessage(input: MessageInput): MessageContent {
   switch (input.kind) {
+    case "entity-under-attack":
+    case "entity-detected":
+    case "build-completed":
+    case "entity-exploded": {
+      const titles = { "entity-under-attack": "Under attack", "entity-detected": "Entity detected", "build-completed": "Build completed", "entity-exploded": "Entity destroyed" };
+      const verbs = { "entity-under-attack": "is under attack", "entity-detected": "entered sensor coverage", "build-completed": "completed construction", "entity-exploded": "was destroyed" };
+      const mention = input.entityId ? entity(input.entityId, input.label) : input.label;
+      const prefix = (input.count ?? 1) > 1 ? `${input.count} detections; latest: ` : "";
+      return { title: titles[input.kind], ...linked`${prefix}${mention} ${verbs[input.kind]}.`, focusEntityId: input.entityId, focusLabel: input.label };
+    }
+    case "laser-fired": {
+      const point = (p: { x: number; y: number }) => `(${Math.round(p.x)}, ${Math.round(p.y)})`;
+      const prefix = `${input.count ?? 1} laser shot${(input.count ?? 1) === 1 ? "" : "s"}; ${(input.count ?? 1) > 1 ? "latest " : ""}from `;
+      return { title: "Laser fire", ...linked`${prefix}${input.attacker ?? point(input.origin)} to ${input.targetEntity ?? point(input.target)}.` };
+    }
     case "waypoints-cleared":
       return { title: "Saved waypoints cleared", message: input.message };
     case "collection-spacing-blocked": {
@@ -120,8 +137,9 @@ export function formatMessage(input: MessageInput): MessageContent {
     }
     case "collection-capacity-blocked": {
       const { entityId, resourceTypeId } = input;
-      return { title: "Collection blocked", message: `Worker ${entityId} has no capacity for ${resourceTypeId} and cannot collect it.`,
-        focusEntityId: String(entityId), focusLabel: `Worker ${entityId}` };
+      const label = `${input.entityTypeId?.replaceAll("_", " ") || "Collector"} #${entityId}`;
+      return { title: "Collection blocked", ...linked`${entity(entityId, label)} has no capacity for ${resourceTypeId} and cannot collect it.`,
+        focusEntityId: String(entityId), focusLabel: label };
     }
     case "collection-delivering-cargo": {
       const { entityId, resourceTypeId, target, targetEntityId } = input;

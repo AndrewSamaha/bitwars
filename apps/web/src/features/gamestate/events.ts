@@ -3,6 +3,7 @@ import type { CommandFeedback } from "@/features/hud/messages";
 
 /** Emitted after the client ECS has incorporated an authoritative state update. */
 export const GAMESTATE_UPDATED_EVENT = "bitwars:gamestate-updated";
+export const LASER_SHOT_EVENT = "bitwars:laser-shot";
 export const ENTITY_EXPLODED_EVENT = "bitwars:entity-exploded";
 export const ENTITY_DETECTED_EVENT = "bitwars:entity-detected";
 export const BUILD_COMPLETED_EVENT = "bitwars:build-completed";
@@ -148,4 +149,30 @@ export function dispatchCenterCameraOnEntity(entityId: string) {
 
 export function dispatchTransferEndpointLost(carrierEntityId: string) {
   window.dispatchEvent(new CustomEvent(TRANSFER_ENDPOINT_LOST_EVENT, { detail: { carrierEntityId } }));
+}
+
+/** IDs remain decimal strings across the SSE and presentation boundaries. */
+export type LaserShotDetail = {
+  origin: { x: number; y: number };
+  target: { x: number; y: number };
+  attackerId?: string;
+  targetId?: string;
+};
+
+export function laserEntityId(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^[1-9][0-9]*$/.test(value)) return;
+  if (value.length > 20 || BigInt(value) > 18446744073709551615n) return;
+  return value;
+}
+
+/** Convert the existing laser_shot SSE payload without inferring entities from positions. */
+export function dispatchLaserShot(payload: {
+  type?: string; origin?: LaserShotDetail["origin"]; target?: LaserShotDetail["target"];
+  attacker_id?: unknown; target_id?: unknown;
+}) {
+  if (payload.type !== "laser_shot" || !payload.origin || !payload.target) return;
+  window.dispatchEvent(new CustomEvent<LaserShotDetail>(LASER_SHOT_EVENT, { detail: {
+    origin: payload.origin, target: payload.target,
+    attackerId: laserEntityId(payload.attacker_id), targetId: laserEntityId(payload.target_id),
+  } }));
 }

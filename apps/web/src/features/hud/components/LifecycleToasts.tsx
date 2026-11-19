@@ -133,10 +133,12 @@ export default function LifecycleToasts() {
       if (!detail?.resourceTypeId || detail.nearestCompatible) return;
       const entity = game.world.entities.find((entity) => String(entity.id) === String(detail.entityId));
       if (!entity) return;
-      const capacities = contentManager.getEntityType(entity.entity_type_id ?? "")?.max_capacity ?? {};
+      const definition = contentManager.getEntityType(entity.entity_type_id ?? "");
+      if (!definition?.collector || (definition.collector.transport_rate_per_second ?? 8) <= 0) return;
+      const capacities = definition.max_capacity ?? {};
       const capacityStatus = collectionCapacityStatus(entity.resources, capacities, detail.resourceTypeId);
       if (capacityStatus === "unavailable") {
-        publishMessage({ kind: "collection-capacity-blocked", entityId: detail.entityId, resourceTypeId: detail.resourceTypeId });
+        publishMessage({ kind: "collection-capacity-blocked", entityId: detail.entityId, entityTypeId: entity.entity_type_id, resourceTypeId: detail.resourceTypeId });
       } else if (capacityStatus === "full" && detail.depotEntityId) {
         const depot = game.world.entities.find((candidate) => Number(candidate.id) === detail.depotEntityId);
         const target = `${depot?.entity_type_id?.replaceAll("_", " ") ?? "depot"} #${detail.depotEntityId}`;

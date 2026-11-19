@@ -9,7 +9,7 @@ import { contentManager } from "@/features/content/contentManager";
 import { syncContentChangedEvent } from "@/features/content/contentEvents";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
-import { dispatchBuildRejected, dispatchCollectionRejected, dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
+import { dispatchLaserShot, dispatchBuildRejected, dispatchCollectionRejected, dispatchTransferEndpointLost, dispatchCenterCameraOnEntity, dispatchBuildCompleted, dispatchCollectionWaiting, dispatchEntityDetected, dispatchEntityExploded, dispatchEntityRadiationDamage, dispatchEntityResourceStarvation, dispatchEntityUnderAttack, dispatchGameStateUpdated, dispatchMinimumDistanceViolation, shouldNotifyCollectionWaiting } from "@/features/gamestate/events";
 import { COLLECTION_DROPOFF_BLOCKED_EVENT } from "@/features/gamestate/events";
 import { getOwnedSensorSources, isWithinSensorRange } from "@/features/pixijs/renderer/visibilityFog";
 import { buildProgressStore } from "@/features/build-state/buildProgressStore";
@@ -518,11 +518,10 @@ export default function GameStateStreamBridge() {
           type?: string;
           origin?: Pos;
           target?: Pos;
+          attacker_id?: string;
+          target_id?: string;
         };
-        if (payload.type !== "laser_shot" || !payload.origin || !payload.target) return;
-        window.dispatchEvent(new CustomEvent("bitwars:laser-shot", {
-          detail: { origin: payload.origin, target: payload.target },
-        }));
+        dispatchLaserShot(payload);
       } catch (err) {
         console.error("[GameStateStreamBridge] laser-shot parse error", err);
       }

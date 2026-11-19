@@ -31,6 +31,7 @@ vi.mock("@/features/hud/components/EntityDetailPanel", () => ({ default: () => n
 vi.mock("@/features/intent-queue/IntentQueuePanel", () => ({ default: () => null }));
 vi.mock("@/features/hud/components/ResourceHUD", () => ({ ResourceHUD: () => null }));
 vi.mock("@/features/hud/components/LifecycleToasts", () => ({ default: () => null }));
+vi.mock("@/features/hud/components/GameplayMessageBridge", () => ({ default: () => null }));
 
 import ClientGamePage from "@/app/play/ClientGamePage";
 

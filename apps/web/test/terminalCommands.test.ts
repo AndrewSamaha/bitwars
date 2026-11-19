@@ -69,6 +69,43 @@ describe("ls", () => {
     sessionStatus: "active", logout: async () => "", su: () => {}, exitSu: () => {},
   };
 
+  it("filters partial names without case sensitivity and keeps sorted row links", async () => {
+    added.push(
+      game.world.add({ id: 12003, owner_player_id: "raiders", entity_type_id: "heavy_fighter" }),
+      game.world.add({ id: 7, owner_player_id: "raiders", entity_type_id: "fighter_v1" }),
+      game.world.add({ id: 42, owner_player_id: "raiders", entity_type_id: "worker" }),
+      game.world.add({ id: 1, owner_player_id: "player-a", entity_type_id: "fighter_v1" }),
+      game.world.add({ id: 2, entity_type_id: "fighter_v1" }),
+    );
+    for (const command of ["ls figh", "ls FiGh"]) {
+      const result = await executeTerminalCommand(command, context);
+      const rows = ["7       fighter_v1", "12003       heavy_fighter"];
+      expect(result.output).toBe(["id      entity_type", ...rows].join("\n"));
+      expect(result.links).toEqual([
+        { start: 20, end: 20 + rows[0].length, entityId: "7" },
+        { start: 21 + rows[0].length, end: result.output.length, entityId: "12003" },
+      ]);
+      expect(result.links?.map(link => result.output.slice(link.start, link.end))).toEqual(rows);
+    }
+    for (const filter of ["missing", "figh*", "figh.*", "fighter v1"]) {
+      expect(await executeTerminalCommand(`ls ${filter}`, context)).toEqual({
+        output: `No owned entities match "${filter}".`,
+      });
+    }
+    expect(await executeTerminalCommand("ls   \t ", context)).toEqual(await executeTerminalCommand("ls", context));
+    expect((await executeTerminalCommand("help", context)).output).toContain("ls [filter]");
+  });
+
+  it("joins parsed arguments into one literal search phrase", async () => {
+    added.push(game.world.add({ id: 7, owner_player_id: "raiders", entity_type_id: "heavy fighter" }));
+    expect((await executeTerminalCommand("ls heavy   fighter", context)).output).toBe(
+      "id      entity_type\n7       heavy fighter",
+    );
+    expect((await executeTerminalCommand("ls fighter heavy", context)).output).toBe(
+      'No owned entities match "fighter heavy".',
+    );
+  });
+
   it("links each complete row to its sorted ID using effective ownership", async () => {
     added.push(
       game.world.add({ id: 12003, owner_player_id: "raiders", entity_type_id: "worker" }),
@@ -102,6 +139,7 @@ describe("ls", () => {
       expect(result.output).not.toContain("id      entity_type");
     }
     expect((await executeTerminalCommand("ls", context)).output).toBe("No entities owned by you.");
+    expect((await executeTerminalCommand("ls figh", context)).output).toBe("No entities owned by you.");
   });
 });
 
