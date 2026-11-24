@@ -23,6 +23,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Extended yellow-star solar collection reach to 15,000 world units, with proximity production decreasing linearly to zero at the source's outer collection boundary.
 - Added live content publication from authenticated definition and sprite editors: global SHA256 revisions, per-entity definition/artwork hashes, immutable versioned asset bundles, compatible tick-boundary activation, exact snapshot revision restoration, and live client visual updates without reconnecting.
 - Added reload lifecycle/history inspection, client synchronization and retained error/recovery diagnostics to the content UI and game-query endpoints.
+- Idle entities with the `Approach` near-enemy strategy now return to their pre-engagement position after autonomous combat ends. The anchor survives snapshots and restarts, a new engagement interrupts the return without moving the anchor, and accepted move or non-move orders cancel the return.
 - `CHANGELOG.md` created and aligned with existing git history.
 - Updated `README.md` Getting Started to match current tooling (`pnpm`, `turbo`) and Redis Stack via `docker-compose.yml`.
 - Documentation index and links surfaced in `README.md` (see `docs/`).
