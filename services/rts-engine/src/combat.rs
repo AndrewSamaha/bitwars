@@ -33,8 +33,8 @@ impl CombatSystem {
             .collect();
     }
 
-    pub fn cancel_return(&mut self, entity_id: u64) {
-        self.return_positions.remove(&entity_id);
+    pub fn cancel_return(&mut self, entity_id: u64) -> bool {
+        self.return_positions.remove(&entity_id).is_some()
     }
 }
 

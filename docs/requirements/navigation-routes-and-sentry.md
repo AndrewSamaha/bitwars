@@ -130,7 +130,7 @@ player and group orders own movement instead; they cancel a pending idle return.
 Idle return anchors are saved in the authoritative snapshot alongside entities
 and restored across engine restarts, including during pursuit or return. An
 accepted order clears the anchor before movement advances, even if the order
-finishes in that same tick.
+finishes in that same tick. A non-movement order also stops return velocity.
 
 
 Move and Convoy keep ordered movement while firing in-range lasers. Sentry
