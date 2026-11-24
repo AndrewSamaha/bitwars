@@ -17,6 +17,28 @@ pub struct CombatSystem {
     return_positions: HashMap<u64, Vec2>,
 }
 
+impl CombatSystem {
+    pub fn return_positions_for_snapshot(&self) -> Vec<crate::pb::IdleCombatReturnState> {
+        let mut positions: Vec<_> = self.return_positions.iter()
+            .map(|(&entity_id, &position)| crate::pb::IdleCombatReturnState {
+                entity_id, position: Some(position),
+            }).collect();
+        positions.sort_by_key(|entry| entry.entity_id);
+        positions
+    }
+
+    pub fn restore_return_positions(&mut self, positions: Vec<crate::pb::IdleCombatReturnState>) {
+        self.return_positions = positions.into_iter()
+            .filter_map(|entry| entry.position.map(|position| (entry.entity_id, position)))
+            .collect();
+    }
+
+    pub fn cancel_return(&mut self, entity_id: u64) {
+        self.return_positions.remove(&entity_id);
+    }
+}
+
+
 pub struct CombatTick {
     /// Acquired targets, including pursuit and weapon cooldown waiting.
     pub engagements: HashMap<u64, u64>,
@@ -134,7 +156,8 @@ impl CombatSystem {
         }
         // Discard anchors for entities removed by other systems (e.g. radiation).
         if !self.return_positions.is_empty() {
-            self.return_positions.retain(|id, _| entities.iter().any(|entity| entity.id == *id));
+            let entity_ids: HashSet<_> = entities.iter().map(|entity| entity.id).collect();
+            self.return_positions.retain(|id, _| entity_ids.contains(id));
         }
 
         let scripted_target_ids: HashSet<_> = scripted_targets.values().copied().collect();
@@ -669,6 +692,44 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_restores_anchor_mid_pursuit_and_resumes_return() {
+        use prost::Message;
+
+        let pack = content();
+        let mut state = crate::engine::state::GameState {
+            discovered_entities: Default::default(),
+            generation: Default::default(),
+            tick: 0,
+            technologies: HashMap::new(),
+            entities: vec![
+                entity(1, "raider", "me", 0.0, 20.0),
+                entity(2, "worker", "enemy", 40.0, 6.0),
+            ],
+        };
+        let mut combat = CombatSystem::default();
+        advance_combat(&mut combat, &mut state, &pack, 0);
+        assert_eq!(state.entities[0].pos.unwrap().x, 10.0);
+        let snapshot = crate::pb::Snapshot {
+            entities: state.entities.clone(),
+            idle_combat_returns: combat.return_positions_for_snapshot(),
+            ..Default::default()
+        };
+        let restored = crate::pb::Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap();
+        state.entities = restored.entities;
+        combat = CombatSystem::default();
+        combat.restore_return_positions(restored.idle_combat_returns);
+        for tick in 1..3 {
+            assert_eq!(advance_combat(&mut combat, &mut state, &pack, tick).engagements.get(&1), Some(&2));
+        }
+        assert_eq!(advance_combat(&mut combat, &mut state, &pack, 3).dead_entity_ids, vec![2]);
+        for (tick, x) in [(4, 20.0), (5, 10.0), (6, 0.0)] {
+            advance_combat(&mut combat, &mut state, &pack, tick);
+            assert_eq!(state.entities[0].pos.unwrap().x, x);
+        }
+        assert!(combat.return_positions.is_empty());
+    }
+
+    #[test]
     fn new_combat_interrupts_return_without_replacing_the_start() {
         let pack = content();
         let mut state = crate::engine::state::GameState {
@@ -721,6 +782,26 @@ mod tests {
         combat.tick(&mut entities, &pack, 2, 1.0);
         assert_eq!(entities[0].pos.unwrap().x, 10.0);
         assert_eq!(entities[0].vel.unwrap().x, 0.0);
+    }
+
+    #[test]
+    fn completed_same_tick_order_does_not_resume_the_old_return() {
+        let pack = content();
+        let mut entities = vec![
+            entity(1, "raider", "me", 0.0, 20.0),
+            entity(2, "worker", "enemy", 40.0, 100.0),
+        ];
+        let mut combat = CombatSystem::default();
+        combat.tick(&mut entities, &pack, 0, 1.0);
+        assert_eq!(combat.return_positions[&1].x, 0.0);
+        // The accepted Move reaches its destination before combat checks active intents.
+        combat.cancel_return(1);
+        entities[0].pos.as_mut().unwrap().x = 10.0;
+        entities[0].vel.as_mut().unwrap().x = 0.0;
+        entities[1].health = 0.0;
+        combat.tick(&mut entities, &pack, 1, 1.0);
+        assert_eq!(entities[0].pos.unwrap().x, 10.0);
+        assert!(combat.return_positions.is_empty());
     }
 
     #[test]

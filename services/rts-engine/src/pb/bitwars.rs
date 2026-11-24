@@ -1125,6 +1125,14 @@ pub struct CollectionOrderState {
     #[prost(message, optional, tag = "2")]
     pub state: ::core::option::Option<CollectState>,
 }
+/// Server-only anchor for an idle Approach unit pursuing or returning after combat.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct IdleCombatReturnState {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(message, optional, tag = "2")]
+    pub position: ::core::option::Option<Vec2>,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Snapshot {
     #[prost(message, repeated, tag = "17")]
@@ -1164,6 +1172,8 @@ pub struct Snapshot {
     pub sentry_orders: ::prost::alloc::vec::Vec<SentryOrderState>,
     #[prost(message, repeated, tag = "11")]
     pub escort_orders: ::prost::alloc::vec::Vec<EscortOrderState>,
+    #[prost(message, repeated, tag = "18")]
+    pub idle_combat_returns: ::prost::alloc::vec::Vec<IdleCombatReturnState>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotMeta {

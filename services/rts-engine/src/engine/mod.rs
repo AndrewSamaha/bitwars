@@ -2116,7 +2116,7 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries, mut snapshot_escorts, snapshot_collections)) =
+            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries, mut snapshot_escorts, snapshot_collections, snapshot_combat_returns)) =
                 redis.read_latest_snapshot().await?
             {
                 info!(
@@ -2338,6 +2338,7 @@ impl Engine {
                     scenario_runtime: Default::default(),
                     loaded_scenario: None,
                 };
+                engine.combat.restore_return_positions(snapshot_combat_returns);
                 for view in &snapshot_collector_states {
                     if engine.state.entities.iter().any(|entity| entity.id == view.entity_id) {
                         engine.collector_ui_state_by_entity.insert(view.entity_id, CollectorUiState {
@@ -2481,6 +2482,12 @@ impl Engine {
                 engine.restore_convoys(snapshot_convoys).await?;
                 engine.restore_sentries(snapshot_sentries).await?;
                 engine.restore_escorts(snapshot_escorts).await?;
+                for id in engine.intents.active_intents().keys() {
+                    engine.combat.cancel_return(*id);
+                }
+                for id in engine.intents.sentry_member_ids().into_iter().chain(engine.intents.escort_member_ids()) {
+                    engine.combat.cancel_return(id);
+                }
                 engine.hydrate_entity_health_if_missing();
                 if let Some(revision) = startup_revision {
                     engine.bootstrap_content_revision(revision).await?;
@@ -2492,6 +2499,7 @@ impl Engine {
                         engine.intents.convoys.clone(), engine.intents.move_orders_for_snapshot(),
                         engine.intents.sentries.clone(), engine.intents.escorts.clone(),
                         engine.intents.collection_orders_for_snapshot(),
+                        engine.combat.return_positions_for_snapshot(),
                     ).await?;
                 }
                 let build_progress = engine.construction_progress_for_snapshot();
@@ -2574,7 +2582,7 @@ impl Engine {
             engine.bootstrap_content_revision(revision).await?;
         } else {
             engine.redis.publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total,
-                "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).await?;
+                "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).await?;
         }
         engine.initialize_runtime(false).await?;
         Ok(engine)
@@ -5092,6 +5100,7 @@ impl Engine {
                     self.intents.sentries.clone(),
                     self.intents.escorts.clone(),
                     self.intents.collection_orders_for_snapshot(),
+                    self.combat.return_positions_for_snapshot(),
                 )
                 .await
                 .is_ok()
@@ -5428,6 +5437,7 @@ impl Engine {
                         self.intents.sentries.clone(),
                         self.intents.escorts.clone(),
                         self.intents.collection_orders_for_snapshot(),
+                        self.combat.return_positions_for_snapshot(),
                     )
                     .await
                 {
@@ -6338,6 +6348,7 @@ impl Engine {
             self.intents.detach_convoy_member(entity_id);
             self.intents.detach_sentry_member(entity_id);
             self.intents.detach_escort_member(entity_id);
+            self.combat.cancel_return(entity_id);
             self.collection_retry_tick_by_entity.remove(&entity_id);
             self.transport_wait_since_tick_by_entity.remove(&entity_id);
             if intent_kind == "upgrade" {

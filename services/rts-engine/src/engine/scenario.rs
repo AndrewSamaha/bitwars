@@ -280,6 +280,7 @@ impl Engine {
                 self.intents.sentries.clone(),
                 self.intents.escorts.clone(),
                 self.intents.collection_orders_for_snapshot(),
+                self.combat.return_positions_for_snapshot(),
             )
             .await?;
         self.publish_runtime().await

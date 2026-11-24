@@ -127,6 +127,11 @@ position when autonomous pursuit first moves them. After the engagement ends,
 they return at their content-defined speed and stop at that position. A new
 engagement interrupts the return without changing its destination. Active
 player and group orders own movement instead; they cancel a pending idle return.
+Idle return anchors are saved in the authoritative snapshot alongside entities
+and restored across engine restarts, including during pursuit or return. An
+accepted order clears the anchor before movement advances, even if the order
+finishes in that same tick.
+
 
 Move and Convoy keep ordered movement while firing in-range lasers. Sentry
 and Escort own their own combat interruption and return-to-formation movement;
