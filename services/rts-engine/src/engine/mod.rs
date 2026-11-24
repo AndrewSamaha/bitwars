@@ -3609,6 +3609,7 @@ impl Engine {
             &commands.scripted_entity_ids,
             &escort_leashes,
             &moving_entity_ids,
+            &sentry_members,
         );
         self.update_combat_effect_states(&outcome.dismantling);
         if outcome.dead_entity_ids.is_empty() {

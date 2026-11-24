@@ -122,10 +122,15 @@ entity ID alongside its saved route cursor.
   server-owned route reconciliation.
 - `GameStage.tsx`: click/keyboard handling, destination assignment, route rendering.
 
-Active player actions currently suppress autonomous combat entirely. Convoy writes
-positions after ordinary physics. Sentry must change eligibility for its members
-and explicitly arbitrate movement; simply allowing combat during a convoy would
-have pursuit overwritten by the formation mover.
+Idle entities with `combat.on_near_enemy_strategy: approach` remember their
+position when autonomous pursuit first moves them. After the engagement ends,
+they return at their content-defined speed and stop at that position. A new
+engagement interrupts the return without changing its destination. Active
+player and group orders own movement instead; they cancel a pending idle return.
+
+Move and Convoy keep ordered movement while firing in-range lasers. Sentry
+and Escort own their own combat interruption and return-to-formation movement;
+other active player actions suppress autonomous combat.
 
 ## Shared concepts
 
