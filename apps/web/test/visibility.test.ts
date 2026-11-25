@@ -88,6 +88,27 @@ describe("VisibilityFilter", () => {
     expect(delta?.removed_entity_ids).toEqual([]);
   });
 
+  it("discloses projectile termination only to players who covered the terminal point", () => {
+    const shot = "9223372036854775808";
+    const filter = () => {
+      const result = new VisibilityFilter("me", { habitat: { sensor: { range: 100 } } });
+      result.filterSnapshot({ type: "snapshot", tick: 1, entities: [
+        { id: 1, entity_type_id: "habitat", owner_player_id: "me", pos: { x: 0, y: 0 } },
+        { id: shot, entity_type_id: "kinetic_projectile", pos: { x: 95, y: 0 } },
+      ] });
+      return result;
+    };
+    const tick = { type: "delta" as const, tick: 2 };
+    const flyingOut = filter().filterDelta({ ...tick, updates: [{ id: shot, pos: { x: 175, y: 0 } }] });
+    const removed = { ...tick, updates: [], removed_entity_ids: [shot] };
+    const unseen = filter().filterDelta(removed, new Map([[shot, false]]));
+    expect(unseen).toEqual(flyingOut);
+    expect(unseen?.hidden_entity_ids).toEqual([shot]);
+    const witnessed = filter().filterDelta(removed, new Map([[shot, true]]));
+    expect(witnessed?.removed_entity_ids).toEqual([shot]);
+    expect(witnessed?.hidden_entity_ids).toEqual([]);
+  });
+
   it("applies hot-reloaded sensor ranges without losing the connection's cached world", () => {
     const filter = new VisibilityFilter("me", { habitat: { sensor: { range: 100 } } });
     const enemy = { id: 2, entity_type_id: "raider", owner_player_id: "other", pos: { x: 500, y: 0 } };

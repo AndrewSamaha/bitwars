@@ -151,8 +151,15 @@ export async function emitEventFromBuffer(
       break;
     }
     case "delta": {
-      const deltaJson = mapDeltaToJson(record.record.value, visibility?.playerId);
-      const filtered = visibility ? visibility.filterDelta(deltaJson) : deltaJson;
+      const delta = record.record.value;
+      const deltaJson = mapDeltaToJson(delta, visibility?.playerId);
+      const kineticRemovals = visibility && delta.kineticRemovals.length
+        ? new Map(delta.kineticRemovals.map((removal) => [
+            removal.entityId.toString(),
+            removal.witnessPlayerIds.includes(visibility.playerId),
+          ] as const))
+        : undefined;
+      const filtered = visibility ? visibility.filterDelta(deltaJson, kineticRemovals) : deltaJson;
       if (filtered) await channel.write(sseFormat({ event: "delta", id, data: filtered }));
       break;
     }

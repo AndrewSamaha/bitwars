@@ -111,13 +111,18 @@ export class VisibilityFilter {
     };
   }
 
-  filterDelta(delta: DeltaPayload): DeltaPayload | undefined {
+  filterDelta(delta: DeltaPayload, kineticRemovals?: ReadonlyMap<string, boolean>): DeltaPayload | undefined {
     const wasVisible = this.visible;
     const removed: Array<number | string> = [];
     const hidden: Array<number | string> = [];
     for (const id of delta.removed_entity_ids ?? []) {
       const key = idOf(id);
-      if (wasVisible.has(key)) removed.push(id);
+      if (wasVisible.has(key)) {
+        // A shot leaving coverage and a shot terminating outside it must
+        // produce the same signal. Missing witness metadata fails closed for shots.
+        const witnessed = kineticRemovals?.get(key) ?? (this.entities.get(key)?.entity_type_id !== "kinetic_projectile");
+        (witnessed ? removed : hidden).push(id);
+      }
       this.entities.delete(key);
     }
     for (const update of delta.updates) {
@@ -148,6 +153,8 @@ export class VisibilityFilter {
       if (update.owner_player_id === undefined) delete projected.owner_player_id;
       updates.push(projected);
     }
+    // Merge range loss and unwitnessed removal in a canonical order.
+    if (hidden.length > 1) hidden.sort();
     this.visible = nowVisible;
     this.withinSensors = nowWithinSensors;
     this.visibilityDirty = false;
