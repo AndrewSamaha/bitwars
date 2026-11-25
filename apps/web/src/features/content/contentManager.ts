@@ -18,12 +18,13 @@ export type EntityTypeDef = {
     on_near_enemy_strategy?: "approach" | "flee" | "stay";
     attacks: Array<{
       id: string;
-      type: "laser" | "dismantle";
+      type: "laser" | "kinetic" | "dismantle";
       range?: number;
       damage: number;
       cooldown_ticks: number;
       priority?: number;
       contact_tolerance?: number;
+      projectile?: { speed: number; max_travel_distance: number };
     }>;
   };
   /** Client-only sprite presentation settings. */

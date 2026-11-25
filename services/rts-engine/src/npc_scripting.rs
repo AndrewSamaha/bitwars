@@ -459,12 +459,7 @@ impl RaiderScript {
         {
             return;
         }
-        let id = entities
-            .iter()
-            .map(|entity| entity.id)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1);
+        let id = crate::engine::state::next_unit_id(entities);
         let definition = content.get(RAIDER_TYPE).expect("raider type checked above");
         let health = definition.health.max(0.0);
         entities.push(Entity {
@@ -476,6 +471,7 @@ impl RaiderScript {
             owner_player_id: RAIDERS_OWNER.into(),
             health,
             supply: None,
+            projectile: None,
             resource_deposit: None,
             resources: crate::engine::state::initial_resource_inventory(definition),
         });
@@ -559,6 +555,7 @@ mod tests {
     fn entity(id: u64, entity_type_id: &str, owner: &str, x: f32, y: f32) -> Entity {
         Entity {
             supply: None,
+            projectile: None,
             resource_deposit: None,
             resources: None,
             id,

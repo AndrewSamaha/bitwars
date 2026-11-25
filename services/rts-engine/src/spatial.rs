@@ -40,6 +40,17 @@ impl SpatialIndex {
             .copied()
     }
 
+    pub(crate) fn in_rect(
+        &self, min_x: f32, min_y: f32, max_x: f32, max_y: f32,
+    ) -> impl Iterator<Item = usize> + '_ {
+        (Self::cell(min_x)..=Self::cell(max_x)).flat_map(move |x| {
+            (Self::cell(min_y)..=Self::cell(max_y))
+                .filter_map(move |y| self.cells.get(&(x, y)))
+                .flatten()
+                .copied()
+        })
+    }
+
     pub fn within(&self, x: f32, y: f32, radius: f32) -> Vec<usize> {
         let mut result = Vec::new();
         for cell_x in Self::cell(x - radius)..=Self::cell(x + radius) {

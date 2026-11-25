@@ -14,6 +14,15 @@ message Entity {
   ResourceInventory resources = 8; // local inventory; omitted from client projections for non-owned entities
   ResourceDeposit resource_deposit = 9; // finite source stock; visible within sensor coverage
   DepotSupply supply = 10; // association and operating/action shortage; owner-only
+  ProjectileState projectile = 11; // server-only flight checkpoint; omitted from player projections
+}
+
+message ProjectileState {
+  uint64 attacker_id = 1;
+  string attacker_entity_type_id = 2;
+  string attacker_owner_player_id = 3;
+  float damage = 4;
+  double remaining_distance = 5;
 }
 
 message ResourceDeposit {

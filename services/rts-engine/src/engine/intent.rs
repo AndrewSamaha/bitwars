@@ -686,6 +686,7 @@ mod tests {
             tick: 0,
             entities: vec![pb::Entity {
                 supply: None,
+                projectile: None,
                 resource_deposit: None,
                 resources: None,
                 id: entity_id,
@@ -724,6 +725,7 @@ mod tests {
             tick: 0,
             entities: vec![pb::Entity {
                 supply: None,
+                projectile: None,
                 resource_deposit: None,
                 resources: None,
                 id: entity_id,

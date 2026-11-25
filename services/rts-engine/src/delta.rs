@@ -187,6 +187,7 @@ mod tests {
     fn entity(id: u64) -> Entity {
         Entity {
             supply: None,
+            projectile: None,
             resource_deposit: None,
             resources: None,
             id,

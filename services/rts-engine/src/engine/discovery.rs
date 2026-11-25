@@ -179,6 +179,7 @@ fn visibility<'a>(state: &'a GameState, content: &ContentPack) -> BTreeMap<&'a s
     let mut extended = SpatialIndex::new();
     let mut wide_visibility = Vec::new();
     for (i, entity) in state.entities.iter().enumerate() {
+        if entity.projectile.is_some() { continue; }
         let Some(pos) = entity.pos.as_ref() else { continue; };
         points.insert(i, pos.x, pos.y);
         let range = content.get(&entity.entity_type_id).and_then(|d| d.visibility_range).unwrap_or(0.0);
@@ -300,12 +301,14 @@ fn destruction_witnesses(state: &GameState, content: &ContentPack, victim: &pb::
     witnesses
 }
 
-pub fn forget_destroyed(state: &mut GameState, content: &ContentPack, victim: &pb::Entity) {
-    for owner in destruction_witnesses(state, content, victim) {
-        if let Some(knowledge) = state.discovered_entities.players.get_mut(&owner) {
+pub fn forget_destroyed(state: &mut GameState, content: &ContentPack, victim: &pb::Entity) -> BTreeSet<String> {
+    let witnesses = destruction_witnesses(state, content, victim);
+    for owner in &witnesses {
+        if let Some(knowledge) = state.discovered_entities.players.get_mut(owner) {
             knowledge.forget(victim.id);
         }
     }
+    witnesses
 }
 
 /// Before removal, borrow the target and its sensors rather than cloning it.

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file entity.proto.
  */
 export const file_entity: GenFile = /*@__PURE__*/
-  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMitAIKBkVudGl0eRIKCgJpZBgBIAEoBBIWCg5lbnRpdHlfdHlwZV9pZBgCIAEoCRIaCgNwb3MYAyABKAsyDS5iaXR3YXJzLlZlYzISGgoDdmVsGAQgASgLMg0uYml0d2Fycy5WZWMyEhwKBWZvcmNlGAUgASgLMg0uYml0d2Fycy5WZWMyEhcKD293bmVyX3BsYXllcl9pZBgGIAEoCRIOCgZoZWFsdGgYByABKAISLQoJcmVzb3VyY2VzGAggASgLMhouYml0d2Fycy5SZXNvdXJjZUludmVudG9yeRIyChByZXNvdXJjZV9kZXBvc2l0GAkgASgLMhguYml0d2Fycy5SZXNvdXJjZURlcG9zaXQSJAoGc3VwcGx5GAogASgLMhQuYml0d2Fycy5EZXBvdFN1cHBseSI0Cg9SZXNvdXJjZURlcG9zaXQSDgoGYW1vdW50GAEgASgBEhEKCXJlbWFpbmluZxgCIAEoASI3Cg5SZXNvdXJjZUFtb3VudBIVCg1yZXNvdXJjZV90eXBlGAEgASgJEg4KBmFtb3VudBgCIAEoASI/ChFSZXNvdXJjZUludmVudG9yeRIqCglyZXNvdXJjZXMYASADKAsyFy5iaXR3YXJzLlJlc291cmNlQW1vdW50IrYBCgtEZXBvdFN1cHBseRIQCghkZXBvdF9pZBgBIAEoBBIZChFkZWxpdmVyeV9kZXBvdF9pZBgHIAEoBBIZChFtaXNzaW5nX3Jlc291cmNlcxgCIAMoCRITCgtvcGVyYXRpb25hbBgDIAEoCBIWCg5wYWlkX2ludGVudF9pZBgFIAEoDBIdChVjb25zdHJ1Y3Rpb25fcHJvZ3Jlc3MYBiABKAISEwoLd2FpdGluZ19mb3IYBCABKAliBnByb3RvMw", [file_vec2]);
+  fileDesc("CgxlbnRpdHkucHJvdG8SB2JpdHdhcnMi4gIKBkVudGl0eRIKCgJpZBgBIAEoBBIWCg5lbnRpdHlfdHlwZV9pZBgCIAEoCRIaCgNwb3MYAyABKAsyDS5iaXR3YXJzLlZlYzISGgoDdmVsGAQgASgLMg0uYml0d2Fycy5WZWMyEhwKBWZvcmNlGAUgASgLMg0uYml0d2Fycy5WZWMyEhcKD293bmVyX3BsYXllcl9pZBgGIAEoCRIOCgZoZWFsdGgYByABKAISLQoJcmVzb3VyY2VzGAggASgLMhouYml0d2Fycy5SZXNvdXJjZUludmVudG9yeRIyChByZXNvdXJjZV9kZXBvc2l0GAkgASgLMhguYml0d2Fycy5SZXNvdXJjZURlcG9zaXQSJAoGc3VwcGx5GAogASgLMhQuYml0d2Fycy5EZXBvdFN1cHBseRIsCgpwcm9qZWN0aWxlGAsgASgLMhguYml0d2Fycy5Qcm9qZWN0aWxlU3RhdGUilQEKD1Byb2plY3RpbGVTdGF0ZRITCgthdHRhY2tlcl9pZBgBIAEoBBIfChdhdHRhY2tlcl9lbnRpdHlfdHlwZV9pZBgCIAEoCRIgChhhdHRhY2tlcl9vd25lcl9wbGF5ZXJfaWQYAyABKAkSDgoGZGFtYWdlGAQgASgCEhoKEnJlbWFpbmluZ19kaXN0YW5jZRgFIAEoASI0Cg9SZXNvdXJjZURlcG9zaXQSDgoGYW1vdW50GAEgASgBEhEKCXJlbWFpbmluZxgCIAEoASI3Cg5SZXNvdXJjZUFtb3VudBIVCg1yZXNvdXJjZV90eXBlGAEgASgJEg4KBmFtb3VudBgCIAEoASI/ChFSZXNvdXJjZUludmVudG9yeRIqCglyZXNvdXJjZXMYASADKAsyFy5iaXR3YXJzLlJlc291cmNlQW1vdW50IrYBCgtEZXBvdFN1cHBseRIQCghkZXBvdF9pZBgBIAEoBBIZChFkZWxpdmVyeV9kZXBvdF9pZBgHIAEoBBIZChFtaXNzaW5nX3Jlc291cmNlcxgCIAMoCRITCgtvcGVyYXRpb25hbBgDIAEoCBIWCg5wYWlkX2ludGVudF9pZBgFIAEoDBIdChVjb25zdHJ1Y3Rpb25fcHJvZ3Jlc3MYBiABKAISEwoLd2FpdGluZ19mb3IYBCABKAliBnByb3RvMw", [file_vec2]);
 
 /**
  * @generated from message bitwars.Entity
@@ -77,6 +77,13 @@ export type Entity = Message<"bitwars.Entity"> & {
    * @generated from field: bitwars.DepotSupply supply = 10;
    */
   supply?: DepotSupply;
+
+  /**
+   * server-only flight checkpoint; omitted from player projections
+   *
+   * @generated from field: bitwars.ProjectileState projectile = 11;
+   */
+  projectile?: ProjectileState;
 };
 
 /**
@@ -85,6 +92,43 @@ export type Entity = Message<"bitwars.Entity"> & {
  */
 export const EntitySchema: GenMessage<Entity> = /*@__PURE__*/
   messageDesc(file_entity, 0);
+
+/**
+ * @generated from message bitwars.ProjectileState
+ */
+export type ProjectileState = Message<"bitwars.ProjectileState"> & {
+  /**
+   * @generated from field: uint64 attacker_id = 1;
+   */
+  attackerId: bigint;
+
+  /**
+   * @generated from field: string attacker_entity_type_id = 2;
+   */
+  attackerEntityTypeId: string;
+
+  /**
+   * @generated from field: string attacker_owner_player_id = 3;
+   */
+  attackerOwnerPlayerId: string;
+
+  /**
+   * @generated from field: float damage = 4;
+   */
+  damage: number;
+
+  /**
+   * @generated from field: double remaining_distance = 5;
+   */
+  remainingDistance: number;
+};
+
+/**
+ * Describes the message bitwars.ProjectileState.
+ * Use `create(ProjectileStateSchema)` to create a new message.
+ */
+export const ProjectileStateSchema: GenMessage<ProjectileState> = /*@__PURE__*/
+  messageDesc(file_entity, 1);
 
 /**
  * @generated from message bitwars.ResourceDeposit
@@ -108,7 +152,7 @@ export type ResourceDeposit = Message<"bitwars.ResourceDeposit"> & {
  * Use `create(ResourceDepositSchema)` to create a new message.
  */
 export const ResourceDepositSchema: GenMessage<ResourceDeposit> = /*@__PURE__*/
-  messageDesc(file_entity, 1);
+  messageDesc(file_entity, 2);
 
 /**
  * @generated from message bitwars.ResourceAmount
@@ -130,7 +174,7 @@ export type ResourceAmount = Message<"bitwars.ResourceAmount"> & {
  * Use `create(ResourceAmountSchema)` to create a new message.
  */
 export const ResourceAmountSchema: GenMessage<ResourceAmount> = /*@__PURE__*/
-  messageDesc(file_entity, 2);
+  messageDesc(file_entity, 3);
 
 /**
  * @generated from message bitwars.ResourceInventory
@@ -147,7 +191,7 @@ export type ResourceInventory = Message<"bitwars.ResourceInventory"> & {
  * Use `create(ResourceInventorySchema)` to create a new message.
  */
 export const ResourceInventorySchema: GenMessage<ResourceInventory> = /*@__PURE__*/
-  messageDesc(file_entity, 3);
+  messageDesc(file_entity, 4);
 
 /**
  * Physical resource source. Zero depot_id means no depot in range.
@@ -204,5 +248,5 @@ export type DepotSupply = Message<"bitwars.DepotSupply"> & {
  * Use `create(DepotSupplySchema)` to create a new message.
  */
 export const DepotSupplySchema: GenMessage<DepotSupply> = /*@__PURE__*/
-  messageDesc(file_entity, 4);
+  messageDesc(file_entity, 5);
 

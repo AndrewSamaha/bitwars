@@ -33,6 +33,22 @@ pub struct Entity {
     /// association and operating/action shortage; owner-only
     #[prost(message, optional, tag = "10")]
     pub supply: ::core::option::Option<DepotSupply>,
+    /// server-only flight checkpoint; omitted from player projections
+    #[prost(message, optional, tag = "11")]
+    pub projectile: ::core::option::Option<ProjectileState>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProjectileState {
+    #[prost(uint64, tag = "1")]
+    pub attacker_id: u64,
+    #[prost(string, tag = "2")]
+    pub attacker_entity_type_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub attacker_owner_player_id: ::prost::alloc::string::String,
+    #[prost(float, tag = "4")]
+    pub damage: f32,
+    #[prost(double, tag = "5")]
+    pub remaining_distance: f64,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct ResourceDeposit {
