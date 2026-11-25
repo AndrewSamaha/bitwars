@@ -7,6 +7,8 @@ use sha2::{Digest, Sha256};
 use crate::content::ContentPack;
 
 pub const ASSET_FILES: &[&str] = &["idle.png", "gray.png", "primary.png", "invariants.png", "invariant-colors.png", "player-colors.json"];
+/// Bumped when retained definitions need interpretation changes on load.
+pub const MANIFEST_FORMAT_VERSION: u32 = 2;
 
 pub fn valid_id(id: &str) -> bool {
     id.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
@@ -96,6 +98,25 @@ fn immutable_write(path: &Path, bytes: &[u8]) -> Result<()> {
 
 pub fn revision_root(content_path: &Path) -> PathBuf {
     content_path.parent().unwrap_or(Path::new(".")).join(".revisions")
+}
+
+/// v1 manifests predate authored `projectile.entity_type_id`. They were all
+/// produced by the engine's former hardcoded projectile type, so inject that
+/// value and recompute the affected definition hashes. Pinned revisions must
+/// stay loadable (ADR 002).
+fn migrate_v1_definitions(manifest: &mut Manifest, revision: &str) -> Result<()> {
+    anyhow::ensure!(manifest.format_version == 1, "unsupported manifest format {}", manifest.format_version);
+    let mut definitions = std::mem::take(&mut manifest.definitions);
+    crate::content::migrate_legacy_projectile_ids(&mut definitions)
+        .with_context(|| format!("retained content revision {revision} needs republishing before restart"))?;
+    manifest.definitions = definitions;
+    for (id, definition) in manifest.definitions["entity_types"].as_object().into_iter().flatten() {
+        if let Some(entry) = manifest.entities.get_mut(id) {
+            entry.definition_hash = hash_json(definition)?;
+        }
+    }
+    manifest.format_version = MANIFEST_FORMAT_VERSION;
+    Ok(())
 }
 impl Revision {
     /// Snapshot authored YAML and allowed asset bytes before computing any hashes.
@@ -245,6 +266,50 @@ mod tests {
         let manifest = revision_root(&path).join(&first.pack.content_hash).join("manifest.json");
         std::fs::write(manifest, "{}").unwrap();
         assert!(Revision::load(&revision_root(&path), &first.pack.content_hash).is_err());
+        std::fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn retained_v1_manifest_migrates_the_authored_projectile_type() {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/content/entities.yaml");
+        let temp = std::env::temp_dir().join(format!("bitwars-revision-v1-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(temp.join("assets/worker")).unwrap();
+        let path = temp.join("entities.yaml");
+        std::fs::copy(&source, &path).unwrap();
+        std::fs::copy(source.parent().unwrap().join("assets/worker/primary.png"),
+            temp.join("assets/worker/primary.png")).unwrap();
+        let bootstrap = Revision::bootstrap(&path).unwrap();
+        let root = revision_root(&path);
+        let manifest_path = root.join(&bootstrap.pack.content_hash).join("manifest.json");
+        let mut value: Value = serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+        value["format_version"] = Value::from(1);
+        let definitions = value["definitions"]["entity_types"].as_object_mut().unwrap();
+        for definition in definitions.values_mut() {
+            let Some(attacks) = definition.get_mut("combat").and_then(|combat| combat.get_mut("attacks"))
+                .and_then(Value::as_array_mut) else { continue; };
+            for attack in attacks {
+                if attack.get("type").and_then(Value::as_str) == Some("kinetic") {
+                    attack["projectile"].as_object_mut().unwrap().remove("entity_type_id");
+                }
+            }
+        }
+        let hashes: Vec<(String, String)> = definitions.iter()
+            .map(|(id, definition)| (id.clone(), hash_json(definition).unwrap())).collect();
+        for (id, hash) in hashes {
+            if let Some(entry) = value["entities"].get_mut(&id) {
+                entry["definition_hash"] = Value::String(hash);
+            }
+        }
+        let revision = hash_json(&value).unwrap();
+        let migrated_dir = root.join(&revision);
+        std::fs::create_dir_all(&migrated_dir).unwrap();
+        std::fs::write(migrated_dir.join("manifest.json"), canonical_json(&value).unwrap()).unwrap();
+
+        let restored = Revision::load(&root, &revision).unwrap();
+        let fighter = restored.pack.get("kinetic_fighter").unwrap();
+        let kinetic = fighter.combat.as_ref().unwrap().attacks.iter()
+            .find(|attack| attack.attack_type == crate::content::AttackType::Kinetic).unwrap();
+        assert_eq!(kinetic.projectile.as_ref().unwrap().entity_type_id, "kinetic_projectile");
         std::fs::remove_dir_all(temp).unwrap();
     }
 }

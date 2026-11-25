@@ -47,8 +47,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Moved legacy sprites for `planet_blue`, `star_yellow`, `minerals`, and `raider` from the web public directory into `packages/content/assets` so hot-reload revisions include their artwork instead of falling back to the corvette texture.
 - Replaced `packages/content/assets/theta/idle.png`, which contained a solar-collector image, with the correct theta star artwork already present in `public/assets`; republished and live-reloaded the revision.
 - Kinetic kills now remain visible when the interpolated impact point falls just outside coverage: impact-time witnesses are joined by players whose sensors already covered the victim at tick start.
-- Hardened kinetic sweeps against mid-tick entity list changes by keying pre-integration positions by entity ID, and widened the grid candidate bound to the Euclidean hull displacement so diagonal crossings are never culled on the fast path.
+- Hardened kinetic sweeps against mid-tick entity list changes by keying pre-integration positions by entity ID. The grid candidate pad now uses the Euclidean hull displacement as an explicit safety margin; the former per-axis bound was already sufficient for candidate inclusion.
 - Content validation now requires a positive `hull_radius` on every `combat_targetable` entity type, and kinetic attacks declare their projectile `entity_type_id` in content as the single source consumed by the engine and generated into the web client.
+- Retained v1 content manifests migrate on load by filling the former hardcoded kinetic projectile type, so pinned revisions remain loadable after restart; unloadable revisions report an actionable republish message.
+- Kinetic tick tests now drive the shared sweep/spawn/ID/removal helper used by the live tick and publish the returned witness list into the delta; client visibility tests distinguish witness metadata from the projectile fallback.
 
 ### Notes
 - See the development milestones in `docs/milestones.md` for the incremental feature plan (M0–M10).

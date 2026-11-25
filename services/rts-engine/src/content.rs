@@ -700,6 +700,48 @@ struct ContentFile {
     technologies: HashMap<String, TechnologyDef>,
 }
 
+/// Pre-v2 manifests and accepted payloads predate authored
+/// `projectile.entity_type_id`; they all used the engine's former hardcoded
+/// projectile type. Inject it before deserialization so pinned revisions stay
+/// loadable. Authored content must still provide the field.
+pub(crate) fn migrate_legacy_projectile_ids(
+    definitions: &mut serde_json::Value,
+) -> Result<()> {
+    const LEGACY_PROJECTILE_TYPE: &str = "kinetic_projectile";
+    let Some(entity_types) = definitions.get_mut("entity_types")
+        .and_then(serde_json::Value::as_object_mut) else { return Ok(()); };
+    let mut missing = false;
+    for definition in entity_types.values() {
+        let Some(attacks) = definition.get("combat").and_then(|combat| combat.get("attacks"))
+            .and_then(serde_json::Value::as_array) else { continue; };
+        for attack in attacks {
+            if attack.get("type").and_then(serde_json::Value::as_str) == Some("kinetic")
+                && attack.get("projectile").and_then(serde_json::Value::as_object)
+                    .is_some_and(|projectile| !projectile.contains_key("entity_type_id"))
+            {
+                missing = true;
+            }
+        }
+    }
+    if !missing {
+        return Ok(());
+    }
+    anyhow::ensure!(entity_types.contains_key(LEGACY_PROJECTILE_TYPE),
+        "kinetic attacks without projectile.entity_type_id require a {LEGACY_PROJECTILE_TYPE} entity type; republish content before restart");
+    for definition in entity_types.values_mut() {
+        let Some(attacks) = definition.get_mut("combat").and_then(|combat| combat.get_mut("attacks"))
+            .and_then(serde_json::Value::as_array_mut) else { continue; };
+        for attack in attacks {
+            if attack.get("type").and_then(serde_json::Value::as_str) != Some("kinetic") { continue; }
+            let Some(projectile) = attack.get_mut("projectile").and_then(serde_json::Value::as_object_mut) else { continue; };
+            projectile.entry("entity_type_id").or_insert_with(|| {
+                serde_json::Value::String(LEGACY_PROJECTILE_TYPE.to_string())
+            });
+        }
+    }
+    Ok(())
+}
+
 impl ContentPack {
     /// Load a content pack from a YAML file.
     pub fn load(path: &Path) -> Result<Self> {
@@ -711,7 +753,8 @@ impl ContentPack {
     }
 
     /// Validate authored definitions without normalizing the immutable manifest.
-    pub fn from_definitions(definitions: serde_json::Value) -> Result<Self> {
+    pub fn from_definitions(mut definitions: serde_json::Value) -> Result<Self> {
+        migrate_legacy_projectile_ids(&mut definitions)?;
         let file: ContentFile = serde_json::from_value(definitions)?;
 
         validate_resource_content(&file.entity_types, &file.resource_types)?;
@@ -1611,11 +1654,9 @@ mod tests {
     }
 
     fn validate_entity(def: &EntityTypeDef) -> Result<()> {
-        validate_gameplay_content(
-            &HashMap::from([("target".to_string(), def.clone())]),
-            &HashMap::new(),
-            &HashMap::new(),
-        )
+        ContentPack::from_definitions(serde_json::json!({
+            "entity_types": { "target": def },
+        })).map(|_| ())
     }
 
     #[test]
@@ -1624,9 +1665,18 @@ mod tests {
             "fog_memory: forget_when_hidden\nspeed: 0\nstop_radius: 1\nmass: 1\nhealth: 1\ncombat_targetable: true\nhull_radius: 10\n",
         ).unwrap();
         assert!(validate_entity(&def).is_ok());
-        for radius in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        for radius in [0.0, -1.0] {
             def.hull_radius = radius;
             let error = validate_entity(&def).unwrap_err().to_string();
+            assert!(error.contains("hull_radius"), "unexpected error: {error}");
+        }
+        // JSON cannot carry non-finite numbers; validate those directly.
+        for radius in [f32::NAN, f32::INFINITY] {
+            def.hull_radius = radius;
+            let error = validate_gameplay_content(
+                &HashMap::from([("target".to_string(), def.clone())]),
+                &HashMap::new(), &HashMap::new(),
+            ).unwrap_err().to_string();
             assert!(error.contains("hull_radius"), "unexpected error: {error}");
         }
         def.hull_radius = 0.0;
@@ -1655,5 +1705,23 @@ mod tests {
         let error = validate_gameplay_content(&types, &pack.resource_types, &pack.technologies)
             .unwrap_err().to_string();
         assert!(error.contains("projectile entity_type_id"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn legacy_definitions_without_projectile_entity_type_migrate_on_load() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let yaml = std::fs::read_to_string(manifest_dir.join("../../packages/content/entities.yaml")).unwrap();
+        let mut definitions: serde_json::Value = serde_yaml::from_str(&yaml).unwrap();
+        let attacks = definitions["entity_types"]["kinetic_fighter"]["combat"]["attacks"]
+            .as_array_mut().unwrap();
+        for attack in attacks {
+            if attack["type"] == "kinetic" {
+                attack["projectile"].as_object_mut().unwrap().remove("entity_type_id");
+            }
+        }
+        let pack = ContentPack::from_definitions(definitions).unwrap();
+        let kinetic = pack.get("kinetic_fighter").unwrap().combat.as_ref().unwrap()
+            .attacks.iter().find(|attack| attack.attack_type == AttackType::Kinetic).unwrap();
+        assert_eq!(kinetic.projectile.as_ref().unwrap().entity_type_id, "kinetic_projectile");
     }
 }

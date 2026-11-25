@@ -110,7 +110,7 @@ describe("VisibilityFilter", () => {
     expect(witnessed?.hidden_entity_ids).toEqual([]);
   });
 
-  it("shows a kinetic kill for a victim visible before the impact", () => {
+  it("uses kinetic witnesses when present and falls back per entity type otherwise", () => {
     const filter = () => {
       const result = new VisibilityFilter("me", {
         habitat: { sensor: { range: 100 } },
@@ -129,6 +129,17 @@ describe("VisibilityFilter", () => {
     const unseen = filter().filterDelta(removed, new Map([["2", false]]));
     expect(unseen?.removed_entity_ids).toEqual([]);
     expect(unseen?.hidden_entity_ids).toEqual([2]);
+    // Without witness metadata, non-projectiles keep the historical visible
+    // removal while projectile-looking removals fail closed as hidden.
+    expect(filter().filterDelta(removed)?.removed_entity_ids).toEqual([2]);
+    const shot = "9223372036854775808";
+    const shotFilter = new VisibilityFilter("me", { habitat: { sensor: { range: 100 } } });
+    shotFilter.filterSnapshot({ type: "snapshot", tick: 1, entities: [
+      { id: 1, entity_type_id: "habitat", owner_player_id: "me", pos: { x: 0, y: 0 } },
+      { id: shot, entity_type_id: KINETIC_PROJECTILE_ENTITY_TYPE, pos: { x: 95, y: 0 } },
+    ] });
+    const shotRemoved = { type: "delta" as const, tick: 2, updates: [], removed_entity_ids: [shot] };
+    expect(shotFilter.filterDelta(shotRemoved)?.hidden_entity_ids).toEqual([shot]);
   });
 
   it("applies hot-reloaded sensor ranges without losing the connection's cached world", () => {
