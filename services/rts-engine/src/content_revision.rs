@@ -178,7 +178,7 @@ impl Revision {
             };
             anyhow::ensure!(current == expected, "source changed while staging: {}", path.display());
         }
-        let manifest = Manifest { format_version: 1, definitions, entities };
+        let manifest = Manifest { format_version: MANIFEST_FORMAT_VERSION, definitions, entities };
         let value = serde_json::to_value(&manifest)?;
         let revision = hash_json(&value)?;
         immutable_write(&root.join(&revision).join("manifest.json"), canonical_json(&value)?.as_bytes())?;
@@ -190,9 +190,14 @@ impl Revision {
         let bytes = std::fs::read(root.join(revision).join("manifest.json")).context("retained manifest unavailable")?;
         let value: Value = serde_json::from_slice(&bytes)?;
         anyhow::ensure!(hash_json(&value)? == revision, "manifest revision hash mismatch");
-        let manifest: Manifest = serde_json::from_value(value)?;
-        anyhow::ensure!(manifest.format_version == 1, "unsupported manifest format");
-        let mut pack = ContentPack::from_definitions(manifest.definitions.clone())?;
+        let mut manifest: Manifest = serde_json::from_value(value)?;
+        match manifest.format_version {
+            1 => migrate_v1_definitions(&mut manifest, revision)?,
+            MANIFEST_FORMAT_VERSION => {}
+            other => anyhow::bail!("unsupported manifest format {other}"),
+        }
+        let mut pack = ContentPack::from_definitions(manifest.definitions.clone())
+            .with_context(|| format!("retained content revision {revision} is not loadable by this build; republish content before restart"))?;
         for id in pack.entity_types.keys() { anyhow::ensure!(manifest.entities.contains_key(id), "missing manifest entity {id}"); }
         for (id, entry) in &manifest.entities {
             anyhow::ensure!(valid_id(id), "invalid entity ID {id}");
