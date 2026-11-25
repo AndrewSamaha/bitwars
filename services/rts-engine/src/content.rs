@@ -12,6 +12,8 @@ use anyhow::{Context, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub(crate) const KINETIC_PROJECTILE_TYPE: &str = "kinetic_projectile";
+
 /// A loaded content pack with entity and resource type definitions and a content hash.
 #[derive(Clone, Debug)]
 pub struct ContentPack {
@@ -64,7 +66,7 @@ pub struct EntityTypeDef {
     #[schemars(extend("deprecated" = true))]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_sharing: Option<ResourceSharingDef>,
-    /// Physical hull radius in world units used by contact attacks. Defaults to 0.
+    /// Physical hull radius in world units used by contact attacks and projectile collisions. Defaults to 0.
     /// Independent of visual scale and movement-order stop radius.
     #[serde(default)]
     pub hull_radius: f32,
@@ -286,13 +288,25 @@ pub struct CombatDef {
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend(
+    "if" = serde_json::json!({"properties": {"type": {"const": "kinetic"}}}),
+    "then" = serde_json::json!({
+        "required": ["range", "projectile"],
+        "properties": {
+            "range": {"exclusiveMinimum": 0},
+            "damage": {"exclusiveMinimum": 0},
+            "projectile": {"type": "object"}
+        }
+    }),
+    "else" = serde_json::json!({"not": {"required": ["projectile"]}})
+))]
 pub struct AttackDef {
     /// Stable weapon ID within this entity type; identifies its cooldown and breaks equal-priority ties alphabetically.
     pub id: String,
-    /// Weapon behavior: laser uses range; dismantle uses both hull radii plus contact_tolerance.
+    /// Weapon behavior: laser and kinetic use range; dismantle uses both hull radii plus contact_tolerance.
     #[serde(rename = "type")]
     pub attack_type: AttackType,
-    /// Maximum center-to-center laser distance in world units. Defaults to 0; ignored for dismantle.
+    /// Maximum center-to-center laser distance or kinetic firing distance in world units. Defaults to 0; ignored for dismantle.
     #[serde(default)]
     pub range: f32,
     /// Hit points removed per successful attack, not per second.
@@ -305,6 +319,20 @@ pub struct AttackDef {
     /// Extra distance in world units beyond the sum of both hull radii for dismantle. Defaults to 0; negative values act as 0.
     #[serde(default)]
     pub contact_tolerance: f32,
+    /// Ballistic flight parameters. Required for kinetic attacks; omit for laser and dismantle.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projectile: Option<ProjectileDef>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectileDef {
+    /// Projectile speed in world units per second.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub speed: f32,
+    /// Maximum distance from the muzzle in world units, independent of firing range.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub max_travel_distance: f32,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
@@ -312,6 +340,8 @@ pub struct AttackDef {
 pub enum AttackType {
     /// Ranged attack using the weapon's range in world units.
     Laser,
+    /// Ballistic attack that spawns a projectile instead of dealing damage immediately.
+    Kinetic,
     /// Contact attack within attacker hull radius + target hull radius + contact_tolerance.
     Dismantle,
 }
@@ -1049,6 +1079,20 @@ fn validate_gameplay_content(
                 anyhow::ensure!(!attack.id.is_empty() && weapons.insert(&attack.id)
                     && [attack.range, attack.damage, attack.contact_tolerance].iter().all(|v| v.is_finite()),
                     "entity {id}: invalid or duplicate weapon");
+                match (&attack.attack_type, &attack.projectile) {
+                    (AttackType::Kinetic, Some(projectile)) => {
+                        anyhow::ensure!(
+                            [attack.range, attack.damage, projectile.speed, projectile.max_travel_distance]
+                                .iter().all(|value| value.is_finite() && *value > 0.0)
+                                && entities.contains_key(KINETIC_PROJECTILE_TYPE),
+                            "entity {id}: kinetic weapon {} requires positive range, damage, projectile speed, travel distance and a {KINETIC_PROJECTILE_TYPE} definition",
+                            attack.id,
+                        );
+                    }
+                    (AttackType::Kinetic, None) => anyhow::bail!("entity {id}: kinetic weapon {} requires projectile parameters", attack.id),
+                    (_, Some(_)) => anyhow::bail!("entity {id}: only kinetic weapons can define projectile parameters"),
+                    (_, None) => {}
+                }
             }
         }
         for radiation in &def.radiation_sources {

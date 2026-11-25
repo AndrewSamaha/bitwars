@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Military factories can build a kinetic fighter armed only with a projectile weapon. Shots fly in a straight line, hit the first hostile hull along both objects' movement paths, and expire at their own travel limit. Shots grant no vision; unseen kinetic kills and shot terminations are not reported as removals.
 - Self-destruct in the entity details panel now requires a four-word randomized NATO confirmation sequence. Wrong letters, Escape, clicking away, or changing selection cancel the sequence before any order is sent.
 - Minimap sound pings now mark laser firing origins, explosions, and attacked units alongside existing discovery and construction pings; the red circle remains usable even when audio is muted.
 - Selecting an owned entity now shows only its route on the world map: remaining move and sentry waypoints, escort position, or a collection circuit between storage and source (including intermediate waypoints). Collection circuits survive reconnects through the active-intent handshake; the server does not publish a collection waypoint cursor, so the initial approach is not shown as a current leg.

@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
 
 use super::state::{GameState, PlayerTechnologies};
+use crate::combat::{Impact, Motion};
 use crate::{
     content::{ContentPack, TechnologyEffectOperation},
     pb,
@@ -179,6 +180,7 @@ fn visibility<'a>(state: &'a GameState, content: &ContentPack) -> BTreeMap<&'a s
     let mut extended = SpatialIndex::new();
     let mut wide_visibility = Vec::new();
     for (i, entity) in state.entities.iter().enumerate() {
+        if entity.projectile.is_some() { continue; }
         let Some(pos) = entity.pos.as_ref() else { continue; };
         points.insert(i, pos.x, pos.y);
         let range = content.get(&entity.entity_type_id).and_then(|d| d.visibility_range).unwrap_or(0.0);
@@ -274,6 +276,50 @@ pub fn observe(state: &mut GameState, content: &ContentPack) {
     state.discovered_entities = discoveries;
 }
 
+/// Coverage at a sub-tick impact uses actual sensor motion, never last-seen
+/// knowledge. Build before removing any casualties from the projectile sweep.
+pub(super) struct ImpactSensors<'a> {
+    sources: Vec<(&'a str, Motion, f64)>,
+}
+
+impl<'a> ImpactSensors<'a> {
+    pub(super) fn new(
+        state: &'a GameState,
+        content: &ContentPack,
+        starts: &[Option<pb::Vec2>],
+        clamped_moves: &std::collections::HashMap<u64, crate::combat::ClampedMove>,
+    ) -> Self {
+        let sources = state.entities.iter().zip(starts).filter_map(|(source, start)| {
+            if source.projectile.is_some() || !is_player_owner(&source.owner_player_id)
+                || source.supply.as_ref().is_some_and(|s| !s.operational)
+            {
+                return None;
+            }
+            let (start, end) = ((*start)?, source.pos?);
+            let range = sensor_range(source, &state.technologies, content);
+            let motion = clamped_moves.get(&source.id)
+                .map_or_else(|| Motion::linear(start, end), |m| Motion::clamped(m.start, m.stop, m.fraction));
+            (range.is_finite() && range > 0.0)
+                .then_some((source.owner_player_id.as_str(), motion, f64::from(range)))
+        }).collect();
+        Self { sources }
+    }
+
+    pub(super) fn witnesses(&self, impact: Impact, target_range: f32) -> BTreeSet<String> {
+        let mut owners = BTreeSet::new();
+        for &(owner, motion, range) in &self.sources {
+            if owners.contains(owner) { continue; }
+            let (x, y) = motion.at(impact.fraction);
+            let (dx, dy) = (x - impact.position.0, y - impact.position.1);
+            let radius = range.max(f64::from(target_range));
+            if dx * dx + dy * dy <= radius * radius {
+                owners.insert(owner.to_owned());
+            }
+        }
+        owners
+    }
+}
+
 /// Rare destruction paths can invalidate a moved victim at its witnessed death
 /// position rather than guessing from the previous tick's remembered location.
 fn destruction_witnesses(state: &GameState, content: &ContentPack, victim: &pb::Entity) -> BTreeSet<String> {
@@ -301,9 +347,14 @@ fn destruction_witnesses(state: &GameState, content: &ContentPack, victim: &pb::
 }
 
 pub fn forget_destroyed(state: &mut GameState, content: &ContentPack, victim: &pb::Entity) {
-    for owner in destruction_witnesses(state, content, victim) {
-        if let Some(knowledge) = state.discovered_entities.players.get_mut(&owner) {
-            knowledge.forget(victim.id);
+    let witnesses = destruction_witnesses(state, content, victim);
+    forget_witnessed(state, victim.id, &witnesses);
+}
+
+pub(super) fn forget_witnessed(state: &mut GameState, id: u64, witnesses: &BTreeSet<String>) {
+    for owner in witnesses {
+        if let Some(knowledge) = state.discovered_entities.players.get_mut(owner) {
+            knowledge.forget(id);
         }
     }
 }
@@ -536,6 +587,57 @@ mod tests {
         observe(&mut state, &content);
         assert!(!state.discovered_entities.players["alice"].observations.contains_key(&2));
         assert!(changes(&state).player_knowledge_updates[0].removed_entity_ids.contains(&2));
+    }
+
+    #[test]
+    fn kinetic_witnesses_use_impact_positions_and_include_same_sweep_casualties() {
+        let (content, mut state) = setup(vec![
+            entity(1, "worker", "alice", 0.0),
+            entity(2, "worker", "bob", 100.0),
+        ]);
+        observe(&mut state, &content);
+        assert!(state.discovered_entities.players["alice"].visible.contains(&2));
+        let impact = Impact { fraction: 0.5, position: (100.0, 0.0) };
+
+        // A Move snap happened before the interval; previous visibility is stale.
+        state.entities[0].pos.as_mut().unwrap().x = 20_000.0;
+        let starts = [state.entities[0].pos, state.entities[1].pos];
+        let sensors = ImpactSensors::new(&state, &content, &starts, &std::collections::HashMap::new());
+        assert!(!sensors.witnesses(impact, 0.0).contains("alice"));
+
+        // An in-range sensor killed by another shot still witnesses this sweep.
+        state.entities[0].pos.as_mut().unwrap().x = 200.0;
+        state.entities[0].health = 0.0;
+        let starts = [Some(Vec2 { x: 0.0, y: 0.0 }), state.entities[1].pos];
+        let sensors = ImpactSensors::new(&state, &content, &starts, &std::collections::HashMap::new());
+        assert!(sensors.witnesses(impact, 0.0).contains("alice"));
+    }
+
+    #[test]
+    fn kinetic_witnesses_use_the_clamped_sensor_stop_boundary() {
+        let (content, mut state) = setup(vec![
+            entity(1, "worker", "alice", 0.0),
+            entity(2, "worker", "bob", 100.0),
+        ]);
+        let impact = Impact { fraction: 0.5, position: (100.0, 0.0) };
+        let start = Vec2 { x: 0.0, y: 0.0 };
+        state.entities[0].pos = Some(Vec2 { x: 700.0, y: 0.0 });
+        let clamped = std::collections::HashMap::from([(1, crate::combat::ClampedMove {
+            start,
+            stop: Vec2 { x: 700.0, y: 0.0 },
+            fraction: 0.2,
+        })]);
+        let starts = [Some(start), state.entities[1].pos];
+
+        // Alice reaches her stop boundary at 20% of the tick; at impact time
+        // she is at x=700, outside sensor range of the hit at x=100.
+        let sensors = ImpactSensors::new(&state, &content, &starts, &clamped);
+        assert!(!sensors.witnesses(impact, 0.0).contains("alice"));
+
+        // Treating the same displacement as linear over the tick would place
+        // her at x=350 and falsely report coverage.
+        let sensors = ImpactSensors::new(&state, &content, &starts, &std::collections::HashMap::new());
+        assert!(sensors.witnesses(impact, 0.0).contains("alice"));
     }
 
     #[test]

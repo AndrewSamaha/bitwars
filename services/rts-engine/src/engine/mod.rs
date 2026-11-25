@@ -28,7 +28,7 @@ use uuid::{Uuid, Version};
 use crate::combat::CombatSystem;
 use crate::config::GameConfig;
 use crate::content::{
-    CollectionMode, ContentPack, EntityTypeDef, MinimumDistanceDef, RadiationShieldingDef,
+    AttackType, CollectionMode, ContentPack, EntityTypeDef, MinimumDistanceDef, RadiationShieldingDef,
     RepairDef, TechnologyRequirement,
 };
 use crate::delta::compute_delta;
@@ -1202,6 +1202,7 @@ mod radiation_tests {
         let content = make_content();
         let star = pb::Entity {
             supply: None,
+            projectile: None,
             resource_deposit: None,
             resources: None,
             id: 1,
@@ -1214,6 +1215,7 @@ mod radiation_tests {
         };
         let collector_safe = pb::Entity {
             supply: None,
+            projectile: None,
             resource_deposit: None,
             resources: None,
             id: 2,
@@ -1226,6 +1228,7 @@ mod radiation_tests {
         };
         let collector_too_close = pb::Entity {
             supply: None,
+            projectile: None,
             resource_deposit: None,
             resources: None,
             id: 3,
@@ -1238,6 +1241,7 @@ mod radiation_tests {
         };
         let worker_same_distance = pb::Entity {
             supply: None,
+            projectile: None,
             resource_deposit: None,
             resources: None,
             id: 4,
@@ -1273,6 +1277,7 @@ mod radiation_tests {
             entities: vec![
                 pb::Entity {
                     supply: None,
+                    projectile: None,
                     resource_deposit: None,
                     resources: None,
                     id: 1,
@@ -1285,6 +1290,7 @@ mod radiation_tests {
                 },
                 pb::Entity {
                     supply: None,
+                    projectile: None,
                     resource_deposit: None,
                     resources: None,
                     id: 2,
@@ -1297,6 +1303,7 @@ mod radiation_tests {
                 },
                 pb::Entity {
                     supply: None,
+                    projectile: None,
                     resource_deposit: None,
                     resources: None,
                     id: 3,
@@ -1370,6 +1377,7 @@ mod radiation_tests {
         let mut entities = vec![
             pb::Entity {
                 supply: None,
+                projectile: None,
                 resource_deposit: None,
                 resources: None,
                 id: 1,
@@ -1382,6 +1390,7 @@ mod radiation_tests {
             },
             pb::Entity {
                 supply: None,
+                projectile: None,
                 resource_deposit: None,
                 resources: None,
                 id: 2,
@@ -2795,14 +2804,7 @@ impl Engine {
         let (min_x, max_x) = (min_x - padding, max_x + padding);
         let (min_y, max_y) = (min_y - padding, max_y + padding);
 
-        let next_id = self
-            .state
-            .entities
-            .iter()
-            .map(|entity| entity.id)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1);
+        let next_id = state::next_unit_id(&self.state.entities);
         let health = definition.health.max(0.0);
         let mut rng = rand::thread_rng();
         for offset in 0..count {
@@ -2818,6 +2820,7 @@ impl Engine {
                 owner_player_id: crate::spawn_config::RAIDERS_OWNER.to_string(),
                 health,
                 supply: None,
+                projectile: None,
                 resource_deposit: None,
                 resources: initial_resource_inventory(definition),
             });
@@ -3115,14 +3118,7 @@ impl Engine {
                 continue;
             };
             let Some(pos) = builder.pos else { continue };
-            let next_id = self
-                .state
-                .entities
-                .iter()
-                .map(|entity| entity.id)
-                .max()
-                .unwrap_or(0)
-                + 1;
+            let next_id = state::next_unit_id(&self.state.entities);
             let angle = (next_id as f32 * 2.399_963_1) % std::f32::consts::TAU;
             let (Some(builder_def), Some(product_def)) = (
                 content.get(&builder.entity_type_id),
@@ -3144,6 +3140,7 @@ impl Engine {
                 owner_player_id: player_id,
                 health,
                 supply: None,
+                projectile: None,
                 resource_deposit: None,
                 resources: initial_resource_inventory(product_def),
             });
@@ -3555,7 +3552,7 @@ impl Engine {
         }
 
         for entity in &state.entities {
-            if entity.health <= 0.0 {
+            if entity.health <= 0.0 || entity.projectile.is_some() {
                 continue;
             }
             let Some(pos) = entity.pos.as_ref() else {
@@ -3669,6 +3666,7 @@ impl Engine {
             return crate::combat::CombatTick {
                 dead_entity_ids: Vec::new(),
                 laser_shots: Vec::new(),
+                projectile_spawns: Vec::new(),
                 dismantling: Vec::new(),
                 destructions: Vec::new(),
                 engagements: HashMap::new(),
@@ -3698,17 +3696,92 @@ impl Engine {
             &sentry_members,
         );
         self.update_combat_effect_states(&outcome.dismantling);
-        if outcome.dead_entity_ids.is_empty() {
-            return outcome;
-        }
-        let dead_ids: HashSet<u64> = outcome.dead_entity_ids.iter().copied().collect();
-        self.state
-            .entities
-            .retain(|entity| !dead_ids.contains(&entity.id));
-        for entity_id in &outcome.dead_entity_ids {
-            self.clear_fractional_for_entity(*entity_id);
-        }
+        self.remove_combat_casualties(&outcome.dead_entity_ids, false);
         outcome
+    }
+
+    fn remove_combat_casualties(&mut self, ids: &[u64], despawn_projectiles: bool) {
+        if ids.is_empty() && !despawn_projectiles {
+            return;
+        }
+        let dead: HashSet<_> = ids.iter().copied().collect();
+        self.state.entities.retain(|entity| !dead.contains(&entity.id)
+            && !(despawn_projectiles && entity.projectile.is_some() && entity.health <= 0.0));
+        for &id in ids {
+            self.clear_fractional_for_entity(id);
+        }
+    }
+
+    /// Integrate hulls and existing projectiles over the same motion interval.
+    /// Newly fired shots start advancing on the next tick.
+    async fn advance_combat_motion(&mut self, dt: f32, mut spawns: Vec<pb::Entity>) -> Result<Vec<pb::KineticRemoval>> {
+        let swept = dt > 0.0 && self.content.is_some()
+            && self.state.entities.iter().any(|entity| entity.projectile.is_some());
+        let clamped_moves = if swept {
+            self.intents.clamped_move_motions().clone()
+        } else {
+            HashMap::new()
+        };
+        // Clamped Move steps already snapped to their stop boundary before this
+        // point; sweep them from their pre-snap positions instead.
+        let starts: Option<Vec<_>> = swept.then(|| self.state.entities.iter()
+            .map(|entity| clamped_moves.get(&entity.id).map_or(entity.pos, |motion| Some(motion.start)))
+            .collect());
+        integrate(&self.cfg, &mut self.state, dt);
+        self.advance_convoys(dt).await?;
+        self.intents.tick_sentries(&mut self.state, dt);
+        self.cancel_invalid_escorts().await?;
+        self.intents.tick_escorts(&mut self.state, dt);
+
+        let mut removals = Vec::new();
+        if let Some((starts, content)) = starts.as_deref().zip(self.content.as_ref()) {
+            let outcome = crate::combat::advance_projectiles(
+                &mut self.state.entities, starts, &clamped_moves, content, dt,
+            );
+            if !outcome.terminations.is_empty() {
+                let sensors = discovery::ImpactSensors::new(&self.state, content, starts, &clamped_moves);
+                removals = outcome.terminations.into_iter().map(|(entity_id, impact)| {
+                    pb::KineticRemoval {
+                        entity_id,
+                        witness_player_ids: sensors.witnesses(impact, 0.0).into_iter().collect(),
+                    }
+                }).collect();
+                let witnessed_deaths: Vec<_> = outcome.destructions.into_iter().map(|death| {
+                    let target_range = content.get(&death.victim.entity_type_id)
+                        .and_then(|def| def.visibility_range).unwrap_or(0.0);
+                    let witnesses = sensors.witnesses(death.impact.unwrap(), target_range);
+                    (death, witnesses)
+                }).collect();
+
+                let dead: Vec<_> = witnessed_deaths.iter().map(|(death, _)| death.victim.id).collect();
+                self.combat.forget_destroyed(&dead);
+                self.remove_combat_casualties(&dead, true);
+                for (death, mut witnesses) in witnessed_deaths {
+                    let attacker_saw_impact = witnesses.contains(&death.attacker_owner_player_id);
+                    if is_player_owner(&death.victim.owner_player_id) {
+                        witnesses.insert(death.victim.owner_player_id.clone());
+                    }
+                    discovery::forget_witnessed(&mut self.state, death.victim.id, &witnesses);
+                    removals.push(pb::KineticRemoval {
+                        entity_id: death.victim.id,
+                        witness_player_ids: witnesses.into_iter().collect(),
+                    });
+                    self.emit_combat_destruction(&death, attacker_saw_impact).await;
+                }
+                self.cancel_destroyed_intents(&dead).await;
+            }
+        }
+
+        if !spawns.is_empty() {
+            // Never reuse IDs of vanished shots, including after checkpoint restoration.
+            let sequence = self.state.generation.projectile_sequence.get_or_insert(0);
+            for shot in &mut spawns {
+                shot.id = (1 << 63) | *sequence;
+                *sequence += 1;
+            }
+            self.state.entities.append(&mut spawns);
+        }
+        Ok(removals)
     }
 
     fn update_combat_effect_states(&mut self, dismantling: &[crate::combat::Dismantling]) {
@@ -4136,41 +4209,48 @@ impl Engine {
             if let Some(content) = self.content.as_ref() {
                 discovery::forget_destroyed(&mut self.state, content, &destruction.victim);
             }
-            let recipients = gameplay_event_recipients(
-                &destruction.victim.owner_player_id,
-                &destruction.attacker_owner_player_id,
-            );
-            if recipients.is_empty() {
-                continue;
-            }
-            let event = GameplayEvent {
-                server_tick: self.state.tick,
-                occurred_at_ms: unix_time_ms(),
-                recipients,
-                kind: GameplayEventKind::EntityDestroyed {
-                    victim: gameplay_entity_ref(&destruction.victim),
-                    attacker: Some(GameplayEntityRef {
-                        entity_id: destruction.attacker_id,
-                        entity_type_id: destruction.attacker_entity_type_id.clone(),
-                        owner_player_id: destruction.attacker_owner_player_id.clone(),
-                    }),
-                    cause: match destruction.cause {
-                        crate::content::AttackType::Laser => "laser".to_string(),
-                        crate::content::AttackType::Dismantle => "dismantle".to_string(),
-                    },
-                    damage_amount: None,
-                    missing_resource_types: None,
-                    source_entity_id: None,
-                    position: entity_position(&destruction.victim),
+            self.emit_combat_destruction(destruction, true).await;
+        }
+    }
+
+    async fn emit_combat_destruction(
+        &mut self,
+        destruction: &crate::combat::CombatDestruction,
+        attacker_saw_impact: bool,
+    ) {
+        let attacker_owner = if attacker_saw_impact { destruction.attacker_owner_player_id.as_str() } else { "" };
+        let recipients = gameplay_event_recipients(&destruction.victim.owner_player_id, attacker_owner);
+        if recipients.is_empty() {
+            return;
+        }
+        let event = GameplayEvent {
+            server_tick: self.state.tick,
+            occurred_at_ms: unix_time_ms(),
+            recipients,
+            kind: GameplayEventKind::EntityDestroyed {
+                victim: gameplay_entity_ref(&destruction.victim),
+                attacker: Some(GameplayEntityRef {
+                    entity_id: destruction.attacker_id,
+                    entity_type_id: destruction.attacker_entity_type_id.clone(),
+                    owner_player_id: destruction.attacker_owner_player_id.clone(),
+                }),
+                cause: match destruction.cause {
+                    AttackType::Laser => "laser".to_string(),
+                    AttackType::Kinetic => "kinetic".to_string(),
+                    AttackType::Dismantle => "dismantle".to_string(),
                 },
-            };
-            if let Err(error) = self.redis.publish_gameplay_event(&event).await {
-                warn!(
-                    ?error,
-                    victim_id = destruction.victim.id,
-                    "failed to publish gameplay destruction event"
-                );
-            }
+                damage_amount: None,
+                missing_resource_types: None,
+                source_entity_id: None,
+                position: entity_position(&destruction.victim),
+            },
+        };
+        if let Err(error) = self.redis.publish_gameplay_event(&event).await {
+            warn!(
+                ?error,
+                victim_id = destruction.victim.id,
+                "failed to publish gameplay destruction event"
+            );
         }
     }
 
@@ -5099,11 +5179,7 @@ impl Engine {
         let starvation_damage = self.maintain_depot_operations(dt).await;
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
-        integrate(&self.cfg, &mut self.state, dt);
-        self.advance_convoys(dt).await?;
-        self.intents.tick_sentries(&mut self.state, dt);
-        self.cancel_invalid_escorts().await?;
-        self.intents.tick_escorts(&mut self.state, dt);
+        let kinetic_removals = self.advance_combat_motion(dt, combat.projectile_spawns).await?;
         let radiation_source_by_victim = self.apply_radiation_damage(dt);
         let radiation_damaged_entities: HashSet<u64> = radiation_source_by_victim.keys().copied().collect();
         let radiation_victims: Vec<pb::Entity> = self
@@ -5145,6 +5221,7 @@ impl Engine {
             &starvation_damage,
             &radiation_damaged_entities,
         );
+        delta.kinetic_removals = kinetic_removals;
         self.intents.append_move_order_changes(&mut delta);
         self.intents.append_sentry_changes(&mut delta);
         self.intents.append_escort_changes(&mut delta);
@@ -5404,11 +5481,7 @@ impl Engine {
                 "economy",
                 &mut phase_started,
             );
-            integrate(&self.cfg, &mut self.state, dt);
-            self.advance_convoys(dt).await?;
-            self.intents.tick_sentries(&mut self.state, dt);
-            self.cancel_invalid_escorts().await?;
-            self.intents.tick_escorts(&mut self.state, dt);
+            let kinetic_removals = self.advance_combat_motion(dt, combat.projectile_spawns).await?;
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
@@ -5469,6 +5542,7 @@ impl Engine {
                 &starvation_damage,
                 &radiation_damaged_entities,
             );
+            delta.kinetic_removals = kinetic_removals;
             self.intents.append_move_order_changes(&mut delta);
             self.intents.append_sentry_changes(&mut delta);
             self.intents.append_escort_changes(&mut delta);

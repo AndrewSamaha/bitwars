@@ -21,4 +21,11 @@ message Delta {
   repeated SentryOrderRemoval sentry_order_removals = 9;
   repeated EscortOrderState escort_order_updates = 10;
   repeated EscortOrderRemoval escort_order_removals = 11;
+  // Server-side witnesses of kinetic kills and projectile terminations.
+  repeated KineticRemoval kinetic_removals = 13;
+}
+
+message KineticRemoval {
+  uint64 entity_id = 1;
+  repeated string witness_player_ids = 2;
 }

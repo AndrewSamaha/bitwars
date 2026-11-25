@@ -33,6 +33,27 @@ pub struct Entity {
     /// association and operating/action shortage; owner-only
     #[prost(message, optional, tag = "10")]
     pub supply: ::core::option::Option<DepotSupply>,
+    /// server-only flight checkpoint; omitted from player projections
+    #[prost(message, optional, tag = "11")]
+    pub projectile: ::core::option::Option<ProjectileState>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProjectileState {
+    #[prost(uint64, tag = "1")]
+    pub attacker_id: u64,
+    #[prost(string, tag = "2")]
+    pub attacker_entity_type_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub attacker_owner_player_id: ::prost::alloc::string::String,
+    #[prost(float, tag = "4")]
+    pub damage: f32,
+    #[prost(double, tag = "5")]
+    pub remaining_distance: f64,
+    /// Authoritative coordinates; Entity.pos is the rounded client projection.
+    #[prost(double, optional, tag = "6")]
+    pub precise_x: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "7")]
+    pub precise_y: ::core::option::Option<f64>,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct ResourceDeposit {
@@ -389,6 +410,16 @@ pub struct Delta {
     pub escort_order_updates: ::prost::alloc::vec::Vec<EscortOrderState>,
     #[prost(message, repeated, tag = "11")]
     pub escort_order_removals: ::prost::alloc::vec::Vec<EscortOrderRemoval>,
+    /// Server-side witnesses of kinetic kills and projectile terminations.
+    #[prost(message, repeated, tag = "13")]
+    pub kinetic_removals: ::prost::alloc::vec::Vec<KineticRemoval>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct KineticRemoval {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(string, repeated, tag = "2")]
+    pub witness_player_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]

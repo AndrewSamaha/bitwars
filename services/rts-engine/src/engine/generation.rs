@@ -1,7 +1,7 @@
 //! Procedural neutral populations and transactional player starts.
 use super::state::{
-    initialize_resource_deposits, neutral_entity, on_player_spawn, sample_normal_position,
-    set_resource_amount, GameState,
+    initialize_resource_deposits, neutral_entity, next_unit_id as next_id, on_player_spawn,
+    sample_normal_position, set_resource_amount, GameState,
 };
 use crate::{
     content::ContentPack,
@@ -21,6 +21,9 @@ pub struct GenerationState {
     pub version: u32,
     pub starts: BTreeMap<String, StartReservation>,
     pub pending: BTreeMap<String, PendingStart>,
+    // Persistent world-entity allocation in the reserved upper half of the u64 ID space.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projectile_sequence: Option<u64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -115,9 +118,6 @@ fn pos(e: &Entity) -> [f32; 2] {
 fn hull(content: &ContentPack, id: &str) -> f32 {
     content.get(id).map_or(0.0, |d| d.hull_radius.max(0.0))
 }
-fn next_id(entities: &[Entity]) -> u64 {
-    entities.iter().map(|e| e.id).max().unwrap_or(0) + 1
-}
 fn radiation_safe(
     entities: &[Entity],
     content: &ContentPack,
@@ -149,7 +149,7 @@ fn clear(
 ) -> bool {
     entities
         .iter()
-        .filter(|e| e.health > 0.0)
+        .filter(|e| e.health > 0.0 && e.projectile.is_none())
         .all(|e| distance(p, pos(e)) >= separation.max(radius + hull(content, &e.entity_type_id)))
 }
 fn add_object(

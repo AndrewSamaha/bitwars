@@ -51,6 +51,8 @@ pub struct IntentManager {
     pub(super) move_route_last_cmd: HashMap<u64, Vec<u8>>,
     pub(super) move_routes: HashMap<u64, pb::NavigationRoute>,
     pub(super) changed_move_routes: std::collections::HashSet<u64>,
+    /// Move steps clamped to their stop boundary this tick, for projectile sweeps.
+    clamped_move_motions: HashMap<u64, crate::combat::ClampedMove>,
     /// M4: per-entity-type definitions for speed/stop_radius lookups.
     pub(super) entity_types: HashMap<String, EntityTypeDef>,
     default_stop_radius: f32,
@@ -76,6 +78,7 @@ impl IntentManager {
             published_move_orders: HashMap::new(),
             move_route_last_cmd: HashMap::new(),
             changed_move_routes: std::collections::HashSet::new(),
+            clamped_move_motions: HashMap::new(),
             entity_types,
             default_stop_radius,
             default_speed,
@@ -247,6 +250,8 @@ impl IntentManager {
         dt: f32,
     ) -> Vec<(u64, IntentMetadata)> {
         let mut finished: Vec<u64> = Vec::new();
+        self.clamped_move_motions.clear();
+        let mut clamped_motions: Vec<(u64, crate::combat::ClampedMove)> = Vec::new();
 
         let mut members: std::collections::HashSet<u64> = self.convoys.iter()
             .flat_map(|order| order.slots.iter().map(|slot| slot.entity_id)).collect();
@@ -304,8 +309,19 @@ impl IntentManager {
                                 // Overshoot prevention: snap to stop boundary
                                 // and arrive immediately.  Without this clamp a
                                 // fast entity would ping-pong past the target.
+                                let previous = *pos;
                                 pos.x = to.x - dir_x * stop_r;
                                 pos.y = to.y - dir_y * stop_r;
+                                let fraction = if step > 0.0 {
+                                    f64::from((effective_dist / step).clamp(0.0, 1.0))
+                                } else {
+                                    1.0
+                                };
+                                clamped_motions.push((*eid, crate::combat::ClampedMove {
+                                    start: previous,
+                                    stop: *pos,
+                                    fraction,
+                                }));
                                 vel.x = 0.0;
                                 vel.y = 0.0;
                                 finished.push(*eid);
@@ -321,6 +337,10 @@ impl IntentManager {
                 }
                 _ => {}
             }
+        }
+
+        for (entity_id, motion) in clamped_motions {
+            self.clamped_move_motions.insert(entity_id, motion);
         }
 
         let mut notifications = Vec::with_capacity(finished.len());
@@ -349,6 +369,11 @@ impl IntentManager {
     /// Read-only view of active intents (M1: no server-side queues).
     pub fn active_intents(&self) -> &HashMap<u64, ActiveIntent> {
         &self.current_action
+    }
+
+    /// Move steps clamped during the most recent [`Self::follow_targets`].
+    pub(crate) fn clamped_move_motions(&self) -> &HashMap<u64, crate::combat::ClampedMove> {
+        &self.clamped_move_motions
     }
 
     /// Return the maintained collection assignment for an entity, if it is
@@ -686,6 +711,7 @@ mod tests {
             tick: 0,
             entities: vec![pb::Entity {
                 supply: None,
+                projectile: None,
                 resource_deposit: None,
                 resources: None,
                 id: entity_id,
@@ -710,6 +736,39 @@ mod tests {
     }
 
     #[test]
+    fn clamped_move_records_pre_snap_path_for_projectile_sweeps() {
+        let mut manager = IntentManager::new(HashMap::new(), 0.75, 90.0);
+        let entity_id = 21_u64;
+        let outcome = manager.try_activate(
+            make_move_intent(entity_id, (0.0, 0.0)),
+            make_metadata(4, pb::IntentPolicy::ReplaceActive),
+            "",
+        );
+        assert!(outcome.started.is_some());
+        let mut state = GameState {
+            discovered_entities: Default::default(),
+            generation: Default::default(),
+            tick: 0,
+            entities: vec![pb::Entity {
+                id: entity_id,
+                pos: Some(pb::Vec2 { x: 0.0, y: 10.0 }),
+                vel: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
+                owner_player_id: "p1".into(),
+                health: 100.0,
+                ..Default::default()
+            }],
+            technologies: Default::default(),
+        };
+
+        manager.follow_targets(&mut state, 90.0, 0.2);
+        assert_eq!(state.entities[0].pos.unwrap().y, 0.75);
+        let motion = manager.clamped_move_motions()[&entity_id];
+        assert_eq!(motion.start.y, 10.0);
+        assert_eq!(motion.stop.y, 0.75);
+        assert!((motion.fraction - 9.25 / 18.0).abs() < 1e-6);
+    }
+
+    #[test]
     fn collect_intent_stays_active_until_replaced() {
         let mut manager = IntentManager::new(HashMap::new(), 0.75, 90.0);
         let entity_id = 17_u64;
@@ -724,6 +783,7 @@ mod tests {
             tick: 0,
             entities: vec![pb::Entity {
                 supply: None,
+                projectile: None,
                 resource_deposit: None,
                 resources: None,
                 id: entity_id,

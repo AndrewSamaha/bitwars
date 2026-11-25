@@ -231,6 +231,8 @@ export default function GameStateStreamBridge() {
       console.log(`[GameState] ${label}`, { myPlayerId, entityCount: entities.length, entities });
     };
 
+    const projectileType = "kinetic_projectile";
+
     const applySnapshot = (payload: SnapshotPayload & { run_id?: string; paused?: boolean }) => {
       minimapMemory.setContext(currentPlayerIdRef.current, payload.run_id ?? game.runId);
       minimapMemory.replace(payload.remembered_entities ?? []);
@@ -271,7 +273,7 @@ export default function GameStateStreamBridge() {
 
       // Add new ones
       for (const s of payload.entities) {
-        knownEntityIdsRef.current.add(normalizeId(s.id));
+        if (s.entity_type_id !== projectileType) knownEntityIdsRef.current.add(normalizeId(s.id));
         const collectorState = collectorStateByEntity.get(normalizeId(s.id));
         const combatEffectState = combatEffectStateByEntity.get(normalizeId(s.id));
         const ent: Entity = {
@@ -350,7 +352,7 @@ export default function GameStateStreamBridge() {
         const key = normalizeId(id);
         const existing = byId.get(key);
         if (!existing) continue;
-        dispatchEntityExploded(existing);
+        if (existing.entity_type_id !== projectileType) dispatchEntityExploded(existing);
         try {
           // @ts-ignore - sprite is optional
           existing.sprite?.destroy?.();
@@ -361,8 +363,9 @@ export default function GameStateStreamBridge() {
       }
       for (const u of payload.updates) {
         const key = normalizeId(u.id);
-        const firstSeen = !knownEntityIdsRef.current.has(key);
         const existing = byId.get(key);
+        const isProjectile = (u.entity_type_id ?? existing?.entity_type_id) === projectileType;
+        const firstSeen = !isProjectile && !knownEntityIdsRef.current.has(key);
         if (existing) {
           const reacquired = existing.remembered !== undefined;
           if (reacquired) world.removeComponent(existing, "remembered");
@@ -426,7 +429,7 @@ export default function GameStateStreamBridge() {
           applyIntentOverlayToEntity(ent, activeIntentByEntityRef.current.get(key));
           if (firstSeen) newlyKnown.push(ent);
         }
-        knownEntityIdsRef.current.add(key);
+        if (!isProjectile) knownEntityIdsRef.current.add(key);
       }
       for (const observation of payload.remembered_entity_updates ?? []) syncMemory(observation.id);
       for (const state of payload.collector_state_updates ?? []) {
