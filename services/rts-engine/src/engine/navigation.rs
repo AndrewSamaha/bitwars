@@ -355,6 +355,7 @@ mod tests {
         (
             manager,
             GameState { discovered_entities: Default::default(), generation: Default::default(),
+                projectile_trails: Vec::new(),
                 tick: 5,
                 entities: vec![pb::Entity {
                     id: 1,
@@ -606,6 +607,7 @@ mod tests {
         let mut restored_state = GameState {
             tick: 0, entities: decoded.entities, technologies: HashMap::new(),
             discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
         };
         let (metadata, destination) = restored.restore_move_order(decoded.move_orders.into_iter().next().unwrap(), "");
         assert_eq!(metadata.entity_id, 1);

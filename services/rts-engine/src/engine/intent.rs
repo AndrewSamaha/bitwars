@@ -683,6 +683,7 @@ mod tests {
 
         // Entity is already at (0,0), target is (0,0) -> should finish immediately
         let mut state = GameState { discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
             tick: 0,
             entities: vec![pb::Entity {
                 supply: None,
@@ -722,6 +723,7 @@ mod tests {
         assert!(!outcome.rejected_busy);
 
         let mut state = GameState { discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
             tick: 0,
             entities: vec![pb::Entity {
                 supply: None,

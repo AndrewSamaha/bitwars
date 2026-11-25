@@ -112,7 +112,7 @@ impl Knowledge {
     }
 }
 
-fn sensor_range(source: &pb::Entity, technologies: &PlayerTechnologies, content: &ContentPack) -> f32 {
+pub(crate) fn sensor_range(source: &pb::Entity, technologies: &PlayerTechnologies, content: &ContentPack) -> f32 {
     let mut range = content.get(&source.entity_type_id)
         .and_then(|d| d.sensor.as_ref()).map_or(0.0, |sensor| sensor.range);
     if let Some(owned) = technologies.get(&source.owner_player_id) {
@@ -305,12 +305,20 @@ fn destruction_witnesses(state: &GameState, content: &ContentPack, victim: &pb::
 
 pub(crate) fn forget_destroyed(state: &mut GameState, content: &ContentPack, victim: &pb::Entity) -> BTreeSet<String> {
     let witnesses = destruction_witnesses(state, content, victim);
-    for owner in &witnesses {
+    forget_witnessed(state, victim.id, witnesses.iter().map(String::as_str));
+    witnesses
+}
+
+pub(super) fn forget_witnessed<'a>(
+    state: &mut GameState,
+    victim_id: u64,
+    witnesses: impl IntoIterator<Item = &'a str>,
+) {
+    for owner in witnesses {
         if let Some(knowledge) = state.discovered_entities.players.get_mut(owner) {
-            knowledge.forget(victim.id);
+            knowledge.forget(victim_id);
         }
     }
-    witnesses
 }
 
 /// Before removal, borrow the target and its sensors rather than cloning it.
@@ -353,6 +361,7 @@ mod tests {
             technologies: Default::default(),
             generation: Default::default(),
             discovered_entities: Default::default(),
+            projectile_trails: Vec::new(),
         };
         (content, state)
     }
@@ -366,6 +375,7 @@ mod tests {
             attacker_owner_player_id: "alice".into(),
             damage: 12.0,
             remaining_distance: 200.0,
+            position: None,
         });
         let victim = entity(2, "worker", "bob", 1200.0);
         let (content, mut state) = setup(vec![entity(1, "kinetic_fighter", "alice", 0.0), shot]);
@@ -626,6 +636,7 @@ mod tests {
             entities: saved.entities, tick: saved.tick as u64,
             technologies: Default::default(), generation: Default::default(),
             discovered_entities: serde_json::from_str(&saved.discovered_entities_json).unwrap(),
+            projectile_trails: Vec::new(),
         };
         restored.discovered_entities.restore_knowledge(saved.player_knowledge, restored.tick);
         assert_eq!(observation(&restored, "alice", 2), observation(&state, "alice", 2));
@@ -736,6 +747,7 @@ mod index_comparison_tests {
             technologies: Default::default(),
             generation: Default::default(),
             discovered_entities: Default::default(),
+            projectile_trails: Vec::new(),
         };
         update(&mut state, &content);
         assert_eq!(state.discovered_entities, expected);

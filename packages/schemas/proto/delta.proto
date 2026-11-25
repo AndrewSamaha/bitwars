@@ -1,6 +1,7 @@
 syntax = "proto3";
 package bitwars;
 
+import "entity.proto";
 import "entity_delta.proto";
 import "navigation.proto";
 import "collector_state.proto";
@@ -21,4 +22,17 @@ message Delta {
   repeated SentryOrderRemoval sentry_order_removals = 9;
   repeated EscortOrderState escort_order_updates = 10;
   repeated EscortOrderRemoval escort_order_removals = 11;
+  repeated KineticDestruction kinetic_destructions = 13;
+  // Full set after this tick. An empty frame clears the last expired trails;
+  // an absent frame leaves the observer's cached trails unchanged.
+  ProjectileTrailFrame projectile_trail_frame = 14;
+}
+
+message KineticDestruction {
+  uint64 entity_id = 1;
+  repeated string witnesses = 2;
+}
+
+message ProjectileTrailFrame {
+  repeated ProjectileTrail trails = 1;
 }

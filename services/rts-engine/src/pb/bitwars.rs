@@ -49,6 +49,33 @@ pub struct ProjectileFlight {
     pub damage: f32,
     #[prost(double, tag = "5")]
     pub remaining_distance: f64,
+    /// optional for legacy checkpoints
+    #[prost(message, optional, tag = "6")]
+    pub position: ::core::option::Option<FlightPosition>,
+}
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct FlightPosition {
+    #[prost(double, tag = "1")]
+    pub x: f64,
+    #[prost(double, tag = "2")]
+    pub y: f64,
+}
+/// Server-only flight after an impact, used for observers who could not see
+/// the struck hull. This is never a simulated entity and cannot deal damage.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProjectileTrail {
+    #[prost(uint64, tag = "1")]
+    pub projectile_id: u64,
+    #[prost(message, optional, tag = "2")]
+    pub position: ::core::option::Option<FlightPosition>,
+    #[prost(message, optional, tag = "3")]
+    pub velocity: ::core::option::Option<Vec2>,
+    #[prost(double, tag = "4")]
+    pub remaining_distance: f64,
+    #[prost(string, repeated, tag = "5")]
+    pub impact_witnesses: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(float, tag = "6")]
+    pub health: f32,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct ResourceDeposit {
@@ -405,6 +432,24 @@ pub struct Delta {
     pub escort_order_updates: ::prost::alloc::vec::Vec<EscortOrderState>,
     #[prost(message, repeated, tag = "11")]
     pub escort_order_removals: ::prost::alloc::vec::Vec<EscortOrderRemoval>,
+    #[prost(message, repeated, tag = "13")]
+    pub kinetic_destructions: ::prost::alloc::vec::Vec<KineticDestruction>,
+    /// Full set after this tick. An empty frame clears the last expired trails;
+    /// an absent frame leaves the observer's cached trails unchanged.
+    #[prost(message, optional, tag = "14")]
+    pub projectile_trail_frame: ::core::option::Option<ProjectileTrailFrame>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct KineticDestruction {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(string, repeated, tag = "2")]
+    pub witnesses: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProjectileTrailFrame {
+    #[prost(message, repeated, tag = "1")]
+    pub trails: ::prost::alloc::vec::Vec<ProjectileTrail>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -1190,6 +1235,8 @@ pub struct Snapshot {
     pub escort_orders: ::prost::alloc::vec::Vec<EscortOrderState>,
     #[prost(message, repeated, tag = "18")]
     pub idle_combat_returns: ::prost::alloc::vec::Vec<IdleCombatReturnState>,
+    #[prost(message, repeated, tag = "19")]
+    pub projectile_trails: ::prost::alloc::vec::Vec<ProjectileTrail>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotMeta {

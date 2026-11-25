@@ -594,6 +594,7 @@ mod tests {
             }],
             technologies: HashMap::new(),
             discovered_entities: Default::default(),
+            projectile_trails: Vec::new(),
             generation: Default::default(),
         };
         let metadata = IntentMetadata {

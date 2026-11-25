@@ -66,4 +66,5 @@ message Snapshot {
   repeated SentryOrderState sentry_orders = 10;
   repeated EscortOrderState escort_orders = 11;
   repeated IdleCombatReturnState idle_combat_returns = 18;
+  repeated ProjectileTrail projectile_trails = 19;
 }

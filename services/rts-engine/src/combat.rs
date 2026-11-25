@@ -1,12 +1,13 @@
 //! Deterministic, server-authoritative combat. Lasers and dismantling resolve
 //! when fired; kinetic shots resolve separately as their projectiles travel.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::content::{AttackDef, AttackType, ContentPack, NearEnemyStrategy, KINETIC_PROJECTILE_TYPE};
-use crate::pb::{Entity, ProjectileFlight, Vec2};
+use crate::engine::{discovery::sensor_range, state::PlayerTechnologies};
+use crate::pb::{Entity, FlightPosition, ProjectileFlight, ProjectileTrail, Vec2};
 use crate::spatial::{SpatialIndex, CELL_SIZE};
-use crate::spawn_config::is_system_owner;
+use crate::spawn_config::{is_player_owner, is_system_owner};
 
 // Scenario IDs are limited to safe JavaScript integers. Projectiles use the
 // uint64 range above them so transient shots don't affect unit IDs.
@@ -72,6 +73,7 @@ pub struct CombatDestruction {
     pub attacker_entity_type_id: String,
     pub attacker_owner_player_id: String,
     pub cause: AttackType,
+    pub(crate) kinetic_witnesses: Option<Vec<String>>,
 }
 
 struct DamageContribution {
@@ -380,6 +382,7 @@ impl CombatSystem {
                                 attacker_owner_player_id: attacker.owner_player_id.clone(),
                                 damage: attack.damage,
                                 remaining_distance: f64::from(projectile.max_travel_distance),
+                                position: Some(flight_position(origin)),
                             }),
                             ..Default::default()
                         });
@@ -473,28 +476,39 @@ impl CombatSystem {
 pub(crate) fn advance_projectiles(
     entities: &mut Vec<Entity>,
     previous_entities: &[Entity],
+    trails: &mut Vec<ProjectileTrail>,
+    technologies: &PlayerTechnologies,
     content: &ContentPack,
     dt: f32,
     launches: Vec<Entity>,
 ) -> (Vec<u64>, Vec<CombatDestruction>) {
     let in_flight = entities.iter().any(|entity| entity.projectile.is_some());
-    if dt <= 0.0 || (!in_flight && launches.is_empty()) {
+    if dt <= 0.0 {
         return (Vec::new(), Vec::new());
     }
 
-    // No ID that existed in the previous published state may reappear as a
-    // different entity in the same delta, even if it was removed this tick.
+    // Reserve IDs still in authoritative or projected flight, including those
+    // expiring this tick, so removal and a new launch never share an ID.
     let mut next_id = if launches.is_empty() {
         0
     } else {
         entities.iter().chain(previous_entities)
             .filter(|entity| entity.projectile.is_some())
             .map(|entity| entity.id)
+            .chain(trails.iter().map(|trail| trail.projectile_id))
             .max()
             .unwrap_or(FIRST_PROJECTILE_ID - 1)
     };
+    let dt = f64::from(dt);
+    trails.retain_mut(|trail| {
+        let (Some(position), Some(velocity)) = (trail.position, trail.velocity) else { return false; };
+        let Some(step) = FlightStep::new(velocity, trail.remaining_distance, dt) else { return false; };
+        trail.remaining_distance -= step.distance;
+        trail.position = Some(step.end(position));
+        trail.remaining_distance > 0.0
+    });
     let outcome = if in_flight {
-        sweep_projectiles(entities, previous_entities, content, dt)
+        sweep_projectiles(entities, previous_entities, trails, technologies, content, dt)
     } else {
         (Vec::new(), Vec::new())
     };
@@ -506,20 +520,74 @@ pub(crate) fn advance_projectiles(
     outcome
 }
 
-struct SweptHull {
-    entity_index: usize,
-    start_x: f64,
-    start_y: f64,
+fn flight_position(pos: Vec2) -> FlightPosition {
+    FlightPosition { x: f64::from(pos.x), y: f64::from(pos.y) }
+}
+
+fn projected_position(pos: FlightPosition) -> Vec2 {
+    Vec2 { x: pos.x as f32, y: pos.y as f32 }
+}
+
+struct FlightStep {
     dx: f64,
     dy: f64,
+    distance: f64,
+    tick_fraction: f64,
+}
+
+impl FlightStep {
+    fn new(velocity: Vec2, remaining: f64, dt: f64) -> Option<Self> {
+        let (vx, vy) = (f64::from(velocity.x), f64::from(velocity.y));
+        let full_step = vx.hypot(vy) * dt;
+        if full_step <= 0.0 || remaining <= 0.0 {
+            return None;
+        }
+        let distance = full_step.min(remaining);
+        let tick_fraction = distance / full_step;
+        Some(Self { dx: vx * dt * tick_fraction, dy: vy * dt * tick_fraction, distance, tick_fraction })
+    }
+
+    fn end(&self, start: FlightPosition) -> FlightPosition {
+        FlightPosition { x: start.x + self.dx, y: start.y + self.dy }
+    }
+}
+
+struct Motion {
+    start: FlightPosition,
+    dx: f64,
+    dy: f64,
+}
+
+impl Motion {
+    fn new(previous: Option<&Vec2>, current: Vec2) -> Self {
+        let start = flight_position(previous.copied().unwrap_or(current));
+        Self { start, dx: f64::from(current.x) - start.x, dy: f64::from(current.y) - start.y }
+    }
+
+    fn at(&self, fraction: f64) -> FlightPosition {
+        FlightPosition { x: self.start.x + self.dx * fraction, y: self.start.y + self.dy * fraction }
+    }
+}
+
+struct SweptHull {
+    entity_index: usize,
+    motion: Motion,
     radius: f64,
+}
+
+struct Contact {
+    time: f64,
+    shot: usize,
+    hull: usize,
 }
 
 fn sweep_projectiles(
     entities: &mut Vec<Entity>,
     previous_entities: &[Entity],
+    trails: &mut Vec<ProjectileTrail>,
+    technologies: &PlayerTechnologies,
     content: &ContentPack,
-    dt: f32,
+    dt: f64,
 ) -> (Vec<u64>, Vec<CombatDestruction>) {
     let previous_positions: HashMap<_, _> = previous_entities.iter()
         .filter(|entity| !entity.owner_player_id.is_empty())
@@ -535,77 +603,150 @@ fn sweep_projectiles(
         }
         let Some(definition) = content.get(&entity.entity_type_id) else { continue; };
         if definition.combat_targetable {
-            let start = previous_positions.get(&entity.id).copied().unwrap_or(pos);
-            let start_x = f64::from(start.x);
-            let start_y = f64::from(start.y);
-            let dx = f64::from(pos.x) - start_x;
-            let dy = f64::from(pos.y) - start_y;
+            let motion = Motion::new(previous_positions.get(&entity.id), pos);
             let radius = f64::from(definition.hull_radius.max(0.0));
-            max_extent = max_extent.max(radius + dx.hypot(dy));
+            max_extent = max_extent.max(radius + motion.dx.hypot(motion.dy));
             target_grid.insert(targets.len(), pos.x, pos.y);
-            targets.push(SweptHull { entity_index: index, start_x, start_y, dx, dy, radius });
+            targets.push(SweptHull { entity_index: index, motion, radius });
         }
     }
 
-    let mut hits = HashMap::new();
+    let mut contacts = Vec::new();
     let mut expired = false;
     for index in 0..entities.len() {
         let shot = &entities[index];
         let Some(flight) = &shot.projectile else { continue; };
-        let (Some(pos), Some(vel)) = (shot.pos, shot.vel) else {
+        let Some((start, step)) = flight.position.or_else(|| shot.pos.map(flight_position))
+            .zip(shot.vel.and_then(|vel| FlightStep::new(vel, flight.remaining_distance, dt)))
+        else {
             entities[index].health = 0.0;
             expired = true;
             continue;
         };
-        let (vx, vy) = (f64::from(vel.x), f64::from(vel.y));
-        let speed = vx.hypot(vy);
-        let full_step = speed * f64::from(dt);
-        let distance = full_step.min(flight.remaining_distance);
-        let fraction = distance / full_step;
-        let (step_x, step_y) = (vx * f64::from(dt) * fraction, vy * f64::from(dt) * fraction);
-        let (x, y) = (f64::from(pos.x), f64::from(pos.y));
-        let search_radius = distance * 0.5 + max_extent;
-        let nearest = |target_index: usize| {
-            let hull = &targets[target_index];
+        let search_radius = step.distance * 0.5 + max_extent;
+        let mut check = |hull_index: usize| {
+            let hull = &targets[hull_index];
             let target = &entities[hull.entity_index];
             if target.owner_player_id == flight.attacker_owner_player_id {
+                return;
+            }
+            // Clip hull movement at expiry, then sweep in the hull's frame.
+            if let Some(entry) = segment_hit_fraction(
+                hull.motion.start.x - start.x,
+                hull.motion.start.y - start.y,
+                step.dx - hull.motion.dx * step.tick_fraction,
+                step.dy - hull.motion.dy * step.tick_fraction,
+                hull.radius,
+            ) {
+                contacts.push(Contact { time: entry * step.tick_fraction, shot: index, hull: hull_index });
+            }
+        };
+        if search_radius > f64::from(CELL_SIZE) {
+            // Wide steps are cheaper to scan than to enumerate empty cells.
+            (0..targets.len()).for_each(check);
+        } else {
+            target_grid.in_area(start.x + step.dx * 0.5, start.y + step.dy * 0.5, search_radius)
+                .for_each(&mut check);
+        }
+
+        // Save the collision-free endpoint. If an impact occurs, this becomes
+        // the first sample of the non-damaging trail for non-witnesses.
+        let shot = &mut entities[index];
+        let flight = shot.projectile.as_mut().unwrap();
+        let end = step.end(start);
+        flight.position = Some(end);
+        flight.remaining_distance -= step.distance;
+        shot.pos = Some(projected_position(end));
+        expired |= flight.remaining_distance <= 0.0;
+    }
+
+    contacts.sort_unstable_by(|a, b| {
+        a.time.total_cmp(&b.time)
+            .then_with(|| entities[a.shot].id.cmp(&entities[b.shot].id))
+            .then_with(|| entities[targets[a.hull].entity_index].id.cmp(&entities[targets[b.hull].entity_index].id))
+    });
+    let sensors = if contacts.is_empty() { Vec::new() } else {
+        entities.iter().enumerate().filter_map(|(index, entity)| {
+            if !is_player_owner(&entity.owner_player_id) || entity.health <= 0.0
+                || entity.supply.as_ref().is_some_and(|supply| !supply.operational)
+            {
                 return None;
             }
-            // Clip target movement to the same fraction when the shot expires
-            // mid-tick, and sweep in the target's moving frame.
-            segment_hit_fraction(
-                hull.start_x - x,
-                hull.start_y - y,
-                step_x - hull.dx * fraction,
-                step_y - hull.dy * fraction,
-                hull.radius,
-            ).map(|entry| (entry, target.id))
-        };
-        let compare = |a: &(f64, u64), b: &(f64, u64)| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1));
-        // For wide steps, scanning targets is cheaper than enumerating empty cells.
-        let impact = if search_radius > f64::from(CELL_SIZE) {
-            (0..targets.len()).filter_map(nearest).min_by(compare)
-        } else {
-            target_grid.in_area(x + step_x * 0.5, y + step_y * 0.5, search_radius)
-                .filter_map(nearest).min_by(compare)
-        };
-        if let Some((_, target_id)) = impact {
-            record_hit(&mut hits, target_id, flight.damage, flight.attacker_id,
-                &flight.attacker_entity_type_id, &flight.attacker_owner_player_id, AttackType::Kinetic);
+            let range = sensor_range(entity, technologies, content);
+            let pos = entity.pos?;
+            (range.is_finite() && range > 0.0)
+                .then(|| (index, Motion::new(previous_positions.get(&entity.id), pos), f64::from(range)))
+        }).collect()
+    };
+    let mut dead = Vec::new();
+    let mut destructions = Vec::new();
+    for Contact { time, shot, hull } in contacts {
+        let hull = &targets[hull];
+        let target = &entities[hull.entity_index];
+        // Earlier contacts can consume the shot or destroy the hull. In the
+        // latter case the shot can still hit its next contact.
+        if entities[shot].health <= 0.0 || target.health <= 0.0 {
+            continue;
         }
-        if impact.is_some() || distance >= flight.remaining_distance {
-            entities[index].health = 0.0;
-            expired = true;
-        } else {
-            let shot = &mut entities[index];
-            shot.pos = Some(Vec2 { x: (x + step_x) as f32, y: (y + step_y) as f32 });
-            shot.projectile.as_mut().unwrap().remaining_distance -= distance;
+        let target_pos = hull.motion.at(time);
+        let target_range = f64::from(content.get(&target.entity_type_id)
+            .and_then(|def| def.visibility_range).unwrap_or(0.0));
+        let mut witnesses = BTreeSet::new();
+        if is_player_owner(&target.owner_player_id) {
+            witnesses.insert(target.owner_player_id.as_str());
+        }
+        for (index, motion, range) in &sensors {
+            let sensor = &entities[*index];
+            if sensor.health <= 0.0 || witnesses.contains(sensor.owner_player_id.as_str()) {
+                continue;
+            }
+            let pos = motion.at(time);
+            if (pos.x - target_pos.x).powi(2) + (pos.y - target_pos.y).powi(2) <= range.max(target_range).powi(2) {
+                witnesses.insert(sensor.owner_player_id.as_str());
+            }
+        }
+        let mut witnesses: Vec<_> = witnesses.into_iter().map(str::to_owned).collect();
+
+        let projectile = &mut entities[shot];
+        let flight = std::mem::take(projectile.projectile.as_mut().unwrap());
+        let trail = (flight.remaining_distance > 0.0).then(|| ProjectileTrail {
+            projectile_id: projectile.id,
+            position: flight.position,
+            velocity: projectile.vel,
+            remaining_distance: flight.remaining_distance,
+            impact_witnesses: Vec::new(),
+            health: projectile.health,
+        });
+        projectile.health = 0.0;
+        expired = true;
+
+        let target = &mut entities[hull.entity_index];
+        target.health = (target.health - flight.damage).max(0.0);
+        let lethal = target.health <= 0.0;
+        if let Some(mut trail) = trail {
+            trail.impact_witnesses = if lethal { witnesses.clone() } else { std::mem::take(&mut witnesses) };
+            trails.push(trail);
+        }
+        if lethal {
+            dead.push(target.id);
+            let mut victim = target.clone();
+            victim.pos = Some(projected_position(target_pos));
+            destructions.push(CombatDestruction {
+                victim,
+                attacker_id: flight.attacker_id,
+                attacker_entity_type_id: flight.attacker_entity_type_id,
+                attacker_owner_player_id: flight.attacker_owner_player_id,
+                cause: AttackType::Kinetic,
+                kinetic_witnesses: Some(witnesses),
+            });
         }
     }
+
     if expired {
-        entities.retain(|entity| entity.projectile.is_none() || entity.health > 0.0);
+        entities.retain(|entity| entity.projectile.as_ref()
+            .is_none_or(|flight| entity.health > 0.0 && flight.remaining_distance > 0.0));
     }
-    apply_damage(entities, hits)
+    (dead, destructions)
 }
 
 fn segment_hit_fraction(x: f64, y: f64, dx: f64, dy: f64, radius: f64) -> Option<f64> {
@@ -684,6 +825,7 @@ fn apply_damage(
                     attacker_entity_type_id: hit.attacker_entity_type_id,
                     attacker_owner_player_id: hit.attacker_owner_player_id,
                     cause: hit.cause,
+                    kinetic_witnesses: None,
                 });
             }
         }
@@ -856,7 +998,9 @@ mod tests {
         entities[1].pos.as_mut().unwrap().x = 800.0;
         let fired = fire(&mut combat, &mut entities, 1);
         assert!(fired.laser_shots.is_empty());
-        advance_projectiles(&mut entities, &[], &pack, 0.25, fired.projectile_launches);
+        let mut trails = Vec::new();
+        let technologies = PlayerTechnologies::new();
+        advance_projectiles(&mut entities, &[], &mut trails, &technologies, &pack, 0.25, fired.projectile_launches);
         assert_eq!(entities[1].health, 100.0);
         let shot = &entities[2];
         assert_eq!(shot.pos.unwrap().x, 0.0);
@@ -870,15 +1014,15 @@ mod tests {
             entity(5, "worker", "bob", 1100.0, 100.0),
             entity(6, "worker", "bob", 1300.0, 100.0),
         ]);
-        advance_projectiles(&mut entities, &[], &pack, 0.25, Vec::new());
+        advance_projectiles(&mut entities, &[], &mut trails, &technologies, &pack, 0.25, Vec::new());
         assert_eq!(entities[2].pos.unwrap().x, 400.0);
-        advance_projectiles(&mut entities, &[], &pack, 1.0, Vec::new());
+        advance_projectiles(&mut entities, &[], &mut trails, &technologies, &pack, 1.0, Vec::new());
         assert!(entities.iter().all(|entity| entity.id != shot_id));
         assert_eq!(entities[1].health, 100.0);
         assert_eq!(entities[2].health, 100.0);
         assert_eq!(entities[3].health, 88.0);
         assert_eq!(entities[4].health, 100.0);
-        advance_projectiles(&mut entities, &[], &pack, 1.0, Vec::new());
+        advance_projectiles(&mut entities, &[], &mut trails, &technologies, &pack, 1.0, Vec::new());
         assert_eq!(entities[3].health, 88.0);
     }
 
@@ -890,14 +1034,16 @@ mod tests {
             entity(2, "worker", "bob", 800.0, 12.0),
         ];
         let fired = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
-        advance_projectiles(&mut entities, &[], &pack, 1.0, fired.projectile_launches);
+        let mut trails = Vec::new();
+        let technologies = PlayerTechnologies::new();
+        advance_projectiles(&mut entities, &[], &mut trails, &technologies, &pack, 1.0, fired.projectile_launches);
 
         for (crossing_x, expected_dead) in [(800.0, vec![2]), (1500.0, Vec::new())] {
             let mut before = entities.clone();
             before[1].pos = Some(Vec2 { x: crossing_x, y: -crossing_x });
             let mut after = before.clone();
             after[1].pos.as_mut().unwrap().y = 1600.0 - crossing_x;
-            let (dead, destructions) = advance_projectiles(&mut after, &before, &pack, 1.0, Vec::new());
+            let (dead, destructions) = advance_projectiles(&mut after, &before, &mut trails, &technologies, &pack, 1.0, Vec::new());
             assert_eq!(dead, expected_dead);
             assert!(after.iter().all(|entity| entity.projectile.is_none()));
             if let Some(hit) = destructions.first() {
@@ -907,6 +1053,96 @@ mod tests {
                 assert_eq!(after[1].health, 12.0);
             }
         }
+    }
+
+    fn kinetic_shot(id: u64, attacker_id: u64, x: f32, remaining_distance: f64) -> Entity {
+        let mut shot = entity(id, KINETIC_PROJECTILE_TYPE, "", x, 1.0);
+        shot.vel = Some(Vec2 { x: 1600.0, y: 0.0 });
+        shot.projectile = Some(ProjectileFlight {
+            attacker_id,
+            attacker_entity_type_id: "kinetic_fighter".into(),
+            attacker_owner_player_id: "alice".into(),
+            damage: 12.0,
+            remaining_distance,
+            position: shot.pos.map(flight_position),
+        });
+        shot
+    }
+
+    #[test]
+    fn kinetic_contacts_resolve_in_tick_order_and_skip_destroyed_hulls() {
+        let pack = packaged_content();
+        // The late shot is stored first and has the lower ID. It must pass
+        // the first hull once the other shot has destroyed it.
+        let mut entities = vec![
+            kinetic_shot(FIRST_PROJECTILE_ID, 11, 0.0, 1400.0),
+            entity(1, "worker", "bob", 150.0, 12.0),
+            kinetic_shot(FIRST_PROJECTILE_ID + 1, 22, 80.0, 1400.0),
+            entity(2, "worker", "bob", 300.0, 12.0),
+        ];
+        let (dead, destructions) = advance_projectiles(
+            &mut entities, &[], &mut Vec::new(), &PlayerTechnologies::new(), &pack, 0.25, Vec::new(),
+        );
+        assert_eq!(dead, vec![1, 2]);
+        assert_eq!(destructions.iter().map(|hit| hit.attacker_id).collect::<Vec<_>>(), vec![22, 11]);
+        assert!(entities.iter().all(|entity| entity.projectile.is_none()));
+    }
+
+    #[test]
+    fn kinetic_impact_samples_both_the_victim_and_moving_sensors() {
+        let pack = packaged_content();
+        let before = vec![
+            entity(1, "kinetic_fighter", "alice", 0.0, 80.0),
+            entity(2, "worker", "bob", 990.0, 12.0),
+            entity(3, "kinetic_fighter", "carol", 1800.0, 80.0),
+            kinetic_shot(FIRST_PROJECTILE_ID, 1, 880.0, 520.0),
+        ];
+        let mut entities = before.clone();
+        entities[1].pos.as_mut().unwrap().x = 1190.0;
+        entities[2].pos.as_mut().unwrap().x = 2250.0;
+        let mut trails = Vec::new();
+        let (dead, destructions) = advance_projectiles(
+            &mut entities, &before, &mut trails, &PlayerTechnologies::new(), &pack, 0.2, Vec::new(),
+        );
+        assert_eq!(dead, vec![2]);
+        // Alice saw Bob at the previous sample but not at impact. Carol's
+        // moving sensor saw the impact, even though it misses the end point.
+        let witnesses = vec!["bob".to_string(), "carol".to_string()];
+        assert_eq!(destructions[0].kinetic_witnesses.as_ref(), Some(&witnesses));
+        assert_eq!(destructions[0].victim.pos.unwrap().x, 1090.0);
+        assert_eq!(trails[0].impact_witnesses, witnesses);
+        assert_eq!(projected_position(trails[0].position.unwrap()).x, 1200.0);
+        assert!(entities.iter().all(|entity| entity.projectile.is_none()));
+
+        advance_projectiles(&mut entities, &[], &mut trails, &PlayerTechnologies::new(), &pack, 0.05, Vec::new());
+        assert_eq!(projected_position(trails[0].position.unwrap()).x, 1280.0);
+        advance_projectiles(&mut entities, &[], &mut trails, &PlayerTechnologies::new(), &pack, 0.1, Vec::new());
+        assert!(trails.is_empty());
+    }
+
+    #[test]
+    fn kinetic_flight_survives_projection_rounding_and_checkpoint_restore() {
+        use prost::Message;
+
+        let pack = packaged_content();
+        let origin = (1u64 << 31) as f32;
+        let mut entities = vec![
+            kinetic_shot(FIRST_PROJECTILE_ID, 1, origin, 1400.0),
+            entity(2, "worker", "bob", origin + 512.0, 12.0),
+        ];
+        let mut trails = Vec::new();
+        let technologies = PlayerTechnologies::new();
+        let step = |entities: &mut Vec<Entity>, trails: &mut Vec<ProjectileTrail>| {
+            advance_projectiles(entities, &[], trails, &technologies, &pack, 0.05, Vec::new()).0
+        };
+        assert!(step(&mut entities, &mut trails).is_empty());
+        assert_eq!(entities[0].pos.unwrap().x, origin);
+        let checkpoint = crate::pb::Snapshot { entities, ..Default::default() };
+        let mut entities = crate::pb::Snapshot::decode(checkpoint.encode_to_vec().as_slice()).unwrap().entities;
+        for _ in 0..4 {
+            assert!(step(&mut entities, &mut trails).is_empty());
+        }
+        assert_eq!(step(&mut entities, &mut trails), vec![2]);
     }
 
     #[test]
@@ -970,6 +1206,7 @@ mod tests {
         let pack = content();
         let mut state = crate::engine::state::GameState {
             discovered_entities: Default::default(),
+            projectile_trails: Vec::new(),
             generation: Default::default(),
             tick: 0,
             technologies: HashMap::new(),
@@ -1004,6 +1241,7 @@ mod tests {
         let pack = content();
         let mut state = crate::engine::state::GameState {
             discovered_entities: Default::default(),
+            projectile_trails: Vec::new(),
             generation: Default::default(),
             tick: 0,
             technologies: HashMap::new(),
@@ -1040,6 +1278,7 @@ mod tests {
         let pack = content();
         let mut state = crate::engine::state::GameState {
             discovered_entities: Default::default(),
+            projectile_trails: Vec::new(),
             generation: Default::default(),
             tick: 0,
             technologies: HashMap::new(),
@@ -1474,7 +1713,7 @@ mod tests {
         })) }, IntentMetadata { entity_id: 1, intent_id: vec![1;16], client_cmd_id: vec![2;16],
             player_id: "me".into(), protocol_version: crate::engine::ENGINE_PROTOCOL_MAJOR,
             server_tick: 0, policy: pb::IntentPolicy::ReplaceActive }, "raider");
-        let mut state = GameState { discovered_entities: Default::default(), generation: Default::default(), tick: 0, technologies: HashMap::new(), entities: vec![
+        let mut state = GameState { discovered_entities: Default::default(), generation: Default::default(), tick: 0, technologies: HashMap::new(), projectile_trails: Vec::new(), entities: vec![
             entity(1, "raider", "me", 0.0, 20.0), entity(2, "worker", "enemy", 5.0, 100.0)] };
         assert!(manager.follow_targets(&mut state, 10.0, 0.1).is_empty());
         let velocity = state.entities[0].vel.unwrap();

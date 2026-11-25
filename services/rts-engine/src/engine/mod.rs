@@ -1253,6 +1253,7 @@ mod radiation_tests {
             health: 100.0,
         };
         let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
             tick: 0,
             entities: vec![
                 star,
@@ -1273,6 +1274,7 @@ mod radiation_tests {
     fn overlapping_sources_stack_damage() {
         let content = make_content();
         let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
             tick: 0,
             entities: vec![
                 pb::Entity {
@@ -1330,6 +1332,7 @@ mod radiation_tests {
     fn radiation_grid_finds_sources_across_cell_boundaries() {
         let content = make_content();
         let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
             tick: 0,
             entities: vec![
                 pb::Entity {
@@ -1357,7 +1360,7 @@ mod radiation_tests {
     fn self_destruct_requires_ownership_and_publishes_removal() {
         let entity = pb::Entity { id: 42, owner_player_id: "me".into(), health: 100.0, ..Default::default() };
         let mut entities = vec![entity];
-        let previous = GameState { discovered_entities: Default::default(), entities: entities.clone(), generation: Default::default(), tick: 0, technologies: HashMap::new() };
+        let previous = GameState { discovered_entities: Default::default(), entities: entities.clone(), generation: Default::default(), tick: 0, technologies: HashMap::new(), projectile_trails: Vec::new() };
         assert_eq!(self_destruct_entity(&mut entities, "other", 42), Err(pb::LifecycleReason::NotOwned));
         assert_eq!(self_destruct_entity(&mut entities, "me", 99), Err(pb::LifecycleReason::InvalidTarget));
         assert_eq!(entities.len(), 1);
@@ -1523,6 +1526,7 @@ mod idle_combat_return_tests {
         ).unwrap();
         let mut state = GameState {
             discovered_entities: Default::default(),
+            projectile_trails: Vec::new(),
             generation: Default::default(),
             tick: 0,
             technologies: HashMap::new(),
@@ -2012,6 +2016,7 @@ fn should_publish_delta(delta: &pb::Delta) -> bool {
         || !delta.escort_order_updates.is_empty()
         || !delta.escort_order_removals.is_empty()
         || !delta.player_knowledge_updates.is_empty()
+        || delta.projectile_trail_frame.is_some()
 }
 
 fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<String> {
@@ -3072,6 +3077,9 @@ impl Engine {
             warn!(?error, "failed to update build progress tracking");
         }
 
+        // Combat may have removed the highest ID before construction. Reserve
+        // the previous sample's IDs so new hulls start at their spawn position.
+        let mut last_build_id = None;
         for (builder_id, player_id, target_entity_type_id, is_upgrade) in completed {
             if is_upgrade {
                 let Some(target_def) = content.get(&target_entity_type_id) else {
@@ -3121,14 +3129,18 @@ impl Engine {
                 continue;
             };
             let Some(pos) = builder.pos else { continue };
-            let next_id = state::max_unit_id(&self.state.entities) + 1;
-            let angle = (next_id as f32 * 2.399_963_1) % std::f32::consts::TAU;
             let (Some(builder_def), Some(product_def)) = (
                 content.get(&builder.entity_type_id),
                 content.get(&target_entity_type_id),
             ) else {
                 continue;
             };
+            let last_id = last_build_id.get_or_insert_with(|| {
+                state::max_unit_id(&self.state.entities).max(state::max_unit_id(&self.prev_state.entities))
+            });
+            *last_id += 1;
+            let next_id = *last_id;
+            let angle = (next_id as f32 * 2.399_963_1) % std::f32::consts::TAU;
             let spawn_distance = builder_def.hull_radius + product_def.hull_radius;
             let health = product_def.health.max(0.0);
             self.state.entities.push(pb::Entity {
@@ -3716,18 +3728,36 @@ impl Engine {
         }
     }
 
-    async fn tick_projectiles(&mut self, dt: f32, launches: Vec<pb::Entity>) {
-        let Some(content) = self.content.as_ref() else { return; };
+    async fn tick_projectiles(
+        &mut self,
+        dt: f32,
+        launches: Vec<pb::Entity>,
+    ) -> (Vec<pb::KineticDestruction>, Option<pb::ProjectileTrailFrame>) {
+        let Some(content) = self.content.as_ref() else { return (Vec::new(), None); };
+        let had_trails = !self.state.projectile_trails.is_empty();
         let (dead, destructions) = crate::combat::advance_projectiles(
-            &mut self.state.entities, &self.prev_state.entities, content, dt, launches,
+            &mut self.state.entities,
+            &self.prev_state.entities,
+            &mut self.state.projectile_trails,
+            &self.state.technologies,
+            content,
+            dt,
+            launches,
         );
-        if dead.is_empty() {
-            return;
+        let frame = (had_trails || !self.state.projectile_trails.is_empty()).then(|| pb::ProjectileTrailFrame {
+            trails: self.state.projectile_trails.clone(),
+        });
+        if !dead.is_empty() {
+            self.combat.clear_destroyed(&dead);
+            self.remove_combat_dead(&dead);
+            self.emit_combat_destructions(&destructions).await;
+            self.cancel_destroyed_intents(&dead).await;
         }
-        self.combat.clear_destroyed(&dead);
-        self.remove_combat_dead(&dead);
-        self.emit_combat_destructions(&destructions).await;
-        self.cancel_destroyed_intents(&dead).await;
+        let removals = destructions.into_iter().map(|destruction| pb::KineticDestruction {
+            entity_id: destruction.victim.id,
+            witnesses: destruction.kinetic_witnesses.unwrap_or_default(),
+        }).collect();
+        (removals, frame)
     }
 
     fn update_combat_effect_states(&mut self, dismantling: &[crate::combat::Dismantling]) {
@@ -4152,16 +4182,15 @@ impl Engine {
         destructions: &[crate::combat::CombatDestruction],
     ) {
         for destruction in destructions {
-            let witnesses = self.content.as_ref().map(|content| {
-                discovery::forget_destroyed(&mut self.state, content, &destruction.victim)
-            });
-            let attacker = &destruction.attacker_owner_player_id;
-            let recipient_attacker = if destruction.cause != crate::content::AttackType::Kinetic
-                || witnesses.is_some_and(|players| players.contains(attacker))
-            {
-                attacker.as_str()
+            let attacker = destruction.attacker_owner_player_id.as_str();
+            let recipient_attacker = if let Some(witnesses) = &destruction.kinetic_witnesses {
+                discovery::forget_witnessed(&mut self.state, destruction.victim.id, witnesses.iter().map(String::as_str));
+                if witnesses.iter().any(|player| player == attacker) { attacker } else { "" }
             } else {
-                ""
+                if let Some(content) = self.content.as_ref() {
+                    discovery::forget_destroyed(&mut self.state, content, &destruction.victim);
+                }
+                attacker
             };
             let recipients = gameplay_event_recipients(&destruction.victim.owner_player_id, recipient_attacker);
             if recipients.is_empty() {
@@ -5147,7 +5176,7 @@ impl Engine {
         self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
         self.cancel_destroyed_intents(&radiation_dead_entity_ids)
             .await;
-        self.tick_projectiles(dt, combat.projectile_launches).await;
+        let (kinetic_destructions, projectile_trail_frame) = self.tick_projectiles(dt, combat.projectile_launches).await;
         self.cancel_invalid_escorts().await?;
         self.persist_escort_changes().await?;
         if let Err(error) = self.persist_sentry_changes().await {
@@ -5171,6 +5200,8 @@ impl Engine {
             &starvation_damage,
             &radiation_damaged_entities,
         );
+        delta.kinetic_destructions = kinetic_destructions;
+        delta.projectile_trail_frame = projectile_trail_frame;
         self.intents.append_move_order_changes(&mut delta);
         self.intents.append_sentry_changes(&mut delta);
         self.intents.append_escort_changes(&mut delta);
@@ -5459,7 +5490,7 @@ impl Engine {
             self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
             self.cancel_destroyed_intents(&radiation_dead_entity_ids)
                 .await;
-            self.tick_projectiles(dt, combat.projectile_launches).await;
+            let (kinetic_destructions, projectile_trail_frame) = self.tick_projectiles(dt, combat.projectile_launches).await;
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
@@ -5496,6 +5527,8 @@ impl Engine {
                 &starvation_damage,
                 &radiation_damaged_entities,
             );
+            delta.kinetic_destructions = kinetic_destructions;
+            delta.projectile_trail_frame = projectile_trail_frame;
             self.intents.append_move_order_changes(&mut delta);
             self.intents.append_sentry_changes(&mut delta);
             self.intents.append_escort_changes(&mut delta);
@@ -6815,6 +6848,7 @@ mod jettison_tests {
         };
         let previous = GameState {
             entities: vec![worker, source], tick: 0, discovered_entities: Default::default(),
+            projectile_trails: Vec::new(),
             generation: Default::default(), technologies: HashMap::new()
         };
         let mut current = previous.clone();

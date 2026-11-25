@@ -61,7 +61,14 @@ pub fn compute_delta(
                 ed.resource_deposit = ce.resource_deposit.clone();
             }
             if let (Some(cp), Some(pp)) = (&ce.pos, &pe.pos) {
-                if (cp.x - pp.x).abs() > eps_pos || (cp.y - pp.y).abs() > eps_pos {
+                // Live shots and projection-only trails use the same position
+                // sampling; crossing over to a trail must not alter the cadence.
+                let moved = if ce.projectile.is_some() {
+                    cp != pp
+                } else {
+                    (cp.x - pp.x).abs() > eps_pos || (cp.y - pp.y).abs() > eps_pos
+                };
+                if moved {
                     ed.pos = Some(cp.clone());
                 }
             } else if ce.pos.is_some() {
@@ -175,6 +182,8 @@ pub fn compute_delta(
         removed_entity_ids,
         collector_state_updates,
         combat_effect_state_updates,
+        kinetic_destructions: Vec::new(),
+        projectile_trail_frame: None,
     }
 }
 
@@ -205,7 +214,7 @@ mod tests {
         use prost::Message;
         let mut source = entity(1);
         source.resource_deposit = Some(crate::pb::ResourceDeposit { amount: 10.0, remaining: 1.0 });
-        let previous = GameState { discovered_entities: Default::default(), generation: Default::default(), tick: 1, entities: vec![source], technologies: HashMap::new() };
+        let previous = GameState { discovered_entities: Default::default(), generation: Default::default(), tick: 1, entities: vec![source], technologies: HashMap::new(), projectile_trails: Vec::new() };
         let mut current = previous.clone();
         current.entities[0].resource_deposit.as_mut().unwrap().remaining = 0.0;
         let delta = compute_delta(&previous, &current, &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(), 0.01, 0.01, &HashMap::new(), &HashSet::new());
@@ -219,11 +228,13 @@ mod tests {
     #[test]
     fn reports_removed_entities_in_stable_id_order() {
         let previous = GameState { discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
             tick: 10,
             entities: vec![entity(9), entity(2), entity(5)],
             technologies: HashMap::new(),
         };
         let current = GameState { discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
             tick: 11,
             entities: vec![entity(5)],
             technologies: HashMap::new(),
@@ -248,6 +259,7 @@ mod tests {
     #[test]
     fn reports_collector_telemetry_only_when_displayed_values_change() {
         let state = GameState { discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
             tick: 10,
             entities: vec![entity(4)],
             technologies: HashMap::new(),

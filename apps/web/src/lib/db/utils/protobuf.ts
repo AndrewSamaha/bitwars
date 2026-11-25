@@ -1,8 +1,9 @@
 import { type Delta } from "@bitwars/shared/gen/delta_pb";
-import { type Entity } from "@bitwars/shared/gen/entity_pb";
+import type { Entity, ProjectileTrail } from "@bitwars/shared/gen/entity_pb";
 import type { EscortOrderState, SentryOrderState, MoveOrderState } from "@bitwars/shared/gen/navigation_pb";
 import { type Snapshot } from "@bitwars/shared/gen/snapshot_pb";
 import type { EntityObservation } from "@bitwars/shared/gen/player_knowledge_pb";
+import { KINETIC_PROJECTILE_TYPE } from "./visibility";
 
 // Helpers to convert protobuf-es messages into compact, client-friendly JSON
 export const biToNumOrStr = (v: bigint): number | string => {
@@ -63,12 +64,35 @@ const mapKnowledgeUpdateToJson = (delta: Delta, playerId?: string) => {
   };
 };
 
+// The filter receives only this observer's counterfactual flight samples.
+// Never forward flight internals or the list of witnesses to the client.
+const mapProjectileTrails = (trails: ProjectileTrail[], playerId: string) => trails.flatMap((trail) => {
+  const { position, velocity } = trail;
+  if (!position || !velocity || trail.impactWitnesses.includes(playerId)) return [];
+  return [{
+    id: biToNumOrStr(trail.projectileId),
+    entity_type_id: KINETIC_PROJECTILE_TYPE,
+    owner_player_id: "",
+    pos: { x: Math.fround(position.x), y: Math.fround(position.y) },
+    vel: { x: velocity.x, y: velocity.y },
+    health: trail.health,
+  }];
+});
+
 // Entity has entity_type_id (proto field 2); TS codegen may use camelCase
 export const mapDeltaToJson = (d: Delta, playerId?: string) => ({
   type: "delta" as const,
   tick: biToNumOrStr(d.tick),
   removed_entity_ids: (d.removedEntityIds ?? []).map(biToNumOrStr),
   ...mapKnowledgeUpdateToJson(d, playerId),
+  ...(playerId && d.kineticDestructions?.length ? {
+    unwitnessed_kinetic_deaths: d.kineticDestructions
+      .filter((death) => !death.witnesses.includes(playerId))
+      .map((death) => death.entityId.toString()),
+  } : {}),
+  ...(playerId && d.projectileTrailFrame ? {
+    projectile_trails: mapProjectileTrails(d.projectileTrailFrame.trails, playerId),
+  } : {}),
   escort_order_updates: (d.escortOrderUpdates ?? []).map(mapEscortOrderToJson),
   escort_order_removals: (d.escortOrderRemovals ?? []).map((order) => ({ player_id: order.playerId, client_cmd_id: mapUuid(order.clientCmdId) })),
   sentry_order_updates: (d.sentryOrderUpdates ?? []).map(mapSentryOrderToJson),
@@ -144,6 +168,9 @@ export const mapSnapshotToJson = (s: Snapshot, playerId?: string) => {
     tick: biToNumOrStr(s.tick),
     content_revision: s.contentRevision,
     entities: (s.entities ?? []).map(mapEntityToJson),
+    ...(playerId && s.projectileTrails?.length ? {
+      projectile_trails: mapProjectileTrails(s.projectileTrails, playerId),
+    } : {}),
     remembered_entities: (knowledge?.observations ?? []).flatMap(mapObservationToJson),
     player_ledgers,
     escort_orders: (s.escortOrders ?? []).map(mapEscortOrderToJson),

@@ -23,6 +23,23 @@ message ProjectileFlight {
   string attacker_owner_player_id = 3;
   float damage = 4;
   double remaining_distance = 5;
+  FlightPosition position = 6; // optional for legacy checkpoints
+}
+
+message FlightPosition {
+  double x = 1;
+  double y = 2;
+}
+
+// Server-only flight after an impact, used for observers who could not see
+// the struck hull. This is never a simulated entity and cannot deal damage.
+message ProjectileTrail {
+  uint64 projectile_id = 1;
+  FlightPosition position = 2;
+  Vec2 velocity = 3;
+  double remaining_distance = 4;
+  repeated string impact_witnesses = 5;
+  float health = 6;
 }
 
 message ResourceDeposit {

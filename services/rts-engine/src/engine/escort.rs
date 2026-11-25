@@ -636,6 +636,7 @@ mod tests {
             .collect();
         let mut manager = IntentManager::new(types, 5.0, 1.0);
         let mut state = GameState { discovered_entities: Default::default(), generation: Default::default(),
+            projectile_trails: Vec::new(),
             tick: 0,
             entities: vec![],
             technologies: HashMap::new(),

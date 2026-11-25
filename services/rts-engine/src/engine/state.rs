@@ -164,6 +164,8 @@ pub struct GameState {
     pub generation: super::generation::GenerationState,
     pub tick: u64,
     pub entities: Vec<Entity>,
+    /// Projection-only continuations; never in the physics or entity index.
+    pub(crate) projectile_trails: Vec<crate::pb::ProjectileTrail>,
     /// Completed, player-owned technologies. Definitions remain immutable content.
     pub technologies: PlayerTechnologies,
 }
@@ -176,6 +178,7 @@ impl GameState {
             generation: self.generation.clone(),
             tick: self.tick,
             entities: self.entities.clone(),
+            projectile_trails: Vec::new(),
             technologies: self.technologies.clone(),
         }
     }
@@ -193,6 +196,7 @@ pub fn init_world(spawn_config: &SpawnConfig) -> GameState {
         generation: super::generation::GenerationState { version: 1, ..Default::default() },
         tick: 0,
         entities: Vec::new(),
+        projectile_trails: Vec::new(),
         technologies: PlayerTechnologies::new(),
     }
 }

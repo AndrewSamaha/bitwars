@@ -34,6 +34,7 @@ type SnapshotPayload = {
   type: "snapshot";
   tick: number | string;
   entities: StreamEntity[];
+  projectile_trails?: StreamEntity[];
   remembered_entities?: EntityObservation[];
   player_ledgers?: Array<{ player_id: string; resources: unknown[] }>;
   collector_states?: Array<{ entity_id: number | string }>;
@@ -55,6 +56,8 @@ type DeltaPayload = {
   type: "delta";
   tick: number | string;
   removed_entity_ids?: Array<number | string>;
+  unwitnessed_kinetic_deaths?: string[];
+  projectile_trails?: StreamEntity[];
   /** Connection-local visibility loss, not an authoritative world removal. */
   hidden_entity_ids?: Array<number | string>;
   updates: StreamEntity[];
@@ -65,6 +68,9 @@ type DeltaPayload = {
 };
 
 const idOf = (id: number | string) => String(id);
+const compareIds = (a: number | string, b: number | string) => idOf(a).localeCompare(idOf(b));
+const compareEntityIds = (a: StreamEntity, b: StreamEntity) => compareIds(a.id, b.id);
+const isProjectile = (entity: StreamEntity | undefined) => entity?.entity_type_id === KINETIC_PROJECTILE_TYPE;
 const hasPosition = (entity: StreamEntity): entity is StreamEntity & { pos: Pos } =>
   Number.isFinite(entity.pos?.x) && Number.isFinite(entity.pos?.y);
 const forClient = (entity: StreamEntity, playerId: string, withinSensors: boolean): StreamEntity => {
@@ -76,6 +82,7 @@ const forClient = (entity: StreamEntity, playerId: string, withinSensors: boolea
 /** Projects authoritative state into one player's visible world. */
 export class VisibilityFilter {
   private entities = new Map<string, StreamEntity>();
+  private trailIds = new Set<string>();
   private visible = new Set<string>();
   private withinSensors = new Set<string>();
   private visibilityDirty = false;
@@ -93,15 +100,26 @@ export class VisibilityFilter {
     this.visibilityDirty = true;
   }
 
-  filterSnapshot(snapshot: SnapshotPayload): SnapshotPayload {
+  filterSnapshot({ projectile_trails = [], ...snapshot }: SnapshotPayload): SnapshotPayload {
     this.entities = new Map(snapshot.entities.map((entity) => [idOf(entity.id), { ...entity }]));
+    this.trailIds = new Set(projectile_trails.map((trail) => {
+      const key = idOf(trail.id);
+      this.entities.set(key, trail);
+      return key;
+    }));
     this.ownedTechnologies = new Set(snapshot.player_technologies?.find((state) => state.player_id === this.playerId)?.technology_ids ?? []);
     this.visible = this.currentlyVisible();
     this.withinSensors = this.currentlyWithinSensors();
     this.visibilityDirty = false;
+    const entities: StreamEntity[] = [];
+    const shots: StreamEntity[] = [];
+    for (const key of this.visible) {
+      const entity = this.entities.get(key)!;
+      (isProjectile(entity) ? shots : entities).push(forClient(entity, this.playerId, this.withinSensors.has(key)));
+    }
     return {
       ...snapshot,
-      entities: snapshot.entities.filter((entity) => this.visible.has(idOf(entity.id))).map((entity) => forClient(entity, this.playerId, this.withinSensors.has(idOf(entity.id)))),
+      entities: shots.length ? entities.concat(shots.sort(compareEntityIds)) : entities,
       convoys: snapshot.convoys?.filter((order) => order.player_id === this.playerId),
       escort_orders: snapshot.escort_orders?.filter((order) => order.player_id === this.playerId),
       sentry_orders: snapshot.sentry_orders?.filter((order) => order.player_id === this.playerId),
@@ -113,39 +131,64 @@ export class VisibilityFilter {
     };
   }
 
-  filterDelta(delta: DeltaPayload): DeltaPayload | undefined {
+  filterDelta({ projectile_trails, unwitnessed_kinetic_deaths, ...delta }: DeltaPayload): DeltaPayload | undefined {
     const wasVisible = this.visible;
     const removed: Array<number | string> = [];
     const hidden: Array<number | string> = [];
-    for (const id of delta.removed_entity_ids ?? []) {
-      const key = idOf(id);
+    const hiddenShots: Array<number | string> = [];
+    const unwitnessed = unwitnessed_kinetic_deaths?.length ? new Set(unwitnessed_kinetic_deaths) : undefined;
+    const trailIds = projectile_trails ? new Set(projectile_trails.map((trail) => idOf(trail.id))) : this.trailIds;
+    const remove = (key: string, id: number | string) => {
       if (wasVisible.has(key)) {
-        // A shot's disappearance is not a destruction notification. Use the
-        // same projection for removal as for leaving sensor coverage.
-        if (this.entities.get(key)?.entity_type_id === KINETIC_PROJECTILE_TYPE) hidden.push(id);
+        if (isProjectile(this.entities.get(key))) hiddenShots.push(id);
+        else if (unwitnessed?.has(key)) hidden.push(id);
         else removed.push(id);
       }
       this.entities.delete(key);
+    };
+    for (const id of delta.removed_entity_ids ?? []) {
+      const key = idOf(id);
+      // Swap the real shot for the collision-free continuation without a
+      // removal or a fresh spawn in this observer's stream.
+      if (!trailIds.has(key)) remove(key, id);
     }
-    for (const update of delta.updates) {
+    let sourceUpdates = delta.updates;
+    let trailsExpired = false;
+    if (projectile_trails) {
+      for (const key of this.trailIds) {
+        if (trailIds.has(key)) continue;
+        remove(key, this.entities.get(key)!.id);
+        trailsExpired = true;
+      }
+      this.trailIds = trailIds;
+      for (const trail of projectile_trails) {
+        const old = this.entities.get(idOf(trail.id));
+        if (old && old.pos?.x === trail.pos?.x && old.pos?.y === trail.pos?.y) continue;
+        if (sourceUpdates === delta.updates) sourceUpdates = [...delta.updates];
+        sourceUpdates.push(old ? { id: trail.id, pos: trail.pos } : trail);
+      }
+    }
+    for (const update of sourceUpdates) {
       const key = idOf(update.id);
       this.entities.set(key, { ...this.entities.get(key), ...update });
     }
 
-    const visibilityChanged = this.visibilityDirty || delta.updates.length > 0 || !!delta.removed_entity_ids?.length;
+    const visibilityChanged = this.visibilityDirty || sourceUpdates.length > 0 || !!delta.removed_entity_ids?.length || trailsExpired;
     const nowVisible = visibilityChanged ? this.currentlyVisible() : this.visible;
     const nowWithinSensors = visibilityChanged ? this.currentlyWithinSensors() : this.withinSensors;
     const updates: StreamEntity[] = [];
+    // The payload order must not distinguish a live shot from a continuation.
+    const shots: StreamEntity[] = [];
     if (visibilityChanged) for (const [key, entity] of this.entities) {
       if (!wasVisible.has(key) && nowVisible.has(key)) {
-        updates.push(forClient(entity, this.playerId, nowWithinSensors.has(key)));
+        (isProjectile(entity) ? shots : updates).push(forClient(entity, this.playerId, nowWithinSensors.has(key)));
       } else if (wasVisible.has(key) && !nowVisible.has(key)) {
-        hidden.push(entity.id);
+        (isProjectile(entity) ? hiddenShots : hidden).push(entity.id);
       } else if (nowVisible.has(key) && entity.resource_deposit && this.withinSensors.has(key) !== nowWithinSensors.has(key)) {
         updates.push({ id: entity.id, resource_deposit: nowWithinSensors.has(key) ? entity.resource_deposit : null });
       }
     }
-    for (const update of delta.updates) {
+    for (const update of sourceUpdates) {
       const key = idOf(update.id);
       if (!wasVisible.has(key) || !nowVisible.has(key)) continue;
       // Sparse deltas usually omit owner_player_id, so use the merged entity
@@ -153,7 +196,7 @@ export class VisibilityFilter {
       const entity = this.entities.get(key)!;
       const projected = forClient({ ...update, owner_player_id: entity.owner_player_id }, this.playerId, nowWithinSensors.has(key));
       if (update.owner_player_id === undefined) delete projected.owner_player_id;
-      updates.push(projected);
+      (isProjectile(entity) ? shots : updates).push(projected);
     }
     this.visible = nowVisible;
     this.withinSensors = nowWithinSensors;
@@ -167,12 +210,12 @@ export class VisibilityFilter {
     const sentry_order_removals = delta.sentry_order_removals?.filter((order) => order.player_id === this.playerId);
     const move_order_updates = delta.move_order_updates?.filter((order) => order.player_id === this.playerId);
     const move_order_removals = delta.move_order_removals?.filter((order) => order.player_id === this.playerId);
-    if (updates.length === 0 && removed.length === 0 && hidden.length === 0 && !delta.remembered_entity_updates?.length && !delta.forgotten_entity_ids?.length && !collector_state_updates?.length && !combat_effect_state_updates?.length && !move_order_updates?.length && !move_order_removals?.length && !sentry_order_updates?.length && !sentry_order_removals?.length && !escort_order_updates?.length && !escort_order_removals?.length) return undefined;
+    if (updates.length === 0 && shots.length === 0 && removed.length === 0 && hidden.length === 0 && hiddenShots.length === 0 && !delta.remembered_entity_updates?.length && !delta.forgotten_entity_ids?.length && !collector_state_updates?.length && !combat_effect_state_updates?.length && !move_order_updates?.length && !move_order_removals?.length && !sentry_order_updates?.length && !sentry_order_removals?.length && !escort_order_updates?.length && !escort_order_removals?.length) return undefined;
     return {
       ...delta,
       removed_entity_ids: removed,
-      hidden_entity_ids: hidden,
-      updates,
+      hidden_entity_ids: hiddenShots.length ? hidden.concat(hiddenShots.sort(compareIds)) : hidden,
+      updates: shots.length ? updates.concat(shots.sort(compareEntityIds)) : updates,
       collector_state_updates,
       combat_effect_state_updates,
       escort_order_updates,

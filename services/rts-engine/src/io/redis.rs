@@ -599,6 +599,7 @@ impl RedisClient {
             idle_combat_returns,
             tick: state.tick as i64,
             entities: state.entities.clone(),
+            projectile_trails: state.projectile_trails.clone(),
             player_ledgers,
             collector_states,
             combat_effect_states,
@@ -1529,6 +1530,7 @@ fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<Co
         generation,
         tick: snapshot.tick as u64,
         entities: snapshot.entities,
+        projectile_trails: snapshot.projectile_trails,
         technologies: snapshot.player_technologies.into_iter()
             .map(|player| (player.player_id, player.technology_ids.into_iter().collect())).collect(),
     }, snapshot.collector_states))

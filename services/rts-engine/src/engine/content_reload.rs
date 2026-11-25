@@ -253,6 +253,7 @@ mod tests {
     fn setup() -> (ContentPack, GameState, IntentManager) {
         let pack = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/content/entities.yaml")).unwrap();
         let state = GameState { discovered_entities: Default::default(), generation: Default::default(), tick: 42,
+            projectile_trails: Vec::new(),
             technologies: [("alice".into(), ["space_age".into()].into())].into(),
             entities: vec![pb::Entity { id: 91, entity_type_id: "worker".into(), owner_player_id: "alice".into(),
                 health: pack.get("worker").unwrap().health, pos: Some(pb::Vec2 { x: 23.0, y: 45.0 }), ..Default::default() }] };
