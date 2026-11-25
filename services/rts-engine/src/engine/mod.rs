@@ -1578,6 +1578,224 @@ mod idle_combat_return_tests {
 }
 
 #[cfg(test)]
+mod kinetic_engine_tests {
+    use super::*;
+    use crate::combat::CombatSystem;
+    use crate::pb::{Entity, ProjectileState, Snapshot, Vec2};
+    use prost::Message;
+
+    fn content() -> ContentPack {
+        ContentPack::load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../packages/content/entities.yaml"),
+        ).unwrap()
+    }
+
+    fn entity(id: u64, kind: &str, owner: &str, x: f32, y: f32, health: f32) -> Entity {
+        Entity {
+            id,
+            entity_type_id: kind.into(),
+            owner_player_id: owner.into(),
+            pos: Some(Vec2 { x, y }),
+            vel: Some(Vec2 { x: 0.0, y: 0.0 }),
+            health,
+            ..Default::default()
+        }
+    }
+
+    fn state(entities: Vec<Entity>) -> GameState {
+        GameState {
+            discovered_entities: Default::default(),
+            generation: Default::default(),
+            tick: 0,
+            technologies: HashMap::new(),
+            entities,
+        }
+    }
+
+    fn live_shot(projectile_type: &str, id: u64, attacker_id: u64, attacker_owner: &str, damage: f32, x: f32, y: f32) -> Entity {
+        Entity {
+            id,
+            entity_type_id: projectile_type.into(),
+            pos: Some(Vec2 { x, y }),
+            vel: Some(Vec2 { x: 1_600.0, y: 0.0 }),
+            health: 1.0,
+            projectile: Some(ProjectileState {
+                attacker_id,
+                attacker_entity_type_id: "kinetic_fighter".into(),
+                attacker_owner_player_id: attacker_owner.into(),
+                damage,
+                remaining_distance: 1_400.0,
+                precise_x: Some(f64::from(x)),
+                precise_y: Some(f64::from(y)),
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn advance(state: &mut GameState, content: &ContentPack, combat: &mut CombatSystem, dt: f32) -> KineticSweep {
+        let cfg = GameConfig { friction: 0.0, ..Default::default() };
+        let starts = combat_motion_starts(&state.entities, &HashMap::new());
+        integrate(&cfg, state, dt);
+        sweep_kinetic_projectiles(state, content, combat, &starts, &HashMap::new(), dt)
+    }
+
+    #[test]
+    fn kinetic_fighter_spawns_flies_hits_once_and_publishes_witnessed_removals() {
+        let content = content();
+        let mut combat = CombatSystem::default();
+        let mut state = state(vec![
+            entity(1, "kinetic_fighter", "alice", 0.0, 0.0, 80.0),
+            entity(2, "worker", "bob", 300.0, 0.0, 10.0),
+        ]);
+        let dt = 1.0 / 20.0;
+
+        let spawn = combat.tick(&mut state.entities, &content, 0, dt);
+        assert_eq!(spawn.projectile_spawns.len(), 1);
+        let mut spawns = spawn.projectile_spawns;
+        assign_projectile_ids(&mut state, &mut spawns);
+        let shot_id = spawns[0].id;
+        assert_eq!(shot_id, 1 << 63);
+        assert_eq!(spawns[0].pos, Some(Vec2 { x: 0.0, y: 0.0 }));
+        state.entities.append(&mut spawns);
+
+        let mut saw_flight = false;
+        let mut outcome = KineticSweep::default();
+        let mut previous = state.clone_for_delta();
+        for _ in 0..10 {
+            previous = state.clone_for_delta();
+            let before = state.entities.iter().find(|entity| entity.id == shot_id).unwrap().pos.unwrap().x;
+            outcome = advance(&mut state, &content, &mut combat, dt);
+            let shot = state.entities.iter().find(|entity| entity.id == shot_id);
+            if let Some(shot) = shot {
+                assert!(shot.pos.unwrap().x > before, "the shot advances each tick");
+                saw_flight = true;
+            }
+            if !outcome.dead.is_empty() { break; }
+        }
+
+        assert!(saw_flight, "the projectile flew before impact");
+        assert_eq!(outcome.dead, vec![2]);
+        assert_eq!(outcome.destructions.len(), 1, "the first valid hit destroys the victim once");
+        assert!(state.entities.iter().all(|entity| entity.id != 2 && entity.id != shot_id));
+        let death = &outcome.destructions[0];
+        assert_eq!(death.destruction.victim.id, 2);
+        assert_eq!(death.destruction.attacker_id, 1);
+        assert_eq!(death.destruction.cause, AttackType::Kinetic);
+        assert!(death.attacker_saw_impact, "the attacker's sensor covers the impact");
+
+        let victim_removal = outcome.removals.iter().find(|removal| removal.entity_id == 2).unwrap();
+        assert_eq!(victim_removal.witness_player_ids, vec!["alice".to_string(), "bob".to_string()]);
+        let shot_removal = outcome.removals.iter().find(|removal| removal.entity_id == shot_id).unwrap();
+        assert_eq!(shot_removal.witness_player_ids, vec!["alice".to_string(), "bob".to_string()]);
+
+        let mut current = previous.clone();
+        current.entities.retain(|entity| entity.id != 2 && entity.id != shot_id);
+        let mut delta = compute_delta(
+            &previous, &current,
+            &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(),
+            0.0, 0.0, &HashMap::new(), &HashSet::new(),
+        );
+        delta.kinetic_removals = outcome.removals.clone();
+        assert!(delta.kinetic_removals.iter().any(|removal| removal.entity_id == 2));
+        assert!(should_publish_delta(&delta));
+    }
+
+    #[test]
+    fn kinetic_destruction_event_is_withheld_when_the_attacker_cannot_see_the_impact() {
+        let mut content = content();
+        content.entity_types.get_mut("kinetic_fighter").unwrap()
+            .sensor.as_mut().unwrap().range = 10.0;
+        let mut combat = CombatSystem::default();
+        let mut state = state(vec![
+            entity(1, "kinetic_fighter", "alice", 0.0, 0.0, 80.0),
+            entity(2, "worker", "bob", 300.0, 0.0, 10.0),
+        ]);
+        let projectile_type = *content.projectile_entity_type_ids().iter().next().unwrap();
+        state.entities.push(live_shot(projectile_type, 9, 1, "alice", 12.0, 240.0, 0.0));
+
+        let outcome = advance(&mut state, &content, &mut combat, 1.0 / 20.0);
+
+        assert_eq!(outcome.dead, vec![2]);
+        assert!(!outcome.destructions[0].attacker_saw_impact,
+            "an uncovered attacker does not receive the kill event");
+        let victim_removal = outcome.removals.iter().find(|removal| removal.entity_id == 2).unwrap();
+        assert!(!victim_removal.witness_player_ids.contains(&"alice".to_string()));
+    }
+
+    #[test]
+    fn prior_visibility_still_reports_a_kill_at_the_impact_boundary() {
+        let mut content = content();
+        content.entity_types.get_mut("kinetic_fighter").unwrap()
+            .sensor.as_mut().unwrap().range = 100.0;
+        let mut combat = CombatSystem::default();
+        let mut state = state(vec![
+            entity(1, "kinetic_fighter", "alice", 0.0, 0.0, 80.0),
+            entity(2, "worker", "bob", 100.0, 0.0, 10.0),
+        ]);
+        crate::engine::discovery::observe(&mut state, &content);
+        assert!(crate::engine::discovery::prior_visibility_witnesses(&state, 2).contains("alice"));
+        // The impact point lands just outside max(sensor range, visibility range).
+        state.entities[1].pos = Some(Vec2 { x: 100.5, y: 0.0 });
+        let projectile_type = *content.projectile_entity_type_ids().iter().next().unwrap();
+        state.entities.push(live_shot(projectile_type, 9, 1, "alice", 12.0, 50.5, 0.0));
+
+        let outcome = advance(&mut state, &content, &mut combat, 1.0 / 20.0);
+
+        assert_eq!(outcome.dead, vec![2]);
+        let victim_removal = outcome.removals.iter().find(|removal| removal.entity_id == 2).unwrap();
+        assert!(victim_removal.witness_player_ids.contains(&"alice".to_string()),
+            "prior visibility is added to impact-time witnesses");
+        assert!(outcome.destructions[0].attacker_saw_impact);
+    }
+
+    #[test]
+    fn checkpoint_restore_preserves_the_live_projectile_and_its_id_sequence() {
+        let content = content();
+        let mut combat = CombatSystem::default();
+        let mut state = state(vec![entity(1, "kinetic_fighter", "alice", 0.0, 0.0, 80.0)]);
+        let projectile_type = *content.projectile_entity_type_ids().iter().next().unwrap();
+        let mut spawns = vec![live_shot(projectile_type, 0, 1, "alice", 12.0, 0.0, 0.0)];
+        assign_projectile_ids(&mut state, &mut spawns);
+        let live_id = spawns[0].id;
+        assert_eq!(live_id, 1 << 63);
+        state.entities.append(&mut spawns);
+        state.tick = 7;
+
+        let snapshot = Snapshot {
+            economy_version: 1,
+            tick: state.tick as i64,
+            entities: state.entities.clone(),
+            generation_state_json: serde_json::to_string(&state.generation).unwrap(),
+            ..Default::default()
+        };
+        let decoded = Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap();
+        let (mut restored, _) = crate::io::redis::restore_snapshot(decoded).unwrap();
+
+        assert_eq!(restored.generation.projectile_sequence, Some(1));
+        assert!(restored.entities.iter().any(|entity| entity.id == live_id));
+
+        // The live shot still advances after restore.
+        let started_at = restored.entities.iter().find(|entity| entity.id == live_id).unwrap().pos.unwrap().x;
+        let cfg = GameConfig { friction: 0.0, ..Default::default() };
+        let starts = combat_motion_starts(&restored.entities, &HashMap::new());
+        integrate(&cfg, &mut restored, 1.0 / 20.0);
+        let outcome = sweep_kinetic_projectiles(
+            &mut restored, &content, &mut combat, &starts, &HashMap::new(), 1.0 / 20.0,
+        );
+        assert!(outcome.removals.is_empty());
+        assert!(restored.entities.iter().find(|entity| entity.id == live_id)
+            .unwrap().pos.unwrap().x > started_at);
+
+        // A new shot after restore must not reuse the saved live shot ID.
+        let mut spawns = vec![live_shot(projectile_type, 0, 1, "alice", 12.0, 0.0, 0.0)];
+        assign_projectile_ids(&mut restored, &mut spawns);
+        assert_eq!(spawns[0].id, (1 << 63) | 1);
+        assert_ne!(spawns[0].id, live_id);
+    }
+}
+
+#[cfg(test)]
 mod integration_tests {
     use super::*;
     use prost::Message;
@@ -1996,6 +2214,103 @@ fn self_destruct_entity(entities: &mut Vec<pb::Entity>, player_id: &str, entity_
     }
     entities.remove(index);
     Ok(())
+}
+
+/// A kinetic destruction plus the witness set that authorizes its delivery.
+struct KineticDestruction {
+    destruction: crate::combat::CombatDestruction,
+    attacker_saw_impact: bool,
+}
+
+#[derive(Default)]
+struct KineticSweep {
+    removals: Vec<pb::KineticRemoval>,
+    destructions: Vec<KineticDestruction>,
+    dead: Vec<u64>,
+}
+
+/// Positions captured before integration, keyed by entity ID. A keyed map keeps
+/// a mid-tick spawn or removal from shifting a hull's start onto another entity.
+fn combat_motion_starts(
+    entities: &[pb::Entity],
+    clamped_moves: &HashMap<u64, crate::combat::ClampedMove>,
+) -> HashMap<u64, pb::Vec2> {
+    entities.iter().filter_map(|entity| {
+        let start = match clamped_moves.get(&entity.id) {
+            Some(motion) => motion.start,
+            None => entity.pos?,
+        };
+        Some((entity.id, start))
+    }).collect()
+}
+
+/// Projectile IDs live in the reserved upper half of the ID space. The sequence
+/// is checkpointed so a restored live shot is never reused.
+fn assign_projectile_ids(state: &mut GameState, spawns: &mut [pb::Entity]) {
+    if spawns.is_empty() {
+        return;
+    }
+    let sequence = state.generation.projectile_sequence.get_or_insert(0);
+    for shot in spawns {
+        shot.id = (1 << 63) | *sequence;
+        *sequence += 1;
+    }
+}
+
+/// Sweep live shots, publish witness-scoped removals, and remove casualties.
+/// Used verbatim by the tick path; `starts` must be captured before integration.
+fn sweep_kinetic_projectiles(
+    state: &mut GameState,
+    content: &ContentPack,
+    combat: &mut CombatSystem,
+    starts: &HashMap<u64, pb::Vec2>,
+    clamped_moves: &HashMap<u64, crate::combat::ClampedMove>,
+    dt: f32,
+) -> KineticSweep {
+    let outcome = crate::combat::advance_projectiles(
+        &mut state.entities, starts, clamped_moves, content, dt,
+    );
+    if outcome.terminations.is_empty() {
+        return KineticSweep::default();
+    }
+
+    let sensors = discovery::ImpactSensors::new(state, content, starts, clamped_moves);
+    let mut removals: Vec<_> = outcome.terminations.into_iter().map(|(entity_id, impact)| {
+        pb::KineticRemoval {
+            entity_id,
+            witness_player_ids: sensors.witnesses(impact, 0.0).into_iter().collect(),
+        }
+    }).collect();
+    let mut witnessed: Vec<_> = outcome.destructions.into_iter().map(|destruction| {
+        let impact = destruction.impact.expect("kinetic destruction carries an impact");
+        let target_range = content.get(&destruction.victim.entity_type_id)
+            .and_then(|definition| definition.visibility_range).unwrap_or(0.0);
+        let mut witnesses = sensors.witnesses(impact, target_range);
+        witnesses.extend(discovery::prior_visibility_witnesses(state, destruction.victim.id));
+        (destruction, witnesses)
+    }).collect();
+    drop(sensors);
+
+    let dead: Vec<_> = witnessed.iter().map(|(destruction, _)| destruction.victim.id).collect();
+    combat.forget_destroyed(&dead);
+    let dead_set: HashSet<_> = dead.iter().copied().collect();
+    state.entities.retain(|entity| !dead_set.contains(&entity.id)
+        && !(entity.projectile.is_some() && entity.health <= 0.0));
+
+    let mut destructions = Vec::with_capacity(witnessed.len());
+    for (destruction, mut witnesses) in witnessed.drain(..) {
+        let attacker_saw_impact = witnesses.contains(&destruction.attacker_owner_player_id);
+        if is_player_owner(&destruction.victim.owner_player_id) {
+            witnesses.insert(destruction.victim.owner_player_id.clone());
+        }
+        discovery::forget_witnessed(state, destruction.victim.id, &witnesses);
+        removals.push(pb::KineticRemoval {
+            entity_id: destruction.victim.id,
+            witness_player_ids: witnesses.into_iter().collect(),
+        });
+        destructions.push(KineticDestruction { destruction, attacker_saw_impact });
+    }
+    KineticSweep { removals, destructions, dead }
 }
 
 /// A removal-only delta is still an authoritative state change. Keep all
@@ -3724,9 +4039,11 @@ impl Engine {
         };
         // Clamped Move steps already snapped to their stop boundary before this
         // point; sweep them from their pre-snap positions instead.
-        let starts: Option<Vec<_>> = swept.then(|| self.state.entities.iter()
-            .map(|entity| clamped_moves.get(&entity.id).map_or(entity.pos, |motion| Some(motion.start)))
-            .collect());
+        let starts = if swept {
+            combat_motion_starts(&self.state.entities, &clamped_moves)
+        } else {
+            HashMap::new()
+        };
         integrate(&self.cfg, &mut self.state, dt);
         self.advance_convoys(dt).await?;
         self.intents.tick_sentries(&mut self.state, dt);
@@ -3734,53 +4051,28 @@ impl Engine {
         self.intents.tick_escorts(&mut self.state, dt);
 
         let mut removals = Vec::new();
-        if let Some((starts, content)) = starts.as_deref().zip(self.content.as_ref()) {
-            let outcome = crate::combat::advance_projectiles(
-                &mut self.state.entities, starts, &clamped_moves, content, dt,
+        let mut destructions = Vec::new();
+        let mut dead = Vec::new();
+        if let Some(content) = self.content.as_ref().filter(|_| swept) {
+            let sweep = sweep_kinetic_projectiles(
+                &mut self.state, content, &mut self.combat, &starts, &clamped_moves, dt,
             );
-            if !outcome.terminations.is_empty() {
-                let sensors = discovery::ImpactSensors::new(&self.state, content, starts, &clamped_moves);
-                removals = outcome.terminations.into_iter().map(|(entity_id, impact)| {
-                    pb::KineticRemoval {
-                        entity_id,
-                        witness_player_ids: sensors.witnesses(impact, 0.0).into_iter().collect(),
-                    }
-                }).collect();
-                let witnessed_deaths: Vec<_> = outcome.destructions.into_iter().map(|death| {
-                    let target_range = content.get(&death.victim.entity_type_id)
-                        .and_then(|def| def.visibility_range).unwrap_or(0.0);
-                    let witnesses = sensors.witnesses(death.impact.unwrap(), target_range);
-                    (death, witnesses)
-                }).collect();
-
-                let dead: Vec<_> = witnessed_deaths.iter().map(|(death, _)| death.victim.id).collect();
-                self.combat.forget_destroyed(&dead);
-                self.remove_combat_casualties(&dead, true);
-                for (death, mut witnesses) in witnessed_deaths {
-                    let attacker_saw_impact = witnesses.contains(&death.attacker_owner_player_id);
-                    if is_player_owner(&death.victim.owner_player_id) {
-                        witnesses.insert(death.victim.owner_player_id.clone());
-                    }
-                    discovery::forget_witnessed(&mut self.state, death.victim.id, &witnesses);
-                    removals.push(pb::KineticRemoval {
-                        entity_id: death.victim.id,
-                        witness_player_ids: witnesses.into_iter().collect(),
-                    });
-                    self.emit_combat_destruction(&death, attacker_saw_impact).await;
-                }
-                self.cancel_destroyed_intents(&dead).await;
+            for entity_id in &sweep.dead {
+                self.clear_fractional_for_entity(*entity_id);
             }
+            removals = sweep.removals;
+            destructions = sweep.destructions;
+            dead = sweep.dead;
+        }
+        for outcome in destructions {
+            self.emit_combat_destruction(&outcome.destruction, outcome.attacker_saw_impact).await;
+        }
+        if !dead.is_empty() {
+            self.cancel_destroyed_intents(&dead).await;
         }
 
-        if !spawns.is_empty() {
-            // Never reuse IDs of vanished shots, including after checkpoint restoration.
-            let sequence = self.state.generation.projectile_sequence.get_or_insert(0);
-            for shot in &mut spawns {
-                shot.id = (1 << 63) | *sequence;
-                *sequence += 1;
-            }
-            self.state.entities.append(&mut spawns);
-        }
+        assign_projectile_ids(&mut self.state, &mut spawns);
+        self.state.entities.append(&mut spawns);
         Ok(removals)
     }
 

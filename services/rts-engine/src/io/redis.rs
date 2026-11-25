@@ -1495,7 +1495,7 @@ impl RedisClient {
 
 
 /// Legacy cargo is folded into inventory once; new snapshots write zero cargo.
-fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<CollectorState>)> {
+pub(crate) fn restore_snapshot(mut snapshot: Snapshot) -> anyhow::Result<(GameState, Vec<CollectorState>)> {
     let mut entities: std::collections::HashMap<_, _> = snapshot.entities.iter_mut()
         .map(|entity| (entity.id, entity)).collect();
     for collector in &mut snapshot.collector_states {

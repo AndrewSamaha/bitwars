@@ -46,6 +46,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Made collection capacity and delivery resource-specific: full food or energy no longer blocks mineral collection or gets unloaded by mineral routes. Full/no-capacity warnings now refer only to the requested resource.
 - Moved legacy sprites for `planet_blue`, `star_yellow`, `minerals`, and `raider` from the web public directory into `packages/content/assets` so hot-reload revisions include their artwork instead of falling back to the corvette texture.
 - Replaced `packages/content/assets/theta/idle.png`, which contained a solar-collector image, with the correct theta star artwork already present in `public/assets`; republished and live-reloaded the revision.
+- Kinetic kills now remain visible when the interpolated impact point falls just outside coverage: impact-time witnesses are joined by players whose sensors already covered the victim at tick start.
+- Hardened kinetic sweeps against mid-tick entity list changes by keying pre-integration positions by entity ID, and widened the grid candidate bound to the Euclidean hull displacement so diagonal crossings are never culled on the fast path.
+- Content validation now requires a positive `hull_radius` on every `combat_targetable` entity type, and kinetic attacks declare their projectile `entity_type_id` in content as the single source consumed by the engine and generated into the web client.
 
 ### Notes
 - See the development milestones in `docs/milestones.md` for the incremental feature plan (M0–M10).
