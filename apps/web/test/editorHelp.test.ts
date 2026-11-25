@@ -82,9 +82,12 @@ describe("content editor help", () => {
   });
 
 
-  it("distinguishes sensor, weapon, and repair range", () => {
+  it("distinguishes sensor range, weapon firing range, projectile travel, and repair range", () => {
     expect(hover("sensor:\n  |range: 100")).toContain("detection");
-    expect(hover("combat:\n  attacks:\n    - id: laser\n      |range: 100")).toContain("laser distance");
+    const attack = "combat:\n  attacks:\n    - id: kinetic\n      type: kinetic\n";
+    expect(hover(`${attack}      |range: 100`)).toContain("firing distance");
+    expect(hover(`${attack}      projectile:\n        |max_travel_distance: 200`))
+      .toContain("from launch along the projectile's path, independent of firing range");
     expect(hover("repair: { |range: 100 }")).toContain("repair distance");
   });
 
