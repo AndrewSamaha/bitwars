@@ -17,6 +17,7 @@ import { minimapMemory, type EntityObservation } from "@/features/gamestate/mini
 import { reconcileRememberedEntity } from "../entityMemory";
 import { collectionRouting } from "@/features/collection-routing/collectionRouting";
 import { moveRouting } from "@/features/collection-routing/moveRouting";
+import { KINETIC_PROJECTILE_TYPE } from "@/lib/db/utils/visibility";
 
 // Types that match the SSE payload emitted by /api/v2/gamestate/stream
 type Pos = { x: number; y: number };
@@ -463,7 +464,7 @@ export default function GameStateStreamBridge() {
           (typeId) => contentManager.getEntityType(typeId)?.sensor?.range,
         );
         for (const entity of newlyKnown) {
-          if (entity.owner_player_id !== playerId && entity.pos && isWithinSensorRange(entity.pos, sensorSources)) {
+          if (entity.entity_type_id !== KINETIC_PROJECTILE_TYPE && entity.owner_player_id !== playerId && entity.pos && isWithinSensorRange(entity.pos, sensorSources)) {
             dispatchEntityDetected(entity);
           }
         }

@@ -27,6 +27,7 @@ mod tests {
             supply: None,
             resource_deposit: None,
             resources: None,
+            projectile: None,
             id: 1,
             entity_type_id: String::new(),
             pos: Some(v),

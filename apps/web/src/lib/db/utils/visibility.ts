@@ -1,3 +1,5 @@
+export const KINETIC_PROJECTILE_TYPE = "kinetic_projectile";
+
 type Pos = { x: number; y: number };
 
 export type StreamEntity = {
@@ -117,7 +119,12 @@ export class VisibilityFilter {
     const hidden: Array<number | string> = [];
     for (const id of delta.removed_entity_ids ?? []) {
       const key = idOf(id);
-      if (wasVisible.has(key)) removed.push(id);
+      if (wasVisible.has(key)) {
+        // A shot's disappearance is not a destruction notification. Use the
+        // same projection for removal as for leaving sensor coverage.
+        if (this.entities.get(key)?.entity_type_id === KINETIC_PROJECTILE_TYPE) hidden.push(id);
+        else removed.push(id);
+      }
       this.entities.delete(key);
     }
     for (const update of delta.updates) {

@@ -1,7 +1,7 @@
 //! Procedural neutral populations and transactional player starts.
 use super::state::{
-    initialize_resource_deposits, neutral_entity, on_player_spawn, sample_normal_position,
-    set_resource_amount, GameState,
+    initialize_resource_deposits, max_unit_id, neutral_entity, on_player_spawn,
+    sample_normal_position, set_resource_amount, GameState,
 };
 use crate::{
     content::ContentPack,
@@ -116,7 +116,7 @@ fn hull(content: &ContentPack, id: &str) -> f32 {
     content.get(id).map_or(0.0, |d| d.hull_radius.max(0.0))
 }
 fn next_id(entities: &[Entity]) -> u64 {
-    entities.iter().map(|e| e.id).max().unwrap_or(0) + 1
+    max_unit_id(entities) + 1
 }
 fn radiation_safe(
     entities: &[Entity],
@@ -149,7 +149,7 @@ fn clear(
 ) -> bool {
     entities
         .iter()
-        .filter(|e| e.health > 0.0)
+        .filter(|e| e.health > 0.0 && e.projectile.is_none())
         .all(|e| distance(p, pos(e)) >= separation.max(radius + hull(content, &e.entity_type_id)))
 }
 fn add_object(

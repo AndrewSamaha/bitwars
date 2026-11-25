@@ -638,6 +638,45 @@ entity_types:
     visual:
       rotate_deg: 0
       scale: 1
+  kinetic_fighter:
+    build_cost:
+      energy: 50
+      minerals: 75
+    combat:
+      acquisition_range: 900
+      attacks:
+        - cooldown_ticks: 30
+          damage: 12
+          id: kinetic
+          range: 800
+          type: kinetic
+          projectile:
+            speed: 1600
+            max_travel_distance: 1400
+      on_near_enemy_strategy: approach
+    combat_targetable: true
+    fog_memory: forget_when_hidden
+    health: 80
+    hull_radius: 50
+    maintenance_cost_per_minute:
+      energy: 2
+      food: 1
+    mass: 0.6
+    max_capacity:
+      energy: 120
+      food: 60
+    sensor:
+      range: 1000
+    speed: 400
+    stop_radius: 0.5
+  kinetic_projectile:
+    fog_memory: forget_when_hidden
+    health: 1
+    mass: 1
+    speed: 0
+    stop_radius: 0
+    suppress_hover: true
+    z_index: 100
   battleship:
     build_cost:
       energy: 2000
@@ -777,6 +816,8 @@ entity_types:
         entity_type_id: fighter_v1
       - duration_seconds: 75
         entity_type_id: heavy_fighter
+      - duration_seconds: 50
+        entity_type_id: kinetic_fighter
       - duration_seconds: 2005
         entity_type_id: battleship
       - duration_seconds: 50

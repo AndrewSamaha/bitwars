@@ -179,6 +179,9 @@ fn visibility<'a>(state: &'a GameState, content: &ContentPack) -> BTreeMap<&'a s
     let mut extended = SpatialIndex::new();
     let mut wide_visibility = Vec::new();
     for (i, entity) in state.entities.iter().enumerate() {
+        // Transient shots never enter durable discovery or last-seen memory.
+        // The stream projects them directly using normal sensor coverage.
+        if entity.projectile.is_some() { continue; }
         let Some(pos) = entity.pos.as_ref() else { continue; };
         points.insert(i, pos.x, pos.y);
         let range = content.get(&entity.entity_type_id).and_then(|d| d.visibility_range).unwrap_or(0.0);
@@ -300,12 +303,14 @@ fn destruction_witnesses(state: &GameState, content: &ContentPack, victim: &pb::
     witnesses
 }
 
-pub fn forget_destroyed(state: &mut GameState, content: &ContentPack, victim: &pb::Entity) {
-    for owner in destruction_witnesses(state, content, victim) {
-        if let Some(knowledge) = state.discovered_entities.players.get_mut(&owner) {
+pub(crate) fn forget_destroyed(state: &mut GameState, content: &ContentPack, victim: &pb::Entity) -> BTreeSet<String> {
+    let witnesses = destruction_witnesses(state, content, victim);
+    for owner in &witnesses {
+        if let Some(knowledge) = state.discovered_entities.players.get_mut(owner) {
             knowledge.forget(victim.id);
         }
     }
+    witnesses
 }
 
 /// Before removal, borrow the target and its sensors rather than cloning it.
@@ -350,6 +355,24 @@ mod tests {
             discovered_entities: Default::default(),
         };
         (content, state)
+    }
+
+    #[test]
+    fn a_projectile_does_not_witness_a_hidden_destruction_for_its_shooter() {
+        let mut shot = entity(3, "kinetic_projectile", "", 1200.0);
+        shot.projectile = Some(pb::ProjectileFlight {
+            attacker_id: 1,
+            attacker_entity_type_id: "kinetic_fighter".into(),
+            attacker_owner_player_id: "alice".into(),
+            damage: 12.0,
+            remaining_distance: 200.0,
+        });
+        let victim = entity(2, "worker", "bob", 1200.0);
+        let (content, mut state) = setup(vec![entity(1, "kinetic_fighter", "alice", 0.0), shot]);
+        assert_eq!(forget_destroyed(&mut state, &content, &victim), BTreeSet::from(["bob".into()]));
+        state.entities[0].pos.as_mut().unwrap().x = 200.0;
+        assert_eq!(forget_destroyed(&mut state, &content, &victim),
+            BTreeSet::from(["alice".into(), "bob".into()]));
     }
 
     #[test]

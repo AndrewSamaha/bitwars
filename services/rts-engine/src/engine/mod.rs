@@ -1204,6 +1204,7 @@ mod radiation_tests {
             supply: None,
             resource_deposit: None,
             resources: None,
+            projectile: None,
             id: 1,
             entity_type_id: "star_yellow".to_string(),
             pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
@@ -1216,6 +1217,7 @@ mod radiation_tests {
             supply: None,
             resource_deposit: None,
             resources: None,
+            projectile: None,
             id: 2,
             entity_type_id: "collector_solar".to_string(),
             pos: Some(pb::Vec2 { x: 120.0, y: 0.0 }),
@@ -1228,6 +1230,7 @@ mod radiation_tests {
             supply: None,
             resource_deposit: None,
             resources: None,
+            projectile: None,
             id: 3,
             entity_type_id: "collector_solar".to_string(),
             pos: Some(pb::Vec2 { x: 20.0, y: 0.0 }),
@@ -1240,6 +1243,7 @@ mod radiation_tests {
             supply: None,
             resource_deposit: None,
             resources: None,
+            projectile: None,
             id: 4,
             entity_type_id: "worker".to_string(),
             pos: Some(pb::Vec2 { x: 120.0, y: 0.0 }),
@@ -1275,6 +1279,7 @@ mod radiation_tests {
                     supply: None,
                     resource_deposit: None,
                     resources: None,
+                    projectile: None,
                     id: 1,
                     entity_type_id: "star_yellow".to_string(),
                     pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
@@ -1287,6 +1292,7 @@ mod radiation_tests {
                     supply: None,
                     resource_deposit: None,
                     resources: None,
+                    projectile: None,
                     id: 2,
                     entity_type_id: "star_yellow".to_string(),
                     pos: Some(pb::Vec2 { x: 60.0, y: 0.0 }),
@@ -1299,6 +1305,7 @@ mod radiation_tests {
                     supply: None,
                     resource_deposit: None,
                     resources: None,
+                    projectile: None,
                     id: 3,
                     entity_type_id: "worker".to_string(),
                     pos: Some(pb::Vec2 { x: 40.0, y: 0.0 }),
@@ -1372,6 +1379,7 @@ mod radiation_tests {
                 supply: None,
                 resource_deposit: None,
                 resources: None,
+                projectile: None,
                 id: 1,
                 entity_type_id: "worker".to_string(),
                 pos: None,
@@ -1384,6 +1392,7 @@ mod radiation_tests {
                 supply: None,
                 resource_deposit: None,
                 resources: None,
+                projectile: None,
                 id: 2,
                 entity_type_id: "worker".to_string(),
                 pos: None,
@@ -2774,6 +2783,9 @@ impl Engine {
         let mut min_y = f32::INFINITY;
         let mut max_y = f32::NEG_INFINITY;
         for entity in &self.state.entities {
+            if entity.projectile.is_some() {
+                continue;
+            }
             let Some(position) = entity.pos.as_ref() else {
                 continue;
             };
@@ -2795,14 +2807,7 @@ impl Engine {
         let (min_x, max_x) = (min_x - padding, max_x + padding);
         let (min_y, max_y) = (min_y - padding, max_y + padding);
 
-        let next_id = self
-            .state
-            .entities
-            .iter()
-            .map(|entity| entity.id)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1);
+        let next_id = state::max_unit_id(&self.state.entities).saturating_add(1);
         let health = definition.health.max(0.0);
         let mut rng = rand::thread_rng();
         for offset in 0..count {
@@ -2819,6 +2824,7 @@ impl Engine {
                 health,
                 supply: None,
                 resource_deposit: None,
+                projectile: None,
                 resources: initial_resource_inventory(definition),
             });
         }
@@ -3115,14 +3121,7 @@ impl Engine {
                 continue;
             };
             let Some(pos) = builder.pos else { continue };
-            let next_id = self
-                .state
-                .entities
-                .iter()
-                .map(|entity| entity.id)
-                .max()
-                .unwrap_or(0)
-                + 1;
+            let next_id = state::max_unit_id(&self.state.entities) + 1;
             let angle = (next_id as f32 * 2.399_963_1) % std::f32::consts::TAU;
             let (Some(builder_def), Some(product_def)) = (
                 content.get(&builder.entity_type_id),
@@ -3145,6 +3144,7 @@ impl Engine {
                 health,
                 supply: None,
                 resource_deposit: None,
+                projectile: None,
                 resources: initial_resource_inventory(product_def),
             });
             if let Some(metadata) = self.intents.finish(builder_id) {
@@ -3555,7 +3555,7 @@ impl Engine {
         }
 
         for entity in &state.entities {
-            if entity.health <= 0.0 {
+            if entity.health <= 0.0 || entity.projectile.is_some() {
                 continue;
             }
             let Some(pos) = entity.pos.as_ref() else {
@@ -3669,6 +3669,7 @@ impl Engine {
             return crate::combat::CombatTick {
                 dead_entity_ids: Vec::new(),
                 laser_shots: Vec::new(),
+                projectile_launches: Vec::new(),
                 dismantling: Vec::new(),
                 destructions: Vec::new(),
                 engagements: HashMap::new(),
@@ -3698,17 +3699,35 @@ impl Engine {
             &sentry_members,
         );
         self.update_combat_effect_states(&outcome.dismantling);
-        if outcome.dead_entity_ids.is_empty() {
-            return outcome;
+        self.remove_combat_dead(&outcome.dead_entity_ids);
+        outcome
+    }
+
+    fn remove_combat_dead(&mut self, dead_entity_ids: &[u64]) {
+        if dead_entity_ids.is_empty() {
+            return;
         }
-        let dead_ids: HashSet<u64> = outcome.dead_entity_ids.iter().copied().collect();
+        let dead_ids: HashSet<u64> = dead_entity_ids.iter().copied().collect();
         self.state
             .entities
             .retain(|entity| !dead_ids.contains(&entity.id));
-        for entity_id in &outcome.dead_entity_ids {
-            self.clear_fractional_for_entity(*entity_id);
+        for &entity_id in dead_entity_ids {
+            self.clear_fractional_for_entity(entity_id);
         }
-        outcome
+    }
+
+    async fn tick_projectiles(&mut self, dt: f32, launches: Vec<pb::Entity>) {
+        let Some(content) = self.content.as_ref() else { return; };
+        let (dead, destructions) = crate::combat::advance_projectiles(
+            &mut self.state.entities, &self.prev_state.entities, content, dt, launches,
+        );
+        if dead.is_empty() {
+            return;
+        }
+        self.combat.clear_destroyed(&dead);
+        self.remove_combat_dead(&dead);
+        self.emit_combat_destructions(&destructions).await;
+        self.cancel_destroyed_intents(&dead).await;
     }
 
     fn update_combat_effect_states(&mut self, dismantling: &[crate::combat::Dismantling]) {
@@ -4133,13 +4152,18 @@ impl Engine {
         destructions: &[crate::combat::CombatDestruction],
     ) {
         for destruction in destructions {
-            if let Some(content) = self.content.as_ref() {
-                discovery::forget_destroyed(&mut self.state, content, &destruction.victim);
-            }
-            let recipients = gameplay_event_recipients(
-                &destruction.victim.owner_player_id,
-                &destruction.attacker_owner_player_id,
-            );
+            let witnesses = self.content.as_ref().map(|content| {
+                discovery::forget_destroyed(&mut self.state, content, &destruction.victim)
+            });
+            let attacker = &destruction.attacker_owner_player_id;
+            let recipient_attacker = if destruction.cause != crate::content::AttackType::Kinetic
+                || witnesses.is_some_and(|players| players.contains(attacker))
+            {
+                attacker.as_str()
+            } else {
+                ""
+            };
+            let recipients = gameplay_event_recipients(&destruction.victim.owner_player_id, recipient_attacker);
             if recipients.is_empty() {
                 continue;
             }
@@ -4156,6 +4180,7 @@ impl Engine {
                     }),
                     cause: match destruction.cause {
                         crate::content::AttackType::Laser => "laser".to_string(),
+                        crate::content::AttackType::Kinetic => "kinetic".to_string(),
                         crate::content::AttackType::Dismantle => "dismantle".to_string(),
                     },
                     damage_amount: None,
@@ -5122,6 +5147,7 @@ impl Engine {
         self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
         self.cancel_destroyed_intents(&radiation_dead_entity_ids)
             .await;
+        self.tick_projectiles(dt, combat.projectile_launches).await;
         self.cancel_invalid_escorts().await?;
         self.persist_escort_changes().await?;
         if let Err(error) = self.persist_sentry_changes().await {
@@ -5433,6 +5459,7 @@ impl Engine {
             self.emit_radiation_destructions(&radiation_victims, &radiation_source_by_victim).await;
             self.cancel_destroyed_intents(&radiation_dead_entity_ids)
                 .await;
+            self.tick_projectiles(dt, combat.projectile_launches).await;
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,

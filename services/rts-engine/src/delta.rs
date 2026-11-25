@@ -189,6 +189,7 @@ mod tests {
             supply: None,
             resource_deposit: None,
             resources: None,
+            projectile: None,
             id,
             entity_type_id: "worker".to_string(),
             pos: None,

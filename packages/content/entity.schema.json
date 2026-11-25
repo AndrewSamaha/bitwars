@@ -296,24 +296,66 @@
           "format": "int32",
           "default": 0
         },
+        "projectile": {
+          "description": "Flight parameters for kinetic weapons only.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectileDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "range": {
-          "description": "Maximum center-to-center laser distance in world units. Defaults to 0; ignored for dismantle.",
+          "description": "Maximum center-to-center firing distance in world units. Defaults to 0; ignored for dismantle.",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "type": {
-          "description": "Weapon behavior: laser uses range; dismantle uses both hull radii plus contact_tolerance.",
+          "description": "Weapon behavior: laser is instant, kinetic launches a projectile, and dismantle requires hull contact.",
           "$ref": "#/$defs/AttackType"
         }
       },
       "additionalProperties": false,
+      "else": {
+        "not": {
+          "required": [
+            "projectile"
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "kinetic"
+          }
+        }
+      },
       "required": [
         "id",
         "type",
         "damage",
         "cooldown_ticks"
-      ]
+      ],
+      "then": {
+        "properties": {
+          "damage": {
+            "exclusiveMinimum": 0
+          },
+          "projectile": {
+            "type": "object"
+          },
+          "range": {
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "range",
+          "projectile"
+        ]
+      }
     },
     "AttackType": {
       "oneOf": [
@@ -321,6 +363,11 @@
           "description": "Ranged attack using the weapon's range in world units.",
           "type": "string",
           "const": "laser"
+        },
+        {
+          "description": "Ballistic attack that deals damage only when its projectile intersects a hostile hull.",
+          "type": "string",
+          "const": "kinetic"
         },
         {
           "description": "Contact attack within attacker hull radius + target hull radius + contact_tolerance.",
@@ -539,6 +586,28 @@
           "type": "string",
           "const": "stay"
         }
+      ]
+    },
+    "ProjectileDef": {
+      "type": "object",
+      "properties": {
+        "max_travel_distance": {
+          "description": "Maximum distance from launch along the projectile's path, independent of firing range.",
+          "type": "number",
+          "format": "float",
+          "exclusiveMinimum": 0
+        },
+        "speed": {
+          "description": "Projectile speed in world units per second.",
+          "type": "number",
+          "format": "float",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "speed",
+        "max_travel_distance"
       ]
     },
     "RadiationShieldingDef": {

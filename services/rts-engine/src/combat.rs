@@ -1,14 +1,16 @@
-//! Deterministic, server-authoritative neutral NPC combat.
-//!
-//! Damage is resolved at the firing tick.  Projectile/tracer rendering can use
-//! the same firing decision later, without making client animation authoritative.
+//! Deterministic, server-authoritative combat. Lasers and dismantling resolve
+//! when fired; kinetic shots resolve separately as their projectiles travel.
 
 use std::collections::{HashMap, HashSet};
 
-use crate::content::{AttackDef, AttackType, ContentPack, NearEnemyStrategy};
-use crate::pb::{Entity, Vec2};
-use crate::spatial::SpatialIndex;
+use crate::content::{AttackDef, AttackType, ContentPack, NearEnemyStrategy, KINETIC_PROJECTILE_TYPE};
+use crate::pb::{Entity, ProjectileFlight, Vec2};
+use crate::spatial::{SpatialIndex, CELL_SIZE};
 use crate::spawn_config::is_system_owner;
+
+// Scenario IDs are limited to safe JavaScript integers. Projectiles use the
+// uint64 range above them so transient shots don't affect unit IDs.
+const FIRST_PROJECTILE_ID: u64 = 1 << 63;
 
 #[derive(Default)]
 pub struct CombatSystem {
@@ -44,6 +46,7 @@ pub struct CombatTick {
     pub engagements: HashMap<u64, u64>,
     pub dead_entity_ids: Vec<u64>,
     pub laser_shots: Vec<LaserShot>,
+    pub(crate) projectile_launches: Vec<Entity>,
     pub dismantling: Vec<Dismantling>,
     pub destructions: Vec<CombatDestruction>,
 }
@@ -138,7 +141,7 @@ impl CombatSystem {
             scripted_targets, scripted_entity_ids, leashes, &HashSet::new(), &HashSet::new())
     }
 
-    /// Ordered movement owns position and velocity; combat may only fire in-range lasers.
+    /// Ordered movement owns position and velocity; combat may only fire in-range ranged weapons.
     pub fn tick_with_ordered_movement(
         &mut self, entities: &mut [Entity], content: &ContentPack, tick: u64, dt: f32,
         commanded_entity_ids: &HashSet<u64>, scripted_targets: &HashMap<u64, u64>,
@@ -149,6 +152,7 @@ impl CombatSystem {
             return CombatTick {
                 dead_entity_ids: Vec::new(),
                 laser_shots: Vec::new(),
+                projectile_launches: Vec::new(),
                 dismantling: Vec::new(),
                 destructions: Vec::new(),
                 engagements: HashMap::new(),
@@ -196,6 +200,7 @@ impl CombatSystem {
 
         let mut damage_by_target: HashMap<u64, DamageContribution> = HashMap::new();
         let mut laser_shots = Vec::new();
+        let mut projectile_launches = Vec::new();
         let mut engagements = HashMap::new();
         let mut dismantling = Vec::new();
         for attacker in entities.iter_mut() {
@@ -351,27 +356,36 @@ impl CombatSystem {
                     .copied()
                     .unwrap_or(0);
                 if tick >= next_tick && attack.damage.is_finite() && attack.damage > 0.0 {
-                    let contribution =
-                        damage_by_target
-                            .entry(target.id)
-                            .or_insert_with(|| DamageContribution {
-                                total: 0.0,
+                    if attack.attack_type == AttackType::Kinetic {
+                        let Some(projectile) = attack.projectile else { continue; };
+                        let Some(projectile_type) = content.get(KINETIC_PROJECTILE_TYPE) else { continue; };
+                        let distance = distance_sq.sqrt();
+                        let (dir_x, dir_y) = if distance > 0.0 {
+                            (dx / distance, dy / distance)
+                        } else {
+                            (1.0, 0.0)
+                        };
+                        projectile_launches.push(Entity {
+                            entity_type_id: KINETIC_PROJECTILE_TYPE.to_string(),
+                            pos: Some(origin),
+                            vel: Some(Vec2 {
+                                x: dir_x * projectile.speed,
+                                y: dir_y * projectile.speed,
+                            }),
+                            // Unowned in player projections: only sensors can see the shot.
+                            health: projectile_type.health,
+                            projectile: Some(ProjectileFlight {
                                 attacker_id: attacker.id,
                                 attacker_entity_type_id: attacker.entity_type_id.clone(),
                                 attacker_owner_player_id: attacker.owner_player_id.clone(),
-                                cause: attack.attack_type,
-                                largest_hit: 0.0,
-                            });
-                    contribution.total += attack.damage;
-                    if attack.damage > contribution.largest_hit
-                        || (attack.damage == contribution.largest_hit
-                            && attacker.id < contribution.attacker_id)
-                    {
-                        contribution.attacker_id = attacker.id;
-                        contribution.attacker_entity_type_id = attacker.entity_type_id.clone();
-                        contribution.attacker_owner_player_id = attacker.owner_player_id.clone();
-                        contribution.cause = attack.attack_type;
-                        contribution.largest_hit = attack.damage;
+                                damage: attack.damage,
+                                remaining_distance: f64::from(projectile.max_travel_distance),
+                            }),
+                            ..Default::default()
+                        });
+                    } else {
+                        record_hit(&mut damage_by_target, target.id, attack.damage, attacker.id,
+                            &attacker.entity_type_id, &attacker.owner_player_id, attack.attack_type);
                     }
                     if attack.attack_type == AttackType::Laser {
                         laser_shots.push(LaserShot {
@@ -431,39 +445,250 @@ impl CombatSystem {
             }
         }
 
-        let mut dead = Vec::new();
-        let mut destructions = Vec::new();
-        for entity in entities.iter_mut() {
-            let Some(damage) = damage_by_target.get(&entity.id) else {
-                continue;
-            };
-            if damage.total > 0.0 {
-                entity.health = (entity.health - damage.total).max(0.0);
-                if entity.health <= 0.0 {
-                    dead.push(entity.id);
-                    destructions.push(CombatDestruction {
-                        victim: entity.clone(),
-                        attacker_id: damage.attacker_id,
-                        attacker_entity_type_id: damage.attacker_entity_type_id.clone(),
-                        attacker_owner_player_id: damage.attacker_owner_player_id.clone(),
-                        cause: damage.cause,
-                    });
-                }
-            }
-        }
-        self.next_attack_tick
-            .retain(|(id, _), _| !dead.contains(id));
-        for id in &dead {
-            self.return_positions.remove(id);
-        }
+        let (dead, destructions) = apply_damage(entities, damage_by_target);
+        self.clear_destroyed(&dead);
         CombatTick {
             engagements,
             dead_entity_ids: dead,
             laser_shots,
+            projectile_launches,
             dismantling,
             destructions,
         }
     }
+
+    pub(crate) fn clear_destroyed(&mut self, dead: &[u64]) {
+        if dead.is_empty() {
+            return;
+        }
+        self.next_attack_tick.retain(|(id, _), _| !dead.contains(id));
+        for id in dead {
+            self.return_positions.remove(id);
+        }
+    }
+}
+
+/// Sweep existing flights against hulls moving between simulation samples,
+/// then insert new shots at their recorded launch positions for the next tick.
+pub(crate) fn advance_projectiles(
+    entities: &mut Vec<Entity>,
+    previous_entities: &[Entity],
+    content: &ContentPack,
+    dt: f32,
+    launches: Vec<Entity>,
+) -> (Vec<u64>, Vec<CombatDestruction>) {
+    let in_flight = entities.iter().any(|entity| entity.projectile.is_some());
+    if dt <= 0.0 || (!in_flight && launches.is_empty()) {
+        return (Vec::new(), Vec::new());
+    }
+
+    // No ID that existed in the previous published state may reappear as a
+    // different entity in the same delta, even if it was removed this tick.
+    let mut next_id = if launches.is_empty() {
+        0
+    } else {
+        entities.iter().chain(previous_entities)
+            .filter(|entity| entity.projectile.is_some())
+            .map(|entity| entity.id)
+            .max()
+            .unwrap_or(FIRST_PROJECTILE_ID - 1)
+    };
+    let outcome = if in_flight {
+        sweep_projectiles(entities, previous_entities, content, dt)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    entities.extend(launches.into_iter().map(|mut shot| {
+        next_id += 1;
+        shot.id = next_id;
+        shot
+    }));
+    outcome
+}
+
+struct SweptHull {
+    entity_index: usize,
+    start_x: f64,
+    start_y: f64,
+    dx: f64,
+    dy: f64,
+    radius: f64,
+}
+
+fn sweep_projectiles(
+    entities: &mut Vec<Entity>,
+    previous_entities: &[Entity],
+    content: &ContentPack,
+    dt: f32,
+) -> (Vec<u64>, Vec<CombatDestruction>) {
+    let previous_positions: HashMap<_, _> = previous_entities.iter()
+        .filter(|entity| !entity.owner_player_id.is_empty())
+        .filter_map(|entity| entity.pos.map(|pos| (entity.id, pos)))
+        .collect();
+    let mut target_grid = SpatialIndex::new();
+    let mut targets = Vec::new();
+    let mut max_extent = 0.0_f64;
+    for (index, entity) in entities.iter().enumerate() {
+        let Some(pos) = entity.pos else { continue; };
+        if entity.owner_player_id.is_empty() || entity.health <= 0.0 {
+            continue;
+        }
+        let Some(definition) = content.get(&entity.entity_type_id) else { continue; };
+        if definition.combat_targetable {
+            let start = previous_positions.get(&entity.id).copied().unwrap_or(pos);
+            let start_x = f64::from(start.x);
+            let start_y = f64::from(start.y);
+            let dx = f64::from(pos.x) - start_x;
+            let dy = f64::from(pos.y) - start_y;
+            let radius = f64::from(definition.hull_radius.max(0.0));
+            max_extent = max_extent.max(radius + dx.hypot(dy));
+            target_grid.insert(targets.len(), pos.x, pos.y);
+            targets.push(SweptHull { entity_index: index, start_x, start_y, dx, dy, radius });
+        }
+    }
+
+    let mut hits = HashMap::new();
+    let mut expired = false;
+    for index in 0..entities.len() {
+        let shot = &entities[index];
+        let Some(flight) = &shot.projectile else { continue; };
+        let (Some(pos), Some(vel)) = (shot.pos, shot.vel) else {
+            entities[index].health = 0.0;
+            expired = true;
+            continue;
+        };
+        let (vx, vy) = (f64::from(vel.x), f64::from(vel.y));
+        let speed = vx.hypot(vy);
+        let full_step = speed * f64::from(dt);
+        let distance = full_step.min(flight.remaining_distance);
+        let fraction = distance / full_step;
+        let (step_x, step_y) = (vx * f64::from(dt) * fraction, vy * f64::from(dt) * fraction);
+        let (x, y) = (f64::from(pos.x), f64::from(pos.y));
+        let search_radius = distance * 0.5 + max_extent;
+        let nearest = |target_index: usize| {
+            let hull = &targets[target_index];
+            let target = &entities[hull.entity_index];
+            if target.owner_player_id == flight.attacker_owner_player_id {
+                return None;
+            }
+            // Clip target movement to the same fraction when the shot expires
+            // mid-tick, and sweep in the target's moving frame.
+            segment_hit_fraction(
+                hull.start_x - x,
+                hull.start_y - y,
+                step_x - hull.dx * fraction,
+                step_y - hull.dy * fraction,
+                hull.radius,
+            ).map(|entry| (entry, target.id))
+        };
+        let compare = |a: &(f64, u64), b: &(f64, u64)| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1));
+        // For wide steps, scanning targets is cheaper than enumerating empty cells.
+        let impact = if search_radius > f64::from(CELL_SIZE) {
+            (0..targets.len()).filter_map(nearest).min_by(compare)
+        } else {
+            target_grid.in_area(x + step_x * 0.5, y + step_y * 0.5, search_radius)
+                .filter_map(nearest).min_by(compare)
+        };
+        if let Some((_, target_id)) = impact {
+            record_hit(&mut hits, target_id, flight.damage, flight.attacker_id,
+                &flight.attacker_entity_type_id, &flight.attacker_owner_player_id, AttackType::Kinetic);
+        }
+        if impact.is_some() || distance >= flight.remaining_distance {
+            entities[index].health = 0.0;
+            expired = true;
+        } else {
+            let shot = &mut entities[index];
+            shot.pos = Some(Vec2 { x: (x + step_x) as f32, y: (y + step_y) as f32 });
+            shot.projectile.as_mut().unwrap().remaining_distance -= distance;
+        }
+    }
+    if expired {
+        entities.retain(|entity| entity.projectile.is_none() || entity.health > 0.0);
+    }
+    apply_damage(entities, hits)
+}
+
+fn segment_hit_fraction(x: f64, y: f64, dx: f64, dy: f64, radius: f64) -> Option<f64> {
+    let radius_sq = radius * radius;
+    let outside_sq = x * x + y * y - radius_sq;
+    if outside_sq <= 0.0 {
+        return Some(0.0);
+    }
+    let projected = x * dx + y * dy;
+    if projected <= 0.0 {
+        return None;
+    }
+    let perpendicular = x * dy - y * dx;
+    let discriminant = (dx * dx + dy * dy) * radius_sq - perpendicular * perpendicular;
+    if discriminant < 0.0 {
+        return None;
+    }
+    let entry = outside_sq / (projected + discriminant.sqrt());
+    (entry <= 1.0).then_some(entry)
+}
+
+fn record_hit(
+    hits: &mut HashMap<u64, DamageContribution>,
+    target_id: u64,
+    damage: f32,
+    attacker_id: u64,
+    attacker_type: &str,
+    attacker_owner: &str,
+    cause: AttackType,
+) {
+    use std::collections::hash_map::Entry;
+    match hits.entry(target_id) {
+        Entry::Vacant(entry) => {
+            entry.insert(DamageContribution {
+                total: damage,
+                attacker_id,
+                attacker_entity_type_id: attacker_type.to_string(),
+                attacker_owner_player_id: attacker_owner.to_string(),
+                cause,
+                largest_hit: damage,
+            });
+        }
+        Entry::Occupied(mut entry) => {
+            let contribution = entry.get_mut();
+            contribution.total += damage;
+            if damage > contribution.largest_hit
+                || (damage == contribution.largest_hit && attacker_id < contribution.attacker_id)
+            {
+                contribution.attacker_id = attacker_id;
+                contribution.attacker_entity_type_id.clear();
+                contribution.attacker_entity_type_id.push_str(attacker_type);
+                contribution.attacker_owner_player_id.clear();
+                contribution.attacker_owner_player_id.push_str(attacker_owner);
+                contribution.cause = cause;
+                contribution.largest_hit = damage;
+            }
+        }
+    }
+}
+
+fn apply_damage(
+    entities: &mut [Entity],
+    mut hits: HashMap<u64, DamageContribution>,
+) -> (Vec<u64>, Vec<CombatDestruction>) {
+    let mut dead = Vec::new();
+    let mut destructions = Vec::new();
+    if !hits.is_empty() {
+        for entity in entities {
+            let Some(hit) = hits.remove(&entity.id) else { continue; };
+            entity.health = (entity.health - hit.total).max(0.0);
+            if entity.health <= 0.0 {
+                dead.push(entity.id);
+                destructions.push(CombatDestruction {
+                    victim: entity.clone(),
+                    attacker_id: hit.attacker_id,
+                    attacker_entity_type_id: hit.attacker_entity_type_id,
+                    attacker_owner_player_id: hit.attacker_owner_player_id,
+                    cause: hit.cause,
+                });
+            }
+        }
+    }
+    (dead, destructions)
 }
 
 struct Target {
@@ -477,7 +702,7 @@ struct Target {
 
 fn attack_range(attack: &AttackDef, attacker_hull_radius: f32, target_hull_radius: f32) -> f32 {
     match attack.attack_type {
-        AttackType::Laser => attack.range.max(0.0),
+        AttackType::Laser | AttackType::Kinetic => attack.range.max(0.0),
         AttackType::Dismantle => {
             attacker_hull_radius + target_hull_radius + attack.contact_tolerance.max(0.0)
         }
@@ -489,11 +714,11 @@ fn select_attack<'a>(
     distance_sq: f32,
     attacker_hull_radius: f32,
     target_hull_radius: f32,
-    laser_only: bool,
+    ranged_only: bool,
 ) -> Option<&'a AttackDef> {
     attacks
         .iter()
-        .filter(|attack| !laser_only || attack.attack_type == AttackType::Laser)
+        .filter(|attack| !ranged_only || attack.attack_type != AttackType::Dismantle)
         .filter(|attack| {
             distance_sq <= attack_range(attack, attacker_hull_radius, target_hull_radius).powi(2)
         })
@@ -553,6 +778,7 @@ mod tests {
                     cooldown_ticks: 2,
                     priority: 0,
                     contact_tolerance: 0.0,
+                    projectile: None,
                 }],
             }),
             combat_targetable: true,
@@ -593,6 +819,7 @@ mod tests {
             supply: None,
             resource_deposit: None,
             resources: None,
+            projectile: None,
             id,
             entity_type_id: kind.to_string(),
             pos: Some(Vec2 { x, y: 0.0 }),
@@ -600,6 +827,85 @@ mod tests {
             force: None,
             owner_player_id: owner.to_string(),
             health,
+        }
+    }
+
+    fn packaged_content() -> ContentPack {
+        ContentPack::load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../packages/content/entities.yaml"),
+        ).unwrap()
+    }
+
+    #[test]
+    fn kinetic_shot_travels_past_firing_range_and_hits_the_first_hostile_once() {
+        let pack = packaged_content();
+        let mut combat = CombatSystem::default();
+        let mut entities = vec![
+            entity(1, "kinetic_fighter", "alice", 0.0, 80.0),
+            entity(2, "worker", "bob", 801.0, 100.0),
+        ];
+        let moving = HashSet::from([1]);
+        let fire = |combat: &mut CombatSystem, entities: &mut [Entity], tick| {
+            combat.tick_with_ordered_movement(
+                entities, &pack, tick, 0.25, &moving, &HashMap::new(),
+                &HashSet::new(), &HashMap::new(), &moving, &HashSet::new(),
+            )
+        };
+        assert!(fire(&mut combat, &mut entities, 0).projectile_launches.is_empty());
+        entities[1].pos.as_mut().unwrap().x = 800.0;
+        let fired = fire(&mut combat, &mut entities, 1);
+        assert!(fired.laser_shots.is_empty());
+        advance_projectiles(&mut entities, &[], &pack, 0.25, fired.projectile_launches);
+        assert_eq!(entities[1].health, 100.0);
+        let shot = &entities[2];
+        assert_eq!(shot.pos.unwrap().x, 0.0);
+        assert_eq!(shot.vel.unwrap().x, 1600.0);
+        let shot_id = shot.id;
+
+        // The aimed-at target leaves the flight path. The shot flies straight.
+        entities[1].pos.as_mut().unwrap().y = 200.0;
+        entities.extend([
+            entity(4, "worker", "alice", 650.0, 100.0),
+            entity(5, "worker", "bob", 1100.0, 100.0),
+            entity(6, "worker", "bob", 1300.0, 100.0),
+        ]);
+        advance_projectiles(&mut entities, &[], &pack, 0.25, Vec::new());
+        assert_eq!(entities[2].pos.unwrap().x, 400.0);
+        advance_projectiles(&mut entities, &[], &pack, 1.0, Vec::new());
+        assert!(entities.iter().all(|entity| entity.id != shot_id));
+        assert_eq!(entities[1].health, 100.0);
+        assert_eq!(entities[2].health, 100.0);
+        assert_eq!(entities[3].health, 88.0);
+        assert_eq!(entities[4].health, 100.0);
+        advance_projectiles(&mut entities, &[], &pack, 1.0, Vec::new());
+        assert_eq!(entities[3].health, 88.0);
+    }
+
+    #[test]
+    fn kinetic_sweep_hits_a_crossing_hull_only_before_expiry() {
+        let pack = packaged_content();
+        let mut entities = vec![
+            entity(1, "kinetic_fighter", "alice", 0.0, 80.0),
+            entity(2, "worker", "bob", 800.0, 12.0),
+        ];
+        let fired = CombatSystem::default().tick(&mut entities, &pack, 0, 1.0);
+        advance_projectiles(&mut entities, &[], &pack, 1.0, fired.projectile_launches);
+
+        for (crossing_x, expected_dead) in [(800.0, vec![2]), (1500.0, Vec::new())] {
+            let mut before = entities.clone();
+            before[1].pos = Some(Vec2 { x: crossing_x, y: -crossing_x });
+            let mut after = before.clone();
+            after[1].pos.as_mut().unwrap().y = 1600.0 - crossing_x;
+            let (dead, destructions) = advance_projectiles(&mut after, &before, &pack, 1.0, Vec::new());
+            assert_eq!(dead, expected_dead);
+            assert!(after.iter().all(|entity| entity.projectile.is_none()));
+            if let Some(hit) = destructions.first() {
+                assert_eq!(hit.cause, AttackType::Kinetic);
+                assert_eq!(hit.attacker_id, 1);
+            } else {
+                assert_eq!(after[1].health, 12.0);
+            }
         }
     }
 
@@ -916,6 +1222,7 @@ mod tests {
                 cooldown_ticks: 2,
                 priority: 0,
                 contact_tolerance: 2.0,
+                projectile: None,
             }],
         });
         let raider = pack.entity_types.get_mut("raider").unwrap();
@@ -953,6 +1260,7 @@ mod tests {
                     cooldown_ticks: 20,
                     priority: 0,
                     contact_tolerance: 2.0,
+                    projectile: None,
                 }],
             });
             let raider = pack.entity_types.get_mut("raider").unwrap();

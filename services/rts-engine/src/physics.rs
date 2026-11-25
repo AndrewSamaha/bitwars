@@ -31,6 +31,7 @@ pub fn apply_random_forces(
     dt: f32,
 ) {
     for e in &mut state.entities {
+        if e.projectile.is_some() { continue; }
         let vel = e.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
         let fx = rng.gen_range(cfg.force_min..=cfg.force_max);
         let fy = rng.gen_range(cfg.force_min..=cfg.force_max);
@@ -49,6 +50,7 @@ pub fn apply_random_forces(
 
 pub fn integrate(cfg: &GameConfig, state: &mut GameState, dt: f32) {
     for e in &mut state.entities {
+        if e.projectile.is_some() { continue; }
         let pos = e.pos.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
         let vel = e.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
         let damped = v_exp_damp(vel, cfg.friction, dt);

@@ -225,6 +225,12 @@ pub(super) fn sample_normal_position(
     )
 }
 
+/// Transient projectiles use a separate ID range and never affect unit allocation.
+pub(crate) fn max_unit_id(entities: &[Entity]) -> u64 {
+    entities.iter().filter(|entity| entity.projectile.is_none())
+        .map(|entity| entity.id).max().unwrap_or(0)
+}
+
 pub(super) fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, content: &ContentPack) -> Entity {
     let definition = content.get(entity_type_id);
     Entity {
@@ -237,6 +243,7 @@ pub(super) fn neutral_entity(id: u64, entity_type_id: &str, x: f32, y: f32, cont
         health: definition.map(|def| def.health.max(0.0)).unwrap_or(0.0),
         supply: None,
         resource_deposit: None,
+        projectile: None,
         resources: definition.and_then(initial_resource_inventory),
     }
 }

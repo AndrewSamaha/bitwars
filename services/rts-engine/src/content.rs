@@ -268,6 +268,8 @@ pub enum FogMemory {
     ForgetWhenHidden,
 }
 
+pub(crate) const KINETIC_PROJECTILE_TYPE: &str = "kinetic_projectile";
+
 /// Data needed for server-authoritative autonomous combat.
 ///
 /// Timings are ticks, rather than seconds, so a combat replay is a pure
@@ -286,13 +288,25 @@ pub struct CombatDef {
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend(
+    "if" = serde_json::json!({"properties": {"type": {"const": "kinetic"}}}),
+    "then" = serde_json::json!({
+        "required": ["range", "projectile"],
+        "properties": {
+            "range": {"exclusiveMinimum": 0},
+            "damage": {"exclusiveMinimum": 0},
+            "projectile": {"type": "object"}
+        }
+    }),
+    "else" = serde_json::json!({"not": {"required": ["projectile"]}})
+))]
 pub struct AttackDef {
     /// Stable weapon ID within this entity type; identifies its cooldown and breaks equal-priority ties alphabetically.
     pub id: String,
-    /// Weapon behavior: laser uses range; dismantle uses both hull radii plus contact_tolerance.
+    /// Weapon behavior: laser is instant, kinetic launches a projectile, and dismantle requires hull contact.
     #[serde(rename = "type")]
     pub attack_type: AttackType,
-    /// Maximum center-to-center laser distance in world units. Defaults to 0; ignored for dismantle.
+    /// Maximum center-to-center firing distance in world units. Defaults to 0; ignored for dismantle.
     #[serde(default)]
     pub range: f32,
     /// Hit points removed per successful attack, not per second.
@@ -305,6 +319,20 @@ pub struct AttackDef {
     /// Extra distance in world units beyond the sum of both hull radii for dismantle. Defaults to 0; negative values act as 0.
     #[serde(default)]
     pub contact_tolerance: f32,
+    /// Flight parameters for kinetic weapons only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projectile: Option<ProjectileDef>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectileDef {
+    /// Projectile speed in world units per second.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub speed: f32,
+    /// Maximum distance from launch along the projectile's path, independent of firing range.
+    #[schemars(extend("exclusiveMinimum" = 0))]
+    pub max_travel_distance: f32,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
@@ -312,6 +340,8 @@ pub struct AttackDef {
 pub enum AttackType {
     /// Ranged attack using the weapon's range in world units.
     Laser,
+    /// Ballistic attack that deals damage only when its projectile intersects a hostile hull.
+    Kinetic,
     /// Contact attack within attacker hull radius + target hull radius + contact_tolerance.
     Dismantle,
 }
@@ -1049,6 +1079,18 @@ fn validate_gameplay_content(
                 anyhow::ensure!(!attack.id.is_empty() && weapons.insert(&attack.id)
                     && [attack.range, attack.damage, attack.contact_tolerance].iter().all(|v| v.is_finite()),
                     "entity {id}: invalid or duplicate weapon");
+                if attack.attack_type == AttackType::Kinetic {
+                    anyhow::ensure!(attack.range > 0.0 && attack.damage > 0.0
+                        && attack.projectile.is_some_and(|projectile| {
+                            projectile.speed.is_finite() && projectile.speed > 0.0
+                                && projectile.max_travel_distance.is_finite()
+                                && projectile.max_travel_distance > 0.0
+                        }), "entity {id}: kinetic weapons require positive range, damage, projectile speed and travel distance");
+                    anyhow::ensure!(entities.contains_key(KINETIC_PROJECTILE_TYPE),
+                        "entity {id}: missing kinetic projectile entity definition");
+                } else {
+                    anyhow::ensure!(attack.projectile.is_none(), "entity {id}: flight parameters require a kinetic weapon");
+                }
             }
         }
         for radiation in &def.radiation_sources {

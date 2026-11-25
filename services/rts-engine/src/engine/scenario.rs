@@ -143,6 +143,8 @@ impl Scenario {
             if source.id == 0 || source.id > 9_007_199_254_740_991 || !ids.insert(source.id) {
                 bail!("invalid or duplicate entity id: {}", source.id);
             }
+            anyhow::ensure!(source.entity_type != crate::content::KINETIC_PROJECTILE_TYPE,
+                "projectiles cannot be placed by a scenario");
             let def = content
                 .get(&source.entity_type)
                 .ok_or_else(|| anyhow!("unknown entity type: {}", source.entity_type))?;
@@ -188,6 +190,7 @@ impl Scenario {
                 force: Some(pb::Vec2 { x: 0.0, y: 0.0 }),
                 supply: None,
                 resource_deposit,
+                projectile: None,
                 resources: None,
             };
             // Saved legacy stock may exceed capacity; only inflows enforce capacity.
@@ -399,6 +402,9 @@ impl Engine {
             .entities
             .iter()
             .filter(|entity| {
+                if entity.projectile.is_some() {
+                    return false;
+                }
                 if let Some(ids) = &cmd.entity_ids {
                     if !ids.contains(&entity.id) {
                         return false;
