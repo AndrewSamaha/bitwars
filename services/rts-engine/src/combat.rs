@@ -1006,12 +1006,12 @@ mod tests {
         let start = Vec2 { x: 40.0, y: shot_y + 55.0 };
 
         let mut entities = [test_shot(0.0, shot_y, 80.0), target.clone()];
-        let hit = advance_projectiles(&mut entities, &[None, Some(start)], &pack, 1.0);
+        let hit = advance_projectiles(&mut entities, &[None, Some(start)], &HashMap::new(), &pack, 1.0);
         assert_eq!(hit.destructions[0].victim.id, 2);
         assert!(hit.terminations[0].1.fraction < 0.5);
 
         let mut entities = [test_shot(0.0, shot_y, 20.0), target];
-        let expired = advance_projectiles(&mut entities, &[None, Some(start)], &pack, 1.0);
+        let expired = advance_projectiles(&mut entities, &[None, Some(start)], &HashMap::new(), &pack, 1.0);
         assert_eq!(entities[1].health, 10.0);
         assert_eq!(expired.terminations[0].1.position, (20.0, f64::from(shot_y)));
     }
@@ -1106,14 +1106,14 @@ mod tests {
         let starts = [None, target.pos];
         let mut entities = [test_shot(origin, 0.0, 560.0), target];
 
-        advance_projectiles(&mut entities, &starts, &pack, 1.0);
+        advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
         assert_eq!(entities[0].pos.unwrap().x, origin);
         entities[0] = Entity::decode(entities[0].encode_to_vec().as_slice()).unwrap();
         for _ in 0..4 {
-            let result = advance_projectiles(&mut entities, &starts, &pack, 1.0);
+            let result = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
             assert!(result.terminations.is_empty());
         }
-        let result = advance_projectiles(&mut entities, &starts, &pack, 1.0);
+        let result = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
         assert_eq!(result.terminations[0].1.position.0, f64::from(origin) + 462.0);
         assert_eq!(result.destructions[0].victim.id, 2);
     }
