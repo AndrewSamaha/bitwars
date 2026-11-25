@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { KINETIC_PROJECTILE_ENTITY_TYPE } from "@bitwars/content";
 import { VisibilityFilter } from "../src/lib/db/utils/visibility";
 
 describe("VisibilityFilter", () => {
@@ -94,7 +95,7 @@ describe("VisibilityFilter", () => {
       const result = new VisibilityFilter("me", { habitat: { sensor: { range: 100 } } });
       result.filterSnapshot({ type: "snapshot", tick: 1, entities: [
         { id: 1, entity_type_id: "habitat", owner_player_id: "me", pos: { x: 0, y: 0 } },
-        { id: shot, entity_type_id: "kinetic_projectile", pos: { x: 95, y: 0 } },
+        { id: shot, entity_type_id: KINETIC_PROJECTILE_ENTITY_TYPE, pos: { x: 95, y: 0 } },
       ] });
       return result;
     };
@@ -107,6 +108,38 @@ describe("VisibilityFilter", () => {
     const witnessed = filter().filterDelta(removed, new Map([[shot, true]]));
     expect(witnessed?.removed_entity_ids).toEqual([shot]);
     expect(witnessed?.hidden_entity_ids).toEqual([]);
+  });
+
+  it("uses kinetic witnesses when present and falls back per entity type otherwise", () => {
+    const filter = () => {
+      const result = new VisibilityFilter("me", {
+        habitat: { sensor: { range: 100 } },
+        worker: { visibility_range: 0 },
+      });
+      result.filterSnapshot({ type: "snapshot", tick: 1, entities: [
+        { id: 1, entity_type_id: "habitat", owner_player_id: "me", pos: { x: 0, y: 0 } },
+        { id: 2, entity_type_id: "worker", owner_player_id: "other", pos: { x: 95, y: 0 } },
+      ] });
+      return result;
+    };
+    const removed = { type: "delta" as const, tick: 2, updates: [], removed_entity_ids: [2] };
+    const witnessed = filter().filterDelta(removed, new Map([["2", true]]));
+    expect(witnessed?.removed_entity_ids).toEqual([2]);
+    expect(witnessed?.hidden_entity_ids).toEqual([]);
+    const unseen = filter().filterDelta(removed, new Map([["2", false]]));
+    expect(unseen?.removed_entity_ids).toEqual([]);
+    expect(unseen?.hidden_entity_ids).toEqual([2]);
+    // Without witness metadata, non-projectiles keep the historical visible
+    // removal while projectile-looking removals fail closed as hidden.
+    expect(filter().filterDelta(removed)?.removed_entity_ids).toEqual([2]);
+    const shot = "9223372036854775808";
+    const shotFilter = new VisibilityFilter("me", { habitat: { sensor: { range: 100 } } });
+    shotFilter.filterSnapshot({ type: "snapshot", tick: 1, entities: [
+      { id: 1, entity_type_id: "habitat", owner_player_id: "me", pos: { x: 0, y: 0 } },
+      { id: shot, entity_type_id: KINETIC_PROJECTILE_ENTITY_TYPE, pos: { x: 95, y: 0 } },
+    ] });
+    const shotRemoved = { type: "delta" as const, tick: 2, updates: [], removed_entity_ids: [shot] };
+    expect(shotFilter.filterDelta(shotRemoved)?.hidden_entity_ids).toEqual([shot]);
   });
 
   it("applies hot-reloaded sensor ranges without losing the connection's cached world", () => {

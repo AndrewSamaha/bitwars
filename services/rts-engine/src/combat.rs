@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::content::{AttackDef, AttackType, ContentPack, NearEnemyStrategy, KINETIC_PROJECTILE_TYPE};
+use crate::content::{AttackDef, AttackType, ContentPack, NearEnemyStrategy};
 use crate::pb::{Entity, ProjectileState, Vec2};
 use crate::spatial::{SpatialIndex, CELL_SIZE};
 use crate::spawn_config::is_system_owner;
@@ -378,7 +378,7 @@ impl CombatSystem {
                     .unwrap_or(0);
                 if tick >= next_tick && attack.damage.is_finite() && attack.damage > 0.0 {
                     if attack.attack_type == AttackType::Kinetic {
-                        let Some(projectile) = attack.projectile else { continue; };
+                        let Some(projectile) = attack.projectile.as_ref() else { continue; };
                         let distance = f64::from(dx).hypot(f64::from(dy));
                         let (ux, uy) = if distance > 0.0 {
                             (f64::from(dx) / distance, f64::from(dy) / distance)
@@ -386,7 +386,7 @@ impl CombatSystem {
                             (1.0, 0.0)
                         };
                         projectile_spawns.push(Entity {
-                            entity_type_id: KINETIC_PROJECTILE_TYPE.into(),
+                            entity_type_id: projectile.entity_type_id.clone(),
                             pos: Some(origin),
                             vel: Some(Vec2 {
                                 x: (ux * f64::from(projectile.speed)) as f32,
@@ -684,12 +684,42 @@ fn first_projectile_contact(
     best
 }
 
+/// Grid candidate rectangle padding. A hull that contacts the shot sits within
+/// `hull_radius` of the shot path, so its per-axis start offset is at most the
+/// corresponding displacement. The per-axis (L∞) bound was already sufficient
+/// for inclusion: no diagonal-only miss exists, because a contact point within
+/// `R` of the shot rectangle implies the hull start is within `R + max(|Δx|,
+/// |Δy|)` in both axes. The Euclidean length is kept as an explicit safety
+/// margin; `sweep_query_rect_pads_with_the_euclidean_bound` pins the value that
+/// the sweep actually uses so a revert cannot silently narrow the query.
+fn candidate_pad(max_radius: f64, max_dx: f64, max_dy: f64) -> f64 {
+    max_radius + max_dx.hypot(max_dy)
+}
+
+/// Candidate query rectangle for the grid fast path. Shared with the sweep so
+/// the call-site pad and the tested pad cannot diverge.
+fn sweep_query_rect(
+    (x, y): (f64, f64),
+    (end_x, end_y): (f64, f64),
+    max_radius: f64,
+    (max_dx, max_dy): (f64, f64),
+) -> (f32, f32, f32, f32) {
+    let pad = candidate_pad(max_radius, max_dx, max_dy);
+    (
+        (x.min(end_x) - pad) as f32,
+        (y.min(end_y) - pad) as f32,
+        (x.max(end_x) + pad) as f32,
+        (y.max(end_y) + pad) as f32,
+    )
+}
+
 /// Resolve existing shots against the same movement interval as the hulls.
-/// `starts` holds each hull's pre-integration position, which is the pre-snap
-/// position for clamped Move steps. Newly spawned shots wait for the next tick.
+/// `starts` is keyed by entity ID so a mid-tick spawn or removal cannot shift
+/// hull positions onto the wrong entity. Newly spawned shots wait for the next
+/// tick.
 pub(crate) fn advance_projectiles(
     entities: &mut [Entity],
-    starts: &[Option<Vec2>],
+    starts: &HashMap<u64, Vec2>,
     clamped_moves: &HashMap<u64, ClampedMove>,
     content: &ContentPack,
     dt: f32,
@@ -697,9 +727,10 @@ pub(crate) fn advance_projectiles(
     let mut targets = Vec::new();
     let mut grid = SpatialIndex::new();
     let mut max_radius = 0.0_f64;
-    let mut max_displacement = 0.0_f64;
-    for (index, (entity, start)) in entities.iter().zip(starts).enumerate() {
-        let (Some(start), Some(end)) = (*start, entity.pos) else { continue; };
+    let mut max_displacement = (0.0_f64, 0.0_f64);
+    for (index, entity) in entities.iter().enumerate() {
+        let Some(start) = starts.get(&entity.id).copied() else { continue; };
+        let Some(end) = entity.pos else { continue; };
         if entity.health <= 0.0 || entity.owner_player_id.is_empty() || entity.projectile.is_some() {
             continue;
         }
@@ -708,9 +739,9 @@ pub(crate) fn advance_projectiles(
             .map_or_else(|| HullPath::linear(start, end), |motion| HullPath::clamped(*motion));
         let radius = f64::from(def.hull_radius.max(0.0));
         max_radius = max_radius.max(radius);
-        max_displacement = max_displacement
-            .max(path.move_delta.0.abs())
-            .max(path.move_delta.1.abs());
+        let (dx, dy) = path.move_delta;
+        max_displacement.0 = max_displacement.0.max(dx.abs());
+        max_displacement.1 = max_displacement.1.max(dy.abs());
         grid.insert(targets.len(), path.start.0 as f32, path.start.1 as f32);
         targets.push(MovingTarget { entity_index: index, path, radius });
     }
@@ -754,14 +785,14 @@ pub(crate) fn advance_projectiles(
         };
         // Index hull start points. Full-tick displacement keeps hulls that
         // enter the projectile rectangle during the clipped interval eligible.
-        let pad = max_radius + max_displacement;
+        let pad = candidate_pad(max_radius, max_displacement.0, max_displacement.1);
+        let rect = sweep_query_rect(
+            (x, y), (end_x, end_y), max_radius, max_displacement);
         let hit = if limit == 0.0 {
             None
         } else if travel + 2.0 * pad <= f64::from(CELL_SIZE) {
-            grid.in_rect(
-                (x.min(end_x) - pad) as f32, (y.min(end_y) - pad) as f32,
-                (x.max(end_x) + pad) as f32, (y.max(end_y) + pad) as f32,
-            ).filter_map(|i| candidate(&targets[i])).min_by(compare)
+            grid.in_rect(rect.0, rect.1, rect.2, rect.3)
+                .filter_map(|i| candidate(&targets[i])).min_by(compare)
         } else {
             // Wide custom-content sweeps should not visit thousands of empty cells.
             targets.iter().filter_map(candidate).min_by(compare)
@@ -996,7 +1027,8 @@ mod tests {
     fn test_shot(x: f32, y: f32, range: f64) -> Entity {
         Entity {
             id: 10,
-            entity_type_id: KINETIC_PROJECTILE_TYPE.into(),
+            // Sweep mechanics do not consult the projectile type definition.
+            entity_type_id: "test_projectile".into(),
             pos: Some(Vec2 { x, y }),
             vel: Some(Vec2 { x: 80.0, y: 0.0 }),
             health: 1.0,
@@ -1019,13 +1051,14 @@ mod tests {
         target.pos.as_mut().unwrap().y = shot_y + 35.0;
         let start = Vec2 { x: 40.0, y: shot_y + 55.0 };
 
+        let starts = HashMap::from([(2, start)]);
         let mut entities = [test_shot(0.0, shot_y, 80.0), target.clone()];
-        let hit = advance_projectiles(&mut entities, &[None, Some(start)], &HashMap::new(), &pack, 1.0);
+        let hit = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
         assert_eq!(hit.destructions[0].victim.id, 2);
         assert!(hit.terminations[0].1.fraction < 0.5);
 
         let mut entities = [test_shot(0.0, shot_y, 20.0), target];
-        let expired = advance_projectiles(&mut entities, &[None, Some(start)], &HashMap::new(), &pack, 1.0);
+        let expired = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
         assert_eq!(entities[1].health, 10.0);
         assert_eq!(expired.terminations[0].1.position, (20.0, f64::from(shot_y)));
     }
@@ -1036,7 +1069,7 @@ mod tests {
         pack.entity_types.get_mut("worker").unwrap().hull_radius = 50.0;
         let mut target = entity(2, "worker", "enemy", 60.0, 10.0);
         target.pos.as_mut().unwrap().y = 51.0; // Post-snap stop boundary.
-        let starts = [None, Some(Vec2 { x: 60.0, y: 31.0 })];
+        let starts = HashMap::from([(2, Vec2 { x: 60.0, y: 31.0 })]);
         let clamped = HashMap::from([(2, ClampedMove {
             start: Vec2 { x: 60.0, y: 31.0 },
             stop: Vec2 { x: 60.0, y: 51.0 },
@@ -1050,7 +1083,7 @@ mod tests {
 
         // Without the pre-snap trajectory the hull appears stationary at y=51
         // and the same shot expires beyond it without a hit.
-        let stationary_starts = [None, Some(Vec2 { x: 60.0, y: 51.0 })];
+        let stationary_starts = HashMap::from([(2, Vec2 { x: 60.0, y: 51.0 })]);
         let mut entities = [test_shot(0.0, 0.0, 80.0), target];
         let missed = advance_projectiles(&mut entities, &stationary_starts, &HashMap::new(), &pack, 1.0);
         assert!(missed.destructions.is_empty());
@@ -1063,7 +1096,7 @@ mod tests {
         pack.entity_types.get_mut("worker").unwrap().hull_radius = 8.0;
         let mut target = entity(2, "worker", "enemy", 40.0, 10.0);
         target.pos.as_mut().unwrap().y = 0.0;
-        let starts = [None, Some(Vec2 { x: 40.0, y: 20.0 })];
+        let starts = HashMap::from([(2, Vec2 { x: 40.0, y: 20.0 })]);
         let clamped = HashMap::from([(2, ClampedMove {
             start: Vec2 { x: 40.0, y: 20.0 },
             stop: Vec2 { x: 40.0, y: 0.0 },
@@ -1096,7 +1129,7 @@ mod tests {
         second.projectile.as_mut().unwrap().attacker_id = 3;
 
         let mut entities = [first, second, target.clone()];
-        let starts = [None, None, target.pos];
+        let starts = HashMap::from([(2, target.pos.unwrap())]);
         let outcome = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
         assert_eq!(outcome.terminations.len(), 2);
         assert_eq!(outcome.destructions.len(), 1);
@@ -1110,6 +1143,74 @@ mod tests {
     }
 
     #[test]
+    fn sweep_positions_are_keyed_by_entity_id_across_a_mid_tick_spawn() {
+        let mut pack = content();
+        pack.entity_types.get_mut("worker").unwrap().hull_radius = 20.0;
+        let target = entity(2, "worker", "enemy", 40.0, 10.0);
+        let removed = entity(3, "worker", "enemy", 500.0, 10.0);
+        // Positions were captured from the tick-start world. Entity 3 is then
+        // removed and entity 99 spawns on the shot path before the sweep,
+        // shifting every index. A start-less spawn must not be swept.
+        let starts = HashMap::from([
+            (2, target.pos.unwrap()),
+            (3, removed.pos.unwrap()),
+        ]);
+        let spawned = entity(99, "worker", "enemy", 60.0, 10.0);
+        let mut entities = [test_shot(0.0, 0.0, 80.0), spawned, target];
+
+        let outcome = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
+
+        assert_eq!(outcome.destructions.len(), 1);
+        assert_eq!(outcome.destructions[0].victim.id, 2, "the swept hull stays aligned with its own start");
+        assert_eq!(entities[1].health, 10.0, "a mid-tick spawn on the shot path without a tick-start position is not swept");
+        assert_eq!(entities[2].health, 0.0);
+    }
+
+    #[test]
+    fn sweep_query_rect_pads_with_the_euclidean_bound() {
+        // The sweep computes the candidate rectangle through this helper, so a
+        // revert to the former per-axis pad changes the pinned value.
+        let rect = sweep_query_rect((0.0, 0.0), (80.0, 0.0), 10.0, (-160.0, -200.0));
+        let pad = 10.0 + 160.0_f64.hypot(200.0);
+        assert_eq!(rect, (
+            (-pad) as f32,
+            (-pad) as f32,
+            (80.0 + pad) as f32,
+            pad as f32,
+        ));
+        // A point that only the Euclidean pad admits: y = -250 is outside the
+        // former L∞ rectangle (radius 10 + 200 = 210) but inside this one.
+        assert!(-250.0 >= f64::from(rect.1));
+        assert!(-250.0 < -(10.0 + 200.0));
+    }
+
+    #[test]
+    fn diagonal_hull_displacement_hits_on_the_grid_fast_path() {
+        let mut pack = content();
+        pack.entity_types.get_mut("worker").unwrap().hull_radius = 10.0;
+        // Hit detection on the grid fast path. Candidate inclusion also held
+        // under the former per-axis pad; the requested diagonal-only miss is
+        // geometrically impossible, so this covers the padded fast path while
+        // `sweep_query_rect_pads_with_the_euclidean_bound` pins the pad value.
+        let mut target = entity(2, "worker", "enemy", -40.0, 10.0);
+        target.pos = Some(Vec2 { x: -40.0, y: -100.0 });
+        let start = Vec2 { x: 120.0, y: 100.0 };
+        let clamped = HashMap::from([(2, ClampedMove {
+            start,
+            stop: Vec2 { x: -40.0, y: -100.0 },
+            fraction: 1.0,
+        })]);
+        let starts = HashMap::from([(2, start)]);
+
+        let mut entities = [test_shot(0.0, 0.0, 80.0), target];
+        let outcome = advance_projectiles(&mut entities, &starts, &clamped, &pack, 1.0);
+
+        assert_eq!(outcome.destructions.len(), 1, "a diagonal hull crossing the path must not be culled");
+        assert_eq!(outcome.destructions[0].victim.id, 2);
+        assert_eq!(entities[1].health, 0.0);
+    }
+
+    #[test]
     fn flight_accumulates_steps_smaller_than_a_coordinate_ulp_across_checkpoint() {
         use prost::Message;
 
@@ -1117,7 +1218,7 @@ mod tests {
         pack.entity_types.get_mut("worker").unwrap().hull_radius = 50.0;
         let origin = 2_147_483_648.0_f32;
         let target = entity(2, "worker", "enemy", origin + 512.0, 10.0);
-        let starts = [None, target.pos];
+        let starts = HashMap::from([(2, target.pos.unwrap())]);
         let mut entities = [test_shot(origin, 0.0, 560.0), target];
 
         advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);

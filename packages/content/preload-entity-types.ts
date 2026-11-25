@@ -3,6 +3,9 @@
 
 export const PRELOAD_ENTITY_TYPES = ["theta","planet_blue","star_yellow","minerals","collector_solar","worker","habitat","processor","factory","scout","raider","defense_pylon_v2","defense_pylon","collector_solar_v2","defense_pylon_v3","fighter_v1","heavy_fighter","kinetic_fighter","kinetic_projectile","battleship","science_vessel","scout_long_range","resource_transport","military_factory","marine_worker","waypoint","asteroid","food_storage_container","dead_planet_blue","mineral_storage_container","planet_ice","planet_inhospitable","planet_blue_inhabitated","power_storage_pod"] as const;
 
+/** Entity type spawned by kinetic attacks; authored once in entities.yaml. */
+export const KINETIC_PROJECTILE_ENTITY_TYPE = "kinetic_projectile" as const;
+
 export type PreloadEntityTypeId = (typeof PRELOAD_ENTITY_TYPES)[number];
 
 /** Static content used by the content browser before a game server is running. */
@@ -148,7 +151,7 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {},
-    "definition": "build_cost:\n  energy: 55\n  minerals: 90\ncombat:\n  acquisition_range: 1600\n  attacks:\n    - cooldown_ticks: 30\n      damage: 12\n      id: kinetic\n      range: 900\n      type: kinetic\n      projectile:\n        speed: 1600\n        max_travel_distance: 1400\n  on_near_enemy_strategy: approach\ncombat_targetable: true\nfog_memory: forget_when_hidden\nhealth: 80\nhull_radius: 65\nmaintenance_cost_per_minute:\n  energy: 2.5\n  food: 1\nmass: 0.65\nmax_capacity:\n  energy: 150\n  food: 60\nsensor:\n  range: 1600\nspeed: 360\nstop_radius: 0.5"
+    "definition": "build_cost:\n  energy: 55\n  minerals: 90\ncombat:\n  acquisition_range: 1600\n  attacks:\n    - cooldown_ticks: 30\n      damage: 12\n      id: kinetic\n      range: 900\n      type: kinetic\n      projectile:\n        entity_type_id: kinetic_projectile\n        speed: 1600\n        max_travel_distance: 1400\n  on_near_enemy_strategy: approach\ncombat_targetable: true\nfog_memory: forget_when_hidden\nhealth: 80\nhull_radius: 65\nmaintenance_cost_per_minute:\n  energy: 2.5\n  food: 1\nmass: 0.65\nmax_capacity:\n  energy: 150\n  food: 60\nsensor:\n  range: 1600\nspeed: 360\nstop_radius: 0.5"
   },
   {
     "id": "kinetic_projectile",

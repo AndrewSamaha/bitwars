@@ -1,3 +1,5 @@
+import { KINETIC_PROJECTILE_ENTITY_TYPE } from "@bitwars/content";
+
 type Pos = { x: number; y: number };
 
 export type StreamEntity = {
@@ -120,7 +122,7 @@ export class VisibilityFilter {
       if (wasVisible.has(key)) {
         // A shot leaving coverage and a shot terminating outside it must
         // produce the same signal. Missing witness metadata fails closed for shots.
-        const witnessed = kineticRemovals?.get(key) ?? (this.entities.get(key)?.entity_type_id !== "kinetic_projectile");
+        const witnessed = kineticRemovals?.get(key) ?? (this.entities.get(key)?.entity_type_id !== KINETIC_PROJECTILE_ENTITY_TYPE);
         (witnessed ? removed : hidden).push(id);
       }
       this.entities.delete(key);

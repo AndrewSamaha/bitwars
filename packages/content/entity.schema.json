@@ -591,6 +591,10 @@
     "ProjectileDef": {
       "type": "object",
       "properties": {
+        "entity_type_id": {
+          "description": "Entity type spawned for each shot. Must name a defined entity type and\nis the single authored source for the projectile type ID.",
+          "type": "string"
+        },
         "max_travel_distance": {
           "description": "Maximum distance from the muzzle in world units, independent of firing range.",
           "type": "number",
@@ -606,6 +610,7 @@
       },
       "additionalProperties": false,
       "required": [
+        "entity_type_id",
         "speed",
         "max_travel_distance"
       ]

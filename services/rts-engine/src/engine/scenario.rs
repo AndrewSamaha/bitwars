@@ -138,12 +138,13 @@ impl Scenario {
             bail!("scenario limit is 5000 entities");
         }
         let mut ids = HashSet::new();
+        let projectile_entity_types = content.projectile_entity_type_ids();
         let mut entities = Vec::new();
         for source in &self.entities {
             if source.id == 0 || source.id > 9_007_199_254_740_991 || !ids.insert(source.id) {
                 bail!("invalid or duplicate entity id: {}", source.id);
             }
-            if source.entity_type == crate::content::KINETIC_PROJECTILE_TYPE {
+            if projectile_entity_types.contains(source.entity_type.as_str()) {
                 bail!("scenarios cannot author in-flight projectiles");
             }
             let def = content

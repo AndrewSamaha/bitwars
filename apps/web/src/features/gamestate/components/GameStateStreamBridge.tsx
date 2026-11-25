@@ -6,6 +6,7 @@ import { useLogger } from "@/lib/axiom/client";
 import { game, RADIATION_DAMAGE_VISUAL_LINGER_MS, type Entity } from "../world";
 import { intentQueue, type EscortOrderPayload, type EscortOrderRemovalPayload, type MoveOrderPayload, type MoveOrderRemovalPayload, type SentryOrderPayload, type SentryOrderRemovalPayload } from "@/features/intent-queue/intentQueueManager";
 import { contentManager } from "@/features/content/contentManager";
+import { KINETIC_PROJECTILE_ENTITY_TYPE } from "@bitwars/content";
 import { syncContentChangedEvent } from "@/features/content/contentEvents";
 import { useHUD } from "@/features/hud/components/HUDContext";
 import { useSession } from "@/features/users/components/identity/SessionContext";
@@ -231,7 +232,7 @@ export default function GameStateStreamBridge() {
       console.log(`[GameState] ${label}`, { myPlayerId, entityCount: entities.length, entities });
     };
 
-    const projectileType = "kinetic_projectile";
+    const projectileType = KINETIC_PROJECTILE_ENTITY_TYPE;
 
     const applySnapshot = (payload: SnapshotPayload & { run_id?: string; paused?: boolean }) => {
       minimapMemory.setContext(currentPlayerIdRef.current, payload.run_id ?? game.runId);
