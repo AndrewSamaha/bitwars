@@ -1093,7 +1093,7 @@ mod tests {
         let mut second = test_shot(0.0, 10.0, 80.0);
         second.id = 101;
         second.pos.as_mut().unwrap().y = 10.0;
-        second.projectile.as_mut().unwrap().attacker_id = 2;
+        second.projectile.as_mut().unwrap().attacker_id = 3;
 
         let mut entities = [first, second, target.clone()];
         let starts = [None, None, target.pos];
@@ -1102,7 +1102,7 @@ mod tests {
         assert_eq!(outcome.destructions.len(), 1);
         let death = &outcome.destructions[0];
         assert_eq!(death.victim.id, 2);
-        assert_eq!(death.attacker_id, 2, "second, lethal hit owns the kill");
+        assert_eq!(death.attacker_id, 3, "second, lethal hit owns the kill");
         let impact = death.impact.unwrap();
         assert!(impact.fraction > 0.25);
         assert_eq!(impact.position, (40.0, 0.0));
