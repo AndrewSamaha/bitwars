@@ -82,6 +82,16 @@ pub(crate) struct ProjectileTick {
     pub(crate) destructions: Vec<CombatDestruction>,
 }
 
+/// A Move step clamped to its stop boundary before the rest of the tick.
+/// `fraction` is the share of the tick spent covering the segment; the hull is
+/// stationary at `stop` for the remainder.
+#[derive(Clone, Copy)]
+pub(crate) struct ClampedMove {
+    pub(crate) start: Vec2,
+    pub(crate) stop: Vec2,
+    pub(crate) fraction: f64,
+}
+
 struct DamageContribution {
     total: f32,
     attacker_id: u64,
@@ -89,7 +99,6 @@ struct DamageContribution {
     attacker_owner_player_id: String,
     cause: AttackType,
     largest_hit: f32,
-    impact: Option<Impact>,
 }
 
 impl CombatSystem {
@@ -398,7 +407,7 @@ impl CombatSystem {
                         });
                     } else {
                         record_hit(&mut damage_by_target, target.id, attack.damage, attacker.id,
-                            &attacker.entity_type_id, &attacker.owner_player_id, attack.attack_type, None);
+                            &attacker.entity_type_id, &attacker.owner_player_id, attack.attack_type);
                         if attack.attack_type == AttackType::Laser {
                             laser_shots.push(LaserShot {
                                 attacker_id: attacker.id,
@@ -487,7 +496,6 @@ fn record_hit(
     attacker_entity_type_id: &str,
     attacker_owner_player_id: &str,
     cause: AttackType,
-    impact: Option<Impact>,
 ) {
     damage_by_target.entry(target_id).and_modify(|contribution| {
         contribution.total += damage;
@@ -498,7 +506,6 @@ fn record_hit(
             attacker_entity_type_id.clone_into(&mut contribution.attacker_entity_type_id);
             attacker_owner_player_id.clone_into(&mut contribution.attacker_owner_player_id);
             contribution.cause = cause;
-            contribution.impact = impact;
             contribution.largest_hit = damage;
         }
     }).or_insert_with(|| DamageContribution {
@@ -508,7 +515,6 @@ fn record_hit(
         attacker_owner_player_id: attacker_owner_player_id.into(),
         cause,
         largest_hit: damage,
-        impact,
     });
 }
 
@@ -524,17 +530,14 @@ fn apply_damage(
         let Some(damage) = damage_by_target.get(&entity.id) else { continue; };
         entity.health = (entity.health - damage.total).max(0.0);
         if entity.health <= 0.0 {
-            let mut victim = entity.clone();
-            if let Some(impact) = damage.impact {
-                victim.pos = Some(project_position(impact.position));
-            }
+            let victim = entity.clone();
             destructions.push(CombatDestruction {
                 victim,
                 attacker_id: damage.attacker_id,
                 attacker_entity_type_id: damage.attacker_entity_type_id.clone(),
                 attacker_owner_player_id: damage.attacker_owner_player_id.clone(),
                 cause: damage.cause,
-                impact: damage.impact,
+                impact: None,
             });
         }
     }
@@ -562,16 +565,120 @@ impl Motion {
     }
 }
 
+/// A hull's center path over one simulation tick. Ordinary movement is a
+/// single linear segment; a clamped Move covers its segment first and then
+/// stays on the stop boundary for the rest of the tick.
+#[derive(Clone, Copy)]
+struct HullPath {
+    start: (f64, f64),
+    move_delta: (f64, f64),
+    move_fraction: f64,
+}
+
+impl HullPath {
+    fn linear(start: Vec2, end: Vec2) -> Self {
+        let start = (f64::from(start.x), f64::from(start.y));
+        Self {
+            start,
+            move_delta: (f64::from(end.x) - start.0, f64::from(end.y) - start.1),
+            move_fraction: 1.0,
+        }
+    }
+
+    fn clamped(motion: ClampedMove) -> Self {
+        let start = (f64::from(motion.start.x), f64::from(motion.start.y));
+        let stop = (f64::from(motion.stop.x), f64::from(motion.stop.y));
+        Self {
+            start,
+            move_delta: (stop.0 - start.0, stop.1 - start.1),
+            move_fraction: motion.fraction.clamp(0.0, 1.0),
+        }
+    }
+
+    fn at(self, fraction: f64) -> (f64, f64) {
+        let scale = if self.move_fraction > 0.0 {
+            (fraction / self.move_fraction).min(1.0).max(0.0)
+        } else {
+            1.0
+        };
+        (
+            self.start.0 + self.move_delta.0 * scale,
+            self.start.1 + self.move_delta.1 * scale,
+        )
+    }
+}
+
 struct MovingTarget {
     entity_index: usize,
-    motion: Motion,
+    path: HullPath,
     radius: f64,
 }
 
+struct KineticHit {
+    fraction: f64,
+    projectile_id: u64,
+    victim_id: u64,
+    victim_index: usize,
+    damage: f32,
+    attacker_id: u64,
+    attacker_entity_type_id: String,
+    attacker_owner_player_id: String,
+    /// Victim hull center at the moment health reaches zero.
+    impact: Impact,
+}
+
+/// Earliest tick fraction where a projectile reaches a moving hull. Both the
+/// shot and hull are clipped to the shot's remaining travel `limit`.
+fn first_projectile_contact(
+    path: HullPath,
+    (shot_x, shot_y): (f64, f64),
+    (shot_dx, shot_dy): (f64, f64),
+    limit: f64,
+    radius: f64,
+) -> Option<f64> {
+    if limit <= 0.0 {
+        return None;
+    }
+    let mut best: Option<f64> = None;
+    let moving_end = path.move_fraction.min(limit);
+    if moving_end > 0.0 && path.move_fraction > 0.0 {
+        let hull_scale = moving_end / path.move_fraction;
+        let shot_scale = moving_end / limit;
+        let hull_delta = (path.move_delta.0 * hull_scale, path.move_delta.1 * hull_scale);
+        let shot_delta = (shot_dx * shot_scale, shot_dy * shot_scale);
+        let offset = (shot_x - path.start.0, shot_y - path.start.1);
+        if let Some(entry) = circle_entry(
+            offset,
+            (shot_delta.0 - hull_delta.0, shot_delta.1 - hull_delta.1),
+            radius,
+        ) {
+            best = Some(entry * moving_end);
+        }
+    }
+    let stationary_from = path.move_fraction.max(0.0);
+    if stationary_from < limit {
+        let hull = path.at(stationary_from);
+        let shot_scale = stationary_from / limit;
+        let shot = (shot_x + shot_dx * shot_scale, shot_y + shot_dy * shot_scale);
+        let rest = limit - stationary_from;
+        let relative = (shot_dx * (rest / limit), shot_dy * (rest / limit));
+        if let Some(entry) = circle_entry((shot.0 - hull.0, shot.1 - hull.1), relative, radius) {
+            let fraction = stationary_from + entry * rest;
+            best = Some(best.map_or(fraction, |current| current.min(fraction)));
+        }
+    }
+    best
+}
+
 /// Resolve existing shots against the same movement interval as the hulls.
-/// Positions are captured after pre-movement snaps, before physics and formations.
+/// `starts` holds each hull's pre-integration position, which is the pre-snap
+/// position for clamped Move steps. Newly spawned shots wait for the next tick.
 pub(crate) fn advance_projectiles(
-    entities: &mut [Entity], starts: &[Option<Vec2>], content: &ContentPack, dt: f32,
+    entities: &mut [Entity],
+    starts: &[Option<Vec2>],
+    clamped_moves: &HashMap<u64, ClampedMove>,
+    content: &ContentPack,
+    dt: f32,
 ) -> ProjectileTick {
     let mut targets = Vec::new();
     let mut grid = SpatialIndex::new();
@@ -583,16 +690,18 @@ pub(crate) fn advance_projectiles(
             continue;
         }
         let Some(def) = content.get(&entity.entity_type_id).filter(|def| def.combat_targetable) else { continue; };
-        let motion = Motion { start, end };
-        let (dx, dy) = motion.displacement();
+        let path = clamped_moves.get(&entity.id)
+            .map_or_else(|| HullPath::linear(start, end), |motion| HullPath::clamped(*motion));
         let radius = f64::from(def.hull_radius.max(0.0));
         max_radius = max_radius.max(radius);
-        max_displacement = max_displacement.max(dx.abs()).max(dy.abs());
-        grid.insert(targets.len(), start.x, start.y);
-        targets.push(MovingTarget { entity_index: index, motion, radius });
+        max_displacement = max_displacement
+            .max(path.move_delta.0.abs())
+            .max(path.move_delta.1.abs());
+        grid.insert(targets.len(), path.start.0 as f32, path.start.1 as f32);
+        targets.push(MovingTarget { entity_index: index, path, radius });
     }
 
-    let mut damage = HashMap::new();
+    let mut hits = Vec::new();
     let mut terminations = Vec::new();
     for index in 0..entities.len() {
         let shot = &entities[index];
@@ -623,18 +732,15 @@ pub(crate) fn advance_projectiles(
             if entity.id == flight.attacker_id || entity.owner_player_id == flight.attacker_owner_player_id {
                 return None;
             }
-            let (tx, ty) = target.motion.displacement();
-            let offset = (f64::from(target.motion.start.x) - x, f64::from(target.motion.start.y) - y);
-            let relative = (dx - tx * limit, dy - ty * limit);
-            let entry = circle_entry(offset, relative, target.radius)?;
-            Some((entry, entity.id, target.motion))
+            let entry = first_projectile_contact(target.path, (x, y), (dx, dy), limit, target.radius)?;
+            Some((entry, entity.id, target.entity_index, target.path))
         };
-        let compare = |a: &(f64, u64, Motion), b: &(f64, u64, Motion)| {
+        let compare = |a: &(f64, u64, usize, HullPath), b: &(f64, u64, usize, HullPath)| {
             a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1))
         };
-        // Index hull starts. A hull can reach the projectile rectangle only
-        // from within its radius plus its displacement in the clipped interval.
-        let pad = max_radius + max_displacement * limit;
+        // Index hull start points. Full-tick displacement keeps hulls that
+        // enter the projectile rectangle during the clipped interval eligible.
+        let pad = max_radius + max_displacement;
         let hit = if limit == 0.0 {
             None
         } else if travel + 2.0 * pad <= f64::from(CELL_SIZE) {
@@ -646,12 +752,23 @@ pub(crate) fn advance_projectiles(
             // Wide custom-content sweeps should not visit thousands of empty cells.
             targets.iter().filter_map(candidate).min_by(compare)
         };
-        let terminal = if let Some((entry, victim_id, motion)) = hit {
-            let fraction = entry * limit;
-            record_hit(&mut damage, victim_id, flight.damage, flight.attacker_id,
-                &flight.attacker_entity_type_id, &flight.attacker_owner_player_id, AttackType::Kinetic,
-                Some(Impact { fraction, position: motion.at(fraction) }));
-            Some(Impact { fraction, position: (x + dx * entry, y + dy * entry) })
+        let terminal = if let Some((fraction, victim_id, victim_index, path)) = hit {
+            let shot_fraction = fraction / limit;
+            hits.push(KineticHit {
+                fraction,
+                projectile_id: shot.id,
+                victim_id,
+                victim_index,
+                damage: flight.damage,
+                attacker_id: flight.attacker_id,
+                attacker_entity_type_id: flight.attacker_entity_type_id.clone(),
+                attacker_owner_player_id: flight.attacker_owner_player_id.clone(),
+                impact: Impact { fraction, position: path.at(fraction) },
+            });
+            Some(Impact {
+                fraction,
+                position: (x + dx * shot_fraction, y + dy * shot_fraction),
+            })
         } else if limit == 0.0 {
             Some(Impact { fraction: 0.0, position: (x, y) })
         } else if travel >= flight.remaining_distance {
@@ -671,29 +788,56 @@ pub(crate) fn advance_projectiles(
             shot.pos = Some(project_position((end_x, end_y)));
         }
     }
-    let destructions = apply_damage(entities, &damage);
+
+    // Kinetic damage lands in impact order. The hit that drives health to zero
+    // owns the destruction, so witnesses use that hit's time and position.
+    hits.sort_by(|a, b| {
+        a.fraction.total_cmp(&b.fraction)
+            .then_with(|| a.projectile_id.cmp(&b.projectile_id))
+            .then_with(|| a.victim_id.cmp(&b.victim_id))
+    });
+    let mut destructions = Vec::new();
+    for hit in hits {
+        let entity = &mut entities[hit.victim_index];
+        if entity.health <= 0.0 {
+            continue;
+        }
+        entity.health = (entity.health - hit.damage).max(0.0);
+        if entity.health > 0.0 {
+            continue;
+        }
+        let mut victim = entity.clone();
+        victim.pos = Some(project_position(hit.impact.position));
+        destructions.push(CombatDestruction {
+            victim,
+            attacker_id: hit.attacker_id,
+            attacker_entity_type_id: hit.attacker_entity_type_id,
+            attacker_owner_player_id: hit.attacker_owner_player_id,
+            cause: AttackType::Kinetic,
+            impact: Some(hit.impact),
+        });
+    }
     ProjectileTick { terminations, destructions }
 }
 
-/// Entry fraction for a swept point and stationary circle in relative space.
+/// Entry fraction in `[0, 1]` for a point moving by `delta` from `offset`
+/// (relative to a stationary circle) that reaches the circle.
 fn circle_entry((x, y): (f64, f64), (dx, dy): (f64, f64), radius: f64) -> Option<f64> {
-    let radius_sq = radius * radius;
-    if x * x + y * y <= radius_sq {
+    let outside = x * x + y * y - radius * radius;
+    if outside <= 0.0 {
         return Some(0.0);
     }
-    let length = dx.hypot(dy);
-    if length == 0.0 {
+    let speed_sq = dx * dx + dy * dy;
+    if speed_sq == 0.0 {
         return None;
     }
-    let (ux, uy) = (dx / length, dy / length);
-    let along = x * ux + y * uy;
-    let across = x * uy - y * ux;
-    let chord_sq = radius_sq - across * across;
-    if along < 0.0 || chord_sq < 0.0 {
+    let b = x * dx + y * dy;
+    let discriminant = b * b - speed_sq * outside;
+    if discriminant < 0.0 {
         return None;
     }
-    let entry = along - chord_sq.sqrt();
-    (entry <= length).then_some(entry.max(0.0) / length)
+    let entry = (-b - discriminant.sqrt()) / speed_sq;
+    (0.0..=1.0).contains(&entry).then_some(entry)
 }
 
 struct Target {
@@ -870,6 +1014,85 @@ mod tests {
         let expired = advance_projectiles(&mut entities, &[None, Some(start)], &pack, 1.0);
         assert_eq!(entities[1].health, 10.0);
         assert_eq!(expired.terminations[0].1.position, (20.0, f64::from(shot_y)));
+    }
+
+    #[test]
+    fn clamped_move_sweeps_pre_snap_path_before_stopping() {
+        let mut pack = content();
+        pack.entity_types.get_mut("worker").unwrap().hull_radius = 50.0;
+        let mut target = entity(2, "worker", "enemy", 60.0, 10.0);
+        target.pos.as_mut().unwrap().y = 51.0; // Post-snap stop boundary.
+        let starts = [None, Some(Vec2 { x: 60.0, y: 31.0 })];
+        let clamped = HashMap::from([(2, ClampedMove {
+            start: Vec2 { x: 60.0, y: 31.0 },
+            stop: Vec2 { x: 60.0, y: 51.0 },
+            fraction: 0.8,
+        })]);
+
+        let mut entities = [test_shot(0.0, 0.0, 80.0), target.clone()];
+        let hit = advance_projectiles(&mut entities, &starts, &clamped, &pack, 1.0);
+        assert_eq!(hit.destructions[0].victim.id, 2);
+        assert!(hit.destructions[0].impact.unwrap().fraction < 0.5);
+
+        // Without the pre-snap trajectory the hull appears stationary at y=51
+        // and the same shot expires beyond it without a hit.
+        let stationary_starts = [None, Some(Vec2 { x: 60.0, y: 51.0 })];
+        let mut entities = [test_shot(0.0, 0.0, 80.0), target];
+        let missed = advance_projectiles(&mut entities, &stationary_starts, &HashMap::new(), &pack, 1.0);
+        assert!(missed.destructions.is_empty());
+        assert_eq!(entities[1].health, 10.0);
+    }
+
+    #[test]
+    fn clamped_move_stays_on_its_stop_boundary_for_the_rest_of_the_tick() {
+        let mut pack = content();
+        pack.entity_types.get_mut("worker").unwrap().hull_radius = 8.0;
+        let mut target = entity(2, "worker", "enemy", 40.0, 10.0);
+        target.pos.as_mut().unwrap().y = 0.0;
+        let starts = [None, Some(Vec2 { x: 40.0, y: 20.0 })];
+        let clamped = HashMap::from([(2, ClampedMove {
+            start: Vec2 { x: 40.0, y: 20.0 },
+            stop: Vec2 { x: 40.0, y: 0.0 },
+            fraction: 0.2,
+        })]);
+
+        let mut entities = [test_shot(0.0, 0.0, 80.0), target.clone()];
+        let hit = advance_projectiles(&mut entities, &starts, &clamped, &pack, 1.0);
+        assert_eq!(hit.destructions[0].victim.id, 2);
+        assert!((hit.destructions[0].impact.unwrap().fraction - 0.4).abs() < 1e-6);
+
+        // Linear interpolation over the whole tick would still be moving
+        // upward at x=40 and would miss the 8-unit hull.
+        let mut entities = [test_shot(0.0, 0.0, 80.0), target];
+        let missed = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
+        assert!(missed.destructions.is_empty());
+    }
+
+    #[test]
+    fn kinetic_destruction_uses_the_lethal_hit_not_the_largest_or_first() {
+        let mut pack = content();
+        pack.entity_types.get_mut("worker").unwrap().hull_radius = 20.0;
+        let target = entity(2, "worker", "enemy", 40.0, 20.0);
+        let mut first = test_shot(0.0, 0.0, 80.0);
+        first.id = 100;
+        first.projectile.as_mut().unwrap().attacker_id = 1;
+        let mut second = test_shot(0.0, 10.0, 80.0);
+        second.id = 101;
+        second.pos.as_mut().unwrap().y = 10.0;
+        second.projectile.as_mut().unwrap().attacker_id = 2;
+
+        let mut entities = [first, second, target.clone()];
+        let starts = [None, None, target.pos];
+        let outcome = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
+        assert_eq!(outcome.terminations.len(), 2);
+        assert_eq!(outcome.destructions.len(), 1);
+        let death = &outcome.destructions[0];
+        assert_eq!(death.victim.id, 2);
+        assert_eq!(death.attacker_id, 2, "second, lethal hit owns the kill");
+        let impact = death.impact.unwrap();
+        assert!(impact.fraction > 0.25);
+        assert_eq!(impact.position, (40.0, 0.0));
+        assert_eq!(entities[2].health, 0.0);
     }
 
     #[test]

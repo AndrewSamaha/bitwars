@@ -3715,9 +3715,18 @@ impl Engine {
     /// Integrate hulls and existing projectiles over the same motion interval.
     /// Newly fired shots start advancing on the next tick.
     async fn advance_combat_motion(&mut self, dt: f32, mut spawns: Vec<pb::Entity>) -> Result<Vec<pb::KineticRemoval>> {
-        let starts: Option<Vec<_>> = (dt > 0.0 && self.content.is_some()
-            && self.state.entities.iter().any(|entity| entity.projectile.is_some()))
-            .then(|| self.state.entities.iter().map(|entity| entity.pos).collect());
+        let swept = dt > 0.0 && self.content.is_some()
+            && self.state.entities.iter().any(|entity| entity.projectile.is_some());
+        let clamped_moves = if swept {
+            self.intents.clamped_move_motions().clone()
+        } else {
+            HashMap::new()
+        };
+        // Clamped Move steps already snapped to their stop boundary before this
+        // point; sweep them from their pre-snap positions instead.
+        let starts: Option<Vec<_>> = swept.then(|| self.state.entities.iter()
+            .map(|entity| clamped_moves.get(&entity.id).map_or(entity.pos, |motion| Some(motion.start)))
+            .collect());
         integrate(&self.cfg, &mut self.state, dt);
         self.advance_convoys(dt).await?;
         self.intents.tick_sentries(&mut self.state, dt);
@@ -3726,7 +3735,9 @@ impl Engine {
 
         let mut removals = Vec::new();
         if let Some((starts, content)) = starts.as_deref().zip(self.content.as_ref()) {
-            let outcome = crate::combat::advance_projectiles(&mut self.state.entities, starts, content, dt);
+            let outcome = crate::combat::advance_projectiles(
+                &mut self.state.entities, starts, &clamped_moves, content, dt,
+            );
             if !outcome.terminations.is_empty() {
                 let sensors = discovery::ImpactSensors::new(&self.state, content, starts);
                 removals = outcome.terminations.into_iter().map(|(entity_id, impact)| {
