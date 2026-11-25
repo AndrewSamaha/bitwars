@@ -512,9 +512,10 @@ impl RedisClient {
         sentry_orders: Vec<pb::SentryOrderState>,
         escort_orders: Vec<pb::EscortOrderState>,
         collection_orders: Vec<pb::CollectionOrderState>,
+        idle_combat_returns: Vec<pb::IdleCombatReturnState>,
     ) -> anyhow::Result<()> {
         self.publish_snapshot_with_content(state, resource_spend_total, resource_gain_total, boundary_stream_id,
-            collector_states, combat_effect_states, convoys, move_orders, sentry_orders, escort_orders, collection_orders, None).await
+            collector_states, combat_effect_states, convoys, move_orders, sentry_orders, escort_orders, collection_orders, idle_combat_returns, None).await
     }
 
     /// Optional accepted content and checkpoint commit together; restart cannot roll
@@ -532,6 +533,7 @@ impl RedisClient {
         sentry_orders: Vec<pb::SentryOrderState>,
         escort_orders: Vec<pb::EscortOrderState>,
         collection_orders: Vec<pb::CollectionOrderState>,
+        idle_combat_returns: Vec<pb::IdleCombatReturnState>,
         content: Option<(&serde_json::Value, &serde_json::Value)>,
     ) -> anyhow::Result<()> {
         let mut inventory_totals: HashMap<String, HashMap<String, i64>> = HashMap::new();
@@ -594,6 +596,7 @@ impl RedisClient {
             sentry_orders,
             escort_orders,
             collection_orders,
+            idle_combat_returns,
             tick: state.tick as i64,
             entities: state.entities.clone(),
             player_ledgers,
@@ -885,7 +888,7 @@ impl RedisClient {
     /// Returns state, boundary stream ID, and collector state or None if absent.
     pub async fn read_latest_snapshot(
         &mut self,
-    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>, Vec<pb::SentryOrderState>, Vec<pb::EscortOrderState>, Vec<pb::CollectionOrderState>)>> {
+    ) -> anyhow::Result<Option<(GameState, String, Vec<CollectorState>, Vec<pb::ConvoyOrderState>, Vec<pb::MoveOrderState>, Vec<pb::SentryOrderState>, Vec<pb::EscortOrderState>, Vec<pb::CollectionOrderState>, Vec<pb::IdleCombatReturnState>)>> {
         let snap_key = self.snapshot_key();
         let meta_key = self.snapshot_meta_key();
 
@@ -915,6 +918,7 @@ impl RedisClient {
         let sentry_orders = snapshot.sentry_orders.clone();
         let escort_orders = snapshot.escort_orders.clone();
         let collection_orders = snapshot.collection_orders.clone();
+        let idle_combat_returns = snapshot.idle_combat_returns.clone();
         anyhow::ensure!(snapshot.economy_version == 1 || !snapshot.entities.iter().any(|e| crate::spawn_config::is_player_owner(&e.owner_player_id)),
             "this match predates depot logistics; archive it and run game:reset before restarting the upgraded engine");
         let (state, collector_states) = restore_snapshot(snapshot)?;
@@ -927,7 +931,7 @@ impl RedisClient {
             "restored snapshot from Redis"
         );
 
-        Ok(Some((state, boundary, collector_states, convoys, move_orders, sentry_orders, escort_orders, collection_orders)))
+        Ok(Some((state, boundary, collector_states, convoys, move_orders, sentry_orders, escort_orders, collection_orders, idle_combat_returns)))
     }
 
     /// Read new entries from the events stream, blocking up to `block_ms` if no data.

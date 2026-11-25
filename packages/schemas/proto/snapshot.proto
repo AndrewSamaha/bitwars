@@ -2,6 +2,7 @@ syntax = "proto3";
 package bitwars;
 
 import "entity.proto";
+import "vec2.proto";
 import "intent.proto";
 import "navigation.proto";
 import "collector_state.proto";
@@ -37,6 +38,12 @@ message CollectionOrderState {
   CollectState state = 2;
 }
 
+// Server-only anchor for an idle Approach unit pursuing or returning after combat.
+message IdleCombatReturnState {
+  uint64 entity_id = 1;
+  Vec2 position = 2;
+}
+
 message Snapshot {
   repeated PlayerKnowledge player_knowledge = 17;
   // Exact accepted immutable content used by this checkpoint. Empty only on legacy snapshots.
@@ -58,4 +65,5 @@ message Snapshot {
   repeated MoveOrderState move_orders = 9;
   repeated SentryOrderState sentry_orders = 10;
   repeated EscortOrderState escort_orders = 11;
+  repeated IdleCombatReturnState idle_combat_returns = 18;
 }

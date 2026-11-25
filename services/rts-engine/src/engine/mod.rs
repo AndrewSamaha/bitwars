@@ -1490,6 +1490,84 @@ pub struct Engine {
     loaded_scenario: Option<(scenario::Scenario, std::collections::BTreeMap<String, String>)>,
 }
 
+/// An accepted non-movement order must not inherit velocity from an idle combat return.
+fn cancel_idle_return_on_order(
+    combat: &mut CombatSystem, entities: &mut [pb::Entity], entity_id: u64, is_move: bool,
+) {
+    if combat.cancel_return(entity_id) && !is_move {
+        if let Some(entity) = entities.iter_mut().find(|entity| entity.id == entity_id) {
+            entity.vel = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+            entity.force = Some(pb::Vec2 { x: 0.0, y: 0.0 });
+        }
+    }
+}
+
+#[cfg(test)]
+mod idle_combat_return_tests {
+    use super::*;
+
+    #[test]
+    fn build_accepted_during_return_stops_worker_before_physics() {
+        let content = ContentPack::load(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../packages/content/entities.yaml"),
+        ).unwrap();
+        let mut state = GameState {
+            discovered_entities: Default::default(),
+            generation: Default::default(),
+            tick: 0,
+            technologies: HashMap::new(),
+            entities: vec![
+                pb::Entity {
+                    id: 1, entity_type_id: "worker".into(), owner_player_id: "me".into(),
+                    pos: Some(pb::Vec2 { x: 0.0, y: 0.0 }), health: 200.0,
+                    ..Default::default()
+                },
+                pb::Entity {
+                    id: 2, entity_type_id: "worker".into(), owner_player_id: "enemy".into(),
+                    pos: Some(pb::Vec2 { x: 200.0, y: 0.0 }), health: 200.0,
+                    ..Default::default()
+                },
+            ],
+        };
+        let cfg = GameConfig { friction: 0.0, ..Default::default() };
+        let mut combat = CombatSystem::default();
+        assert_eq!(combat.tick(&mut state.entities, &content, 0, 1.0).engagements.get(&1), Some(&2));
+        integrate(&cfg, &mut state, 1.0);
+        let position = state.entities[0].pos.unwrap();
+        assert!(position.x > 0.0);
+        assert_eq!(combat.return_positions_for_snapshot()[0].position, Some(pb::Vec2 { x: 0.0, y: 0.0 }));
+
+        state.entities.retain(|entity| entity.id == 1);
+        assert!(combat.tick(&mut state.entities, &content, 1, 0.5).engagements.is_empty());
+        assert!(state.entities[0].vel.unwrap().x < 0.0, "worker is returning");
+
+        let mut intents = IntentManager::new(content.entity_types.clone(), 0.75, 90.0);
+        let outcome = intents.try_activate(
+            pb::Intent { kind: Some(pb::intent::Kind::Build(pb::BuildIntent {
+                entity_id: 1, blueprint_id: "waypoint".into(), ..Default::default()
+            })) },
+            IntentMetadata {
+                entity_id: 1, intent_id: vec![], client_cmd_id: vec![],
+                player_id: "me".into(), protocol_version: ENGINE_PROTOCOL_MAJOR,
+                server_tick: 1, policy: pb::IntentPolicy::ReplaceActive,
+            },
+            "worker",
+        );
+        assert!(outcome.started.is_some());
+        cancel_idle_return_on_order(&mut combat, &mut state.entities, 1, false);
+        assert!(combat.return_positions_for_snapshot().is_empty());
+        assert_eq!(state.entities[0].vel.unwrap().x, 0.0);
+
+        for tick in 1..=2 {
+            let commanded = intents.active_intents().keys().copied().collect();
+            combat.tick_with_player_orders(&mut state.entities, &content, tick, 1.0, &commanded);
+            integrate(&cfg, &mut state, 1.0);
+            assert_eq!(state.entities[0].pos, Some(position));
+        }
+    }
+}
+
 #[cfg(test)]
 mod integration_tests {
     use super::*;
@@ -2116,7 +2194,7 @@ impl Engine {
             // ── Restore mode: load latest snapshot + replay intents since boundary ──
             info!(game_id = %cfg.game_id, "RESTORE_GAMESTATE_ON_RESTART=true; attempting restore");
 
-            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries, mut snapshot_escorts, snapshot_collections)) =
+            if let Some((mut state, boundary, snapshot_collector_states, mut snapshot_convoys, mut snapshot_moves, mut snapshot_sentries, mut snapshot_escorts, snapshot_collections, snapshot_combat_returns)) =
                 redis.read_latest_snapshot().await?
             {
                 info!(
@@ -2338,6 +2416,7 @@ impl Engine {
                     scenario_runtime: Default::default(),
                     loaded_scenario: None,
                 };
+                engine.combat.restore_return_positions(snapshot_combat_returns);
                 for view in &snapshot_collector_states {
                     if engine.state.entities.iter().any(|entity| entity.id == view.entity_id) {
                         engine.collector_ui_state_by_entity.insert(view.entity_id, CollectorUiState {
@@ -2481,6 +2560,12 @@ impl Engine {
                 engine.restore_convoys(snapshot_convoys).await?;
                 engine.restore_sentries(snapshot_sentries).await?;
                 engine.restore_escorts(snapshot_escorts).await?;
+                for id in engine.intents.active_intents().keys() {
+                    engine.combat.cancel_return(*id);
+                }
+                for id in engine.intents.sentry_member_ids().into_iter().chain(engine.intents.escort_member_ids()) {
+                    engine.combat.cancel_return(id);
+                }
                 engine.hydrate_entity_health_if_missing();
                 if let Some(revision) = startup_revision {
                     engine.bootstrap_content_revision(revision).await?;
@@ -2492,6 +2577,7 @@ impl Engine {
                         engine.intents.convoys.clone(), engine.intents.move_orders_for_snapshot(),
                         engine.intents.sentries.clone(), engine.intents.escorts.clone(),
                         engine.intents.collection_orders_for_snapshot(),
+                        engine.combat.return_positions_for_snapshot(),
                     ).await?;
                 }
                 let build_progress = engine.construction_progress_for_snapshot();
@@ -2574,7 +2660,7 @@ impl Engine {
             engine.bootstrap_content_revision(revision).await?;
         } else {
             engine.redis.publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total,
-                "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).await?;
+                "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).await?;
         }
         engine.initialize_runtime(false).await?;
         Ok(engine)
@@ -3609,6 +3695,7 @@ impl Engine {
             &commands.scripted_entity_ids,
             &escort_leashes,
             &moving_entity_ids,
+            &sentry_members,
         );
         self.update_combat_effect_states(&outcome.dismantling);
         if outcome.dead_entity_ids.is_empty() {
@@ -5091,6 +5178,7 @@ impl Engine {
                     self.intents.sentries.clone(),
                     self.intents.escorts.clone(),
                     self.intents.collection_orders_for_snapshot(),
+                    self.combat.return_positions_for_snapshot(),
                 )
                 .await
                 .is_ok()
@@ -5427,6 +5515,7 @@ impl Engine {
                         self.intents.sentries.clone(),
                         self.intents.escorts.clone(),
                         self.intents.collection_orders_for_snapshot(),
+                        self.combat.return_positions_for_snapshot(),
                     )
                     .await
                 {
@@ -6337,6 +6426,9 @@ impl Engine {
             self.intents.detach_convoy_member(entity_id);
             self.intents.detach_sentry_member(entity_id);
             self.intents.detach_escort_member(entity_id);
+            cancel_idle_return_on_order(
+                &mut self.combat, &mut self.state.entities, entity_id, intent_kind == "move",
+            );
             self.collection_retry_tick_by_entity.remove(&entity_id);
             self.transport_wait_since_tick_by_entity.remove(&entity_id);
             if intent_kind == "upgrade" {

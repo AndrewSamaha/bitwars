@@ -123,7 +123,7 @@ impl Engine {
             self.collector_states_for_stream(), self.combat_effect_states_for_stream(),
             self.intents.convoys.clone(), self.intents.move_orders_for_snapshot(),
             self.intents.sentries.clone(), self.intents.escorts.clone(),
-            self.intents.collection_orders_for_snapshot(), Some((payload, operation)),
+            self.intents.collection_orders_for_snapshot(), self.combat.return_positions_for_snapshot(), Some((payload, operation)),
         ).await;
         if let Err(error) = &result {
             // A lost MULTI reply or a failed stream notification must not turn an

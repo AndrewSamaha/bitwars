@@ -8,12 +8,36 @@ use std::collections::{HashMap, HashSet};
 use crate::content::{AttackDef, AttackType, ContentPack, NearEnemyStrategy};
 use crate::pb::{Entity, Vec2};
 use crate::spatial::SpatialIndex;
-use crate::spawn_config::{is_system_owner, RAIDERS_OWNER};
+use crate::spawn_config::is_system_owner;
 
 #[derive(Default)]
 pub struct CombatSystem {
     next_attack_tick: HashMap<(u64, String), u64>,
+    // Only idle Approach pursuits own a return position. Orders own their own movement.
+    return_positions: HashMap<u64, Vec2>,
 }
+
+impl CombatSystem {
+    pub fn return_positions_for_snapshot(&self) -> Vec<crate::pb::IdleCombatReturnState> {
+        let mut positions: Vec<_> = self.return_positions.iter()
+            .map(|(&entity_id, &position)| crate::pb::IdleCombatReturnState {
+                entity_id, position: Some(position),
+            }).collect();
+        positions.sort_by_key(|entry| entry.entity_id);
+        positions
+    }
+
+    pub fn restore_return_positions(&mut self, positions: Vec<crate::pb::IdleCombatReturnState>) {
+        self.return_positions = positions.into_iter()
+            .filter_map(|entry| entry.position.map(|position| (entry.entity_id, position)))
+            .collect();
+    }
+
+    pub fn cancel_return(&mut self, entity_id: u64) -> bool {
+        self.return_positions.remove(&entity_id).is_some()
+    }
+}
+
 
 pub struct CombatTick {
     /// Acquired targets, including pursuit and weapon cooldown waiting.
@@ -111,7 +135,7 @@ impl CombatSystem {
         scripted_entity_ids: &HashSet<u64>, leashes: &HashMap<u64, (Vec2, f32)>,
     ) -> CombatTick {
         self.tick_with_ordered_movement(entities, content, tick, dt, commanded_entity_ids,
-            scripted_targets, scripted_entity_ids, leashes, &HashSet::new())
+            scripted_targets, scripted_entity_ids, leashes, &HashSet::new(), &HashSet::new())
     }
 
     /// Ordered movement owns position and velocity; combat may only fire in-range lasers.
@@ -119,7 +143,7 @@ impl CombatSystem {
         &mut self, entities: &mut [Entity], content: &ContentPack, tick: u64, dt: f32,
         commanded_entity_ids: &HashSet<u64>, scripted_targets: &HashMap<u64, u64>,
         scripted_entity_ids: &HashSet<u64>, leashes: &HashMap<u64, (Vec2, f32)>,
-        moving_entity_ids: &HashSet<u64>,
+        moving_entity_ids: &HashSet<u64>, maintained_entity_ids: &HashSet<u64>,
     ) -> CombatTick {
         if dt <= 0.0 {
             return CombatTick {
@@ -129,6 +153,11 @@ impl CombatSystem {
                 destructions: Vec::new(),
                 engagements: HashMap::new(),
             };
+        }
+        // Discard anchors for entities removed by other systems (e.g. radiation).
+        if !self.return_positions.is_empty() {
+            let entity_ids: HashSet<_> = entities.iter().map(|entity| entity.id).collect();
+            self.return_positions.retain(|id, _| entity_ids.contains(id));
         }
 
         let scripted_target_ids: HashSet<_> = scripted_targets.values().copied().collect();
@@ -170,6 +199,9 @@ impl CombatSystem {
         let mut engagements = HashMap::new();
         let mut dismantling = Vec::new();
         for attacker in entities.iter_mut() {
+            if commanded_entity_ids.contains(&attacker.id) {
+                self.return_positions.remove(&attacker.id);
+            }
             if attacker.owner_player_id.is_empty()
                 || attacker.supply.as_ref().is_some_and(|s| !s.operational)
                 || attacker.health <= 0.0
@@ -189,6 +221,15 @@ impl CombatSystem {
             let Some(pos) = attacker.pos.as_mut() else {
                 continue;
             };
+            let idle_approach = profile.on_near_enemy_strategy == NearEnemyStrategy::Approach
+                && !commanded_entity_ids.contains(&attacker.id)
+                && !moving_entity_ids.contains(&attacker.id)
+                && !maintained_entity_ids.contains(&attacker.id)
+                && !scripted_entity_ids.contains(&attacker.id)
+                && !leashes.contains_key(&attacker.id);
+            if !idle_approach {
+                self.return_positions.remove(&attacker.id);
+            }
             let ordered_movement = moving_entity_ids.contains(&attacker.id);
             let acquisition_sq = profile.acquisition_range.max(0.0).powi(2);
             let target = if scripted_entity_ids.contains(&attacker.id) {
@@ -230,6 +271,26 @@ impl CombatSystem {
                     .map(|(_, target)| target)
             };
             let Some(target) = target else {
+                if idle_approach {
+                    if let Some(home) = self.return_positions.get(&attacker.id).copied() {
+                        let dx = home.x - pos.x;
+                        let dy = home.y - pos.y;
+                        let distance = (dx * dx + dy * dy).sqrt();
+                        let speed = definition.speed.max(0.0);
+                        if distance <= speed * dt {
+                            *pos = home;
+                            zero_velocity(attacker);
+                            self.return_positions.remove(&attacker.id);
+                        } else if speed > 0.0 {
+                            let velocity = attacker.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
+                            velocity.x = dx / distance * speed;
+                            velocity.y = dy / distance * speed;
+                        } else {
+                            zero_velocity(attacker);
+                        }
+                        continue;
+                    }
+                }
                 // Neutrals have no player-issued movement to preserve. Player
                 // units resume their current intent after hostiles leave range.
                 if is_system_owner(&attacker.owner_player_id)
@@ -339,6 +400,9 @@ impl CombatSystem {
             }
 
             if ordered_movement { continue; }
+            if idle_approach && definition.speed > 0.0 {
+                self.return_positions.entry(attacker.id).or_insert(*pos);
+            }
             let distance = distance_sq.sqrt();
             let direction_x = dx / distance;
             let direction_y = dy / distance;
@@ -389,6 +453,9 @@ impl CombatSystem {
         }
         self.next_attack_tick
             .retain(|(id, _), _| !dead.contains(id));
+        for id in &dead {
+            self.return_positions.remove(id);
+        }
         CombatTick {
             engagements,
             dead_entity_ids: dead,
@@ -457,6 +524,7 @@ mod tests {
     use crate::content::{
         AttackDef, AttackType, CombatDef, EntityTypeDef, NearEnemyStrategy, VisualDef,
     };
+    use crate::spawn_config::RAIDERS_OWNER;
 
     fn content() -> ContentPack {
         let raider = EntityTypeDef {
@@ -574,6 +642,192 @@ mod tests {
             vec![2]
         );
         assert_eq!(entities[1].health, 0.0);
+    }
+
+    fn advance_combat(
+        combat: &mut CombatSystem,
+        state: &mut crate::engine::state::GameState,
+        pack: &ContentPack,
+        tick: u64,
+    ) -> CombatTick {
+        let result = combat.tick(&mut state.entities, pack, tick, 1.0);
+        crate::physics::integrate(
+            &crate::config::GameConfig { friction: 0.0, ..Default::default() },
+            state,
+            1.0,
+        );
+        result
+    }
+
+    #[test]
+    fn idle_approach_pursues_fights_and_returns_to_its_start() {
+        let pack = content();
+        let mut state = crate::engine::state::GameState {
+            discovered_entities: Default::default(),
+            generation: Default::default(),
+            tick: 0,
+            technologies: HashMap::new(),
+            entities: vec![
+                entity(1, "raider", "me", 0.0, 20.0),
+                entity(2, "worker", "enemy", 40.0, 12.0),
+            ],
+        };
+        let mut combat = CombatSystem::default();
+        for tick in 0..3 {
+            let result = advance_combat(&mut combat, &mut state, &pack, tick);
+            assert_eq!(result.engagements.get(&1), Some(&2));
+            assert!(result.laser_shots.is_empty());
+        }
+        assert_eq!(state.entities[0].pos.unwrap().x, 30.0);
+        assert_eq!(combat.return_positions[&1].x, 0.0);
+        assert_eq!(advance_combat(&mut combat, &mut state, &pack, 3).laser_shots.len(), 1);
+        assert!(advance_combat(&mut combat, &mut state, &pack, 4).laser_shots.is_empty());
+        assert_eq!(advance_combat(&mut combat, &mut state, &pack, 5).dead_entity_ids, vec![2]);
+        for (tick, expected_x) in [(6, 20.0), (7, 10.0), (8, 0.0), (9, 0.0)] {
+            assert!(advance_combat(&mut combat, &mut state, &pack, tick).engagements.is_empty());
+            assert_eq!(state.entities[0].pos.unwrap().x, expected_x);
+        }
+        assert_eq!(state.entities[0].vel.unwrap().x, 0.0);
+        assert!(combat.return_positions.is_empty());
+    }
+
+    #[test]
+    fn snapshot_restores_anchor_mid_pursuit_and_resumes_return() {
+        use prost::Message;
+
+        let pack = content();
+        let mut state = crate::engine::state::GameState {
+            discovered_entities: Default::default(),
+            generation: Default::default(),
+            tick: 0,
+            technologies: HashMap::new(),
+            entities: vec![
+                entity(1, "raider", "me", 0.0, 20.0),
+                entity(2, "worker", "enemy", 40.0, 6.0),
+            ],
+        };
+        let mut combat = CombatSystem::default();
+        advance_combat(&mut combat, &mut state, &pack, 0);
+        assert_eq!(state.entities[0].pos.unwrap().x, 10.0);
+        let snapshot = crate::pb::Snapshot {
+            entities: state.entities.clone(),
+            idle_combat_returns: combat.return_positions_for_snapshot(),
+            ..Default::default()
+        };
+        let restored = crate::pb::Snapshot::decode(snapshot.encode_to_vec().as_slice()).unwrap();
+        state.entities = restored.entities;
+        combat = CombatSystem::default();
+        combat.restore_return_positions(restored.idle_combat_returns);
+        for tick in 1..3 {
+            assert_eq!(advance_combat(&mut combat, &mut state, &pack, tick).engagements.get(&1), Some(&2));
+        }
+        assert_eq!(advance_combat(&mut combat, &mut state, &pack, 3).dead_entity_ids, vec![2]);
+        for (tick, x) in [(4, 20.0), (5, 10.0), (6, 0.0)] {
+            advance_combat(&mut combat, &mut state, &pack, tick);
+            assert_eq!(state.entities[0].pos.unwrap().x, x);
+        }
+        assert!(combat.return_positions.is_empty());
+    }
+
+    #[test]
+    fn new_combat_interrupts_return_without_replacing_the_start() {
+        let pack = content();
+        let mut state = crate::engine::state::GameState {
+            discovered_entities: Default::default(),
+            generation: Default::default(),
+            tick: 0,
+            technologies: HashMap::new(),
+            entities: vec![
+                entity(1, "raider", "me", 0.0, 20.0),
+                entity(2, "worker", "enemy", 40.0, 6.0),
+            ],
+        };
+        let mut combat = CombatSystem::default();
+        for tick in 0..3 {
+            advance_combat(&mut combat, &mut state, &pack, tick);
+        }
+        assert_eq!(advance_combat(&mut combat, &mut state, &pack, 3).dead_entity_ids, vec![2]);
+        assert!(advance_combat(&mut combat, &mut state, &pack, 4).engagements.is_empty());
+        assert_eq!(state.entities[0].pos.unwrap().x, 20.0);
+        state.entities.push(entity(3, "worker", "enemy", 50.0, 6.0));
+        for (tick, expected_x) in [(5, 30.0), (6, 40.0)] {
+            assert_eq!(advance_combat(&mut combat, &mut state, &pack, tick).engagements.get(&1), Some(&3));
+            assert_eq!(state.entities[0].pos.unwrap().x, expected_x);
+            assert_eq!(combat.return_positions[&1].x, 0.0);
+        }
+        assert_eq!(advance_combat(&mut combat, &mut state, &pack, 7).dead_entity_ids, vec![3]);
+        for (tick, expected_x) in [(8, 30.0), (9, 20.0), (10, 10.0), (11, 0.0)] {
+            advance_combat(&mut combat, &mut state, &pack, tick);
+            assert_eq!(state.entities[0].pos.unwrap().x, expected_x);
+        }
+        assert_eq!(state.entities[0].vel.unwrap().x, 0.0);
+        assert!(combat.return_positions.is_empty());
+    }
+
+    #[test]
+    fn an_order_takes_over_and_cancels_an_idle_return() {
+        let pack = content();
+        let mut entities = vec![
+            entity(1, "raider", "me", 0.0, 20.0),
+            entity(2, "worker", "enemy", 40.0, 100.0),
+        ];
+        let mut combat = CombatSystem::default();
+        combat.tick(&mut entities, &pack, 0, 1.0);
+        assert_eq!(combat.return_positions[&1].x, 0.0);
+        entities[0].pos.as_mut().unwrap().x = 10.0;
+        entities[0].vel.as_mut().unwrap().x = 0.0;
+        moving_tick(&mut combat, &mut entities, &pack, 1);
+        assert!(combat.return_positions.is_empty());
+        entities[1].health = 0.0;
+        combat.tick(&mut entities, &pack, 2, 1.0);
+        assert_eq!(entities[0].pos.unwrap().x, 10.0);
+        assert_eq!(entities[0].vel.unwrap().x, 0.0);
+    }
+
+    #[test]
+    fn completed_same_tick_order_does_not_resume_the_old_return() {
+        let pack = content();
+        let mut entities = vec![
+            entity(1, "raider", "me", 0.0, 20.0),
+            entity(2, "worker", "enemy", 40.0, 100.0),
+        ];
+        let mut combat = CombatSystem::default();
+        combat.tick(&mut entities, &pack, 0, 1.0);
+        assert_eq!(combat.return_positions[&1].x, 0.0);
+        // The accepted Move reaches its destination before combat checks active intents.
+        combat.cancel_return(1);
+        entities[0].pos.as_mut().unwrap().x = 10.0;
+        entities[0].vel.as_mut().unwrap().x = 0.0;
+        entities[1].health = 0.0;
+        combat.tick(&mut entities, &pack, 1, 1.0);
+        assert_eq!(entities[0].pos.unwrap().x, 10.0);
+        assert!(combat.return_positions.is_empty());
+    }
+
+    #[test]
+    fn maintained_sentry_and_escort_pursuit_does_not_capture_an_idle_return() {
+        let pack = content();
+        for escort in [false, true] {
+            let mut entities = vec![
+                entity(1, "raider", "me", 0.0, 20.0),
+                entity(2, "worker", "enemy", 40.0, 100.0),
+            ];
+            let maintained = if escort { HashSet::new() } else { HashSet::from([1]) };
+            let leashes = if escort {
+                HashMap::from([(1, (Vec2 { x: 0.0, y: 0.0 }, 100.0))])
+            } else {
+                HashMap::new()
+            };
+            let mut combat = CombatSystem::default();
+            let outcome = combat.tick_with_ordered_movement(
+                &mut entities, &pack, 0, 1.0, &HashSet::new(),
+                &HashMap::new(), &HashSet::new(), &leashes,
+                &HashSet::new(), &maintained,
+            );
+            assert_eq!(outcome.engagements.get(&1), Some(&2));
+            assert_eq!(entities[0].vel.unwrap().x, 10.0);
+            assert!(combat.return_positions.is_empty());
+        }
     }
 
     #[test]
@@ -833,7 +1087,7 @@ mod tests {
 
     fn moving_tick(combat: &mut CombatSystem, entities: &mut [Entity], pack: &ContentPack, tick: u64) -> CombatTick {
         combat.tick_with_ordered_movement(entities, pack, tick, 1.0,
-            &HashSet::from([1]), &HashMap::new(), &HashSet::new(), &HashMap::new(), &HashSet::from([1]))
+            &HashSet::from([1]), &HashMap::new(), &HashSet::new(), &HashMap::new(), &HashSet::from([1]), &HashSet::new())
     }
 
     #[test]

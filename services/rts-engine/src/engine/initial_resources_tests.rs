@@ -116,7 +116,7 @@ async fn initial_resources_creation_and_restore_runtime() -> Result<()> {
         engine.state.entities.iter().find(|entity| entity.id == *id).unwrap().clone()
     }).collect();
     engine.redis.publish_snapshot(&engine.state, &engine.resource_spend_total, &engine.resource_gain_total,
-        "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).await?;
+        "0-0", Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).await?;
     drop(engine);
     cfg.restore_gamestate = true;
     let restored = Engine::new(cfg).await?;

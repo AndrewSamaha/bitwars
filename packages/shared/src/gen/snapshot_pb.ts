@@ -6,6 +6,8 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Entity } from "./entity_pb.js";
 import { file_entity } from "./entity_pb.js";
+import type { Vec2 } from "./vec2_pb.js";
+import { file_vec2 } from "./vec2_pb.js";
 import type { CollectState, ConvoyOrderState } from "./intent_pb.js";
 import { file_intent } from "./intent_pb.js";
 import type { EscortOrderState, MoveOrderState, SentryOrderState } from "./navigation_pb.js";
@@ -22,7 +24,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file snapshot.proto.
  */
 export const file_snapshot: GenFile = /*@__PURE__*/
-  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyJfCg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDEhMKC3NwZW5kX3RvdGFsGAMgASgBEhIKCmdhaW5fdG90YWwYBCABKAEiVAoUUGxheWVyUmVzb3VyY2VMZWRnZXISEQoJcGxheWVyX2lkGAEgASgJEikKCXJlc291cmNlcxgCIAMoCzIWLmJpdHdhcnMuUmVzb3VyY2VFbnRyeSJCChVQbGF5ZXJUZWNobm9sb2d5U3RhdGUSEQoJcGxheWVyX2lkGAEgASgJEhYKDnRlY2hub2xvZ3lfaWRzGAIgAygJIlMKFENvbGxlY3Rpb25PcmRlclN0YXRlEhUKDWNsaWVudF9jbWRfaWQYASABKAwSJAoFc3RhdGUYAiABKAsyFS5iaXR3YXJzLkNvbGxlY3RTdGF0ZSK8BQoIU25hcHNob3QSMgoQcGxheWVyX2tub3dsZWRnZRgRIAMoCzIYLmJpdHdhcnMuUGxheWVyS25vd2xlZGdlEhgKEGNvbnRlbnRfcmV2aXNpb24YECABKAkSIAoYZGlzY292ZXJlZF9lbnRpdGllc19qc29uGA4gASgJEjgKEWNvbGxlY3Rpb25fb3JkZXJzGA8gAygLMh0uYml0d2Fycy5Db2xsZWN0aW9uT3JkZXJTdGF0ZRIdChVnZW5lcmF0aW9uX3N0YXRlX2pzb24YDSABKAkSFwoPZWNvbm9teV92ZXJzaW9uGAwgASgNEgwKBHRpY2sYAiABKAMSIQoIZW50aXRpZXMYAyADKAsyDy5iaXR3YXJzLkVudGl0eRI1Cg5wbGF5ZXJfbGVkZ2VycxgEIAMoCzIdLmJpdHdhcnMuUGxheWVyUmVzb3VyY2VMZWRnZXISMQoQY29sbGVjdG9yX3N0YXRlcxgFIAMoCzIXLmJpdHdhcnMuQ29sbGVjdG9yU3RhdGUSOAoUY29tYmF0X2VmZmVjdF9zdGF0ZXMYBiADKAsyGi5iaXR3YXJzLkNvbWJhdEVmZmVjdFN0YXRlEjsKE3BsYXllcl90ZWNobm9sb2dpZXMYByADKAsyHi5iaXR3YXJzLlBsYXllclRlY2hub2xvZ3lTdGF0ZRIqCgdjb252b3lzGAggAygLMhkuYml0d2Fycy5Db252b3lPcmRlclN0YXRlEiwKC21vdmVfb3JkZXJzGAkgAygLMhcuYml0d2Fycy5Nb3ZlT3JkZXJTdGF0ZRIwCg1zZW50cnlfb3JkZXJzGAogAygLMhkuYml0d2Fycy5TZW50cnlPcmRlclN0YXRlEjAKDWVzY29ydF9vcmRlcnMYCyADKAsyGS5iaXR3YXJzLkVzY29ydE9yZGVyU3RhdGViBnByb3RvMw", [file_entity, file_intent, file_navigation, file_collector_state, file_combat_effect_state, file_player_knowledge]);
+  fileDesc("Cg5zbmFwc2hvdC5wcm90bxIHYml0d2FycyJfCg1SZXNvdXJjZUVudHJ5EhUKDXJlc291cmNlX3R5cGUYASABKAkSDgoGYW1vdW50GAIgASgDEhMKC3NwZW5kX3RvdGFsGAMgASgBEhIKCmdhaW5fdG90YWwYBCABKAEiVAoUUGxheWVyUmVzb3VyY2VMZWRnZXISEQoJcGxheWVyX2lkGAEgASgJEikKCXJlc291cmNlcxgCIAMoCzIWLmJpdHdhcnMuUmVzb3VyY2VFbnRyeSJCChVQbGF5ZXJUZWNobm9sb2d5U3RhdGUSEQoJcGxheWVyX2lkGAEgASgJEhYKDnRlY2hub2xvZ3lfaWRzGAIgAygJIlMKFENvbGxlY3Rpb25PcmRlclN0YXRlEhUKDWNsaWVudF9jbWRfaWQYASABKAwSJAoFc3RhdGUYAiABKAsyFS5iaXR3YXJzLkNvbGxlY3RTdGF0ZSJLChVJZGxlQ29tYmF0UmV0dXJuU3RhdGUSEQoJZW50aXR5X2lkGAEgASgEEh8KCHBvc2l0aW9uGAIgASgLMg0uYml0d2Fycy5WZWMyIvkFCghTbmFwc2hvdBIyChBwbGF5ZXJfa25vd2xlZGdlGBEgAygLMhguYml0d2Fycy5QbGF5ZXJLbm93bGVkZ2USGAoQY29udGVudF9yZXZpc2lvbhgQIAEoCRIgChhkaXNjb3ZlcmVkX2VudGl0aWVzX2pzb24YDiABKAkSOAoRY29sbGVjdGlvbl9vcmRlcnMYDyADKAsyHS5iaXR3YXJzLkNvbGxlY3Rpb25PcmRlclN0YXRlEh0KFWdlbmVyYXRpb25fc3RhdGVfanNvbhgNIAEoCRIXCg9lY29ub215X3ZlcnNpb24YDCABKA0SDAoEdGljaxgCIAEoAxIhCghlbnRpdGllcxgDIAMoCzIPLmJpdHdhcnMuRW50aXR5EjUKDnBsYXllcl9sZWRnZXJzGAQgAygLMh0uYml0d2Fycy5QbGF5ZXJSZXNvdXJjZUxlZGdlchIxChBjb2xsZWN0b3Jfc3RhdGVzGAUgAygLMhcuYml0d2Fycy5Db2xsZWN0b3JTdGF0ZRI4ChRjb21iYXRfZWZmZWN0X3N0YXRlcxgGIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGUSOwoTcGxheWVyX3RlY2hub2xvZ2llcxgHIAMoCzIeLmJpdHdhcnMuUGxheWVyVGVjaG5vbG9neVN0YXRlEioKB2NvbnZveXMYCCADKAsyGS5iaXR3YXJzLkNvbnZveU9yZGVyU3RhdGUSLAoLbW92ZV9vcmRlcnMYCSADKAsyFy5iaXR3YXJzLk1vdmVPcmRlclN0YXRlEjAKDXNlbnRyeV9vcmRlcnMYCiADKAsyGS5iaXR3YXJzLlNlbnRyeU9yZGVyU3RhdGUSMAoNZXNjb3J0X29yZGVycxgLIAMoCzIZLmJpdHdhcnMuRXNjb3J0T3JkZXJTdGF0ZRI7ChNpZGxlX2NvbWJhdF9yZXR1cm5zGBIgAygLMh4uYml0d2Fycy5JZGxlQ29tYmF0UmV0dXJuU3RhdGViBnByb3RvMw", [file_entity, file_vec2, file_intent, file_navigation, file_collector_state, file_combat_effect_state, file_player_knowledge]);
 
 /**
  * M7: Per-player resource totals. Resource types are data-driven (string IDs).
@@ -135,6 +137,30 @@ export const CollectionOrderStateSchema: GenMessage<CollectionOrderState> = /*@_
   messageDesc(file_snapshot, 3);
 
 /**
+ * Server-only anchor for an idle Approach unit pursuing or returning after combat.
+ *
+ * @generated from message bitwars.IdleCombatReturnState
+ */
+export type IdleCombatReturnState = Message<"bitwars.IdleCombatReturnState"> & {
+  /**
+   * @generated from field: uint64 entity_id = 1;
+   */
+  entityId: bigint;
+
+  /**
+   * @generated from field: bitwars.Vec2 position = 2;
+   */
+  position?: Vec2;
+};
+
+/**
+ * Describes the message bitwars.IdleCombatReturnState.
+ * Use `create(IdleCombatReturnStateSchema)` to create a new message.
+ */
+export const IdleCombatReturnStateSchema: GenMessage<IdleCombatReturnState> = /*@__PURE__*/
+  messageDesc(file_snapshot, 4);
+
+/**
  * @generated from message bitwars.Snapshot
  */
 export type Snapshot = Message<"bitwars.Snapshot"> & {
@@ -226,6 +252,11 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
    * @generated from field: repeated bitwars.EscortOrderState escort_orders = 11;
    */
   escortOrders: EscortOrderState[];
+
+  /**
+   * @generated from field: repeated bitwars.IdleCombatReturnState idle_combat_returns = 18;
+   */
+  idleCombatReturns: IdleCombatReturnState[];
 };
 
 /**
@@ -233,5 +264,5 @@ export type Snapshot = Message<"bitwars.Snapshot"> & {
  * Use `create(SnapshotSchema)` to create a new message.
  */
 export const SnapshotSchema: GenMessage<Snapshot> = /*@__PURE__*/
-  messageDesc(file_snapshot, 4);
+  messageDesc(file_snapshot, 5);
 
