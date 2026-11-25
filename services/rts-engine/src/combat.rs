@@ -687,9 +687,30 @@ fn first_projectile_contact(
 /// Grid candidate rectangle padding. A hull that contacts the shot sits within
 /// `hull_radius` of the shot path, so its per-axis start offset is at most the
 /// corresponding displacement. The per-axis (L∞) bound was already sufficient
-/// for inclusion; the Euclidean length is kept as an explicit safety margin.
+/// for inclusion: no diagonal-only miss exists, because a contact point within
+/// `R` of the shot rectangle implies the hull start is within `R + max(|Δx|,
+/// |Δy|)` in both axes. The Euclidean length is kept as an explicit safety
+/// margin; `sweep_query_rect_pads_with_the_euclidean_bound` pins the value that
+/// the sweep actually uses so a revert cannot silently narrow the query.
 fn candidate_pad(max_radius: f64, max_dx: f64, max_dy: f64) -> f64 {
     max_radius + max_dx.hypot(max_dy)
+}
+
+/// Candidate query rectangle for the grid fast path. Shared with the sweep so
+/// the call-site pad and the tested pad cannot diverge.
+fn sweep_query_rect(
+    (x, y): (f64, f64),
+    (end_x, end_y): (f64, f64),
+    max_radius: f64,
+    (max_dx, max_dy): (f64, f64),
+) -> (f32, f32, f32, f32) {
+    let pad = candidate_pad(max_radius, max_dx, max_dy);
+    (
+        (x.min(end_x) - pad) as f32,
+        (y.min(end_y) - pad) as f32,
+        (x.max(end_x) + pad) as f32,
+        (y.max(end_y) + pad) as f32,
+    )
 }
 
 /// Resolve existing shots against the same movement interval as the hulls.
@@ -765,13 +786,13 @@ pub(crate) fn advance_projectiles(
         // Index hull start points. Full-tick displacement keeps hulls that
         // enter the projectile rectangle during the clipped interval eligible.
         let pad = candidate_pad(max_radius, max_displacement.0, max_displacement.1);
+        let rect = sweep_query_rect(
+            (x, y), (end_x, end_y), max_radius, max_displacement);
         let hit = if limit == 0.0 {
             None
         } else if travel + 2.0 * pad <= f64::from(CELL_SIZE) {
-            grid.in_rect(
-                (x.min(end_x) - pad) as f32, (y.min(end_y) - pad) as f32,
-                (x.max(end_x) + pad) as f32, (y.max(end_y) + pad) as f32,
-            ).filter_map(|i| candidate(&targets[i])).min_by(compare)
+            grid.in_rect(rect.0, rect.1, rect.2, rect.3)
+                .filter_map(|i| candidate(&targets[i])).min_by(compare)
         } else {
             // Wide custom-content sweeps should not visit thousands of empty cells.
             targets.iter().filter_map(candidate).min_by(compare)
@@ -1146,21 +1167,31 @@ mod tests {
     }
 
     #[test]
-    fn candidate_pad_uses_euclidean_displacement() {
-        let pad = candidate_pad(10.0, -160.0, -200.0);
-        assert_eq!(pad, 10.0 + 160.0_f64.hypot(200.0));
-        assert!(pad > 10.0 + 200.0_f64,
-            "a per-axis L∞ pad would be 210; the Euclidean bound is 266.2");
+    fn sweep_query_rect_pads_with_the_euclidean_bound() {
+        // The sweep computes the candidate rectangle through this helper, so a
+        // revert to the former per-axis pad changes the pinned value.
+        let rect = sweep_query_rect((0.0, 0.0), (80.0, 0.0), 10.0, (-160.0, -200.0));
+        let pad = 10.0 + 160.0_f64.hypot(200.0);
+        assert_eq!(rect, (
+            (-pad) as f32,
+            (-pad) as f32,
+            (80.0 + pad) as f32,
+            pad as f32,
+        ));
+        // A point that only the Euclidean pad admits: y = -250 is outside the
+        // former L∞ rectangle (radius 10 + 200 = 210) but inside this one.
+        assert!(-250.0 >= f64::from(rect.1));
+        assert!(-250.0 < -(10.0 + 200.0));
     }
 
     #[test]
     fn diagonal_hull_displacement_hits_on_the_grid_fast_path() {
         let mut pack = content();
         pack.entity_types.get_mut("worker").unwrap().hull_radius = 10.0;
-        // Plain hit detection on the grid fast path. Candidate inclusion also
-        // held under the former per-axis pad, so this test does not distinguish
-        // the two bounds; `candidate_pad_uses_euclidean_displacement` pins the
-        // formula instead.
+        // Hit detection on the grid fast path. Candidate inclusion also held
+        // under the former per-axis pad; the requested diagonal-only miss is
+        // geometrically impossible, so this covers the padded fast path while
+        // `sweep_query_rect_pads_with_the_euclidean_bound` pins the pad value.
         let mut target = entity(2, "worker", "enemy", -40.0, 10.0);
         target.pos = Some(Vec2 { x: -40.0, y: -100.0 });
         let start = Vec2 { x: 120.0, y: 100.0 };

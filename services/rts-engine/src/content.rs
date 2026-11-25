@@ -322,7 +322,7 @@ pub struct AttackDef {
     pub projectile: Option<ProjectileDef>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectileDef {
     /// Entity type spawned for each shot. Must name a defined entity type and
@@ -334,6 +334,32 @@ pub struct ProjectileDef {
     /// Maximum distance from the muzzle in world units, independent of firing range.
     #[schemars(extend("exclusiveMinimum" = 0))]
     pub max_travel_distance: f32,
+}
+
+/// Deserialize a retained manifest that predates `entity_type_id` without
+/// weakening the authored schema: the field stays required in
+/// `entity.schema.json`, but a missing value deserializes as empty and is
+/// rejected by `validate_gameplay_content` (v1 manifests are migrated first).
+impl<'de> Deserialize<'de> for ProjectileDef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct RawProjectileDef {
+            #[serde(default)]
+            entity_type_id: String,
+            speed: f32,
+            max_travel_distance: f32,
+        }
+        let raw = RawProjectileDef::deserialize(deserializer)?;
+        Ok(Self {
+            entity_type_id: raw.entity_type_id,
+            speed: raw.speed,
+            max_travel_distance: raw.max_travel_distance,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
@@ -1159,6 +1185,20 @@ fn validate_gameplay_content(
                     .iter().all(|v| v.is_finite() && *v >= 0.0), "entity {id}: invalid radiation");
         }
     }
+    // The web client receives one generated projectile constant, so content may
+    // only name one kinetic projectile type across all attacks.
+    let mut projectile_ids: Vec<&str> = entities.values()
+        .filter_map(|def| def.combat.as_ref())
+        .flat_map(|combat| combat.attacks.iter())
+        .filter_map(|attack| attack.projectile.as_ref())
+        .map(|projectile| projectile.entity_type_id.as_str())
+        .filter(|id| !id.is_empty())
+        .collect();
+    projectile_ids.sort_unstable();
+    projectile_ids.dedup();
+    anyhow::ensure!(projectile_ids.len() <= 1,
+        "kinetic attacks must reference one projectile entity_type_id; found: {}",
+        projectile_ids.join(", "));
     for (id, technology) in technologies {
         costs(&technology.research_cost, &format!("{id}.research_cost"))?;
         costs(&technology.research_rates, &format!("{id}.research_rates"))?;
@@ -1705,6 +1745,24 @@ mod tests {
         let error = validate_gameplay_content(&types, &pack.resource_types, &pack.technologies)
             .unwrap_err().to_string();
         assert!(error.contains("projectile entity_type_id"), "unexpected error: {error}");
+
+        // One kinetic projectile type only: the web client receives a single
+        // generated constant and cannot classify a second projectile type.
+        let mut split = pack.entity_types.clone();
+        let second = {
+            let fighter = split.get_mut("kinetic_fighter").unwrap();
+            let combat = fighter.combat.as_mut().unwrap();
+            let mut second = combat.attacks.iter()
+                .find(|attack| attack.attack_type == AttackType::Kinetic).unwrap().clone();
+            second.id = "kinetic_2".into();
+            second.projectile.as_mut().unwrap().entity_type_id = "scout".into();
+            second
+        };
+        split.get_mut("kinetic_fighter").unwrap().combat.as_mut().unwrap()
+            .attacks.push(second);
+        let error = validate_gameplay_content(&split, &pack.resource_types, &pack.technologies)
+            .unwrap_err().to_string();
+        assert!(error.contains("one projectile entity_type_id"), "unexpected error: {error}");
     }
 
     #[test]

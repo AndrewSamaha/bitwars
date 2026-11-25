@@ -1642,11 +1642,10 @@ mod kinetic_engine_tests {
         collectors: &mut HashMap<u64, CollectorUiState>,
     ) -> KineticSweep {
         let cfg = GameConfig { friction: 0.0, ..Default::default() };
-        let clamped = HashMap::new();
-        let starts = combat_motion_starts(&state.entities, &clamped);
+        let motion = begin_combat_motion(state, Some(content), dt, &HashMap::new());
         integrate(&cfg, state, dt);
-        advance_kinetic_motion(
-            state, content, combat, &starts, &clamped, dt, spawns, collectors,
+        finish_combat_motion(
+            state, Some(content), combat, &motion, dt, spawns, collectors,
         )
     }
 
@@ -1708,9 +1707,12 @@ mod kinetic_engine_tests {
         assert_eq!(death.destruction.victim.id, 2);
         assert_eq!(death.destruction.attacker_id, 1);
         assert_eq!(death.destruction.cause, AttackType::Kinetic);
-        assert!(death.attacker_saw_impact, "the attacker's sensor covers the impact");
+        assert!(death.attacker_witnessed_destruction, "the attacker's sensor covers the impact");
+        let event = combat_destruction_event(
+            1, 0, &death.destruction, death.attacker_witnessed_destruction,
+        ).expect("a witnessed kill publishes an event");
         assert_eq!(
-            destruction_recipients(&death.destruction, death.attacker_saw_impact),
+            event.recipients,
             vec!["bob".to_string(), "alice".to_string()],
             "a witnessed impact delivers the kill event to the attacker",
         );
@@ -1757,10 +1759,14 @@ mod kinetic_engine_tests {
         );
 
         assert_eq!(outcome.dead, vec![2]);
-        assert!(!outcome.destructions[0].attacker_saw_impact,
+        assert!(!outcome.destructions[0].attacker_witnessed_destruction,
             "an uncovered attacker does not receive the kill event");
+        let event = combat_destruction_event(
+            1, 0, &outcome.destructions[0].destruction,
+            outcome.destructions[0].attacker_witnessed_destruction,
+        ).expect("the victim still receives the destruction event");
         assert_eq!(
-            destruction_recipients(&outcome.destructions[0].destruction, false),
+            event.recipients,
             vec!["bob".to_string()],
             "only the victim owner receives an unwitnessed destruction",
         );
@@ -1769,7 +1775,7 @@ mod kinetic_engine_tests {
     }
 
     #[test]
-    fn destruction_event_recipients_include_the_attacker_only_when_witnessed() {
+    fn destruction_event_includes_the_attacker_only_when_witnessed() {
         let destruction = crate::combat::CombatDestruction {
             victim: entity(2, "worker", "bob", 0.0, 0.0, 10.0),
             attacker_id: 1,
@@ -1778,10 +1784,12 @@ mod kinetic_engine_tests {
             cause: AttackType::Kinetic,
             impact: None,
         };
-        assert_eq!(destruction_recipients(&destruction, true),
+        let witnessed = combat_destruction_event(7, 0, &destruction, true).unwrap();
+        assert_eq!(witnessed.recipients,
             vec!["bob".to_string(), "alice".to_string()]);
-        assert_eq!(destruction_recipients(&destruction, false),
-            vec!["bob".to_string()]);
+        assert_eq!(witnessed.server_tick, 7);
+        let unwitnessed = combat_destruction_event(7, 0, &destruction, false).unwrap();
+        assert_eq!(unwitnessed.recipients, vec!["bob".to_string()]);
     }
 
     #[test]
@@ -1802,18 +1810,25 @@ mod kinetic_engine_tests {
         let mut state = state(vec![
             entity(1, "kinetic_fighter", "alice", 0.0, 0.0, 80.0),
             entity(2, "worker", "bob", victim_start as f32, 0.0, 10.0),
+            // Observer whose 10-unit sensor cannot see the victim at tick start
+            // (1,002 units away), but sits 900 units from the impact: only the
+            // victim's 1,000-unit visibility range, combined with max(), covers
+            // it. A min() or an undersized target range would omit carol.
+            entity(3, "worker", "carol", 1_902.0, 0.0, 10.0),
         ]);
         state.entities[1].vel = Some(Vec2 { x: hull_speed as f32, y: 0.0 });
         crate::engine::discovery::observe(&mut state, &content);
         assert!(crate::engine::discovery::prior_visibility_witnesses(&state, 2).contains("alice"));
+        assert!(!crate::engine::discovery::prior_visibility_witnesses(&state, 2).contains("carol"),
+            "carol's sensor did not cover the victim at tick start");
         let projectile_type = *content.projectile_entity_type_ids().iter().next().unwrap();
         state.entities.push(live_shot(projectile_type, 9, 1, "alice", 12.0, 0.0, 0.0));
         let cfg = GameConfig { friction: 0.0, ..Default::default() };
-        let starts = combat_motion_starts(&state.entities, &HashMap::new());
+        let motion = begin_combat_motion(&state, Some(&content), 1.0, &HashMap::new());
         integrate(&cfg, &mut state, 1.0);
 
-        let outcome = advance_kinetic_motion(
-            &mut state, &content, &mut combat, &starts, &HashMap::new(), 1.0,
+        let outcome = finish_combat_motion(
+            &mut state, Some(&content), &mut combat, &motion, 1.0,
             &mut Vec::new(), &mut HashMap::new(),
         );
 
@@ -1823,7 +1838,8 @@ mod kinetic_engine_tests {
         assert!((distance - expected_impact).abs() < 1.0,
             "impact point lands just outside max(sensor range, visibility range), got {distance}");
         assert!(distance > 1_000.0);
-        let sensors = discovery::ImpactSensors::new(&state, &content, &starts, &HashMap::new());
+        let sensors = discovery::ImpactSensors::new(
+            &state, &content, &motion.starts, &motion.clamped_moves);
         assert!(!sensors.witnesses(impact, 1_000.0).contains("alice"),
             "impact-time coverage alone does not reach the impact");
         assert!(!sensors.witnesses(impact, (distance - 0.75) as f32).contains("alice"),
@@ -1834,11 +1850,18 @@ mod kinetic_engine_tests {
         let victim_removal = outcome.removals.iter().find(|removal| removal.entity_id == 2).unwrap();
         assert!(victim_removal.witness_player_ids.contains(&"alice".to_string()),
             "prior visibility is added to impact-time witnesses");
-        assert!(outcome.destructions[0].attacker_saw_impact);
-        assert!(destruction_recipients(
+        assert!(victim_removal.witness_player_ids.contains(&"carol".to_string()),
+            "impact-time witnesses combine sensor range with the victim's visibility range via max()");
+        assert!(outcome.dead.contains(&2) && !outcome.dead.contains(&3),
+            "the distant observer is not a casualty");
+        assert!(outcome.destructions[0].attacker_witnessed_destruction);
+        let event = combat_destruction_event(
+            1, 0,
             &outcome.destructions[0].destruction,
-            outcome.destructions[0].attacker_saw_impact,
-        ).contains(&"alice".to_string()), "the covered attacker still receives the destruction event");
+            outcome.destructions[0].attacker_witnessed_destruction,
+        ).unwrap();
+        assert!(event.recipients.contains(&"alice".to_string()),
+            "the covered attacker still receives the destruction event");
     }
 
     #[test]
@@ -2310,7 +2333,7 @@ fn self_destruct_entity(entities: &mut Vec<pb::Entity>, player_id: &str, entity_
 /// A kinetic destruction plus the witness set that authorizes its delivery.
 struct KineticDestruction {
     destruction: crate::combat::CombatDestruction,
-    attacker_saw_impact: bool,
+    attacker_witnessed_destruction: bool,
 }
 
 #[derive(Default)]
@@ -2390,7 +2413,7 @@ fn sweep_kinetic_projectiles(
 
     let mut destructions = Vec::with_capacity(witnessed.len());
     for (destruction, mut witnesses) in witnessed.drain(..) {
-        let attacker_saw_impact = witnesses.contains(&destruction.attacker_owner_player_id);
+        let attacker_witnessed_destruction = witnesses.contains(&destruction.attacker_owner_player_id);
         if is_player_owner(&destruction.victim.owner_player_id) {
             witnesses.insert(destruction.victim.owner_player_id.clone());
         }
@@ -2399,7 +2422,7 @@ fn sweep_kinetic_projectiles(
             entity_id: destruction.victim.id,
             witness_player_ids: witnesses.into_iter().collect(),
         });
-        destructions.push(KineticDestruction { destruction, attacker_saw_impact });
+        destructions.push(KineticDestruction { destruction, attacker_witnessed_destruction });
     }
     KineticSweep { removals, destructions, dead }
 }
@@ -2424,6 +2447,57 @@ fn advance_kinetic_motion(
     assign_projectile_ids(state, spawns);
     state.entities.append(spawns);
     sweep
+}
+
+/// Positions and clamped motions captured before integration. `swept` records
+/// whether any live projectile makes the sweep observable this tick.
+struct CombatMotion {
+    swept: bool,
+    starts: HashMap<u64, pb::Vec2>,
+    clamped_moves: HashMap<u64, crate::combat::ClampedMove>,
+}
+
+/// Capture kinetic sweep inputs before integration mutates positions. Shared
+/// by the tick path and tests so a mid-tick spawn/removal cannot shift starts.
+fn begin_combat_motion(
+    state: &GameState,
+    content: Option<&ContentPack>,
+    dt: f32,
+    clamped_moves: &HashMap<u64, crate::combat::ClampedMove>,
+) -> CombatMotion {
+    let swept = dt > 0.0 && content.is_some()
+        && state.entities.iter().any(|entity| entity.projectile.is_some());
+    if !swept {
+        return CombatMotion { swept, starts: HashMap::new(), clamped_moves: HashMap::new() };
+    }
+    CombatMotion {
+        swept,
+        starts: combat_motion_starts(&state.entities, clamped_moves),
+        clamped_moves: clamped_moves.clone(),
+    }
+}
+
+/// Sweep, remove casualties, assign IDs, and append spawns after integration.
+/// Shared verbatim by the tick path and tests.
+fn finish_combat_motion(
+    state: &mut GameState,
+    content: Option<&ContentPack>,
+    combat: &mut CombatSystem,
+    motion: &CombatMotion,
+    dt: f32,
+    spawns: &mut Vec<pb::Entity>,
+    collector_ui_state: &mut HashMap<u64, CollectorUiState>,
+) -> KineticSweep {
+    if let Some(content) = content.filter(|_| motion.swept) {
+        advance_kinetic_motion(
+            state, content, combat, &motion.starts, &motion.clamped_moves, dt,
+            spawns, collector_ui_state,
+        )
+    } else {
+        assign_projectile_ids(state, spawns);
+        state.entities.append(spawns);
+        KineticSweep::default()
+    }
 }
 
 /// Attach the sweep's witness-scoped removal list to the published delta.
@@ -2454,10 +2528,11 @@ fn should_publish_delta(delta: &pb::Delta) -> bool {
         || !delta.kinetic_removals.is_empty()
 }
 
-/// The attacker is a destruction-event recipient only from an impact its
-/// sensors covered. Unwitnessed kills still notify the victim.
-fn destruction_event_attacker<'a>(attacker_owner: &'a str, attacker_saw_impact: bool) -> &'a str {
-    if attacker_saw_impact { attacker_owner } else { "" }
+/// The attacker is a destruction-event recipient only when it witnessed the
+/// destruction: either impact-time sensor coverage or tick-start visibility of
+/// the victim. Unwitnessed kills still notify the victim.
+fn destruction_event_attacker<'a>(attacker_owner: &'a str, attacker_witnessed_destruction: bool) -> &'a str {
+    if attacker_witnessed_destruction { attacker_owner } else { "" }
 }
 
 fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<String> {
@@ -2470,15 +2545,52 @@ fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<St
     recipients
 }
 
-/// Recipients of one destruction event. Impact-time and tick-start witnesses
-/// were merged by the sweep; only coverage of the impact admits the attacker.
+/// Recipients of one destruction event. Impact-time coverage is the precision
+/// layer; tick-start victim visibility is added by the sweep, and either
+/// admits the attacker.
 fn destruction_recipients(
     destruction: &crate::combat::CombatDestruction,
-    attacker_saw_impact: bool,
+    attacker_witnessed_destruction: bool,
 ) -> Vec<String> {
     let attacker_owner = destruction_event_attacker(
-        &destruction.attacker_owner_player_id, attacker_saw_impact);
+        &destruction.attacker_owner_player_id, attacker_witnessed_destruction);
     gameplay_event_recipients(&destruction.victim.owner_player_id, attacker_owner)
+}
+
+/// Build the gameplay event for one destruction. Shared by laser, kinetic, and
+/// radiation publication so attacker gating cannot diverge.
+fn combat_destruction_event(
+    server_tick: u64,
+    occurred_at_ms: i64,
+    destruction: &crate::combat::CombatDestruction,
+    attacker_witnessed_destruction: bool,
+) -> Option<GameplayEvent> {
+    let recipients = destruction_recipients(destruction, attacker_witnessed_destruction);
+    if recipients.is_empty() {
+        return None;
+    }
+    Some(GameplayEvent {
+        server_tick,
+        occurred_at_ms,
+        recipients,
+        kind: GameplayEventKind::EntityDestroyed {
+            victim: gameplay_entity_ref(&destruction.victim),
+            attacker: Some(GameplayEntityRef {
+                entity_id: destruction.attacker_id,
+                entity_type_id: destruction.attacker_entity_type_id.clone(),
+                owner_player_id: destruction.attacker_owner_player_id.clone(),
+            }),
+            cause: match destruction.cause {
+                AttackType::Laser => "laser".to_string(),
+                AttackType::Kinetic => "kinetic".to_string(),
+                AttackType::Dismantle => "dismantle".to_string(),
+            },
+            damage_amount: None,
+            missing_resource_types: None,
+            source_entity_id: None,
+            position: entity_position(&destruction.victim),
+        },
+    })
 }
 
 /// An `any` requirement reports one sufficient path rather than claiming that
@@ -4171,37 +4283,27 @@ impl Engine {
     /// Integrate hulls and existing projectiles over the same motion interval.
     /// Newly fired shots start advancing on the next tick.
     async fn advance_combat_motion(&mut self, dt: f32, mut spawns: Vec<pb::Entity>) -> Result<KineticSweep> {
-        let swept = dt > 0.0 && self.content.is_some()
-            && self.state.entities.iter().any(|entity| entity.projectile.is_some());
-        let clamped_moves = if swept {
-            self.intents.clamped_move_motions().clone()
-        } else {
-            HashMap::new()
-        };
-        // Clamped Move steps already snapped to their stop boundary before this
-        // point; sweep them from their pre-snap positions instead.
-        let starts = if swept {
-            combat_motion_starts(&self.state.entities, &clamped_moves)
-        } else {
-            HashMap::new()
-        };
+        let motion = begin_combat_motion(
+            &self.state,
+            self.content.as_ref(),
+            dt,
+            self.intents.clamped_move_motions(),
+        );
         integrate(&self.cfg, &mut self.state, dt);
         self.advance_convoys(dt).await?;
         self.intents.tick_sentries(&mut self.state, dt);
         self.cancel_invalid_escorts().await?;
         self.intents.tick_escorts(&mut self.state, dt);
 
-        let sweep = if let Some(content) = self.content.as_ref().filter(|_| swept) {
-            advance_kinetic_motion(
-                &mut self.state, content, &mut self.combat, &starts, &clamped_moves, dt,
-                &mut spawns, &mut self.collector_ui_state_by_entity,
-            )
-        } else {
-            assign_projectile_ids(&mut self.state, &mut spawns);
-            self.state.entities.append(&mut spawns);
-            KineticSweep::default()
-        };
-        Ok(sweep)
+        Ok(finish_combat_motion(
+            &mut self.state,
+            self.content.as_ref(),
+            &mut self.combat,
+            &motion,
+            dt,
+            &mut spawns,
+            &mut self.collector_ui_state_by_entity,
+        ))
     }
 
     /// Publish a completed kinetic sweep's destruction events, then cancel the
@@ -4645,40 +4747,22 @@ impl Engine {
 
     async fn emit_kinetic_destructions(&mut self, sweep: &KineticSweep) {
         for outcome in &sweep.destructions {
-            self.emit_combat_destruction(&outcome.destruction, outcome.attacker_saw_impact).await;
+            self.emit_combat_destruction(&outcome.destruction, outcome.attacker_witnessed_destruction).await;
         }
     }
 
     async fn emit_combat_destruction(
         &mut self,
         destruction: &crate::combat::CombatDestruction,
-        attacker_saw_impact: bool,
+        attacker_witnessed_destruction: bool,
     ) {
-        let recipients = destruction_recipients(destruction, attacker_saw_impact);
-        if recipients.is_empty() {
+        let Some(event) = combat_destruction_event(
+            self.state.tick,
+            unix_time_ms(),
+            destruction,
+            attacker_witnessed_destruction,
+        ) else {
             return;
-        }
-        let event = GameplayEvent {
-            server_tick: self.state.tick,
-            occurred_at_ms: unix_time_ms(),
-            recipients,
-            kind: GameplayEventKind::EntityDestroyed {
-                victim: gameplay_entity_ref(&destruction.victim),
-                attacker: Some(GameplayEntityRef {
-                    entity_id: destruction.attacker_id,
-                    entity_type_id: destruction.attacker_entity_type_id.clone(),
-                    owner_player_id: destruction.attacker_owner_player_id.clone(),
-                }),
-                cause: match destruction.cause {
-                    AttackType::Laser => "laser".to_string(),
-                    AttackType::Kinetic => "kinetic".to_string(),
-                    AttackType::Dismantle => "dismantle".to_string(),
-                },
-                damage_amount: None,
-                missing_resource_types: None,
-                source_entity_id: None,
-                position: entity_position(&destruction.victim),
-            },
         };
         if let Err(error) = self.redis.publish_gameplay_event(&event).await {
             warn!(
