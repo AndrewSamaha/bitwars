@@ -3651,7 +3651,7 @@ impl Engine {
         let Some(content) = self.content.as_ref() else {
             return NpcCommands::default();
         };
-        match self.raider_script.tick_with_spatial_index(
+        match self.raider_script.tick_with_spatial_index_reserving(
             &mut self.state.entities,
             content,
             self.state.tick,
@@ -3660,6 +3660,7 @@ impl Engine {
             self.cfg
                 .raider_ai_spatial_index_mode
                 .enabled_at(self.state.tick, self.cfg.tps),
+            state::max_unit_id(&self.prev_state.entities),
         ) {
             Ok(commands) => commands,
             Err(error) => {

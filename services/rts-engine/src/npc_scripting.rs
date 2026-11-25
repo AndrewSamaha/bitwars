@@ -146,7 +146,26 @@ impl RaiderScript {
         max_raiders: usize,
         spatial_index_enabled: bool,
     ) -> Result<NpcCommands> {
-        self.spawn_raider(entities, content, tick, ticks_per_second, max_raiders);
+        self.tick_with_spatial_index_reserving(
+            entities, content, tick, ticks_per_second, max_raiders, spatial_index_enabled, 0,
+        )
+    }
+
+    /// As [`Self::tick_with_spatial_index`], but keeps spawned raider IDs above
+    /// `reserved_max_id`. Callers reserve IDs that existed at the previous
+    /// published sample so a hull removed earlier in this tick is not reused
+    /// for a different hull during the projectile sweep.
+    pub fn tick_with_spatial_index_reserving(
+        &self,
+        entities: &mut Vec<Entity>,
+        content: &ContentPack,
+        tick: u64,
+        ticks_per_second: u32,
+        max_raiders: usize,
+        spatial_index_enabled: bool,
+        reserved_max_id: u64,
+    ) -> Result<NpcCommands> {
+        self.spawn_raider(entities, content, tick, ticks_per_second, max_raiders, reserved_max_id);
 
         let phase_started = Instant::now();
         let player_targets: Vec<ScriptTarget> = entities
@@ -442,6 +461,7 @@ impl RaiderScript {
         tick: u64,
         ticks_per_second: u32,
         max_raiders: usize,
+        reserved_max_id: u64,
     ) {
         let interval = SPAWN_INTERVAL_SECS.saturating_mul(u64::from(ticks_per_second.max(1)));
         if tick == 0
@@ -459,7 +479,7 @@ impl RaiderScript {
         {
             return;
         }
-        let id = crate::engine::state::max_unit_id(entities).saturating_add(1);
+        let id = crate::engine::state::max_unit_id(entities).max(reserved_max_id).saturating_add(1);
         let definition = content.get(RAIDER_TYPE).expect("raider type checked above");
         let health = definition.health.max(0.0);
         entities.push(Entity {
@@ -693,9 +713,23 @@ mod tests {
             .map(|id| entity(id, RAIDER_TYPE, RAIDERS_OWNER, 0.0, 0.0))
             .collect();
 
-        script.spawn_raider(&mut entities, &content, SPAWN_INTERVAL_SECS * 60, 60, 150);
+        script.spawn_raider(&mut entities, &content, SPAWN_INTERVAL_SECS * 60, 60, 150, 0);
 
         assert_eq!(entities.len(), 150);
+    }
+
+    #[test]
+    fn raider_spawn_reserves_ids_removed_earlier_in_the_tick() {
+        let content = ContentPack::load(Path::new("../../packages/content/entities.yaml")).unwrap();
+        let script = RaiderScript::new().unwrap();
+        let mut entities = vec![entity(2, RAIDER_TYPE, RAIDERS_OWNER, 0.0, 0.0)];
+
+        // Entity 9 died earlier this tick; its sweep interval position is no
+        // longer valid evidence for a new hull.
+        script.spawn_raider(&mut entities, &content, SPAWN_INTERVAL_SECS * 60, 60, 150, 9);
+
+        assert!(entities.iter().any(|entity| entity.id == 10));
+        assert!(!entities.iter().any(|entity| entity.id == 9));
     }
 
     #[test]
