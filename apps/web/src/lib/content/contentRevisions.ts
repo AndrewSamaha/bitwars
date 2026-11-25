@@ -12,7 +12,7 @@ export const CONTENT_REVISION_ROOT = path.join(CONTENT_ROOT, ".revisions");
 
 export type EntityRevision = { definition_hash: string; asset_hash: string | null; files: Record<string, string> };
 export type ContentManifest = {
-  format_version: 1;
+  format_version: 2;
   definitions: { entity_types: Record<string, unknown>; resource_types: Record<string, unknown>; technologies: Record<string, unknown> };
   entities: Record<string, EntityRevision>;
 };
@@ -110,7 +110,7 @@ async function capture(contentRoot: string, fallbackRoot?: string): Promise<Capt
     };
     bundles.set(id, bytes);
   }
-  return { manifest: { format_version: 1, definitions, entities }, bundles };
+  return { manifest: { format_version: 2, definitions, entities }, bundles };
 }
 
 async function assertStoredDirectory(directory: string, expected: Record<string, Buffer>) {

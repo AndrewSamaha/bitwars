@@ -32,6 +32,7 @@ describe("canonical authored content revisions", () => {
 
   it("is deterministic across YAML formatting and excludes generated/candidate images", async () => {
     const first = await stageContentRevision({ contentRoot: root });
+    expect(first.manifest.format_version).toBe(2);
     await writeFile(path.join(root, "entities.yaml"), "# formatting only\ntechnologies: {}\nresource_types: { minerals: {display_name: Minerals} }\nentity_types: { worker: {speed: 2, health: 100} }\n");
     await mkdir(path.join(root, "art-candidates/worker"), { recursive: true });
     await writeFile(path.join(root, "art-candidates/worker/candidate-1.png"), "candidate");

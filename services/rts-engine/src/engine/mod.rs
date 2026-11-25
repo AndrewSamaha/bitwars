@@ -1709,6 +1709,11 @@ mod kinetic_engine_tests {
         assert_eq!(death.destruction.attacker_id, 1);
         assert_eq!(death.destruction.cause, AttackType::Kinetic);
         assert!(death.attacker_saw_impact, "the attacker's sensor covers the impact");
+        assert_eq!(
+            destruction_recipients(&death.destruction, death.attacker_saw_impact),
+            vec!["bob".to_string(), "alice".to_string()],
+            "a witnessed impact delivers the kill event to the attacker",
+        );
 
         let victim_removal = outcome.removals.iter().find(|removal| removal.entity_id == 2).unwrap();
         assert_eq!(victim_removal.witness_player_ids, vec!["alice".to_string(), "bob".to_string()]);
@@ -1720,7 +1725,9 @@ mod kinetic_engine_tests {
             &HashMap::new(), &HashMap::new(), &HashMap::new(), &HashMap::new(),
             0.0, 0.0, &HashMap::new(), &HashSet::new(),
         );
-        apply_kinetic_removals(&mut delta, outcome.removals);
+        // Production helper used by the tick path; the test never assigns the
+        // witness list itself.
+        apply_kinetic_sweep(&mut delta, outcome);
         let published = delta.kinetic_removals.iter().find(|removal| removal.entity_id == 2)
             .expect("the published delta carries the kinetic victim removal");
         assert_eq!(published.witness_player_ids, vec!["alice".to_string(), "bob".to_string()]);
@@ -1752,20 +1759,29 @@ mod kinetic_engine_tests {
         assert_eq!(outcome.dead, vec![2]);
         assert!(!outcome.destructions[0].attacker_saw_impact,
             "an uncovered attacker does not receive the kill event");
+        assert_eq!(
+            destruction_recipients(&outcome.destructions[0].destruction, false),
+            vec!["bob".to_string()],
+            "only the victim owner receives an unwitnessed destruction",
+        );
         let victim_removal = outcome.removals.iter().find(|removal| removal.entity_id == 2).unwrap();
         assert!(!victim_removal.witness_player_ids.contains(&"alice".to_string()));
     }
 
     #[test]
     fn destruction_event_recipients_include_the_attacker_only_when_witnessed() {
-        assert_eq!(
-            gameplay_event_recipients("bob", destruction_event_attacker("alice", true)),
-            vec!["bob".to_string(), "alice".to_string()],
-        );
-        assert_eq!(
-            gameplay_event_recipients("bob", destruction_event_attacker("alice", false)),
-            vec!["bob".to_string()],
-        );
+        let destruction = crate::combat::CombatDestruction {
+            victim: entity(2, "worker", "bob", 0.0, 0.0, 10.0),
+            attacker_id: 1,
+            attacker_entity_type_id: "kinetic_fighter".into(),
+            attacker_owner_player_id: "alice".into(),
+            cause: AttackType::Kinetic,
+            impact: None,
+        };
+        assert_eq!(destruction_recipients(&destruction, true),
+            vec!["bob".to_string(), "alice".to_string()]);
+        assert_eq!(destruction_recipients(&destruction, false),
+            vec!["bob".to_string()]);
     }
 
     #[test]
@@ -1775,15 +1791,21 @@ mod kinetic_engine_tests {
             .sensor.as_mut().unwrap().range = 10.0;
         content.entity_types.get_mut("worker").unwrap().visibility_range = Some(1_000.0);
         let mut combat = CombatSystem::default();
+        let victim_start = 900.0_f64;
+        let hull_radius = f64::from(content.get("worker").unwrap().hull_radius);
+        let shot_speed = 1_600.0_f64;
+        // Solve for the hull speed that places the interpolated impact two
+        // units outside the 1,000-unit max(sensor range, visibility range).
+        let expected_impact = 1_002.0_f64;
+        let offset = expected_impact - victim_start;
+        let hull_speed = shot_speed * offset / (victim_start - hull_radius + offset);
         let mut state = state(vec![
             entity(1, "kinetic_fighter", "alice", 0.0, 0.0, 80.0),
-            entity(2, "worker", "bob", 900.0, 0.0, 10.0),
+            entity(2, "worker", "bob", victim_start as f32, 0.0, 10.0),
         ]);
+        state.entities[1].vel = Some(Vec2 { x: hull_speed as f32, y: 0.0 });
         crate::engine::discovery::observe(&mut state, &content);
         assert!(crate::engine::discovery::prior_visibility_witnesses(&state, 2).contains("alice"));
-        // The hull outruns the shot; the impact lands beyond the 1,000-unit
-        // combined visibility range even though tick-start visibility covered it.
-        state.entities[1].vel = Some(Vec2 { x: 500.0, y: 0.0 });
         let projectile_type = *content.projectile_entity_type_ids().iter().next().unwrap();
         state.entities.push(live_shot(projectile_type, 9, 1, "alice", 12.0, 0.0, 0.0));
         let cfg = GameConfig { friction: 0.0, ..Default::default() };
@@ -1797,16 +1819,26 @@ mod kinetic_engine_tests {
 
         assert_eq!(outcome.dead, vec![2]);
         let impact = outcome.destructions[0].destruction.impact.unwrap();
-        assert!((impact.position.0 - 1_000.0) > 0.0,
-            "impact point is outside max(sensor range, visibility range)");
+        let distance = impact.position.0.hypot(impact.position.1);
+        assert!((distance - expected_impact).abs() < 1.0,
+            "impact point lands just outside max(sensor range, visibility range), got {distance}");
+        assert!(distance > 1_000.0);
         let sensors = discovery::ImpactSensors::new(&state, &content, &starts, &HashMap::new());
         assert!(!sensors.witnesses(impact, 1_000.0).contains("alice"),
             "impact-time coverage alone does not reach the impact");
+        assert!(!sensors.witnesses(impact, (distance - 0.75) as f32).contains("alice"),
+            "a witness radius inside the impact distance excludes the attacker");
+        assert!(sensors.witnesses(impact, (distance + 0.75) as f32).contains("alice"),
+            "a witness radius outside the impact distance includes the attacker");
         drop(sensors);
         let victim_removal = outcome.removals.iter().find(|removal| removal.entity_id == 2).unwrap();
         assert!(victim_removal.witness_player_ids.contains(&"alice".to_string()),
             "prior visibility is added to impact-time witnesses");
         assert!(outcome.destructions[0].attacker_saw_impact);
+        assert!(destruction_recipients(
+            &outcome.destructions[0].destruction,
+            outcome.destructions[0].attacker_saw_impact,
+        ).contains(&"alice".to_string()), "the covered attacker still receives the destruction event");
     }
 
     #[test]
@@ -2399,6 +2431,12 @@ fn apply_kinetic_removals(delta: &mut pb::Delta, removals: Vec<pb::KineticRemova
     delta.kinetic_removals = removals;
 }
 
+/// Attach a completed kinetic sweep to the published delta. Shared verbatim by
+/// the tick path and its tests so a dropped or reordered removal list fails.
+fn apply_kinetic_sweep(delta: &mut pb::Delta, sweep: KineticSweep) {
+    apply_kinetic_removals(delta, sweep.removals);
+}
+
 /// A removal-only delta is still an authoritative state change. Keep all
 /// other no-op delta suppression intact.
 fn should_publish_delta(delta: &pb::Delta) -> bool {
@@ -2430,6 +2468,17 @@ fn gameplay_event_recipients(victim_owner: &str, attacker_owner: &str) -> Vec<St
         }
     }
     recipients
+}
+
+/// Recipients of one destruction event. Impact-time and tick-start witnesses
+/// were merged by the sweep; only coverage of the impact admits the attacker.
+fn destruction_recipients(
+    destruction: &crate::combat::CombatDestruction,
+    attacker_saw_impact: bool,
+) -> Vec<String> {
+    let attacker_owner = destruction_event_attacker(
+        &destruction.attacker_owner_player_id, attacker_saw_impact);
+    gameplay_event_recipients(&destruction.victim.owner_player_id, attacker_owner)
 }
 
 /// An `any` requirement reports one sufficient path rather than claiming that
@@ -4121,7 +4170,7 @@ impl Engine {
 
     /// Integrate hulls and existing projectiles over the same motion interval.
     /// Newly fired shots start advancing on the next tick.
-    async fn advance_combat_motion(&mut self, dt: f32, mut spawns: Vec<pb::Entity>) -> Result<Vec<pb::KineticRemoval>> {
+    async fn advance_combat_motion(&mut self, dt: f32, mut spawns: Vec<pb::Entity>) -> Result<KineticSweep> {
         let swept = dt > 0.0 && self.content.is_some()
             && self.state.entities.iter().any(|entity| entity.projectile.is_some());
         let clamped_moves = if swept {
@@ -4152,13 +4201,17 @@ impl Engine {
             self.state.entities.append(&mut spawns);
             KineticSweep::default()
         };
-        for outcome in sweep.destructions {
-            self.emit_combat_destruction(&outcome.destruction, outcome.attacker_saw_impact).await;
-        }
+        Ok(sweep)
+    }
+
+    /// Publish a completed kinetic sweep's destruction events, then cancel the
+    /// intents of its casualties. The tick path calls this immediately after
+    /// `advance_combat_motion` so event ordering is unchanged.
+    async fn finish_kinetic_sweep(&mut self, sweep: &KineticSweep) {
+        self.emit_kinetic_destructions(sweep).await;
         if !sweep.dead.is_empty() {
             self.cancel_destroyed_intents(&sweep.dead).await;
         }
-        Ok(sweep.removals)
     }
 
     fn update_combat_effect_states(&mut self, dismantling: &[crate::combat::Dismantling]) {
@@ -4590,14 +4643,18 @@ impl Engine {
         }
     }
 
+    async fn emit_kinetic_destructions(&mut self, sweep: &KineticSweep) {
+        for outcome in &sweep.destructions {
+            self.emit_combat_destruction(&outcome.destruction, outcome.attacker_saw_impact).await;
+        }
+    }
+
     async fn emit_combat_destruction(
         &mut self,
         destruction: &crate::combat::CombatDestruction,
         attacker_saw_impact: bool,
     ) {
-        let attacker_owner = destruction_event_attacker(
-            &destruction.attacker_owner_player_id, attacker_saw_impact);
-        let recipients = gameplay_event_recipients(&destruction.victim.owner_player_id, attacker_owner);
+        let recipients = destruction_recipients(destruction, attacker_saw_impact);
         if recipients.is_empty() {
             return;
         }
@@ -5557,7 +5614,8 @@ impl Engine {
         let starvation_damage = self.maintain_depot_operations(dt).await;
         self.advance_builds(dt).await;
         self.advance_research(dt).await;
-        let kinetic_removals = self.advance_combat_motion(dt, combat.projectile_spawns).await?;
+        let kinetic_sweep = self.advance_combat_motion(dt, combat.projectile_spawns).await?;
+        self.finish_kinetic_sweep(&kinetic_sweep).await;
         let radiation_source_by_victim = self.apply_radiation_damage(dt);
         let radiation_damaged_entities: HashSet<u64> = radiation_source_by_victim.keys().copied().collect();
         let radiation_victims: Vec<pb::Entity> = self
@@ -5599,7 +5657,7 @@ impl Engine {
             &starvation_damage,
             &radiation_damaged_entities,
         );
-        apply_kinetic_removals(&mut delta, kinetic_removals);
+        apply_kinetic_sweep(&mut delta, kinetic_sweep);
         self.intents.append_move_order_changes(&mut delta);
         self.intents.append_sentry_changes(&mut delta);
         self.intents.append_escort_changes(&mut delta);
@@ -5859,7 +5917,8 @@ impl Engine {
                 "economy",
                 &mut phase_started,
             );
-            let kinetic_removals = self.advance_combat_motion(dt, combat.projectile_spawns).await?;
+            let kinetic_sweep = self.advance_combat_motion(dt, combat.projectile_spawns).await?;
+            self.finish_kinetic_sweep(&kinetic_sweep).await;
             record_tick_phase(
                 phase_durations.as_mut(),
                 raider_ai_spatial_index_enabled,
@@ -5920,7 +5979,7 @@ impl Engine {
                 &starvation_damage,
                 &radiation_damaged_entities,
             );
-            apply_kinetic_removals(&mut delta, kinetic_removals);
+            apply_kinetic_sweep(&mut delta, kinetic_sweep);
             self.intents.append_move_order_changes(&mut delta);
             self.intents.append_sentry_changes(&mut delta);
             self.intents.append_escort_changes(&mut delta);

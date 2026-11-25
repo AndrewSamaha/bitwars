@@ -685,11 +685,11 @@ fn first_projectile_contact(
 }
 
 /// Grid candidate rectangle padding. A hull that contacts the shot sits within
-/// `hull_radius` of the shot path, so its start is at most a Euclidean
-/// displacement away. The per-axis (L∞) bound was already sufficient for
-/// inclusion; the Euclidean form is kept as an explicit safety margin.
-fn candidate_pad(max_radius: f64, max_displacement: f64) -> f64 {
-    max_radius + max_displacement
+/// `hull_radius` of the shot path, so its per-axis start offset is at most the
+/// corresponding displacement. The per-axis (L∞) bound was already sufficient
+/// for inclusion; the Euclidean length is kept as an explicit safety margin.
+fn candidate_pad(max_radius: f64, max_dx: f64, max_dy: f64) -> f64 {
+    max_radius + max_dx.hypot(max_dy)
 }
 
 /// Resolve existing shots against the same movement interval as the hulls.
@@ -706,7 +706,7 @@ pub(crate) fn advance_projectiles(
     let mut targets = Vec::new();
     let mut grid = SpatialIndex::new();
     let mut max_radius = 0.0_f64;
-    let mut max_displacement = 0.0_f64;
+    let mut max_displacement = (0.0_f64, 0.0_f64);
     for (index, entity) in entities.iter().enumerate() {
         let Some(start) = starts.get(&entity.id).copied() else { continue; };
         let Some(end) = entity.pos else { continue; };
@@ -719,7 +719,8 @@ pub(crate) fn advance_projectiles(
         let radius = f64::from(def.hull_radius.max(0.0));
         max_radius = max_radius.max(radius);
         let (dx, dy) = path.move_delta;
-        max_displacement = max_displacement.max(dx.hypot(dy));
+        max_displacement.0 = max_displacement.0.max(dx.abs());
+        max_displacement.1 = max_displacement.1.max(dy.abs());
         grid.insert(targets.len(), path.start.0 as f32, path.start.1 as f32);
         targets.push(MovingTarget { entity_index: index, path, radius });
     }
@@ -763,7 +764,7 @@ pub(crate) fn advance_projectiles(
         };
         // Index hull start points. Full-tick displacement keeps hulls that
         // enter the projectile rectangle during the clipped interval eligible.
-        let pad = candidate_pad(max_radius, max_displacement);
+        let pad = candidate_pad(max_radius, max_displacement.0, max_displacement.1);
         let hit = if limit == 0.0 {
             None
         } else if travel + 2.0 * pad <= f64::from(CELL_SIZE) {
@@ -1127,38 +1128,39 @@ mod tests {
         let target = entity(2, "worker", "enemy", 40.0, 10.0);
         let removed = entity(3, "worker", "enemy", 500.0, 10.0);
         // Positions were captured from the tick-start world. Entity 3 is then
-        // removed and entity 99 spawns before the sweep, shifting every index.
+        // removed and entity 99 spawns on the shot path before the sweep,
+        // shifting every index. A start-less spawn must not be swept.
         let starts = HashMap::from([
             (2, target.pos.unwrap()),
             (3, removed.pos.unwrap()),
         ]);
-        let spawned = entity(99, "worker", "enemy", 1_000.0, 10.0);
+        let spawned = entity(99, "worker", "enemy", 60.0, 10.0);
         let mut entities = [test_shot(0.0, 0.0, 80.0), spawned, target];
 
         let outcome = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
 
         assert_eq!(outcome.destructions.len(), 1);
         assert_eq!(outcome.destructions[0].victim.id, 2, "the swept hull stays aligned with its own start");
-        assert_eq!(entities[1].health, 10.0, "a mid-tick spawn without a tick-start position is not swept");
+        assert_eq!(entities[1].health, 10.0, "a mid-tick spawn on the shot path without a tick-start position is not swept");
         assert_eq!(entities[2].health, 0.0);
     }
 
     #[test]
     fn candidate_pad_uses_euclidean_displacement() {
-        let (dx, dy) = (-160.0_f64, -200.0_f64);
-        let pad = candidate_pad(10.0, dx.hypot(dy));
-        assert_eq!(pad, 10.0 + (160.0_f64 * 160.0 + 200.0 * 200.0).sqrt());
-        assert!(pad > 10.0 + dx.abs().max(dy.abs()),
-            "the Euclidean bound is stricter than the old per-axis pad");
+        let pad = candidate_pad(10.0, -160.0, -200.0);
+        assert_eq!(pad, 10.0 + 160.0_f64.hypot(200.0));
+        assert!(pad > 10.0 + 200.0_f64,
+            "a per-axis L∞ pad would be 210; the Euclidean bound is 266.2");
     }
 
     #[test]
-    fn diagonal_hull_displacement_finds_a_crossing_on_the_grid_fast_path() {
+    fn diagonal_hull_displacement_hits_on_the_grid_fast_path() {
         let mut pack = content();
         pack.entity_types.get_mut("worker").unwrap().hull_radius = 10.0;
         // Plain hit detection on the grid fast path. Candidate inclusion also
-        // held under the old per-axis pad; only `candidate_pad` distinguishes
-        // the two bounds.
+        // held under the former per-axis pad, so this test does not distinguish
+        // the two bounds; `candidate_pad_uses_euclidean_displacement` pins the
+        // formula instead.
         let mut target = entity(2, "worker", "enemy", -40.0, 10.0);
         target.pos = Some(Vec2 { x: -40.0, y: -100.0 });
         let start = Vec2 { x: 120.0, y: 100.0 };

@@ -700,10 +700,10 @@ struct ContentFile {
     technologies: HashMap<String, TechnologyDef>,
 }
 
-/// Pre-v2 manifests and accepted payloads predate authored
-/// `projectile.entity_type_id`; they all used the engine's former hardcoded
-/// projectile type. Inject it before deserialization so pinned revisions stay
-/// loadable. Authored content must still provide the field.
+/// Pre-v2 retained manifests predate authored `projectile.entity_type_id`;
+/// they all used the engine's former hardcoded projectile type. Inject it before
+/// deserializing a pinned v1 revision so it stays loadable. Authored content
+/// must provide the field itself and fails validation otherwise.
 pub(crate) fn migrate_legacy_projectile_ids(
     definitions: &mut serde_json::Value,
 ) -> Result<()> {
@@ -753,9 +753,9 @@ impl ContentPack {
     }
 
     /// Validate authored definitions without normalizing the immutable manifest.
-    pub fn from_definitions(mut definitions: serde_json::Value) -> Result<Self> {
-        migrate_legacy_projectile_ids(&mut definitions)?;
-        let file: ContentFile = serde_json::from_value(definitions)?;
+    pub fn from_definitions(definitions: serde_json::Value) -> Result<Self> {
+        let file: ContentFile = serde_json::from_value(definitions)
+            .context("invalid content definitions")?;
 
         validate_resource_content(&file.entity_types, &file.resource_types)?;
         validate_upgrades(&file.entity_types)?;
@@ -1708,7 +1708,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_definitions_without_projectile_entity_type_migrate_on_load() {
+    fn authored_kinetic_content_requires_projectile_entity_type() {
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let yaml = std::fs::read_to_string(manifest_dir.join("../../packages/content/entities.yaml")).unwrap();
         let mut definitions: serde_json::Value = serde_yaml::from_str(&yaml).unwrap();
@@ -1719,9 +1719,8 @@ mod tests {
                 attack["projectile"].as_object_mut().unwrap().remove("entity_type_id");
             }
         }
-        let pack = ContentPack::from_definitions(definitions).unwrap();
-        let kinetic = pack.get("kinetic_fighter").unwrap().combat.as_ref().unwrap()
-            .attacks.iter().find(|attack| attack.attack_type == AttackType::Kinetic).unwrap();
-        assert_eq!(kinetic.projectile.as_ref().unwrap().entity_type_id, "kinetic_projectile");
+        let error = ContentPack::from_definitions(definitions).unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("entity_type_id"), "unexpected error: {message}");
     }
 }
