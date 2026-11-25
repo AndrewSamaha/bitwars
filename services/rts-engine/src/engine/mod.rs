@@ -3739,7 +3739,7 @@ impl Engine {
                 &mut self.state.entities, starts, &clamped_moves, content, dt,
             );
             if !outcome.terminations.is_empty() {
-                let sensors = discovery::ImpactSensors::new(&self.state, content, starts);
+                let sensors = discovery::ImpactSensors::new(&self.state, content, starts, &clamped_moves);
                 removals = outcome.terminations.into_iter().map(|(entity_id, impact)| {
                     pb::KineticRemoval {
                         entity_id,

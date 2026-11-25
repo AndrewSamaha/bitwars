@@ -552,16 +552,30 @@ fn project_position((x, y): (f64, f64)) -> Vec2 {
 pub(crate) struct Motion {
     pub(crate) start: Vec2,
     pub(crate) end: Vec2,
+    stop_fraction: f64,
 }
 
 impl Motion {
+    pub(crate) fn linear(start: Vec2, end: Vec2) -> Self {
+        Self { start, end, stop_fraction: 1.0 }
+    }
+
+    pub(crate) fn clamped(start: Vec2, end: Vec2, fraction: f64) -> Self {
+        Self { start, end, stop_fraction: fraction.clamp(0.0, 1.0) }
+    }
+
     fn displacement(self) -> (f64, f64) {
         (f64::from(self.end.x) - f64::from(self.start.x), f64::from(self.end.y) - f64::from(self.start.y))
     }
 
     pub(crate) fn at(self, fraction: f64) -> (f64, f64) {
         let (dx, dy) = self.displacement();
-        (f64::from(self.start.x) + dx * fraction, f64::from(self.start.y) + dy * fraction)
+        let scale = if self.stop_fraction > 0.0 {
+            (fraction / self.stop_fraction).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        (f64::from(self.start.x) + dx * scale, f64::from(self.start.y) + dy * scale)
     }
 }
 
