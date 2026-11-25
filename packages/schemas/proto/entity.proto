@@ -23,6 +23,9 @@ message ProjectileState {
   string attacker_owner_player_id = 3;
   float damage = 4;
   double remaining_distance = 5;
+  // Authoritative coordinates; Entity.pos is the rounded client projection.
+  optional double precise_x = 6;
+  optional double precise_y = 7;
 }
 
 message ResourceDeposit {

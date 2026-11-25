@@ -20,7 +20,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file delta.proto.
  */
 export const file_delta: GenFile = /*@__PURE__*/
-  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyLsBAoFRGVsdGESQAoYcGxheWVyX2tub3dsZWRnZV91cGRhdGVzGAwgAygLMh4uYml0d2Fycy5QbGF5ZXJLbm93bGVkZ2VVcGRhdGUSDAoEdGljaxgBIAEoBBIlCgd1cGRhdGVzGAIgAygLMhQuYml0d2Fycy5FbnRpdHlEZWx0YRIaChJyZW1vdmVkX2VudGl0eV9pZHMYAyADKAQSOAoXY29sbGVjdG9yX3N0YXRlX3VwZGF0ZXMYBCADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEj8KG2NvbWJhdF9lZmZlY3Rfc3RhdGVfdXBkYXRlcxgFIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGUSMwoSbW92ZV9vcmRlcl91cGRhdGVzGAYgAygLMhcuYml0d2Fycy5Nb3ZlT3JkZXJTdGF0ZRI2ChNtb3ZlX29yZGVyX3JlbW92YWxzGAcgAygLMhkuYml0d2Fycy5Nb3ZlT3JkZXJSZW1vdmFsEjcKFHNlbnRyeV9vcmRlcl91cGRhdGVzGAggAygLMhkuYml0d2Fycy5TZW50cnlPcmRlclN0YXRlEjoKFXNlbnRyeV9vcmRlcl9yZW1vdmFscxgJIAMoCzIbLmJpdHdhcnMuU2VudHJ5T3JkZXJSZW1vdmFsEjcKFGVzY29ydF9vcmRlcl91cGRhdGVzGAogAygLMhkuYml0d2Fycy5Fc2NvcnRPcmRlclN0YXRlEjoKFWVzY29ydF9vcmRlcl9yZW1vdmFscxgLIAMoCzIbLmJpdHdhcnMuRXNjb3J0T3JkZXJSZW1vdmFsYgZwcm90bzM", [file_entity_delta, file_navigation, file_collector_state, file_combat_effect_state, file_player_knowledge]);
+  fileDesc("CgtkZWx0YS5wcm90bxIHYml0d2FycyKfBQoFRGVsdGESQAoYcGxheWVyX2tub3dsZWRnZV91cGRhdGVzGAwgAygLMh4uYml0d2Fycy5QbGF5ZXJLbm93bGVkZ2VVcGRhdGUSDAoEdGljaxgBIAEoBBIlCgd1cGRhdGVzGAIgAygLMhQuYml0d2Fycy5FbnRpdHlEZWx0YRIaChJyZW1vdmVkX2VudGl0eV9pZHMYAyADKAQSOAoXY29sbGVjdG9yX3N0YXRlX3VwZGF0ZXMYBCADKAsyFy5iaXR3YXJzLkNvbGxlY3RvclN0YXRlEj8KG2NvbWJhdF9lZmZlY3Rfc3RhdGVfdXBkYXRlcxgFIAMoCzIaLmJpdHdhcnMuQ29tYmF0RWZmZWN0U3RhdGUSMwoSbW92ZV9vcmRlcl91cGRhdGVzGAYgAygLMhcuYml0d2Fycy5Nb3ZlT3JkZXJTdGF0ZRI2ChNtb3ZlX29yZGVyX3JlbW92YWxzGAcgAygLMhkuYml0d2Fycy5Nb3ZlT3JkZXJSZW1vdmFsEjcKFHNlbnRyeV9vcmRlcl91cGRhdGVzGAggAygLMhkuYml0d2Fycy5TZW50cnlPcmRlclN0YXRlEjoKFXNlbnRyeV9vcmRlcl9yZW1vdmFscxgJIAMoCzIbLmJpdHdhcnMuU2VudHJ5T3JkZXJSZW1vdmFsEjcKFGVzY29ydF9vcmRlcl91cGRhdGVzGAogAygLMhkuYml0d2Fycy5Fc2NvcnRPcmRlclN0YXRlEjoKFWVzY29ydF9vcmRlcl9yZW1vdmFscxgLIAMoCzIbLmJpdHdhcnMuRXNjb3J0T3JkZXJSZW1vdmFsEjEKEGtpbmV0aWNfcmVtb3ZhbHMYDSADKAsyFy5iaXR3YXJzLktpbmV0aWNSZW1vdmFsIj8KDktpbmV0aWNSZW1vdmFsEhEKCWVudGl0eV9pZBgBIAEoBBIaChJ3aXRuZXNzX3BsYXllcl9pZHMYAiADKAliBnByb3RvMw", [file_entity_delta, file_navigation, file_collector_state, file_combat_effect_state, file_player_knowledge]);
 
 /**
  * @generated from message bitwars.Delta
@@ -87,6 +87,13 @@ export type Delta = Message<"bitwars.Delta"> & {
    * @generated from field: repeated bitwars.EscortOrderRemoval escort_order_removals = 11;
    */
   escortOrderRemovals: EscortOrderRemoval[];
+
+  /**
+   * Server-side witnesses of kinetic kills and projectile terminations.
+   *
+   * @generated from field: repeated bitwars.KineticRemoval kinetic_removals = 13;
+   */
+  kineticRemovals: KineticRemoval[];
 };
 
 /**
@@ -95,4 +102,26 @@ export type Delta = Message<"bitwars.Delta"> & {
  */
 export const DeltaSchema: GenMessage<Delta> = /*@__PURE__*/
   messageDesc(file_delta, 0);
+
+/**
+ * @generated from message bitwars.KineticRemoval
+ */
+export type KineticRemoval = Message<"bitwars.KineticRemoval"> & {
+  /**
+   * @generated from field: uint64 entity_id = 1;
+   */
+  entityId: bigint;
+
+  /**
+   * @generated from field: repeated string witness_player_ids = 2;
+   */
+  witnessPlayerIds: string[];
+};
+
+/**
+ * Describes the message bitwars.KineticRemoval.
+ * Use `create(KineticRemovalSchema)` to create a new message.
+ */
+export const KineticRemovalSchema: GenMessage<KineticRemoval> = /*@__PURE__*/
+  messageDesc(file_delta, 1);
 

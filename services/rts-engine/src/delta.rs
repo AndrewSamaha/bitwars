@@ -164,6 +164,7 @@ pub fn compute_delta(
     combat_effect_state_updates.sort_by_key(|state| state.entity_id);
     Delta {
         player_knowledge_updates: Vec::new(),
+        kinetic_removals: Vec::new(),
         sentry_order_updates: Vec::new(),
         sentry_order_removals: Vec::new(),
         escort_order_updates: Vec::new(),

@@ -49,6 +49,11 @@ pub struct ProjectileState {
     pub damage: f32,
     #[prost(double, tag = "5")]
     pub remaining_distance: f64,
+    /// Authoritative coordinates; Entity.pos is the rounded client projection.
+    #[prost(double, optional, tag = "6")]
+    pub precise_x: ::core::option::Option<f64>,
+    #[prost(double, optional, tag = "7")]
+    pub precise_y: ::core::option::Option<f64>,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct ResourceDeposit {
@@ -405,6 +410,16 @@ pub struct Delta {
     pub escort_order_updates: ::prost::alloc::vec::Vec<EscortOrderState>,
     #[prost(message, repeated, tag = "11")]
     pub escort_order_removals: ::prost::alloc::vec::Vec<EscortOrderRemoval>,
+    /// Server-side witnesses of kinetic kills and projectile terminations.
+    #[prost(message, repeated, tag = "13")]
+    pub kinetic_removals: ::prost::alloc::vec::Vec<KineticRemoval>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct KineticRemoval {
+    #[prost(uint64, tag = "1")]
+    pub entity_id: u64,
+    #[prost(string, repeated, tag = "2")]
+    pub witness_player_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Represents an in-flight destination for an entity (server-side).
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
