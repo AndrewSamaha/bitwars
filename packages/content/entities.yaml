@@ -643,17 +643,17 @@ entity_types:
       energy: 55
       minerals: 90
     combat:
-      acquisition_range: 1600
+      acquisition_range: 12000
       attacks:
         - cooldown_ticks: 30
-          damage: 12
+          damage: 100
           id: kinetic
-          range: 900
-          type: kinetic
           projectile:
             entity_type_id: kinetic_projectile
+            max_travel_distance: 10000
             speed: 1600
-            max_travel_distance: 1400
+          range: 12000
+          type: kinetic
       on_near_enemy_strategy: approach
     combat_targetable: true
     fog_memory: forget_when_hidden
@@ -677,6 +677,8 @@ entity_types:
     speed: 0
     stop_radius: 0
     suppress_hover: true
+    visual:
+      scale: 1
     z_index: 10
   battleship:
     build_cost:

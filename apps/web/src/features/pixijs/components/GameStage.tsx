@@ -384,6 +384,7 @@ export default function GameStage() {
           if (!entity) return;
           despawnExplosions.explode(entity);
         };
+        window.addEventListener(ENTITY_EXPLODED_EVENT, onEntityExploded);
 
         const renderRadiationRanges = () => {
           radiationRangeGraphics.clear();
