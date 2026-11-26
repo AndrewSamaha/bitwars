@@ -151,14 +151,16 @@ export const ENTITY_CONTENT = [
     "builds": [],
     "upgrades": [],
     "visual": {},
-    "definition": "build_cost:\n  energy: 55\n  minerals: 90\ncombat:\n  acquisition_range: 1600\n  attacks:\n    - cooldown_ticks: 30\n      damage: 12\n      id: kinetic\n      range: 900\n      type: kinetic\n      projectile:\n        entity_type_id: kinetic_projectile\n        speed: 1600\n        max_travel_distance: 1400\n  on_near_enemy_strategy: approach\ncombat_targetable: true\nfog_memory: forget_when_hidden\nhealth: 80\nhull_radius: 65\nmaintenance_cost_per_minute:\n  energy: 2.5\n  food: 1\nmass: 0.65\nmax_capacity:\n  energy: 150\n  food: 60\nsensor:\n  range: 1600\nspeed: 360\nstop_radius: 0.5"
+    "definition": "build_cost:\n  energy: 55\n  minerals: 90\ncombat:\n  acquisition_range: 12000\n  attacks:\n    - cooldown_ticks: 30\n      damage: 100\n      id: kinetic\n      projectile:\n        entity_type_id: kinetic_projectile\n        max_travel_distance: 10000\n        speed: 1600\n      range: 12000\n      type: kinetic\n  on_near_enemy_strategy: approach\ncombat_targetable: true\nfog_memory: forget_when_hidden\nhealth: 80\nhull_radius: 65\nmaintenance_cost_per_minute:\n  energy: 2.5\n  food: 1\nmass: 0.65\nmax_capacity:\n  energy: 150\n  food: 60\nsensor:\n  range: 1600\nspeed: 360\nstop_radius: 0.5"
   },
   {
     "id": "kinetic_projectile",
     "builds": [],
     "upgrades": [],
-    "visual": {},
-    "definition": "fog_memory: forget_when_hidden\nhealth: 1\nmass: 1\nspeed: 0\nstop_radius: 0\nsuppress_hover: true\nz_index: 10"
+    "visual": {
+      "scale": 1
+    },
+    "definition": "fog_memory: forget_when_hidden\nhealth: 1\nmass: 1\nspeed: 0\nstop_radius: 0\nsuppress_hover: true\nvisual:\n  scale: 1\nz_index: 10"
   },
   {
     "id": "battleship",
