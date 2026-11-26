@@ -24,7 +24,7 @@ export type EntityTypeDef = {
       cooldown_ticks: number;
       priority?: number;
       contact_tolerance?: number;
-      projectile?: { entity_type_id: string; speed: number; max_travel_distance: number };
+      projectile?: { entity_type_id: string; speed: number; max_travel_distance: number; error_radians?: number };
     }>;
   };
   /** Client-only sprite presentation settings. */

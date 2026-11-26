@@ -334,6 +334,11 @@ pub struct ProjectileDef {
     /// Maximum distance from the muzzle in world units, independent of firing range.
     #[schemars(extend("exclusiveMinimum" = 0))]
     pub max_travel_distance: f32,
+    /// Maximum aim deviation in radians, sampled uniformly from
+    /// `[-error_radians, +error_radians]` for each shot. Defaults to 0.
+    #[serde(default)]
+    #[schemars(extend("minimum" = 0))]
+    pub error_radians: f32,
 }
 
 /// Deserialize a retained manifest that predates `entity_type_id` without
@@ -352,12 +357,15 @@ impl<'de> Deserialize<'de> for ProjectileDef {
             entity_type_id: String,
             speed: f32,
             max_travel_distance: f32,
+            #[serde(default)]
+            error_radians: f32,
         }
         let raw = RawProjectileDef::deserialize(deserializer)?;
         Ok(Self {
             entity_type_id: raw.entity_type_id,
             speed: raw.speed,
             max_travel_distance: raw.max_travel_distance,
+            error_radians: raw.error_radians,
         })
     }
 }
@@ -1168,8 +1176,9 @@ fn validate_gameplay_content(
                             !projectile.entity_type_id.is_empty()
                                 && entities.contains_key(&projectile.entity_type_id)
                                 && [attack.range, attack.damage, projectile.speed, projectile.max_travel_distance]
-                                    .iter().all(|value| value.is_finite() && *value > 0.0),
-                            "entity {id}: kinetic weapon {} requires positive range, damage, projectile speed, travel distance and a defined projectile entity_type_id",
+                                    .iter().all(|value| value.is_finite() && *value > 0.0)
+                                && projectile.error_radians.is_finite() && projectile.error_radians >= 0.0,
+                            "entity {id}: kinetic weapon {} requires positive range, damage, projectile speed, travel distance, a defined projectile entity_type_id, and non-negative finite aim error",
                             attack.id,
                         );
                     }
@@ -1763,6 +1772,31 @@ mod tests {
         let error = validate_gameplay_content(&split, &pack.resource_types, &pack.technologies)
             .unwrap_err().to_string();
         assert!(error.contains("one projectile entity_type_id"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn kinetic_aim_error_must_be_finite_and_non_negative() {
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let pack =
+            ContentPack::load(&manifest_dir.join("../../packages/content/entities.yaml")).unwrap();
+        let mut types = pack.entity_types.clone();
+        let attack_index = types.get("kinetic_fighter").unwrap().combat.as_ref().unwrap()
+            .attacks.iter().position(|attack| attack.attack_type == AttackType::Kinetic).unwrap();
+        for invalid in [-0.001, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            types.get_mut("kinetic_fighter").unwrap().combat.as_mut().unwrap()
+                .attacks[attack_index].projectile.as_mut().unwrap().error_radians = invalid;
+            let error = validate_gameplay_content(&types, &pack.resource_types, &pack.technologies)
+                .unwrap_err().to_string();
+            assert!(error.contains("aim error"), "unexpected error: {error}");
+        }
+        types.get_mut("kinetic_fighter").unwrap().combat.as_mut().unwrap()
+            .attacks[attack_index].projectile.as_mut().unwrap().error_radians = 0.25;
+        assert!(validate_gameplay_content(&types, &pack.resource_types, &pack.technologies).is_ok());
+
+        let legacy: ProjectileDef = serde_yaml::from_str(
+            "entity_type_id: shot\nspeed: 1\nmax_travel_distance: 1\n",
+        ).unwrap();
+        assert_eq!(legacy.error_radians, 0.0, "retained manifests default to no spread");
     }
 
     #[test]
