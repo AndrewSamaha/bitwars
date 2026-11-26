@@ -101,6 +101,25 @@ struct DamageContribution {
     largest_hit: f32,
 }
 
+/// Deterministic per-shot aim deviation in `[-1, 1)`.
+///
+/// Hashing the tick, combatants, and weapon ID keeps spread replayable after a
+/// checkpoint restore without persisting generator state.
+fn shot_aim_error(attacker_id: u64, target_id: u64, tick: u64, attack_id: &str) -> f64 {
+    let mut seed = attacker_id
+        .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        ^ tick.rotate_left(32)
+        ^ target_id.rotate_left(17);
+    for byte in attack_id.bytes() {
+        seed = (seed ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let mut z = seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^= z >> 31;
+    ((z >> 11) as f64) * (1.0 / ((1_u64 << 53) as f64)) * 2.0 - 1.0
+}
+
 impl CombatSystem {
     /// Drives entities with combat profiles and returns entity IDs that died
     /// this tick. Target ties are intentionally resolved by entity ID.
@@ -384,6 +403,15 @@ impl CombatSystem {
                             (f64::from(dx) / distance, f64::from(dy) / distance)
                         } else {
                             (1.0, 0.0)
+                        };
+                        let error_radians = f64::from(projectile.error_radians);
+                        let (ux, uy) = if error_radians > 0.0 {
+                            let (sin, cos) = (shot_aim_error(
+                                attacker.id, target.id, tick, &attack.id,
+                            ) * error_radians).sin_cos();
+                            (ux * cos - uy * sin, ux * sin + uy * cos)
+                        } else {
+                            (ux, uy)
                         };
                         projectile_spawns.push(Entity {
                             entity_type_id: projectile.entity_type_id.clone(),
@@ -941,7 +969,8 @@ mod tests {
 
     use super::*;
     use crate::content::{
-        AttackDef, AttackType, CombatDef, EntityTypeDef, NearEnemyStrategy, VisualDef,
+        AttackDef, AttackType, CombatDef, EntityTypeDef, NearEnemyStrategy, ProjectileDef,
+        VisualDef,
     };
     use crate::spawn_config::RAIDERS_OWNER;
 
@@ -1272,6 +1301,44 @@ mod tests {
             vec![2]
         );
         assert_eq!(entities[1].health, 0.0);
+    }
+
+    #[test]
+    fn kinetic_aim_error_is_bounded_deterministic_and_zero_aims_straight() {
+        let fire = |error_radians: f32, tick: u64| {
+            let mut pack = content();
+            let raider = pack.entity_types.get_mut("raider").unwrap();
+            raider.combat.as_mut().unwrap().attacks = vec![AttackDef {
+                id: "kinetic".into(),
+                attack_type: AttackType::Kinetic,
+                range: 100.0,
+                damage: 100.0,
+                cooldown_ticks: 10,
+                priority: 0,
+                contact_tolerance: 0.0,
+                projectile: Some(ProjectileDef {
+                    entity_type_id: "shot".into(),
+                    speed: 100.0,
+                    max_travel_distance: 100.0,
+                    error_radians,
+                }),
+            }];
+            let mut entities = vec![
+                entity(1, "raider", RAIDERS_OWNER, 0.0, 20.0),
+                entity(2, "worker", "player", 50.0, 12.0),
+            ];
+            let fired = CombatSystem::default().tick(&mut entities, &pack, tick, 1.0);
+            assert_eq!(fired.projectile_spawns.len(), 1);
+            fired.projectile_spawns[0].vel.unwrap()
+        };
+
+        assert_eq!(fire(0.0, 7), Vec2 { x: 100.0, y: 0.0 });
+        let first = fire(0.25, 7);
+        assert_eq!(fire(0.25, 7), first, "the same shot replays identically");
+        let angle = f64::from(first.y).atan2(f64::from(first.x));
+        assert!(angle != 0.0 && angle.abs() <= 0.25,
+            "deviation stays inside the authored bound, got {angle}");
+        assert_ne!(fire(0.25, 8), first, "a later shot samples a new deviation");
     }
 
     fn advance_combat(

@@ -595,6 +595,13 @@
           "description": "Entity type spawned for each shot. Must name a defined entity type and\nis the single authored source for the projectile type ID.",
           "type": "string"
         },
+        "error_radians": {
+          "description": "Maximum aim deviation in radians, sampled uniformly from\n`[-error_radians, +error_radians]` for each shot. Defaults to 0.",
+          "type": "number",
+          "format": "float",
+          "default": 0.0,
+          "minimum": 0
+        },
         "max_travel_distance": {
           "description": "Maximum distance from the muzzle in world units, independent of firing range.",
           "type": "number",

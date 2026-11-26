@@ -652,6 +652,7 @@ entity_types:
             entity_type_id: kinetic_projectile
             max_travel_distance: 10000
             speed: 1600
+            error_radians: 0.005
           range: 12000
           type: kinetic
       on_near_enemy_strategy: approach
