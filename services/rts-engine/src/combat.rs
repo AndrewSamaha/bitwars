@@ -82,6 +82,35 @@ pub(crate) struct ProjectileTick {
     pub(crate) destructions: Vec<CombatDestruction>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ShotEnd {
+    Contact(u64),
+    Range,
+    Wall,
+}
+
+/// Symmetric closed rectangle, optionally inset by a hull radius.
+#[derive(Clone, Copy)]
+pub(crate) struct CombatRect {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+}
+
+impl CombatRect {
+    pub(crate) fn exit(self, (x, y): (f64, f64), (dx, dy): (f64, f64)) -> f64 {
+        fn axis(half: f64, position: f64, delta: f64) -> f64 {
+            if delta > 0.0 {
+                ((half - position) / delta).max(0.0)
+            } else if delta < 0.0 {
+                ((-half - position) / delta).max(0.0)
+            } else {
+                f64::INFINITY
+            }
+        }
+        axis(self.x, x, dx).min(axis(self.y, y, dy))
+    }
+}
+
 /// A Move step clamped to its stop boundary before the rest of the tick.
 /// `fraction` is the share of the tick spent covering the segment; the hull is
 /// stationary at `stop` for the remainder.
@@ -752,6 +781,33 @@ pub(crate) fn advance_projectiles(
     content: &ContentPack,
     dt: f32,
 ) -> ProjectileTick {
+    sweep_projectiles::<false>(
+        entities, starts, clamped_moves, content, dt, CombatRect { x: 0.0, y: 0.0 },
+        |_, _, _| {},
+    )
+}
+
+pub(crate) fn advance_bounded_projectiles(
+    entities: &mut [Entity],
+    starts: &HashMap<u64, Vec2>,
+    clamped_moves: &HashMap<u64, ClampedMove>,
+    content: &ContentPack,
+    dt: f32,
+    arena: CombatRect,
+    on_end: impl FnMut(u64, Impact, ShotEnd),
+) -> ProjectileTick {
+    sweep_projectiles::<true>(entities, starts, clamped_moves, content, dt, arena, on_end)
+}
+
+fn sweep_projectiles<const BOUNDED: bool>(
+    entities: &mut [Entity],
+    starts: &HashMap<u64, Vec2>,
+    clamped_moves: &HashMap<u64, ClampedMove>,
+    content: &ContentPack,
+    dt: f32,
+    arena: CombatRect,
+    mut on_end: impl FnMut(u64, Impact, ShotEnd),
+) -> ProjectileTick {
     let mut targets = Vec::new();
     let mut grid = SpatialIndex::new();
     let mut max_radius = 0.0_f64;
@@ -793,6 +849,13 @@ pub(crate) fn advance_projectiles(
         } else {
             0.0
         };
+        let wall = if BOUNDED {
+            arena.exit((x, y), (vx * f64::from(dt), vy * f64::from(dt)))
+        } else {
+            f64::INFINITY
+        };
+        let wall_first = BOUNDED && wall <= limit;
+        let limit = if wall_first { wall } else { limit };
         let (dx, dy) = if limit > 0.0 {
             let elapsed = f64::from(dt) * limit;
             (vx * elapsed, vy * elapsed)
@@ -844,14 +907,23 @@ pub(crate) fn advance_projectiles(
             })
         } else if limit == 0.0 {
             Some(Impact { fraction: 0.0, position: (x, y) })
-        } else if travel >= flight.remaining_distance {
+        } else if wall_first || travel >= flight.remaining_distance {
             Some(Impact { fraction: limit, position: (end_x, end_y) })
         } else {
             None
         };
         let shot = &mut entities[index];
         if let Some(impact) = terminal {
-            terminations.push((shot.id, impact));
+            if BOUNDED {
+                let reason = match hit {
+                    Some((_, victim_id, _, _)) => ShotEnd::Contact(victim_id),
+                    None if wall_first => ShotEnd::Wall,
+                    None => ShotEnd::Range,
+                };
+                on_end(shot.id, impact, reason);
+            } else {
+                terminations.push((shot.id, impact));
+            }
             shot.health = 0.0;
         } else {
             let flight = shot.projectile.as_mut().unwrap();
@@ -1090,6 +1162,37 @@ mod tests {
         let expired = advance_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0);
         assert_eq!(entities[1].health, 10.0);
         assert_eq!(expired.terminations[0].1.position, (20.0, f64::from(shot_y)));
+    }
+
+    #[test]
+    fn bounded_sweep_accepts_contact_at_the_wall_but_nothing_past_it() {
+        let mut pack = content();
+        pack.entity_types.get_mut("worker").unwrap().hull_radius = 8.0;
+        let wall = CombatRect { x: 40.0, y: 40.0 };
+        for (origin, target_x, expected) in [
+            (0.0, 48.0, "contact"), (0.0, 49.0, "wall"), (40.0, 48.0, "wall"),
+        ] {
+            let target = entity(2, "worker", "enemy", target_x, 20.0);
+            let starts = HashMap::from([(2, target.pos.unwrap())]);
+            let mut entities = [test_shot(origin, 0.0, 80.0), target];
+            let mut end = None;
+            let swept = advance_bounded_projectiles(&mut entities, &starts, &HashMap::new(), &pack, 1.0, wall,
+                |_, impact, reason| end = Some((impact, reason)));
+            let (impact, cause) = end.unwrap();
+            assert_eq!(impact.position, (40.0, 0.0));
+            assert_eq!(impact.fraction, if origin == 40.0 { 0.0 } else { 0.5 });
+            assert!(swept.destructions.is_empty());
+            match expected {
+                "contact" => {
+                    assert!(matches!(cause, ShotEnd::Contact(2)));
+                    assert_eq!(entities[1].health, 8.0);
+                }
+                _ => {
+                    assert!(matches!(cause, ShotEnd::Wall));
+                    assert_eq!(entities[1].health, 20.0);
+                }
+            }
+        }
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { readImmutableContentAsset } from "@/lib/content/contentRevisions";
+import { readImmutableContentAsset } from "@/lib/content/contentRevisionFiles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

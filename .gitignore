@@ -49,6 +49,7 @@ coverage/
 /packages/content/art-candidates/
 /packages/content/mask-candidates/
 /packages/content/.revisions/
+/packages/content/.battle-revisions/
 
 # debug
 npm-debug.log*

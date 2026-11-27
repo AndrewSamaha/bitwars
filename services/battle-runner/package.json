@@ -1,0 +1,8 @@
+{
+  "name": "@bitwars/battle-runner",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "cd ../rts-engine && exec cargo run -p rts-engine --bin battle_runner"
+  }
+}

@@ -1,3 +1,4 @@
+pub mod battle;
 pub mod combat;
 pub mod config;
 pub mod content;
