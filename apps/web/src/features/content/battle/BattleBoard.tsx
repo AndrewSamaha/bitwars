@@ -112,7 +112,8 @@ export default function BattleBoard({ draft, units, selected, tools, replay }: {
     {replay?.effects.map(event => {
       if (event.kind === "laser") return <line key={event.key} x1={event.from[0]} y1={event.from[1]} x2={event.to[0]} y2={event.to[1]}
         stroke="#f472b6" strokeWidth={2} vectorEffect="non-scaling-stroke" />;
-      if (event.kind === "launch") return <circle key={event.key} cx={event.x} cy={event.y} r={marker * 0.38} fill="none" stroke="#fb923c" vectorEffect="non-scaling-stroke" />;
+      if (event.kind === "launch") return <circle key={event.key} className="motion-reduce:hidden" cx={event.x} cy={event.y}
+        r={marker * 0.38} fill="none" stroke="#fb923c" vectorEffect="non-scaling-stroke" />;
       if (event.kind === "casualty") return <path key={event.key} transform={`translate(${event.x} ${event.y})`}
         d={`M ${-marker} ${-marker} L ${marker} ${marker} M ${marker} ${-marker} L ${-marker} ${marker}`}
         stroke="#fca5a5" strokeWidth={2} vectorEffect="non-scaling-stroke" />;

@@ -9,9 +9,10 @@ const BUTTON = "rounded border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm
 const OUTCOMES = { a: "Team A wins", b: "Team B wins", draw: "Draw — both teams eliminated", tick_limit: "Tick limit — no winner. Review acquisition ranges and starting distance." };
 
 function replayAt(frames: Frame[], tick: number, tps: number): BoardReplay {
-  const index = Math.floor(tick);
-  const alpha = tick - index;
+  const index = Math.min(frames.length - 1, Math.max(0, Math.floor(tick)));
+  const alpha = Math.min(1, Math.max(0, tick - index));
   const current = frames[index];
+  if (!current) return { hulls: [], shots: [], effects: [] };
   const next = frames[index + 1];
   const effects: BoardReplay["effects"] = [];
   // Rebuild effects from the timeline every time, including backward seeks.
@@ -34,11 +35,20 @@ function replayAt(frames: Frame[], tick: number, tps: number): BoardReplay {
     if (e.kind === "shot_end") ends.set(e.shot, e);
   }
   const hulls = new Map(next.hulls.map(h => [h[0], h]));
+  const motion = new Map(next.hull_motion?.map(([id, start, stop, fraction]) => [id, { start, stop, fraction }]));
   const shots = new Map(next.shots.map(s => [s[0], s]));
   const presentation: BoardReplay = { effects, hulls: [], shots: [] };
   for (const [id, x, y, hp] of current.hulls) {
     const end = deaths.get(id);
     if (end && alpha >= end.fraction) continue;
+    const path = motion.get(id);
+    if (path) {
+      const scale = path.fraction > 0 ? Math.min(alpha / path.fraction, 1) : 1;
+      const [sx, sy] = path.start;
+      const [ex, ey] = path.stop;
+      presentation.hulls.push([id, sx + (ex - sx) * scale, sy + (ey - sy) * scale, hp]);
+      continue;
+    }
     const p = hulls.get(id);
     const scale = alpha / (end?.fraction ?? 1);
     presentation.hulls.push([id, x + ((end?.x ?? p?.[1] ?? x) - x) * scale, y + ((end?.y ?? p?.[2] ?? y) - y) * scale, hp]);
@@ -64,9 +74,11 @@ export default function BattleReplay({ draft, units, ready, frames }: { draft: D
     let last = performance.now();
     let request: number;
     function animate(now: number) {
-      const elapsed = Math.min(100, now - last);
+      // The first animation frame can carry a timestamp earlier than the
+      // effect's setup time; never step the cursor backward below tick 0.
+      const elapsed = Math.min(100, Math.max(0, now - last));
       last = now;
-      setCursor(tick => Math.min(ready.last_tick, tick + elapsed * ready.tps * speed / 1000));
+      setCursor(tick => Math.min(ready.last_tick, Math.max(0, tick + elapsed * ready.tps * speed / 1000)));
       request = requestAnimationFrame(animate);
     }
     request = requestAnimationFrame(animate);
@@ -75,8 +87,8 @@ export default function BattleReplay({ draft, units, ready, frames }: { draft: D
 
   const presentation = replayAt(frames, cursor, ready.tps);
   const living = new Map(presentation.hulls.map(h => [h[0], h[3]]));
-  const tick = Math.floor(cursor);
-  const exactEvents = frames[tick].events;
+  const tick = Math.min(frames.length - 1, Math.max(0, Math.floor(cursor)));
+  const exactEvents = frames[tick]?.events ?? [];
   return <section className="space-y-3">
     <p role="status" className="rounded bg-slate-900 px-3 py-2 font-medium">Replay ready · {OUTCOMES[ready.outcome]}</p>
     <div className="flex flex-wrap items-center gap-3">

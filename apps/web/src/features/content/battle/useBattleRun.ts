@@ -8,7 +8,13 @@ export type ReplayEvent =
   | { kind: "launch"; shot: number; attacker: number; x: number; y: number; vx: number; vy: number }
   | { kind: "shot_end"; shot: number; reason: "contact" | "range" | "wall"; target: number | null; x: number; y: number; fraction: number }
   | { kind: "casualty"; victim: number; attacker: number; cause: "laser" | "kinetic" | "dismantle"; x: number; y: number; fraction: number };
-export type Frame = { tick: number; hulls: [id: number, x: number, y: number, health: number][]; shots: [id: number, x: number, y: number][]; events: ReplayEvent[] };
+export type Frame = {
+  tick: number;
+  hulls: [id: number, x: number, y: number, health: number][];
+  shots: [id: number, x: number, y: number][];
+  hull_motion?: [id: number, start: [number, number], stop: [number, number], fraction: number][];
+  events: ReplayEvent[];
+};
 export type Ready = { status: "ready"; run_id: string; tps: number; last_tick: number; outcome: "a" | "b" | "draw" | "tick_limit"; page_count: number };
 type Status = Ready | { status: "pending"; run_id: string } | { status: "rejected" | "failed"; run_id: string; code: string; message: string };
 type RunView = { kind: "edit" } | { kind: "submitting" }

@@ -30,12 +30,18 @@ enum Event {
     Casualty { victim: u64, attacker: u64, cause: AttackType, x: f32, y: f32, fraction: f64 },
 }
 
+/// (Hull ID, post-pursuit start, integrated stop, moving fraction).
+#[derive(Serialize)]
+struct HullMotion(u64, [f32; 2], [f32; 2], f64);
+
 #[derive(Serialize)]
 struct Frame<'a> {
     tick: u32,
     // Small numeric IDs never encode the reserved high bit on the wire.
     hulls: Vec<(u64, f32, f32, f32)>,
     shots: Vec<(u64, f32, f32)>,
+    #[serde(skip_serializing_if = "<[HullMotion]>::is_empty")]
+    hull_motion: &'a [HullMotion],
     events: &'a [Event],
 }
 
@@ -65,8 +71,8 @@ impl Capture {
         self.frames = 0;
     }
 
-    fn push(&mut self, tick: u32, entities: &[Entity], events: &[Event]) -> Result<()> {
-        let mut frame = Frame { tick, hulls: Vec::new(), shots: Vec::new(), events };
+    fn push(&mut self, tick: u32, entities: &[Entity], events: &[Event], hull_motion: &[HullMotion]) -> Result<()> {
+        let mut frame = Frame { tick, hulls: Vec::new(), shots: Vec::new(), hull_motion, events };
         for e in entities {
             let p = e.pos.unwrap_or_default();
             if e.projectile.is_some() {
@@ -129,10 +135,10 @@ fn casualty(death: CombatDestruction) -> Event {
 pub(super) fn simulate(pack: &ContentPack, bounds: Bounds, entities: Vec<Entity>, cfg: &GameConfig) -> Result<Replay> {
     let mut capture = Capture::default();
     let mut battle = Battle::new(pack, bounds, entities, cfg);
-    capture.push(0, &battle.entities, &[])?;
+    capture.push(0, &battle.entities, &[], &[])?;
     for tick in 1..=MAX_TICKS {
         battle.step(tick)?;
-        capture.push(tick, &battle.entities, &battle.events)?;
+        capture.push(tick, &battle.entities, &battle.events, &battle.hull_motion)?;
         if let Some(outcome) = battle.outcome() {
             return Ok(capture.finish(cfg.tps, tick, outcome));
         }
@@ -151,6 +157,7 @@ pub(crate) struct Battle<'a> {
     pub(crate) entities: Vec<Entity>,
     starts: HashMap<u64, Vec2>,
     clamped: HashMap<u64, ClampedMove>,
+    hull_motion: Vec<HullMotion>,
     events: Vec<Event>,
 }
 
@@ -163,7 +170,7 @@ impl<'a> Battle<'a> {
             hull_bounds[entity.id as usize - 1] = inset(arena, radius);
         }
         Self { pack, arena, hull_bounds, dt: 1.0 / cfg.tps as f32, friction: cfg.friction, combat: CombatSystem::default(),
-            sequence: 0, entities, starts: HashMap::new(), clamped: HashMap::new(), events: Vec::new() }
+            sequence: 0, entities, starts: HashMap::new(), clamped: HashMap::new(), hull_motion: Vec::new(), events: Vec::new() }
     }
 
     #[cfg(test)]
@@ -175,6 +182,7 @@ impl<'a> Battle<'a> {
         self.events.clear();
         self.starts.clear();
         self.clamped.clear();
+        self.hull_motion.clear();
         let mut before = [Vec2::default(); MAX_UNITS];
         for e in self.entities.iter().take_while(|e| e.projectile.is_none()) {
             before[e.id as usize - 1] = e.pos.unwrap();
@@ -200,8 +208,19 @@ impl<'a> Battle<'a> {
         }
         crate::physics::integrate_entities(self.friction, &mut self.entities, self.dt);
         for e in self.entities.iter_mut().take_while(|e| e.projectile.is_none()) {
-            if let Some(clamped) = contain(e, self.starts[&e.id], self.hull_bounds[e.id as usize - 1]) {
+            let i = e.id as usize - 1;
+            let start = self.starts[&e.id];
+            let mut fraction = 1.0;
+            if let Some(clamped) = contain(e, start, self.hull_bounds[i]) {
+                fraction = clamped.fraction;
                 self.clamped.insert(e.id, clamped);
+            }
+            // Record before the sweep, which can replace a casualty's pose with
+            // its impact position. Ordinary paths use the two frame poses; a
+            // hull already pinned at the wall needs no repeated override.
+            let stop = e.pos.unwrap();
+            if (fraction < 1.0 && start != stop) || start != before[i] {
+                self.hull_motion.push(HullMotion(e.id, [start.x, start.y], [stop.x, stop.y], fraction));
             }
         }
         let hulls = self.starts.len();
@@ -316,6 +335,49 @@ mod tests {
         assert_eq!(clamped.fraction, 0.5);
         assert_eq!(clamped.stop, Vec2 { x: 40.0, y: 10.0 });
         assert_eq!(entity.vel, Some(Vec2::default()));
+    }
+
+    #[test]
+    fn replay_records_the_wall_stop_before_a_nonlethal_kinetic_hit() {
+        let mut pack = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        pack.entity_types.get_mut("fighter_v1").unwrap().combat.as_mut().unwrap().on_near_enemy_strategy =
+            crate::content::NearEnemyStrategy::Flee;
+        pack.entity_types.get_mut("kinetic_fighter").unwrap().combat.as_mut().unwrap()
+            .attacks[0].projectile.as_mut().unwrap().error_radians = 0.0;
+        let entities = vec![
+            unit(1, "kinetic_fighter", Team::A, 18.0, 80.0),
+            unit(2, "fighter_v1", Team::B, 137.0, 200.0),
+        ];
+        let cfg = GameConfig { tps: 37, ..GameConfig::default() };
+        let replay = simulate(&pack, Bounds { width: 500.0, height: 500.0 }, entities, &cfg).unwrap();
+        let frames: serde_json::Value = serde_json::from_slice(&replay.pages[0]).unwrap();
+        assert!(frames[1].get("hull_motion").is_none()); // Full-step movement.
+        let frame = &frames[2];
+        let motion = &frame["hull_motion"][0];
+        let stop_fraction = motion[3].as_f64().unwrap();
+        assert_eq!(motion[0], 2);
+        assert_eq!(motion[1][0], frames[1]["hulls"][1][1]);
+        assert_eq!(motion[2][0].as_f64(), Some(150.0));
+        let contact = frame["events"].as_array().unwrap().iter().find(|e| e["reason"] == "contact").unwrap();
+        assert!(stop_fraction > 0.0 && stop_fraction < contact["fraction"].as_f64().unwrap());
+        assert!((contact["x"].as_f64().unwrap() - 50.0).abs() < 1e-6);
+        assert_eq!(contact["target"], 2);
+        assert_eq!(frame["hulls"][1][3].as_f64(), Some(100.0));
+    }
+
+    #[test]
+    fn replay_records_a_pursuit_snap_before_integration() {
+        let pack = ContentPack::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packages/content/entities.yaml")).unwrap();
+        let entities = vec![
+            unit(1, "fighter_v1", Team::A, 0.0, 60.0),
+            unit(2, "fighter_v1", Team::B, 305.0, 60.0),
+        ];
+        let replay = simulate(&pack, Bounds { width: 1_000.0, height: 500.0 }, entities, &GameConfig::default()).unwrap();
+        let frames: serde_json::Value = serde_json::from_slice(&replay.pages[0]).unwrap();
+        assert_eq!(frames[0]["hulls"][0][1].as_f64(), Some(0.0));
+        assert_eq!(frames[1]["hull_motion"][0], serde_json::json!([1, [5.0, 0.0], [5.0, 0.0], 1.0]));
     }
 
     #[test]

@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 export default function BattleUnlock({ origin }: { origin: string }) {
   const router = useRouter();
+  const keyInput = useRef<HTMLInputElement>(null);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  useEffect(() => setReady(true), []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    const key = new FormData(form).get("battleKey");
-    if (typeof key !== "string" || !key) return;
+    const key = keyInput.current?.value;
+    if (!ready || submitting || !key) return;
     setSubmitting(true);
     setError("");
     try {
@@ -26,13 +29,13 @@ export default function BattleUnlock({ origin }: { origin: string }) {
     }
   }
 
-  return <form className="mx-auto max-w-lg space-y-4 rounded border border-slate-700 bg-slate-900 p-6" onSubmit={submit}>
+  return <form method="post" action="/api/content/battle/session" className="mx-auto max-w-lg space-y-4 rounded border border-slate-700 bg-slate-900 p-6" onSubmit={submit}>
     <h1 className="text-xl font-semibold">Unlock Battle Sandbox</h1>
     <p className="text-sm text-slate-300">Use your local BATTLE_DEV_KEY at {origin}. A player login does not grant access.</p>
     <label className="block text-sm">Developer key
-      <input name="battleKey" type="password" required maxLength={4096} autoComplete="off" className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 p-2" />
+      <input ref={keyInput} type="password" disabled={!ready || submitting} required maxLength={4096} autoComplete="off" className="mt-1 block w-full rounded border border-slate-600 bg-slate-950 p-2" />
     </label>
     {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-    <button disabled={submitting} className="rounded bg-cyan-800 px-4 py-2 disabled:opacity-60">{submitting ? "Unlocking…" : "Unlock Battle"}</button>
+    <button disabled={!ready || submitting} className="rounded bg-cyan-800 px-4 py-2 disabled:opacity-60">{submitting ? "Unlocking…" : "Unlock Battle"}</button>
   </form>;
 }

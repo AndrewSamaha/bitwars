@@ -42,6 +42,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Set maximum energy storage to 200 for all three defense pylon types.
 
 ### Fixed
+- The battle developer-unlock form now uses an explicit POST with an unnamed, hydration-gated password field, so native or pre-hydration submission cannot place `BATTLE_DEV_KEY` in the URL, browser history, or access logs.
+- The shared engine `load_env` now loads `services/rts-engine/.env` before the cwd-relative and root `.env`, and the battle runner pins its working directory to the engine package. A service-local `GAME_TPS`/friction override takes the same precedence for live and sandbox outcomes regardless of launch directory.
+- Battle replay frames now record pursuit-snap and wall-clamped hull motion as `[id, start, stop, fraction]`; playback moves to the stop at that fraction and holds it, keeping nonlethal contact markers aligned with the authoritative stationary hull after a wall stop. Playback also clamps the cursor to the available frame range, fixing a runtime crash when the first animation frame preceded the effect start.
+- The battle replay's decorative launch flash now honors `prefers-reduced-motion: reduce` while shot positions, contact/expiry/casualty markers, and the event log remain.
 - Releasing Shift after a queued Move or Sentry destination no longer exits destination mode; successive Shift-clicks can extend the same route.
 - Stopped collection routing from repeatedly replacing an active Collect intent with an identical waypoint plan when depot capacity or nearby geometry changes.
 - Workers that partially unload at a hub now replan once on entering `waiting_for_dropoff` and deliver their remaining cargo to a linked depot with more room, even if hub spending keeps a tiny amount of capacity open.

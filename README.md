@@ -39,7 +39,13 @@ pnpm dev --filter=bitwars --filter=@bitwars/battle-runner
 
 Use the same local OS user for Next and the runner. They use a private Unix
 socket scoped to the worktree, not a network listener. Go enqueues a separate
-in-memory simulation; it does not launch a process or alter live state.
+in-memory simulation; it does not launch a process or alter live state. The
+runner pins its working directory to `services/rts-engine` for workspace and
+socket discovery and shares the live engine's `load_env`, which loads
+`services/rts-engine/.env` before the root `.env`. `GAME_TPS` and friction
+therefore match production regardless of launch directory. Cooldowns are
+tick-based: a sandbox TPS mismatch would change outcomes, not just playback
+speed.
 
 Save setup stores at most 20 names and 768 KiB in this browser. Each setup pins
 its exact SHA-256 revision in `packages/content/.battle-revisions/`; saving
@@ -60,7 +66,9 @@ replay and 32 MiB retained overall (64 run records, up to 15 minutes after
 completion). Replay pages are at most 256 KiB and 64 frames. Playback starts
 after the runner finishes; tick limit gives no winner. Reset restores the
 exact pre-Go draft. Runs/replays expire independently of saved setups.
-See the [battle sandbox contract](docs/battle-sandbox.md).
+See the [battle sandbox contract](docs/battle-sandbox.md), including the
+observed integration run covering save/reload, stale-response fencing, access,
+capacity, wall-stop replay, and reduced motion.
 
 ## Other Scripts
 - `pnpm game:reset` -- clear game state and player db

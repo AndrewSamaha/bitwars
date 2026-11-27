@@ -283,15 +283,16 @@ fn listen(workspace: &Path) -> Result<(PrivateSocket, UnixListener)> {
     Ok((guard, listener))
 }
 
-/// Run from the workspace root. The private socket is worktree-scoped.
+/// Run from the engine package directory, like the live engine dev task.
+/// The private socket is worktree-scoped.
 pub async fn run() -> Result<()> {
     if !std::env::var("BATTLE_DEV_KEY").is_ok_and(|key| key.len() >= 32) {
         eprintln!("Battle runner disabled: set BATTLE_DEV_KEY (at least 32 bytes).");
         return Ok(());
     }
-    let workspace = std::env::current_dir()?.canonicalize()?;
+    let workspace = std::env::current_dir()?.join("../..").canonicalize()?;
     let root = workspace.join("packages/content/.battle-revisions");
-    ensure!(root.parent().unwrap().join("entities.yaml").is_file(), "Start the battle runner from the workspace root.");
+    ensure!(root.parent().unwrap().join("entities.yaml").is_file(), "Start the battle runner from services/rts-engine.");
     let (_socket, listener) = listen(&workspace)?;
     let runner = Arc::new(Runner { root, config: GameConfig::from_env(), jobs: Arc::new(Semaphore::new(2)),
         catalog: Arc::new(Semaphore::new(1)), records: Mutex::new(Registry::default()) });
