@@ -49,11 +49,15 @@ pub fn apply_random_forces(
 }
 
 pub fn integrate(cfg: &GameConfig, state: &mut GameState, dt: f32) {
-    for e in &mut state.entities {
+    integrate_entities(cfg.friction, &mut state.entities, dt);
+}
+
+pub(crate) fn integrate_entities(friction: f32, entities: &mut [crate::pb::Entity], dt: f32) {
+    for e in entities {
         if e.projectile.is_some() { continue; } // Combat integrates ballistic flight.
         let pos = e.pos.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
         let vel = e.vel.get_or_insert(Vec2 { x: 0.0, y: 0.0 });
-        let damped = v_exp_damp(vel, cfg.friction, dt);
+        let damped = v_exp_damp(vel, friction, dt);
         *e.vel.as_mut().unwrap() = damped;
         *pos = v_add(pos, &v_scale(&damped, dt));
     }

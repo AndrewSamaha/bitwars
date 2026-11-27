@@ -186,8 +186,28 @@ impl Revision {
     }
 
     pub fn load(root: &Path, revision: &str) -> Result<Self> {
+        Self::load_with(root, revision, |path, _| Ok(std::fs::read(path)?))
+    }
+
+    pub(crate) fn load_bounded(root: &Path, revision: &str, manifest: usize, asset: usize, assets: usize) -> Result<Self> {
+        use std::io::Read;
+        let mut remaining = assets;
+        Self::load_with(root, revision, |path, is_asset| {
+            let limit = if is_asset { asset.min(remaining) } else { manifest };
+            let metadata = std::fs::metadata(path)?;
+            anyhow::ensure!(metadata.is_file(), "not a regular revision file: {}", path.display());
+            anyhow::ensure!(metadata.len() <= limit as u64, "revision byte limit exceeded at {}", path.display());
+            let mut bytes = Vec::with_capacity(metadata.len() as usize);
+            std::fs::File::open(path)?.take(limit as u64 + 1).read_to_end(&mut bytes)?;
+            anyhow::ensure!(bytes.len() <= limit, "revision byte limit exceeded at {}", path.display());
+            if is_asset { remaining -= bytes.len(); }
+            Ok(bytes)
+        })
+    }
+
+    fn load_with(root: &Path, revision: &str, mut read: impl FnMut(&Path, bool) -> Result<Vec<u8>>) -> Result<Self> {
         anyhow::ensure!(valid_hash(revision), "invalid candidate revision");
-        let bytes = std::fs::read(root.join(revision).join("manifest.json")).context("retained manifest unavailable")?;
+        let bytes = read(&root.join(revision).join("manifest.json"), false).context("retained manifest unavailable")?;
         let value: Value = serde_json::from_slice(&bytes)?;
         anyhow::ensure!(hash_json(&value)? == revision, "manifest revision hash mismatch");
         let mut manifest: Manifest = serde_json::from_value(value)?;
@@ -211,7 +231,7 @@ impl Revision {
                         "asset bundle hash mismatch for {id}");
                     for (filename, expected) in &entry.files {
                         anyhow::ensure!(ASSET_FILES.contains(&filename.as_str()) && valid_hash(expected), "invalid asset entry {id}/{filename}");
-                        let bytes = std::fs::read(root.join("bundles").join(id).join(hash).join(filename))
+                        let bytes = read(&root.join("bundles").join(id).join(hash).join(filename), true)
                             .with_context(|| format!("missing immutable asset {id}/{filename}"))?;
                         anyhow::ensure!(hash_bytes(&bytes) == *expected, "asset hash mismatch for {id}/{filename}");
                         validate_asset(filename, &bytes)?;

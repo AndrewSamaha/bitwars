@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { canonicalContentJson, contentSha256, mutateContentResponse, readImmutableContentAsset, requestContentReload, stageContentRevision } from "../src/lib/content/contentRevisions";
+import { canonicalContentJson, contentSha256, readImmutableContentAsset, stageContentRevision } from "../src/lib/content/contentRevisionFiles";
+import { mutateContentResponse, requestContentReload } from "../src/lib/content/contentRevisions";
 
 const database = vi.hoisted(() => ({ get: vi.fn(), eval: vi.fn() }));
 vi.mock("@/lib/db/connection", () => ({ redis: database }));

@@ -1741,6 +1741,65 @@ mod kinetic_engine_tests {
     }
 
     #[test]
+    fn sandbox_matches_the_production_laser_and_kinetic_phases() {
+        use crate::battle::{Battle, Bounds};
+
+        let content = content();
+        let cfg = GameConfig::default();
+        let dt = 1.0 / cfg.tps as f32;
+        for (attacker, target, cause) in [
+            ("fighter_v1", "worker", "laser"),
+            ("kinetic_fighter", "fighter_v1", "kinetic"),
+        ] {
+            let entities = vec![
+                entity(1, attacker, "battle-a", -400.0, 0.0, 80.0),
+                entity(2, target, "battle-b", 400.0, 0.0, 10.0),
+            ];
+            let mut live = state(entities.clone());
+            let mut live_combat = CombatSystem::default();
+            let mut sandbox = Battle::new(&content, Bounds { width: 12_000.0, height: 8_000.0 }, entities, &cfg);
+            let mut laser_ticks = Vec::new();
+            let mut casualty_tick = None;
+            for tick in 0..180 {
+                let mut instant = live_combat.tick(&mut live.entities, &content, tick, dt);
+                live.entities.retain(|e| !instant.dead_entity_ids.contains(&e.id));
+                let motion = begin_combat_motion(&live, Some(&content), dt, &HashMap::new());
+                integrate(&cfg, &mut live, dt);
+                let kinetic = finish_combat_motion(&mut live, Some(&content), &mut live_combat,
+                    &motion, dt, &mut instant.projectile_spawns, &mut HashMap::new());
+                sandbox.step(tick as u32 + 1).unwrap();
+                assert_eq!(sandbox.entities, live.entities, "{cause}, step {tick}");
+                if cause == "kinetic" && tick == 0 {
+                    // Appended after integration: flight cannot start until step 1.
+                    assert_eq!(sandbox.entities.last().unwrap().pos.unwrap().x, -400.0);
+                }
+                let events = sandbox.events_json();
+                let events = events.as_array().unwrap();
+                assert_eq!(events.iter().filter(|e| e["kind"] == "laser").count(), instant.laser_shots.len());
+                if !instant.laser_shots.is_empty() { laser_ticks.push(tick); }
+                let deaths: Vec<_> = events.iter().filter(|e| e["kind"] == "casualty").collect();
+                assert_eq!(deaths.len(), instant.destructions.len() + kinetic.destructions.len());
+                if !deaths.is_empty() {
+                    assert_eq!(deaths.len(), 1);
+                    assert_eq!(deaths[0]["attacker"], 1);
+                    assert_eq!(deaths[0]["victim"], 2);
+                    assert_eq!(deaths[0]["cause"], cause);
+                    casualty_tick = Some(tick);
+                    break;
+                }
+            }
+            assert!(casualty_tick.is_some(), "{cause} never killed the fixture");
+            if cause == "laser" {
+                assert!(laser_ticks[0] > 0, "fighter pursued before firing");
+                assert_eq!(laser_ticks.len(), 3);
+                assert!(laser_ticks.windows(2).all(|pair| pair[1] - pair[0] == 25));
+            } else {
+                assert!(casualty_tick.unwrap() > 1);
+            }
+        }
+    }
+
+    #[test]
     fn kinetic_destruction_event_is_withheld_when_the_attacker_cannot_see_the_impact() {
         let mut content = content();
         content.entity_types.get_mut("kinetic_fighter").unwrap()

@@ -19,6 +19,49 @@ pnpm -C apps/web run db:init
 
 Open [http://localhost:8001/redis-stack/browser](http://localhost:8001/redis-stack/browser) with your browser to connect to Redis Stack.
 
+### Battle sandbox (development only)
+
+Set a dedicated `BATTLE_DEV_KEY` in the root `.env` (generate one with
+`openssl rand -hex 32`; do not reuse the player auth secret). Visit
+**Content → Unlock Battle** on the exact `BATTLE_ORIGIN`, which defaults to
+`http://localhost:$PORT` (`3000` if `PORT` is unset). The key unlocks a 12-hour
+HTTP-only developer session; a player login does not grant access. The page and
+API are disabled in production. Keep development bound to a trusted machine.
+
+`pnpm dev` supervises `@bitwars/battle-runner` alongside the web app. To run the
+editor and runner **without** the live engine or Redis:
+
+```bash
+pnpm --filter @bitwars/schemas gen:ts
+pnpm --filter @bitwars/shared build
+pnpm dev --filter=bitwars --filter=@bitwars/battle-runner
+```
+
+Use the same local OS user for Next and the runner. They use a private Unix
+socket scoped to the worktree, not a network listener. Go enqueues a separate
+in-memory simulation; it does not launch a process or alter live state.
+
+Save setup stores at most 20 names and 768 KiB in this browser. Each setup pins
+its exact SHA-256 revision in `packages/content/.battle-revisions/`; saving
+does not modify authored files or publish. Back up that directory if you need
+to keep setups. To recover a missing revision, restore its
+`<hash>/manifest.json` and referenced `bundles/` folders from a backup, then
+reopen the setup. The editor never substitutes newer content.
+
+The default arena is 12,000 × 8,000 world units; Close Quarters is 500 × 500.
+Whole hulls stop at first wall contact. Kinetic shots stop at the earlier of
+arena exit or travel expiry; a valid hit at the clipped endpoint counts.
+Outward shots on the wall expire without damage. Laser rules are unchanged.
+Acquisition, firing range, and kinetic travel are independent.
+
+Limits: 128 KiB draft, 64 units and 64 variants, 2,400 ticks at `GAME_TPS`,
+256 active shots, two concurrent jobs with no waiting queue, 12 MiB per
+replay and 32 MiB retained overall (64 run records, up to 15 minutes after
+completion). Replay pages are at most 256 KiB and 64 frames. Playback starts
+after the runner finishes; tick limit gives no winner. Reset restores the
+exact pre-Go draft. Runs/replays expire independently of saved setups.
+See the [battle sandbox contract](docs/battle-sandbox.md).
+
 ## Other Scripts
 - `pnpm game:reset` -- clear game state and player db
 - `pnpm -C apps/web storybook` -- start storybook

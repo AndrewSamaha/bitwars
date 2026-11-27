@@ -10,6 +10,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ## [Unreleased]
 
 ### Added
+- Added the developer-only Battle Sandbox at `/content/battle`: deploy and tune opposing units, save browser-local setups against pinned authored revisions, and replay deterministic production combat from an isolated Rust runner. Sandbox edits and runs do not publish or touch live game state.
 - Military factories can build a kinetic fighter armed only with a projectile weapon. Shots fly in a straight line, hit the first hostile hull along both objects' movement paths, and expire at their own travel limit. Shots grant no vision; unseen kinetic kills and shot terminations are not reported as removals.
 - Kinetic attacks accept `combat.attacks[].projectile.error_radians`, a non-negative maximum aim deviation sampled uniformly per shot. The sample derives from tick, attacker, target, and weapon ID, so spread replays identically after checkpoint restore without persisting RNG state. Defaults to 0; the kinetic fighter authors 0.005 rad.
 - Self-destruct in the entity details panel now requires a four-word randomized NATO confirmation sequence. Wrong letters, Escape, clicking away, or changing selection cancel the sequence before any order is sent.
