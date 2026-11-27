@@ -1,0 +1,26 @@
+# Battle sandbox contract (v1)
+
+The reviewed architecture selects a supervised native `battle_runner` over either launching a process for each Go or reusing a live scenario. The runner loads pinned authored content into private memory and never constructs `Engine` or connects to Redis. The browser edits and plays back drafts; only Rust decides combat outcomes. Next verifies developer access, captures revisions, and forwards requests over a user-private Unix socket. A signed developer identity has no relationship to player login.
+
+## Editor and lifecycle
+
+Content → Battle opens the editor after developer unlock. Team A/B and a searchable pinned catalog configure placement; select by board or roster, drag or enter coordinates, and remove explicitly. Use a centered 12,000 × 8,000 rectangle (try starts within 2,000 for short-range units); Close Quarters is 500 × 500. Invalid bounds or moves retain the last valid draft, with affected placement IDs identified. Named variants are shared only by placements that reference them; show base and effective values and allow per-field reset. Acquisition and firing ranges are separate; dismantle uses hull contact plus tolerance. Saves stay in this browser with overwrite confirmation and quota errors. Reopen by exact revision, never by falling back to current content.
+
+Go freezes the current draft, including unsaved edits. The UI distinguishes submission, acceptance, rejection, capacity/unavailability, simulation failure, win/draw, tick limit, and unavailable replay. Status lookup failures can be retried for the same run. Once ready the replay opens paused at tick 0. Play/pause, speed and seek change only the local cursor. Reset restores the exact pre-Go draft and invalidates the current submission generation. Guard every async result by generation and, after acceptance, run ID. Announce lifecycle changes rather than every tick. Distinguish teams with labeled markers as well as color, with a roster for overlap and a marker for missing art.
+
+## Wire contract
+
+All browser routes are under `/api/content/battle`, gated in development by the signed developer session (except `POST /session`, which exchanges the configured key for that session). Writes require the configured same origin. JSON errors carry `code` and `message`; unknown, expired, and foreign run IDs have the same unavailable response.
+
+- `POST /catalog` captures current authored YAML/art in the sandbox-only revision root; `GET /catalog?revision=…` loads an exact retained hash. Returns the revision and normalized unit entries (base combat stats, hull, strategy, weapon IDs/types, optional pinned art). Art URLs stay behind the same gate.
+- `POST /` takes `{version:1, revision, bounds:{width,height}, placements, variants}`. A placement is `{id, team:"a"|"b", type_id, x, y, variant_id?}`. A variant is `{id, name, type_id, health?, speed?, acquisition_range?, weapons:[{id,damage?,range?,cooldown_ticks?}]}`. Placement order determines simulation IDs and is preserved on save. IDs in the draft are distinct within each list. Rust validates resolved stats and references, independently of the editor. A successful enqueue returns HTTP 202 and `{run_id}` (dashed UUID), not a result.
+- `GET /[runId]` returns the ID and status: `pending`, `rejected`, `failed`, or `ready`. Ready includes `tps`, `last_tick`, `outcome` (`a`, `b`, `draw`, `tick_limit`), and `page_count`. Rejected/failed includes the reason.
+- `GET /[runId]/replay?page=0` returns `{run_id, page, frames}`. Frames carry tick-indexed hull poses and health, active shot positions, and events (laser endpoints, kinetic launches, sweep terminations with reason/contact and tick fraction, and attributed casualties). Tick 0 is the setup before actions. Numeric simulation IDs correspond to 1-based placement order; projectile IDs in the replay use a separate small sequence. Playback interpolates only visuals.
+
+## Step and bounds
+
+Use production `GAME_TPS`/friction. Run autonomous combat against the pre-step positions, remove instant casualties, capture hull starts, integrate, sweep existing projectiles and remove kinetic casualties, then append new shots. End when a team is eliminated and remaining shots have finished (or at the cap, with no winner awarded at the cap if unresolved). No economy, radiation, fog, or direct player orders.
+
+Whole hulls stay in the closed arena: the first wall contact zeros velocity and is represented in the shared sweep as motion followed by stationary time. Kinetic shots sweep only to the earlier of first exit or remaining travel. Contact at a positive clipped endpoint counts; outward shots already at the boundary expire immediately. Lasers are unchanged. The live sweep is the unbounded specialization, with no sandbox recording or edge work.
+
+128 KiB draft body, 64 placements/variants, 2,400 ticks, 256 active shots per run, two running jobs and no waiting queue. Replay includes tick 0, is byte-capped per run and globally, paged, and expires. Capacity violations fail explicitly rather than truncating events. No replay or run state survives runner restart; saved setups and retained bundles are separate.
